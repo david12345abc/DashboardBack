@@ -21,6 +21,7 @@ class User(models.Model):
     nickname = models.CharField(max_length=150, unique=True)
     password = models.CharField(max_length=256)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.USER5)
+    department = models.CharField(max_length=255, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

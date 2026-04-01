@@ -127,3 +127,8 @@ STATIC_URL = 'static/'
 
 # CORS: любой origin (с credentials несовместимо — см. django-cors-headers)
 CORS_ALLOW_ALL_ORIGINS = True
+
+# JWT
+JWT_SECRET = SECRET_KEY
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRATION_DAYS = 7
