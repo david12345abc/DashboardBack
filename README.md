@@ -141,7 +141,7 @@ Authorization: Bearer <token>
 | nickname | string | да | Уникальный логин |
 | password | string | да | Пароль |
 | role | string | нет | Роль (User1–User5, по умолчанию User5) |
-| department | string | нет | Название подразделения |
+| department | string | да | Название подразделения |
 
 **Ответ 201:**
 

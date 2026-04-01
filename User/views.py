@@ -132,6 +132,9 @@ def register(request):
     if not nickname or not password:
         return JsonResponse({'error': 'nickname and password are required'}, status=400)
 
+    if not department:
+        return JsonResponse({'error': 'department is required'}, status=400)
+
     if role not in User.Role.values:
         return JsonResponse({'error': f'Invalid role. Choose from: {User.Role.values}'}, status=400)
 
