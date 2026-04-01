@@ -1,0 +1,13 @@
+{
+  "name": "dashbord-backend",
+  "version": "1.0.0",
+  "private": true,
+  "secretKey": "django-insecure-hf^plyw353&9s=j%b_j7v&li&wkqfuz9d73lbijl3kocxn64cr",
+  "database": {
+    "name": "dashbord",
+    "user": "postgres",
+    "password": "davit",
+    "host": "localhost",
+    "port": 5432
+  }
+}
