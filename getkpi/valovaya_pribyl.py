@@ -1,7 +1,7 @@
 """
 Расчёт Валовой Прибыли коммерческого блока из кэшей 1С OData.
 
-Порядок запуска скриптов: step1_scan.py → fetch_costs.py → step2_calc.py
+Скрипт: calc_vp_fast.py (оптимизированный, ~1с вместо ~10 мин)
 Кэш-файлы хранятся в dashboard/.
 Итоговый результат кэшируется на день в dashboard/vp_result_cache.json.
 """
@@ -15,8 +15,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DASHBOARD_DIR = Path(__file__).resolve().parent / 'dashboard'
-SCRIPTS_DIR = DASHBOARD_DIR / 'ВаловаяПрибыль'
+FAST_SCRIPT = DASHBOARD_DIR / 'calc_vp_fast.py'
 RESULT_CACHE = DASHBOARD_DIR / 'vp_result_cache.json'
+NASHE_CACHE = DASHBOARD_DIR / 'nashe_keys_cache.json'
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -55,37 +56,41 @@ def _org_path(month: int, year: int) -> Path:
     return DASHBOARD_DIR / f"аналитика_орг_{MONTH_NAMES[month]}_{year}.json"
 
 
-def _run_1c_scripts(month: int, year: int) -> bool:
-    """Запускает step1_scan → fetch_costs → step2_calc для указанного месяца."""
-    python = sys.executable
-    scripts = [
-        SCRIPTS_DIR / "step1_scan.py",
-        SCRIPTS_DIR / "fetch_costs.py",
-        SCRIPTS_DIR / "step2_calc.py",
-    ]
-
-    for script in scripts:
-        if not script.exists():
-            logger.error("Script not found: %s", script)
-            return False
+def _load_nashe_keys() -> set[str]:
+    """Загружает ключи «Наше предприятие» из кэша."""
+    if NASHE_CACHE.exists():
         try:
-            result = subprocess.run(
-                [python, str(script), str(month), str(year)],
-                cwd=str(DASHBOARD_DIR),
-                capture_output=True,
-                text=True,
-                timeout=900,
-            )
-            if result.returncode != 0:
-                logger.error("Script %s failed: %s", script.name, result.stderr[:500])
-                return False
-        except subprocess.TimeoutExpired:
-            logger.error("Script %s timed out", script.name)
-            return False
-        except Exception as exc:
-            logger.error("Script %s error: %s", script.name, exc)
-            return False
+            with open(NASHE_CACHE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return set()
 
+
+def _run_1c_fast(month: int, year: int) -> bool:
+    """Запускает calc_vp_fast.py для указанного месяца."""
+    if not FAST_SCRIPT.exists():
+        logger.error("Script not found: %s", FAST_SCRIPT)
+        return False
+    try:
+        result = subprocess.run(
+            [sys.executable, str(FAST_SCRIPT), str(month), str(year)],
+            cwd=str(DASHBOARD_DIR),
+            capture_output=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=120,
+        )
+        if result.returncode != 0:
+            logger.error("calc_vp_fast.py failed (m=%d y=%d): %s",
+                         month, year, result.stderr[-500:])
+            return False
+    except subprocess.TimeoutExpired:
+        logger.error("calc_vp_fast.py timed out (m=%d y=%d)", month, year)
+        return False
+    except Exception as exc:
+        logger.error("calc_vp_fast.py error: %s", exc)
+        return False
     return True
 
 
@@ -111,6 +116,8 @@ def _calculate_vp_from_cache(month: int, year: int) -> dict | None:
         with open(org_file, "r", encoding="utf-8") as f:
             org_map = json.load(f)
 
+    nashe_keys = _load_nashe_keys()
+
     filtered = [e for e in entries if e.get("Подразделение_Key") in DEPARTMENTS]
 
     total_vp = 0.0
@@ -120,6 +127,8 @@ def _calculate_vp_from_cache(month: int, year: int) -> dict | None:
 
     for e in filtered:
         if e.get("ТипЗапасов") == "КомиссионныйТовар":
+            continue
+        if e.get("АналитикаУчетаПоПартнерам_Key") in nashe_keys:
             continue
 
         vyruchka = e.get("СуммаВыручки", 0) or 0
@@ -171,7 +180,7 @@ def _ensure_month_data(month: int, year: int) -> dict | None:
         return result
 
     logger.info("No cache for %s %d, fetching from 1C...", MONTH_NAMES[month], year)
-    if _run_1c_scripts(month, year):
+    if _run_1c_fast(month, year):
         return _calculate_vp_from_cache(month, year)
 
     return None
@@ -203,7 +212,7 @@ def _save_result_cache(data: dict) -> None:
 def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
     """
     Валовая прибыль с начала года по текущий месяц.
-    Кэшируется на день. Если кэша 1С нет — запускает скрипты.
+    Кэшируется на день. Если кэша 1С нет — запускает calc_vp_fast.py.
     """
     cached = _load_result_cache()
     if cached is not None:

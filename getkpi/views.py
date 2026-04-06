@@ -1,5 +1,6 @@
 import json
 import random
+from datetime import date
 from pathlib import Path
 
 from django.http import JsonResponse
@@ -97,41 +98,29 @@ def _get_allowed_departments(user_department: str) -> set[str]:
     return result
 
 
-def _generate_tile_value() -> float:
-    return round(random.uniform(80, 120), 1)
+MONTH_NAMES = {
+    1: "январь", 2: "февраль", 3: "март", 4: "апрель",
+    5: "май", 6: "июнь", 7: "июль", 8: "август",
+    9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
+}
 
 
-def _generate_chart_values(frequency: str) -> list[float]:
-    count = 4 if 'квартал' in frequency.lower() else 12
-    return [round(random.uniform(80, 120), 1) for _ in range(count)]
-
-
-def _success_percentage(values: list[float], target: float = 100.0) -> float:
-    hit = sum(1 for v in values if v >= target)
-    return round(hit / len(values) * 100, 1)
-
-
-_TABLE_STATUSES = ['Зелёный', 'Жёлтый', 'Красный']
-_TABLE_ACTIONS = [
-    'Скорректировать план',
-    'Провести анализ причин',
-    'Назначить ответственного',
-    'Усилить контроль',
-    'Запросить данные у владельца',
-]
-
-
-def _generate_table_rows() -> list[dict]:
-    count = random.randint(3, 5)
-    rows = []
-    for i in range(1, count + 1):
-        rows.append({
-            'rank': i,
-            'status': random.choice(_TABLE_STATUSES),
-            'deviation_pct': round(random.uniform(-15, -1), 1),
-            'action': random.choice(_TABLE_ACTIONS),
+def _generate_monthly_data(plan: float) -> list[dict]:
+    """План/факт за каждый месяц с января по текущий (2026)."""
+    today = date.today()
+    current_month = today.month
+    result = []
+    for m in range(1, current_month + 1):
+        fact = round(random.uniform(plan * 0.8, plan * 1.2), 2)
+        pct = round(fact / plan * 100, 1) if plan else None
+        result.append({
+            "month": m,
+            "month_name": MONTH_NAMES[m],
+            "plan": plan,
+            "fact": round(fact, 2),
+            "kpi_pct": pct,
         })
-    return rows
+    return result
 
 
 def _build_kpi_entry(kpi: dict, block: str) -> dict:
@@ -158,21 +147,21 @@ def _build_kpi_entry(kpi: dict, block: str) -> dict:
     kpi_id = kpi['kpi_id']
     if kpi_id in ('KD-M1', 'KD-Y1'):
         vp_data = valovaya_pribyl.get_vp_ytd()
-        entry['valovaya_pribyl'] = vp_data
-        ytd = vp_data['ytd']
-        if ytd['kpi_pct'] is not None:
-            entry['value'] = ytd['kpi_pct']
-        else:
-            entry['value'] = _generate_tile_value()
-    elif block == 'плитка':
-        entry['value'] = _generate_tile_value()
-    elif block == 'график':
-        values = _generate_chart_values(freq)
-        entry['period_count'] = len(values)
-        entry['values'] = values
-        entry['success_pct'] = _success_percentage(values)
-    elif block == 'таблица':
-        entry['rows'] = _generate_table_rows()
+        entry['monthly_data'] = vp_data['months']
+        entry['ytd'] = vp_data['ytd']
+    else:
+        plan = 100.0
+        entry['monthly_data'] = _generate_monthly_data(plan)
+        facts = [m['fact'] for m in entry['monthly_data']]
+        plans = [m['plan'] for m in entry['monthly_data']]
+        total_fact = sum(facts)
+        total_plan = sum(plans)
+        entry['ytd'] = {
+            'total_plan': round(total_plan, 2),
+            'total_fact': round(total_fact, 2),
+            'kpi_pct': round(total_fact / total_plan * 100, 1) if total_plan else None,
+        }
+
     return entry
 
 

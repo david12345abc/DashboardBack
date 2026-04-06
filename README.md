@@ -176,39 +176,49 @@ Authorization: Bearer <token>
 |----------------|----------|
 | `department` | Подразделение (по умолчанию — своё). Должно быть в ветке иерархии. |
 
-**Ответ 200:**
+Каждый KPI содержит `monthly_data` — массив план/факт за каждый месяц с января по текущий (2026).
+
+**Ответ 200 (обычный KPI):**
 
 ```json
 {
-  "department": "Коммерческий директор",
-  "kpi_count": 12,
+  "department": "Коммерческая служба",
+  "kpi_count": 8,
   "kpis": [
     {
-      "kpi_id": "KD-M1",
-      "name": "Валовая прибыль коммерческого блока факт/план",
+      "kpi_id": "КОМ-M1",
+      "name": "Выполнение маркетингового плана по деньгам",
       "block": "плитка",
       "frequency": "ежемесячно",
-      "value": 354.5,
-      "valovaya_pribyl": {
-        "year": 2026,
-        "plan_monthly": 28450241,
-        "months": [
-          {"month": 3, "plan": 28450241, "fact": 100847809.68, "kpi_pct": 354.5, "has_data": true, "vyruchka": 136503177.67, "sebestoimost": 35655367.99}
-        ],
-        "ytd": {"total_plan": 28450241, "total_fact": 100847809.68, "kpi_pct": 354.5, "months_with_data": 1}
-      },
-      "formula": "Факт валовой прибыли / План × 100%",
-      "unit": "%",
-      "weight_pct": 50,
-      "green_threshold": "≥100%",
-      "yellow_threshold": "90–99,9%",
-      "red_threshold": "<90%"
+      "monthly_data": [
+        {"month": 1, "month_name": "январь", "plan": 100.0, "fact": 108.14, "kpi_pct": 108.1},
+        {"month": 2, "month_name": "февраль", "plan": 100.0, "fact": 97.22, "kpi_pct": 97.2},
+        {"month": 3, "month_name": "март", "plan": 100.0, "fact": 96.0, "kpi_pct": 96.0},
+        {"month": 4, "month_name": "апрель", "plan": 100.0, "fact": 90.34, "kpi_pct": 90.3}
+      ],
+      "ytd": {"total_plan": 400.0, "total_fact": 391.7, "kpi_pct": 97.9},
+      "formula": "...", "unit": "%", "weight_pct": 35, "..."
     }
   ]
 }
 ```
 
-> **KD-M1 / KD-Y1 (Валовая прибыль):** данные **реальные** из 1С. Если за сегодня уже считали — берётся кэш. Если кэша за месяц нет — запускаются скрипты 1С: `step1_scan` → `fetch_costs` → `step2_calc`. План: 28 450 241 руб/мес.
+**Ответ 200 (KPI Валовая прибыль — KD-M1 / KD-Y1):**
+
+```json
+{
+  "kpi_id": "KD-M1",
+  "name": "Валовая прибыль коммерческого блока",
+  "monthly_data": [
+    {"month": 1, "month_name": "январь", "plan": 28450241, "fact": null, "kpi_pct": null, "has_data": false},
+    {"month": 3, "month_name": "март", "plan": 28450241, "fact": 100847809.68, "kpi_pct": 354.5, "has_data": true, "vyruchka": 136503177.67, "sebestoimost": 35655367.99}
+  ],
+  "ytd": {"total_plan": 28450241, "total_fact": 100847809.68, "kpi_pct": 354.5, "months_with_data": 1, "months_total": 4}
+}
+```
+
+> **KD-M1 / KD-Y1:** данные **реальные** из 1С. Кэш на день. Нет кэша — скрипты 1С запускаются автоматически. План: 28 450 241 руб/мес.
+> **Остальные KPI:** `plan = 100`, `fact` — генерируется (80–120). Данные помесячные с января по текущий месяц.
 
 | Код | Причина |
 |-----|---------|
