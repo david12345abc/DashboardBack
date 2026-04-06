@@ -8,14 +8,15 @@
       "goal": "Обеспечить выполнение плана поступления ДС коммерческого блока",
       "formula": "Факт поступления ДС / План × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 35
+      "weight_pct": 35,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОМ-M2-1",
@@ -25,14 +26,15 @@
       "goal": "Управлять не только объёмом продаж, но и качеством прибыли коммерческого блока",
       "formula": "Факт валовой прибыли по размещенным заказам / План × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 35
+      "weight_pct": 35,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОМ-M2-2",
@@ -42,14 +44,15 @@
       "goal": "Управлять не только объёмом продаж, но и качеством прибыли коммерческого блока",
       "formula": "Сделки без нарушения МЦР и регламента скидок / Все сделки × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 35
+      "weight_pct": 35,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОМ-M3-1",
@@ -59,14 +62,15 @@
       "goal": "Привязать коммерческий блок к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов КС)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОМ-M3-2",
@@ -76,14 +80,15 @@
       "goal": "Привязать коммерческий блок к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по родразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОМ-М4-1",
@@ -93,14 +98,15 @@
       "goal": "Увязать результат коммерческой службы с прибылью",
       "formula": "Факт дебиторской задолженности / Лимит ДЗ",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": "<=100%",
       "yearly_target": "<=100%",
       "green_threshold": "<=100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОМ-Q4",
@@ -110,14 +116,15 @@
       "goal": "Увязать квартальный результат коммерческой службы с прибылью и качеством портфеля",
       "formula": "Факт квартальной выручки по клиентам сегмента Газпром и МРГ/ общий факт выручки",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": null,
       "quarterly_target": "<46%",
       "yearly_target": "<46%",
       "green_threshold": "<46%",
       "yellow_threshold": "46  - 55%",
       "red_threshold": ">55%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "block": "график"
     },
     {
       "kpi_id": "КОМ-Q5",
@@ -134,7 +141,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "график"
+    },
+    {
+      "kpi_id": "КОМ-C1",
+      "name": "Тренд: Выполнение маркетингового плана по деньгам / Валовая прибыль",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "КОМ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "КОМ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "ОВЭД": [
@@ -146,14 +208,15 @@
       "goal": "Обеспечить вклад направления в прибыль коммерческой службы",
       "formula": "Факт валовой прибыли по размещенным заказам / План × 100% (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 50
+      "weight_pct": 50,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОВЭ-M2-1",
@@ -163,14 +226,15 @@
       "goal": "Обеспечить выполнение плана поступления ДС подразделения",
       "formula": "Факт поступления ДС / План × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОВЭ-M3-1",
@@ -180,14 +244,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов ОВЭД)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОВЭ-Q4",
@@ -204,7 +269,8 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "block": "график"
     },
     {
       "kpi_id": "ОВЭ-Q5",
@@ -221,7 +287,8 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "график"
     },
     {
       "kpi_id": "ОВЭ-M2-2",
@@ -231,14 +298,15 @@
       "goal": "Обеспечить деньги и не допускать накопления просроченной ДЗ",
       "formula": "Факт дебиторской задолженности / Лимит ДЗ",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": "<=100%",
       "yearly_target": "<=100%",
       "green_threshold": "<=100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОВЭ-M3-2",
@@ -248,14 +316,69 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
+    },
+    {
+      "kpi_id": "ОВЭ-C1",
+      "name": "Тренд: Валовая прибыль направления факт/план / Выполнение маркетингового плана по деньгам",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ОВЭ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ОВЭ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Отдел дилерских продаж": [
@@ -267,14 +390,15 @@
       "goal": "Обеспечить вклад направления в прибыль коммерческой службы",
       "formula": "Факт валовой прибыли по размещенным заказам / План × 100% (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 50
+      "weight_pct": 50,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M2-1",
@@ -284,14 +408,15 @@
       "goal": "Обеспечить выполнение плана поступления ДС коммерческого блока",
       "formula": "Факт поступления ДС / План × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M3-1",
@@ -301,14 +426,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов ОДП)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-Q4",
@@ -325,7 +451,8 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "block": "график"
     },
     {
       "kpi_id": "ОТД-Q5",
@@ -342,7 +469,8 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "график"
     },
     {
       "kpi_id": "ОТД-M2-1",
@@ -352,14 +480,15 @@
       "goal": "Обеспечить деньги и не допускать накопления просроченной ДЗ",
       "formula": "Факт дебиторской задолженности / Лимит ДЗ",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": "<=100%",
       "yearly_target": "<=100%",
       "green_threshold": "<=100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M3-2",
@@ -369,14 +498,69 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
+    },
+    {
+      "kpi_id": "ОТД-C1",
+      "name": "Тренд: Валовая прибыль направления факт/план / Выполнение маркетингового плана по деньгам",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ОТД-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ОТД-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Отдел продаж БМИ": [
@@ -388,14 +572,15 @@
       "goal": "Обеспечить вклад направления в прибыль коммерческой службы",
       "formula": "Факт валовой прибыли по размещенным заказам / План × 100% (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 50
+      "weight_pct": 50,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M2-1",
@@ -405,14 +590,15 @@
       "goal": "Обеспечить выполнение плана поступления ДС коммерческого блока",
       "formula": "Факт поступления ДС / План × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M3-1",
@@ -422,14 +608,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов ОП БМИ)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-Q4",
@@ -446,7 +633,8 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "block": "график"
     },
     {
       "kpi_id": "ОТД-Q5",
@@ -463,7 +651,8 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "график"
     },
     {
       "kpi_id": "ОТД-M2-2",
@@ -473,14 +662,15 @@
       "goal": "Обеспечить деньги и не допускать накопления просроченной ДЗ",
       "formula": "Факт дебиторской задолженности / Лимит ДЗ",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": "<=100%",
       "yearly_target": "<=100%",
       "green_threshold": "<=100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M3-2",
@@ -490,14 +680,69 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
+    },
+    {
+      "kpi_id": "ОТД-C1",
+      "name": "Тренд: Валовая прибыль направления факт/план / Выполнение маркетингового плана по деньгам",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ОТД-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ОТД-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "ОПЭОиУ": [
@@ -509,14 +754,15 @@
       "goal": "Обеспечить вклад направления в прибыль коммерческой службы",
       "formula": "Факт валовой прибыли по размещенным заказам / План × 100% (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 50
+      "weight_pct": 50,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОПЭ-M2-1",
@@ -526,14 +772,15 @@
       "goal": "Обеспечить выполнение плана поступления ДС коммерческого блока",
       "formula": "Факт поступления ДС / План × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОПЭ-M2-2",
@@ -543,14 +790,15 @@
       "goal": "Обеспечить деньги и не допускать накопления просроченной ДЗ",
       "formula": "Факт дебиторской задолженности / Лимит ДЗ",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": "<=100%",
       "yearly_target": "≥100%",
       "green_threshold": "<=100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОПЭ-M3-1",
@@ -560,14 +808,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов ОПЭОиУ)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОПЭ-Q4",
@@ -584,7 +833,8 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "block": "график"
     },
     {
       "kpi_id": "ОПЭ-Q5",
@@ -601,7 +851,8 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "график"
     },
     {
       "kpi_id": "ОПЭ-M3-2",
@@ -611,14 +862,69 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
+    },
+    {
+      "kpi_id": "ОПЭ-C1",
+      "name": "Тренд: Валовая прибыль направления факт/план / Выполнение маркетингового плана по деньгам",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ОПЭ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ОПЭ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Отдел по работе с ключевыми клиентами": [
@@ -630,14 +936,15 @@
       "goal": "Обеспечить вклад направления в прибыль коммерческой службы",
       "formula": "Факт валовой прибыли по размещенным заказам / План × 100% (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 50
+      "weight_pct": 50,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M2-1",
@@ -647,14 +954,15 @@
       "goal": "Обеспечить выполнение плана поступления ДС коммерческого блока",
       "formula": "Факт поступления ДС / План × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M2-2",
@@ -664,14 +972,15 @@
       "goal": "Обеспечить деньги и не допускать накопления просроченной ДЗ",
       "formula": "Факт дебиторской задолженности / Лимит ДЗ",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": "<=100%",
       "yearly_target": "≥100%",
       "green_threshold": "<=100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M3-1",
@@ -681,14 +990,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-Q4",
@@ -705,7 +1015,8 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "block": "график"
     },
     {
       "kpi_id": "ОТД-Q5",
@@ -722,7 +1033,8 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "график"
     },
     {
       "kpi_id": "ОТД-M3-2",
@@ -732,14 +1044,69 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
+    },
+    {
+      "kpi_id": "ОТД-C1",
+      "name": "Тренд: Валовая прибыль направления факт/план / Выполнение маркетингового плана по деньгам",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ОТД-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ОТД-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Отдел по работе с ПАО «Газпром»": [
@@ -751,14 +1118,15 @@
       "goal": "Обеспечить вклад направления в прибыль коммерческой службы",
       "formula": "Факт валовой прибыли по размещенным заказам / План × 100% (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 50
+      "weight_pct": 50,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M2-1",
@@ -768,14 +1136,15 @@
       "goal": "Обеспечить выполнение плана поступления ДС коммерческого блока",
       "formula": "Факт поступления ДС / План × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": "<=100%",
       "yearly_target": "≥100%",
       "green_threshold": "<=100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M2-2",
@@ -785,14 +1154,15 @@
       "goal": "Обеспечить деньги и не допускать накопления просроченной ДЗ",
       "formula": "0,5 × KPI(Факт поступления ДС / План × 100%) + 0,5 × KPI(Просроченная ДЗ в лимите)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-M3-1",
@@ -802,14 +1172,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ПАО «Газпром»)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОТД-Q4",
@@ -826,7 +1197,8 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "block": "график"
     },
     {
       "kpi_id": "ОТД-Q5",
@@ -843,7 +1215,8 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "график"
     },
     {
       "kpi_id": "ОТД-M3-2",
@@ -853,14 +1226,69 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
+    },
+    {
+      "kpi_id": "ОТД-C1",
+      "name": "Тренд: Валовая прибыль направления факт/план / Выполнение маркетингового плана по деньгам",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ОТД-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ОТД-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "ГСПП": [
@@ -879,7 +1307,8 @@
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ГСП-M2",
@@ -896,7 +1325,8 @@
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ГСП-M3",
@@ -913,7 +1343,8 @@
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ГСП-Q4",
@@ -930,7 +1361,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "график"
     },
     {
       "kpi_id": "ГСП-Q5",
@@ -947,7 +1379,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ГСП-C1",
+      "name": "Тренд: ТКП выставлены в срок / ОЛ запущены в производство без срыва срока",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥95%",
+      "quarterly_target": null,
+      "yearly_target": "≥95%",
+      "green_threshold": "≥95%",
+      "yellow_threshold": "90–94,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ГСП-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ГСП-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Конструкторское бюро": [
@@ -966,7 +1453,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОН-M1-2",
@@ -983,7 +1471,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОН-M2",
@@ -1000,7 +1489,8 @@
       "green_threshold": "≥92%",
       "yellow_threshold": "85–91,9%",
       "red_threshold": "<85%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОН-M3",
@@ -1017,7 +1507,8 @@
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "КОН-Q4",
@@ -1034,7 +1525,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "график"
     },
     {
       "kpi_id": "КОН-Q5",
@@ -1051,7 +1543,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "КОН-C1",
+      "name": "Тренд: Доля проектов КБ без отклонения >10 р.д. / Доля проектов КБ без отклонения бюджета <10%",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "Turbo Project",
+      "monthly_target": "≥90%",
+      "quarterly_target": null,
+      "yearly_target": "≥90%",
+      "green_threshold": "≥90%",
+      "yellow_threshold": "80–89,9%",
+      "red_threshold": "<80%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "КОН-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "КОН-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Служба качества": [
@@ -1070,7 +1617,8 @@
       "green_threshold": "≤1,0%",
       "yellow_threshold": "1,01–1,5%",
       "red_threshold": ">1,5%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M2",
@@ -1087,7 +1635,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M3-1",
@@ -1097,14 +1646,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M3-2",
@@ -1114,14 +1664,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-Q4",
@@ -1138,7 +1689,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "СЛУ-Q5",
@@ -1155,7 +1707,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЛУ-C1",
+      "name": "Тренд: Уровень внешнего брака / Срок закрытия несоответствий",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≤1,0%",
+      "quarterly_target": null,
+      "yearly_target": "≤1,0%",
+      "green_threshold": "≤1,0%",
+      "yellow_threshold": "1,01–1,5%",
+      "red_threshold": ">1,5%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЛУ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "СЛУ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Метрологическая служба": [
@@ -1167,14 +1774,15 @@
       "goal": "Выполнить план по услугам поверки/ремонта",
       "formula": "Факт выполнения плана производства в части МС / План производства в части МС 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "95–99,9%",
       "red_threshold": "<95%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "МЕТ-M2",
@@ -1184,14 +1792,15 @@
       "goal": "Соблюдать сроки услуг",
       "formula": "Работы, выполненные в срок / Все работы × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "МЕТ-M3-1",
@@ -1201,14 +1810,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "МЕТ-M3-2",
@@ -1218,14 +1828,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "МЕТ-Q4-1",
@@ -1242,7 +1853,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "график"
     },
     {
       "kpi_id": "МЕТ-Q4-2",
@@ -1259,7 +1871,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "график"
     },
     {
       "kpi_id": "МЕТ-Q5",
@@ -1276,7 +1889,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "МЕТ-C1",
+      "name": "Тренд: План производства в части МС / SLA по поверке / ремонту",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "95–99,9%",
+      "red_threshold": "<95%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "МЕТ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "МЕТ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Сервисная служба": [
@@ -1288,14 +1956,15 @@
       "goal": "Соблюдать сроки сервиса",
       "formula": "Работы, закрытые в срок / Все работы × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЕР-M2",
@@ -1305,14 +1974,15 @@
       "goal": "Устранять проблему с первого раза",
       "formula": "Повторные обращения / Все обращения",
       "unit": "коэфф.",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≤0,95",
       "quarterly_target": null,
       "yearly_target": "≤0,95",
       "green_threshold": "≤0,95",
       "yellow_threshold": "0,90–0,949",
       "red_threshold": "<0,90>",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЕР-M3-1",
@@ -1322,14 +1992,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЕР-M3-2",
@@ -1339,14 +2010,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЕР-Q4",
@@ -1363,7 +2035,8 @@
       "green_threshold": "Цель и выше",
       "yellow_threshold": "Отклонение до 10%",
       "red_threshold": "Отклонение >10%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "СЕР-Q5",
@@ -1380,7 +2053,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЕР-C1",
+      "name": "Тренд: SLA по заявкам / работам / Повторные выезды / повторные обращения",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥95%",
+      "quarterly_target": null,
+      "yearly_target": "≥95%",
+      "green_threshold": "≥95%",
+      "yellow_threshold": "90–94,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЕР-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "СЕР-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Производство №1": [
@@ -1392,14 +2120,15 @@
       "goal": "Обеспечить выпуск продукции под выручку и прибыль компании",
       "formula": "Факт выпуска / План выпуска × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-M2",
@@ -1409,14 +2138,15 @@
       "goal": "Снизить стоимость переделок и потери на производстве",
       "formula": "Брак / Выпуск × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≤2,0%",
       "quarterly_target": null,
       "yearly_target": "≤2,0%",
       "green_threshold": "≤2,0%",
       "yellow_threshold": "2,1–3,0%",
       "red_threshold": ">3,0%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-M3-1",
@@ -1426,14 +2156,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-M3-2",
@@ -1443,14 +2174,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-Q4",
@@ -1467,7 +2199,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "ПРО-Q5",
@@ -1484,7 +2217,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 10
+      "weight_pct": 10,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ПРО-C1",
+      "name": "Тренд: Выполнение производственного плана / Внутренний брак",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ПРО-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ПРО-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Производство №2": [
@@ -1496,14 +2284,15 @@
       "goal": "Обеспечить выпуск продукции под выручку и прибыль компании",
       "formula": "Факт выпуска / План выпуска × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥100%",
       "quarterly_target": null,
       "yearly_target": "≥100%",
       "green_threshold": "≥100%",
       "yellow_threshold": "95–99,9%",
       "red_threshold": "<95%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-M2",
@@ -1513,14 +2302,15 @@
       "goal": "Снизить стоимость переделок и потери на производстве",
       "formula": "Брак / Выпуск × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≤2,0%",
       "quarterly_target": null,
       "yearly_target": "≤2,0%",
       "green_threshold": "≤2,0%",
       "yellow_threshold": "2,1–3,0%",
       "red_threshold": ">3,0%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-M3-1",
@@ -1530,14 +2320,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-M3-2",
@@ -1547,14 +2338,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-Q4",
@@ -1571,7 +2363,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "ПРО-Q5",
@@ -1588,7 +2381,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 10
+      "weight_pct": 10,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ПРО-C1",
+      "name": "Тренд: Выполнение производственного плана / Внутренний брак",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "95–99,9%",
+      "red_threshold": "<95%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ПРО-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ПРО-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Производство БМИ": [
@@ -1607,7 +2455,8 @@
       "green_threshold": null,
       "yellow_threshold": null,
       "red_threshold": null,
-      "weight_pct": null
+      "weight_pct": null,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-M1",
@@ -1624,7 +2473,8 @@
       "green_threshold": null,
       "yellow_threshold": null,
       "red_threshold": null,
-      "weight_pct": null
+      "weight_pct": null,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-M2",
@@ -1634,14 +2484,15 @@
       "goal": "Снизить стоимость переделок и потери на производстве",
       "formula": "Брак / Выпуск × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≤2,0%",
       "quarterly_target": null,
       "yearly_target": "≤2,0%",
       "green_threshold": "≤2,0%",
       "yellow_threshold": "2,1–3,0%",
       "red_threshold": ">3,0%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ПРО-Q4",
@@ -1658,7 +2509,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "ПРО-Q5",
@@ -1675,7 +2527,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 10
+      "weight_pct": 10,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ПРО-C1",
+      "name": "Тренд: Доля проектов БМИ пр-во внешних заказов без отклонения >10 р.д. / Доля проектов БМИ пр-во внешних заказов без отклонения бюджета <10%",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "Turbo Project",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ПРО-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ПРО-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "ОМТО / служба логистики": [
@@ -1687,14 +2594,15 @@
       "goal": "Не допустить срывов производства из-за снабжения",
       "formula": "Поставки, выполненные в срок / Все поставки × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОМТ-M2",
@@ -1704,14 +2612,15 @@
       "goal": "Удерживать материальную себестоимость под контролем",
       "formula": "(Фактическая цена - Проектная цена) / Проектная цена × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≤0% или в пределах допусков",
       "quarterly_target": null,
       "yearly_target": "В пределах утверждённых допусков",
       "green_threshold": "В пределах нормы",
       "yellow_threshold": "В пределах согласованного допуска",
       "red_threshold": "Сверх допуска",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОМТ-M3",
@@ -1721,14 +2630,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ОМТ-Q4",
@@ -1738,14 +2648,15 @@
       "goal": "Развивать качественную базу поставщиков",
       "formula": "Поставщики, прошедшие оценку / Все активные поставщики × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": null,
       "quarterly_target": "≥80%",
       "yearly_target": "≥80%",
       "green_threshold": "≥80%",
       "yellow_threshold": "70–79,9%",
       "red_threshold": "<70%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "ОМТ-Q5",
@@ -1762,7 +2673,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 10
+      "weight_pct": 10,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ОМТ-C1",
+      "name": "Тренд: Обеспечение поставок ТМЦ в срок / Отклонение закупочной цены от проектной / последней закупки",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥95%",
+      "quarterly_target": null,
+      "yearly_target": "≥95%",
+      "green_threshold": "≥95%",
+      "yellow_threshold": "90–94,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ОМТ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ОМТ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Склад": [
@@ -1774,14 +2740,15 @@
       "goal": "Обеспечить достоверные остатки",
       "formula": "Позиции без расхождений / Проверенные позиции × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥98%",
       "quarterly_target": null,
       "yearly_target": "≥98%",
       "green_threshold": "≥98%",
       "yellow_threshold": "95–97,9%",
       "red_threshold": "<95%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СКЛ-M2",
@@ -1791,14 +2758,15 @@
       "goal": "Не допускать срыва отгрузок по вине склада",
       "formula": "Заказы, укомплектованные / отгруженные в срок / Все заказы × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "СКЛ-M3-1",
@@ -1808,14 +2776,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СКЛ-M3-2",
@@ -1825,14 +2794,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СКЛ-Q4",
@@ -1842,14 +2812,15 @@
       "goal": "Повысить скорость оборота капитала",
       "formula": "Себестоимость выдачи / Средний запас за квартал",
       "unit": "раз",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": null,
       "quarterly_target": "Не ниже плана квартала",
       "yearly_target": "Не ниже плана года",
       "green_threshold": "План и выше",
       "yellow_threshold": "Отклонение до 10%",
       "red_threshold": "Отклонение >10%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "СКЛ-Q5",
@@ -1866,7 +2837,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 10
+      "weight_pct": 10,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СКЛ-C1",
+      "name": "Тренд: Точность складского учёта / Своевременность комплектации и отгрузки",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥98%",
+      "quarterly_target": null,
+      "yearly_target": "≥98%",
+      "green_threshold": "≥98%",
+      "yellow_threshold": "95–97,9%",
+      "red_threshold": "<95%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СКЛ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "СКЛ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Финансовая служба / бухгалтерия": [
@@ -1878,14 +2904,15 @@
       "goal": "Обеспечить управленческий цикл без задержек",
       "formula": "Закрытие периода в календарный срок: 1 = да; 0 = нет",
       "unit": "факт",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "1",
       "quarterly_target": null,
       "yearly_target": "12 из 12 закрытий в срок",
       "green_threshold": "1",
       "yellow_threshold": "Есть несущественное отклонение",
       "red_threshold": "Срыв срока",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ФИН-M2",
@@ -1895,14 +2922,15 @@
       "goal": "Обеспечить одну версию правды",
       "formula": "1 - (Количество существенных корректировок после выпуска отчётности / Количество отчётов)",
       "unit": "коэфф.",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥0,95",
       "quarterly_target": null,
       "yearly_target": "≥0,95",
       "green_threshold": "≥0,95",
       "yellow_threshold": "0,90–0,949",
       "red_threshold": "<0,90>",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ФИН-M3",
@@ -1912,14 +2940,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "ФИН-Q4",
@@ -1936,7 +2965,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "ФИН-Q5",
@@ -1953,7 +2983,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ФИН-C1",
+      "name": "Тренд: Своевременное закрытие периода / Точность БДР / управленческой отчётности",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "1",
+      "quarterly_target": null,
+      "yearly_target": "12 из 12 закрытий в срок",
+      "green_threshold": "1",
+      "yellow_threshold": "Есть несущественное отклонение",
+      "red_threshold": "Срыв срока",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ФИН-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ФИН-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Служба развития": [
@@ -1965,14 +3050,15 @@
       "goal": "Не допускать накопления инициатив",
       "formula": "ЗПР, обработанные в срок / Все ЗПР × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M2",
@@ -1989,7 +3075,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M3-1",
@@ -1999,14 +3086,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M3-2",
@@ -2016,14 +3104,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": null
+      "weight_pct": null,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-Q4",
@@ -2040,7 +3129,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "график"
     },
     {
       "kpi_id": "СЛУ-Q5",
@@ -2057,10 +3147,65 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЛУ-C1",
+      "name": "Тренд: Обработка ЗПР / инициатив в срок / Выполнение плана работы службы развития",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥95%",
+      "quarterly_target": null,
+      "yearly_target": "≥95%",
+      "green_threshold": "≥95%",
+      "yellow_threshold": "90–94,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЛУ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "СЛУ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
-  "ИТ / автоматизация / сопровождение 1С": [
+  "ИТ / автоматизация / сопровождение 1C": [
     {
       "kpi_id": "ИТ-M1-1",
       "name": "SLA по заявкам ИТ",
@@ -2069,31 +3214,33 @@
       "goal": "Не допускать остановок бизнеса",
       "formula": "Заявки, закрытые в срок / Все заявки × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ИТ-M1-2",
-      "name": "SLA по заявкам  1С",
+      "name": "SLA по заявкам  1C",
       "frequency": "Ежемесячно",
       "perspective": "Процессы",
       "goal": "Не допускать остановок бизнеса",
       "formula": "Заявки, закрытые в срок / Все заявки × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ИТ-M2",
@@ -2110,7 +3257,8 @@
       "green_threshold": "≥99,5%",
       "yellow_threshold": "99,0–99,49%",
       "red_threshold": "<99,0%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "ИТ-Q5",
@@ -2127,7 +3275,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ИТ-C1",
+      "name": "Тренд: SLA по заявкам ИТ / SLA по заявкам  1C",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥95%",
+      "quarterly_target": null,
+      "yearly_target": "≥95%",
+      "green_threshold": "≥95%",
+      "yellow_threshold": "90–94,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ИТ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ИТ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Управление делами": [
@@ -2139,14 +3342,15 @@
       "goal": "Обеспечить управленческий цикл без потери документов",
       "formula": "Документы, зарегистрированные в день поступления / Все документы × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "УПР-M2",
@@ -2156,14 +3360,15 @@
       "goal": "Не допускать срыва управленческих решений",
       "formula": "Протоколы/поручения в срок / Все протоколы/поручения × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "УПР-M3-1",
@@ -2173,14 +3378,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "УПР-M3-2",
@@ -2190,14 +3396,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": null
+      "weight_pct": null,
+      "block": "плитка"
     },
     {
       "kpi_id": "УПР-Q4",
@@ -2214,7 +3421,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "УПР-Q5",
@@ -2231,7 +3439,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "УПР-C1",
+      "name": "Тренд: Регистрация входящих документов в день поступления / Доля протоколов / поручений в срок",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥95%",
+      "quarterly_target": null,
+      "yearly_target": "≥95%",
+      "green_threshold": "≥95%",
+      "yellow_threshold": "90–94,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "УПР-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "УПР-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Транспортная служба": [
@@ -2243,14 +3506,15 @@
       "goal": "Не допускать простоев и срывов поездок/отгрузок",
       "formula": "Выполненные в срок заявки на транспорт / Все заявки на транспорт × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "TRN-M2",
@@ -2260,14 +3524,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "TRN-M3",
@@ -2277,14 +3542,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "TRN-Q1",
@@ -2301,7 +3567,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "TRN-Q2",
@@ -2318,7 +3585,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 10
+      "weight_pct": 10,
+      "block": "график"
+    },
+    {
+      "kpi_id": "TRN-C1",
+      "name": "Тренд: Заявки на транспорт выполнены в срок / ФОТ подразделения в пределах лимита",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥95%",
+      "quarterly_target": null,
+      "yearly_target": "≥95%",
+      "green_threshold": "≥95%",
+      "yellow_threshold": "90–94,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "TRN-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "TRN-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Тендерный отдел": [
@@ -2330,14 +3652,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ПАО «Газпром»)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ТЕН-M3-2",
@@ -2347,14 +3670,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "ТЕН-Q5",
@@ -2371,7 +3695,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ТЕН-C1",
+      "name": "Тренд: Бюджет подразделения в пределах лимита / ФОТ подразделения в пределах лимита",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "<=100%",
+      "quarterly_target": null,
+      "yearly_target": "<=100%",
+      "green_threshold": "<100%",
+      "yellow_threshold": "100–110%",
+      "red_threshold": ">110%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "ТЕН-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "ТЕН-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Служба управления персоналом": [
@@ -2390,7 +3769,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M2",
@@ -2400,14 +3780,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M3-1",
@@ -2417,14 +3798,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": null
+      "weight_pct": null,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-Q4",
@@ -2441,7 +3823,8 @@
       "green_threshold": "≥85%",
       "yellow_threshold": "75–84,9%",
       "red_threshold": "<75%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "СЛУ-Q5",
@@ -2458,7 +3841,62 @@
       "green_threshold": "1",
       "yellow_threshold": "Есть несущественные нарушения",
       "red_threshold": "Есть критичное нарушение",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЛУ-C1",
+      "name": "Тренд: Закрытие критических вакансий в срок / ФОТ подразделения в пределах лимита",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "HR",
+      "monthly_target": "≥90%",
+      "quarterly_target": null,
+      "yearly_target": "≥90%",
+      "green_threshold": "≥90%",
+      "yellow_threshold": "80–89,9%",
+      "red_threshold": "<80%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЛУ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "СЛУ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "Служба безопасности": [
@@ -2477,7 +3915,8 @@
       "green_threshold": "1",
       "yellow_threshold": "Есть несущественные нарушения",
       "red_threshold": "Есть критичное нарушение",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M2",
@@ -2494,7 +3933,8 @@
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-M3",
@@ -2504,14 +3944,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "СЛУ-Q4",
@@ -2528,7 +3969,8 @@
       "green_threshold": "≥90%",
       "yellow_threshold": "80–89,9%",
       "red_threshold": "<80%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
     },
     {
       "kpi_id": "СЛУ-Q5",
@@ -2545,7 +3987,62 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 15
+      "weight_pct": 15,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЛУ-C1",
+      "name": "Тренд: Отсутствие критичных нарушений по безопасности / Выполнение плана проверок / обходов",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "Журнал проверок / инцидентов",
+      "monthly_target": "1",
+      "quarterly_target": null,
+      "yearly_target": "1",
+      "green_threshold": "1",
+      "yellow_threshold": "Есть несущественные нарушения",
+      "red_threshold": "Есть критичное нарушение",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "СЛУ-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "СЛУ-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
     }
   ],
   "АХО": [
@@ -2557,14 +4054,15 @@
       "goal": "Обеспечить административно-хозяйственную поддержку без срыва работы подразделений",
       "formula": "Выполненные в срок хозяйственные заявки / Все хозяйственные заявки × 100%",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "≥95%",
       "quarterly_target": null,
       "yearly_target": "≥95%",
       "green_threshold": "≥95%",
       "yellow_threshold": "90–94,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "AHO-M2",
@@ -2574,14 +4072,15 @@
       "goal": "Привязать руководителя направления к контролю ФОТ",
       "formula": "Факт ФОТ / План ФОТ (по подразделению)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 25
+      "weight_pct": 25,
+      "block": "плитка"
     },
     {
       "kpi_id": "AHO-M3",
@@ -2591,14 +4090,15 @@
       "goal": "Привязать руководителя направления к контролю затрат",
       "formula": "Факт затрат / План затрат (по статьям расходов Отдел по работе с ключевыми клиентами)",
       "unit": "%",
-      "source": "1С",
+      "source": "1C",
       "monthly_target": "<=100%",
       "quarterly_target": null,
       "yearly_target": "<=100%",
       "green_threshold": "<100%",
       "yellow_threshold": "100–110%",
       "red_threshold": ">110%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "block": "плитка"
     },
     {
       "kpi_id": "AHO-Q2",
@@ -2615,7 +4115,390 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 10
+      "weight_pct": 10,
+      "block": "график"
+    },
+    {
+      "kpi_id": "AHO-C1",
+      "name": "Тренд: Хозяйственные заявки выполнены в срок / ФОТ подразделения в пределах лимита",
+      "frequency": "Ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Визуализация динамики ключевых показателей за 12 месяцев",
+      "formula": "Факт / План × 100%",
+      "unit": "%",
+      "source": "1C",
+      "monthly_target": "≥95%",
+      "quarterly_target": null,
+      "yearly_target": "≥95%",
+      "green_threshold": "≥95%",
+      "yellow_threshold": "90–94,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 0,
+      "block": "график"
+    },
+    {
+      "kpi_id": "AHO-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Фокусировать внимание на критичных отклонениях",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    },
+    {
+      "kpi_id": "AHO-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "frequency": "Ежемесячно",
+      "perspective": "Управление",
+      "goal": "Обеспечить прозрачность управленческих решений",
+      "formula": "—",
+      "unit": "—",
+      "source": "CEO Pack / реестр рисков",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": 0,
+      "block": "таблица"
+    }
+  ],
+  "Коммерческий директор": [
+    {
+      "kpi_id": "KD-M1",
+      "name": "Валовая прибыль коммерческого блока факт/план",
+      "block": "плитка",
+      "frequency": "ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Управлять прибылью коммерческой службы",
+      "formula": "Факт валовой прибыли / План × 100%",
+      "unit": "%",
+      "source": "БДР / управленческая отчётность",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 50
+    },
+    {
+      "kpi_id": "KD-M2",
+      "name": "Деньги и просроченная ДЗ",
+      "block": "плитка",
+      "frequency": "ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Управлять денежным потоком и дисциплиной оплаты",
+      "formula": "0,5 × KPI(Факт поступления ДС / План × 100%) + 0,5 × KPI(Просроченная ДЗ в лимите)",
+      "unit": "%",
+      "source": "БДР / реестр ДЗ / 1С",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 30
+    },
+    {
+      "kpi_id": "KD-M3",
+      "name": "Бюджет и ФОТ коммерческой службы в пределах лимита",
+      "block": "плитка",
+      "frequency": "ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Привязать директора к контролю затрат и ФОТ блока",
+      "formula": "0,5 × MIN(1; План затрат / Факт затрат) + 0,5 × MIN(1; План ФОТ / Факт ФОТ)",
+      "unit": "%",
+      "source": "БДР / 1С / ЗУП / HRIS",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 20
+    },
+    {
+      "kpi_id": "KD-Q1",
+      "name": "Валовая прибыль квартала + качество портфеля",
+      "block": "плитка",
+      "frequency": "ежеквартально",
+      "perspective": "Финансы",
+      "goal": "Увязать квартальную премию с прибылью и качеством портфеля",
+      "formula": "0,6 × KPI(Факт квартальной валовой прибыли / План × 100%) + 0,25 × KPI(ДЗ в лимите + ТОП‑5 в лимите) + 0,15 × KPI(Снижение издержек продаж)",
+      "unit": "%",
+      "source": "БДР / ДЗ / аналитика портфеля / финансы",
+      "monthly_target": null,
+      "quarterly_target": "≥100%",
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 70
+    },
+    {
+      "kpi_id": "KD-Q2",
+      "name": "Текучесть персонала коммерческого блока",
+      "block": "плитка",
+      "frequency": "ежеквартально",
+      "perspective": "Персонал",
+      "goal": "Сохранить устойчивость коммерческой команды и скорость воронки",
+      "formula": "Уволенные / Среднесписочная численность × 100%",
+      "unit": "%",
+      "source": "HRIS / 1С ЗУП",
+      "monthly_target": null,
+      "quarterly_target": "≤5%",
+      "yearly_target": "≤20%",
+      "green_threshold": "≤5%",
+      "yellow_threshold": "5,1–7%",
+      "red_threshold": ">7%",
+      "weight_pct": 30
+    },
+    {
+      "kpi_id": "KD-Y1",
+      "name": "Годовой вклад коммерческого блока в валовую прибыль",
+      "block": "плитка",
+      "frequency": "ежегодно",
+      "perspective": "Финансы",
+      "goal": "Подтвердить итоговый экономический эффект коммерческого контура",
+      "formula": "Фактическая валовая прибыль / План валовой прибыли × 100%",
+      "unit": "%",
+      "source": "БДР / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "95–99,9%",
+      "red_threshold": "<95%",
+      "weight_pct": 100
+    },
+    {
+      "kpi_id": "KD-H0",
+      "name": "Период, дата выпуска, версия и владелец дашборда — Коммерческий директор",
+      "block": "шапка",
+      "frequency": "Ежемесячно / ежеквартально",
+      "perspective": "Метаданные",
+      "goal": "Чтобы коммерческий директор видел актуальность, период и ответственность за выпуск.",
+      "formula": "Заполнять период отчёта, дату выпуска, номер версии, владельца дашборда и статус согласования; без этих полей дашборд считается неготовым.",
+      "unit": "текст",
+      "source": "CEO Pack / календарь управленческой отчётности",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": null
+    },
+    {
+      "kpi_id": "KD-C1",
+      "name": "Тренд 12 месяцев: Валовая прибыль коммерческого блока факт/план / Деньги и просроченная ДЗ / Бюджет и ФОТ коммерческой службы в пределах лимита",
+      "block": "график",
+      "frequency": "ежемесячно",
+      "perspective": "График тренда",
+      "goal": "Быстро увидеть динамику ключевых ежемесячных KPI роли «Коммерческий директор».",
+      "formula": "Показывать 12 последних закрытых периодов; для каждого KPI — факт, цель/план и маркер RAG последнего периода.",
+      "unit": "смешанные",
+      "source": "БДР / управленческая отчётность; БДР / реестр ДЗ / 1С; БДР / 1С / ЗУП / HRIS",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": "По порогам KPI",
+      "yellow_threshold": "По порогам KPI",
+      "red_threshold": "По порогам KPI",
+      "weight_pct": null
+    },
+    {
+      "kpi_id": "KD-C2",
+      "name": "Квартальный контроль: Валовая прибыль квартала + качество портфеля / Текучесть персонала коммерческого блока; итог: Годовой вклад коммерческого блока в валовую прибыль",
+      "block": "график",
+      "frequency": "Ежеквартально / ежегодно",
+      "perspective": "План/факт / waterfall",
+      "goal": "Показать, как квартальные и годовой KPI роли закрывают управленческую цель.",
+      "formula": "Показывать план/факт квартала, статус RAG и вклад каждого квартального KPI в итоговый годовой показатель.",
+      "unit": "смешанные",
+      "source": "БДР / ДЗ / аналитика портфеля / финансы; HRIS / 1С ЗУП; БДР / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": "По порогам KPI",
+      "yellow_threshold": "По порогам KPI",
+      "red_threshold": "По порогам KPI",
+      "weight_pct": null
+    },
+    {
+      "kpi_id": "KD-C3",
+      "name": "Воронка и качество портфеля клиентов",
+      "block": "график",
+      "frequency": "Ежемесячно / ежеквартально",
+      "perspective": "Heatmap / структура",
+      "goal": "Дать коммерческий директор структурный срез по зоне ответственности.",
+      "formula": "Показывать распределение статусов, очаги риска, причины отклонений и концентрацию нагрузки по основным срезам роли.",
+      "unit": "статус / шт.",
+      "source": "БДР / управленческая отчётность; БДР / реестр ДЗ / 1С; БДР / 1С / ЗУП / HRIS; БДР / ДЗ / аналитика портфеля / финансы; HRIS / 1С ЗУП",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": null
+    },
+    {
+      "kpi_id": "KD-B1",
+      "name": "ТОП-5 отклонений и корректирующие действия",
+      "block": "таблица",
+      "frequency": "Ежемесячно / ежеквартально",
+      "perspective": "Управленческая таблица",
+      "goal": "Собрать только то, что требует действий, а не обзор всех показателей.",
+      "formula": "Выводить KPI со статусом Yellow/Red: показатель → причина → действие → срок → владелец → эффект.",
+      "unit": "шт.",
+      "source": "БДР / управленческая отчётность; БДР / реестр ДЗ / 1С; БДР / 1С / ЗУП / HRIS; БДР / ДЗ / аналитика портфеля / финансы; HRIS / 1С ЗУП",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": null
+    },
+    {
+      "kpi_id": "KD-B2",
+      "name": "Риски / решения / сроки / ответственный",
+      "block": "таблица",
+      "frequency": "Ежемесячно / ежеквартально",
+      "perspective": "Управленческая таблица",
+      "goal": "Фиксировать, что именно нужно решить и кто отвечает за закрытие.",
+      "formula": "Выводить только решения по красным зонам: риск → решение/эскалация → срок → ответственный → статус.",
+      "unit": "шт.",
+      "source": "Реестр поручений / CEO Pack / протоколы комитетов",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": null,
+      "green_threshold": null,
+      "yellow_threshold": null,
+      "red_threshold": null,
+      "weight_pct": null
+    }
+  ],
+  "Заместитель коммерческого директора по развитию продаж": [
+    {
+      "kpi_id": "ZKD-M1",
+      "name": "Воронка развития по новым рынкам / продуктам",
+      "block": "плитка",
+      "frequency": "ежемесячно",
+      "perspective": "Развитие",
+      "goal": "Обеспечить наполнение и продвижение pipeline развития продаж",
+      "formula": "Выполненные этапы pipeline / План месяца × 100%",
+      "unit": "%",
+      "source": "CRM / реестр развития",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 40
+    },
+    {
+      "kpi_id": "ZKD-M2",
+      "name": "Новые квалифицированные заказчики / возврат утерянных клиентов",
+      "block": "плитка",
+      "frequency": "ежемесячно",
+      "perspective": "Развитие",
+      "goal": "Обеспечить рост клиентской базы и возврат потерянных клиентов",
+      "formula": "(Новые квалифицированные заказчики + возвращённые клиенты) / План × 100%",
+      "unit": "%",
+      "source": "CRM / реестр клиентской базы",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 30
+    },
+    {
+      "kpi_id": "ZKD-M3",
+      "name": "Плановая дополнительная валовая прибыль по новым + бюджет и ФОТ блока",
+      "block": "плитка",
+      "frequency": "ежемесячно",
+      "perspective": "Финансы",
+      "goal": "Привязать развитие продаж к прибыли и дисциплине затрат",
+      "formula": "0,7 × KPI(Плановая валовая прибыль по КП, прошедшим экономконтроль / План × 100%) + 0,3 × KPI(Бюджет и ФОТ блока в лимите)",
+      "unit": "%",
+      "source": "КП / БДР / 1С / ЗУП / HRIS",
+      "monthly_target": "≥100%",
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 30
+    },
+    {
+      "kpi_id": "ZKD-Q1",
+      "name": "Дополнительная валовая прибыль + запуск новых рынков / продуктов",
+      "block": "плитка",
+      "frequency": "ежеквартально",
+      "perspective": "Финансы",
+      "goal": "Увязать квартальную премию с фактическим результатом развития продаж",
+      "formula": "0,7 × KPI(Фактическая дополнительная валовая прибыль / План × 100%) + 0,3 × KPI(Выполнение roadmap новых рынков/продуктов)",
+      "unit": "%",
+      "source": "БДР / аналитика развития / реестр проектов",
+      "monthly_target": null,
+      "quarterly_target": "≥100%",
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "90–99,9%",
+      "red_threshold": "<90%",
+      "weight_pct": 70
+    },
+    {
+      "kpi_id": "ZKD-Q2",
+      "name": "Текучесть персонала блока развития продаж",
+      "block": "плитка",
+      "frequency": "ежеквартально",
+      "perspective": "Персонал",
+      "goal": "Сохранить устойчивость блока развития продаж",
+      "formula": "Уволенные / Среднесписочная численность × 100%",
+      "unit": "%",
+      "source": "HRIS / 1С ЗУП",
+      "monthly_target": null,
+      "quarterly_target": "≤5%",
+      "yearly_target": "≤20%",
+      "green_threshold": "≤5%",
+      "yellow_threshold": "5,1–7%",
+      "red_threshold": ">7%",
+      "weight_pct": 30
+    },
+    {
+      "kpi_id": "ZKD-Y1",
+      "name": "Годовой вклад в прибыль и развитие продаж",
+      "block": "плитка",
+      "frequency": "ежегодно",
+      "perspective": "Финансы",
+      "goal": "Подтвердить итоговый экономический эффект и результативность развития продаж",
+      "formula": "Фактическая валовая прибыль и вклад новых/возвращённых клиентов / План × 100%",
+      "unit": "%",
+      "source": "БДР / CRM / управленческая отчётность",
+      "monthly_target": null,
+      "quarterly_target": null,
+      "yearly_target": "≥100%",
+      "green_threshold": "≥100%",
+      "yellow_threshold": "95–99,9%",
+      "red_threshold": "<95%",
+      "weight_pct": 100
     }
   ]
 }
