@@ -12,11 +12,11 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from .kpi_periods import vp_months_for_api
+from .kpi_periods import last_full_month, vp_months_for_api
 
 logger = logging.getLogger(__name__)
 
-RESULT_CACHE_VERSION = 2
+RESULT_CACHE_VERSION = 4
 
 DASHBOARD_DIR = Path(__file__).resolve().parent / 'dashboard'
 FAST_SCRIPT = DASHBOARD_DIR / 'calc_vp_fast.py'
@@ -45,7 +45,38 @@ PRELIM_ORGS = {
     "fbca2143-6cfd-11e7-812d-001e67112509",
 }
 
-PLAN_VP_MONTHLY = 28_450_241
+# Помесячный план ВП задан **только на 2026 год** (руб.). Для других лет — единый fallback.
+VP_PLAN_TABLE_YEAR = 2026
+
+PLAN_VP_BY_MONTH: dict[int, int] = {
+    1: 16_168_819,
+    2: 12_936_321,
+    3: 28_450_241,
+    4: 34_574_209,
+    5: 50_311_779,
+    6: 58_484_039,
+    7: 58_226_950,
+    8: 38_126_690,
+    9: 51_054_293,
+    10: 33_169_450,
+    11: 30_538_147,
+    12: 61_361_535,
+}
+
+PLAN_VP_FALLBACK = PLAN_VP_BY_MONTH[3]
+
+
+def vp_plan_for_month(month: int, year: int) -> int:
+    """План ВП на месяц 1..12; детальная сетка только для VP_PLAN_TABLE_YEAR."""
+    if year == VP_PLAN_TABLE_YEAR:
+        return PLAN_VP_BY_MONTH.get(month, PLAN_VP_BY_MONTH[3])
+    return PLAN_VP_FALLBACK
+
+
+def _month_is_complete(year: int, month: int, today: date) -> bool:
+    """Месяц полностью завершён (не текущий неполный)."""
+    ry, rm = last_full_month(today)
+    return (year, month) <= (ry, rm)
 
 
 def _cache_path(month: int, year: int) -> Path:
@@ -224,12 +255,21 @@ def _save_result_cache(data: dict) -> None:
         pass
 
 
-def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
+def get_vp_ytd() -> dict:
     """
     Помесячные ряды ВП для графиков (объединение: январь..последний полный месяц
     в его году + месяцы последнего полного квартала).
 
-    Итоговый KPI (ytd) — только за последний полный месяц: факт/план этого месяца.
+    Помесячный план — из PLAN_VP_BY_MONTH **только для года VP_PLAN_TABLE_YEAR (2026)**;
+    для других лет план = PLAN_VP_FALLBACK (март 2026). Факт только за полные месяцы.
+
+    months_calendar — всегда 12 строк за **VP_PLAN_TABLE_YEAR**: все планы по сетке 2026;
+    факт только за завершённые месяцы этого года, иначе null.
+
+    last_full_month_row — одна строка: план, факт и KPI **последнего полного месяца**
+    (для таблицы коммерческого директора).
+
+    Итоговый KPI (ytd) — тот же последний полный месяц.
 
     Кэшируется на день. Если кэша 1С нет — запускает calc_vp_fast.py.
     """
@@ -244,8 +284,9 @@ def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
     ref_row: dict | None = None
 
     for y, m in month_tuples:
-        vp = _ensure_month_data(m, y)
-        plan = plan_monthly
+        plan = vp_plan_for_month(m, y)
+        complete = _month_is_complete(y, m, today)
+        vp = _ensure_month_data(m, y) if complete else None
         fact = vp["valovaya_pribyl"] if vp else None
         pct = round(fact / plan * 100, 1) if fact is not None and plan > 0 else None
 
@@ -257,6 +298,7 @@ def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
             "fact": fact,
             "kpi_pct": pct,
             "has_data": vp is not None,
+            "month_complete": complete,
         }
         if vp:
             month_entry["vyruchka"] = vp["vyruchka"]
@@ -266,21 +308,67 @@ def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
         if y == ref_y and m == ref_m:
             ref_row = month_entry
 
+    plan_ref = vp_plan_for_month(ref_m, ref_y)
     if ref_row and ref_row.get("fact") is not None:
         total_fact = float(ref_row["fact"])
-        plan_one = float(ref_row.get("plan") or plan_monthly)
+        plan_one = float(ref_row.get("plan") or plan_ref)
         ytd_pct = round(total_fact / plan_one * 100, 1) if plan_one > 0 else None
         months_with_data = 1
     else:
         total_fact = 0.0
-        plan_one = float(plan_monthly)
+        plan_one = float(plan_ref)
         ytd_pct = None
         months_with_data = 0
 
+    months_calendar = []
+    calendar_year = VP_PLAN_TABLE_YEAR
+    for m in range(1, 13):
+        plan = vp_plan_for_month(m, calendar_year)
+        complete = _month_is_complete(calendar_year, m, today)
+        vp = _ensure_month_data(m, calendar_year) if complete else None
+        fact = vp["valovaya_pribyl"] if vp else None
+        pct = round(fact / plan * 100, 1) if fact is not None and plan > 0 else None
+        row = {
+            "month": m,
+            "year": calendar_year,
+            "month_name": MONTH_NAMES[m],
+            "plan": plan,
+            "fact": fact,
+            "kpi_pct": pct,
+            "has_data": vp is not None,
+            "month_complete": complete,
+        }
+        if vp:
+            row["vyruchka"] = vp["vyruchka"]
+            row["sebestoimost"] = vp["sebestoimost"]
+        months_calendar.append(row)
+
+    last_full_month_row: dict | None = None
+    if ref_row:
+        last_full_month_row = {
+            "month": ref_row["month"],
+            "year": ref_row["year"],
+            "month_name": ref_row["month_name"],
+            "plan": ref_row["plan"],
+            "fact": ref_row["fact"],
+            "kpi_pct": ref_row["kpi_pct"],
+            "has_data": ref_row.get("has_data", False),
+        }
+        if ref_row.get("vyruchka") is not None:
+            last_full_month_row["vyruchka"] = ref_row["vyruchka"]
+            last_full_month_row["sebestoimost"] = ref_row["sebestoimost"]
+
     result = {
         "year": ref_y,
-        "plan_monthly": plan_monthly,
+        "calendar_year": calendar_year,
+        "plans_apply_to_year": VP_PLAN_TABLE_YEAR,
+        "plan_monthly": plan_ref,
+        "plans_by_month": {
+            str(m): vp_plan_for_month(m, VP_PLAN_TABLE_YEAR) for m in range(1, 13)
+        },
         "months": months_data,
+        "months_calendar": months_calendar,
+        "last_full_month_row": last_full_month_row,
         "kpi_period": {
             "type": "last_full_month",
             "year": ref_y,
@@ -288,7 +376,7 @@ def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
             "month_name": MONTH_NAMES[ref_m],
         },
         "ytd": {
-            "total_plan": round(plan_one, 2) if months_with_data else round(plan_monthly, 2),
+            "total_plan": round(plan_one, 2) if months_with_data else round(plan_ref, 2),
             "total_fact": round(total_fact, 2),
             "kpi_pct": ytd_pct,
             "months_with_data": months_with_data,

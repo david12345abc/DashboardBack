@@ -8,7 +8,8 @@ from django.views.decorators.http import require_GET
 
 from User.views import login_required
 from . import denzhi_dz, komdir_dashboard, komdir_quarterly, valovaya_pribyl
-from .kpi_periods import last_full_month
+from .commercial_tiles import commercial_kpi_key, tile_order_for_kpi_key
+from .kpi_periods import last_full_month, last_full_quarter
 
 # Только плитки дашборда коммерческого директора (KD-Y1 дублирует KD-M1)
 KOMDIR_TILE_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-Q1', 'KD-Q2'})
@@ -114,6 +115,13 @@ def _get_allowed_departments(user_department: str) -> set[str]:
     if user_kpi_key:
         result.add(user_kpi_key)
 
+    extra = set()
+    for name in result:
+        ck = commercial_kpi_key(name)
+        if isinstance(ck, str):
+            extra.add(ck)
+    result |= extra
+
     return result
 
 
@@ -167,6 +175,166 @@ def _filter_kpis_for_department(dept: str, kpis: list[dict]) -> list[dict]:
     if _is_komdir_department(dept):
         return [k for k in kpis if k.get('kpi_id') in KOMDIR_TILE_IDS]
     return kpis
+
+
+def _ordered_commercial_kpi_dicts(kpi_storage_key: str) -> list[dict]:
+    order = tile_order_for_kpi_key(kpi_storage_key)
+    if not order:
+        return []
+    raw = KPI_DATA.get(kpi_storage_key)
+    if not raw:
+        return []
+    by_id = {k['kpi_id']: k for k in raw}
+    return [by_id[i] for i in order if i in by_id]
+
+
+def _thresholds_block(kpi: dict) -> dict:
+    return {
+        'green': kpi.get('green_threshold'),
+        'yellow': kpi.get('yellow_threshold'),
+        'red': kpi.get('red_threshold'),
+    }
+
+
+def _period_label_from_kpi(kpi: dict) -> str:
+    f = (kpi.get('frequency') or '').lower()
+    if 'квартал' in f:
+        return 'ежеквартально'
+    if 'год' in f or 'ежегодн' in f:
+        return 'ежегодно'
+    if 'месяц' in f or 'ежемесячно' in f:
+        return 'ежемесячно'
+    return kpi.get('frequency') or ''
+
+
+def _rag_higher_better(pct: float | None) -> str:
+    if pct is None:
+        return 'unknown'
+    if pct >= 100:
+        return 'green'
+    if pct >= 90:
+        return 'yellow'
+    return 'red'
+
+
+def _rag_lower_turnover(fact_pct: float | None) -> str:
+    if fact_pct is None:
+        return 'unknown'
+    if fact_pct <= 5:
+        return 'green'
+    if fact_pct <= 7:
+        return 'yellow'
+    return 'red'
+
+
+def _is_turnover_style_tile(kpi: dict) -> bool:
+    kid = kpi.get('kpi_id') or ''
+    nm = (kpi.get('name') or '').lower()
+    if 'текучесть' in nm:
+        return True
+    if kid.endswith('-Q5') or kid == 'ZKD-Q2':
+        return True
+    return False
+
+
+def _synthetic_quarter_row_for_tile(kpi: dict) -> tuple[dict, dict]:
+    ly, lq = last_full_quarter(date.today())
+    random.seed(hash((kpi.get('kpi_id'), ly, lq)))
+    kid = kpi.get('kpi_id') or ''
+    nm = (kpi.get('name') or '').lower()
+    period = {'type': 'last_full_quarter', 'year': ly, 'quarter': lq}
+    if 'текучесть' in nm or kid.endswith('-Q5') or kid == 'ZKD-Q2':
+        fact = round(random.uniform(2.0, 8.0), 2)
+        target = 5.0
+        kpi_pct = 100.0 if fact <= target else round(min(100.0, target / fact * 100), 1)
+        row = {
+            'quarter': lq,
+            'year': ly,
+            'label': f'Q{lq} {ly}',
+            'plan_max_turnover_pct': target,
+            'fact_turnover_pct': fact,
+            'kpi_pct': kpi_pct,
+        }
+        return row, period
+    plan = 100.0
+    fact = round(random.uniform(80, 120), 1)
+    kpi_pct = round(fact / plan * 100, 1)
+    row = {
+        'quarter': lq,
+        'year': ly,
+        'label': f'Q{lq} {ly}',
+        'plan': plan,
+        'fact': fact,
+        'kpi_pct': kpi_pct,
+    }
+    return row, period
+
+
+def _synthetic_year_row_for_tile(kpi: dict) -> tuple[dict, dict]:
+    ref_year = date.today().year - 1
+    random.seed(hash((kpi.get('kpi_id'), ref_year)))
+    plan = 100.0
+    fact = round(random.uniform(90, 118), 1)
+    kpi_pct = round(fact / plan * 100, 1)
+    period = {'type': 'last_full_year', 'year': ref_year}
+    row = {'year': ref_year, 'plan': plan, 'fact': fact, 'kpi_pct': kpi_pct}
+    return row, period
+
+
+def _build_commercial_plitki_items(kpis_meta: list[dict], entries: list[dict]) -> list[dict]:
+    by_id = {e['kpi_id']: e for e in entries}
+    items = []
+    for kpi in kpis_meta:
+        kid = kpi['kpi_id']
+        entry = by_id.get(kid)
+        if not entry:
+            continue
+        y = entry.get('ytd') or {}
+        pct = y.get('kpi_pct')
+        if pct is not None:
+            pct = float(pct)
+        if _is_turnover_style_tile(kpi):
+            qd = entry.get('quarterly_data') or []
+            turnover = qd[-1].get('fact_turnover_pct') if qd else None
+            if turnover is not None:
+                color = _rag_lower_turnover(float(turnover))
+            else:
+                color = _rag_lower_turnover(pct)
+        else:
+            color = _rag_higher_better(pct)
+        items.append({
+            'kpi_id': kid,
+            'name': kpi['name'],
+            'kpi_pct': pct,
+            'color': color,
+            'period': _period_label_from_kpi(kpi),
+            'thresholds': _thresholds_block(kpi),
+            'formula': kpi.get('formula'),
+            'unit': kpi.get('unit'),
+            'source': kpi.get('source'),
+            'frequency': kpi.get('frequency'),
+        })
+    return items
+
+
+def _commercial_tiles_json_response(requested_dept: str, kpi_storage_key: str) -> JsonResponse:
+    kpis_meta = _ordered_commercial_kpi_dicts(kpi_storage_key)
+    if not kpis_meta:
+        return JsonResponse({
+            'error': f'No tile KPIs configured for department key "{kpi_storage_key}"',
+        }, status=404)
+    entries = [_build_kpi_entry(k, 'плитка') for k in kpis_meta]
+    items = _build_commercial_plitki_items(kpis_meta, entries)
+    return JsonResponse(
+        {
+            'department': requested_dept,
+            'kpi_storage_key': kpi_storage_key,
+            'kpi_count': len(items),
+            'Плитки': {'count': len(items), 'items': items},
+            'kpis': entries,
+        },
+        json_dumps_params={'ensure_ascii': False},
+    )
 
 
 MONTH_NAMES = {
@@ -224,7 +392,12 @@ def _build_kpi_entry(kpi: dict, block: str) -> dict:
     if kpi_id == 'KD-M1':
         vp_data = valovaya_pribyl.get_vp_ytd()
         entry['data_granularity'] = 'monthly'
-        entry['monthly_data'] = vp_data['months']
+        lm = vp_data.get('last_full_month_row')
+        entry['monthly_data'] = [lm] if lm else []
+        entry['months_calendar'] = vp_data.get('months_calendar')
+        entry['calendar_year'] = vp_data.get('calendar_year')
+        entry['plans_apply_to_year'] = vp_data.get('plans_apply_to_year')
+        entry['plans_by_month'] = vp_data.get('plans_by_month')
         entry['ytd'] = vp_data['ytd']
         entry['kpi_period'] = vp_data.get('kpi_period')
     elif kpi_id == 'KD-M2':
@@ -253,31 +426,67 @@ def _build_kpi_entry(kpi: dict, block: str) -> dict:
         entry['ytd'] = qd['ytd']
         entry['kpi_period'] = qd.get('kpi_period')
     else:
-        plan = 100.0
-        entry['monthly_data'] = _generate_monthly_data(plan)
-        last = entry['monthly_data'][-1] if entry['monthly_data'] else None
-        if last:
+        freq_l = (freq or '').lower()
+        if 'квартал' in freq_l:
+            qrow, kper = _synthetic_quarter_row_for_tile(kpi)
+            entry['data_granularity'] = 'quarterly'
+            entry['quarterly_data'] = [qrow]
+            entry['kpi_period'] = kper
+            fp = qrow.get('fact_turnover_pct')
+            if fp is not None:
+                entry['ytd'] = {
+                    'total_plan': qrow.get('plan_max_turnover_pct'),
+                    'total_fact': fp,
+                    'kpi_pct': qrow.get('kpi_pct'),
+                    'quarters_with_data': 1,
+                    'quarters_total': 1,
+                }
+            else:
+                entry['ytd'] = {
+                    'total_plan': qrow.get('plan'),
+                    'total_fact': qrow.get('fact'),
+                    'kpi_pct': qrow.get('kpi_pct'),
+                    'quarters_with_data': 1,
+                    'quarters_total': 1,
+                }
+        elif 'год' in freq_l or 'ежегодн' in freq_l:
+            yrow, kper = _synthetic_year_row_for_tile(kpi)
+            entry['data_granularity'] = 'yearly'
+            entry['yearly_data'] = [yrow]
+            entry['kpi_period'] = kper
             entry['ytd'] = {
-                'total_plan': last['plan'],
-                'total_fact': last['fact'],
-                'kpi_pct': last['kpi_pct'],
-                'months_with_data': 1,
-                'months_total': 1,
-            }
-            entry['kpi_period'] = {
-                'type': 'last_full_month',
-                'year': last['year'],
-                'month': last['month'],
-                'month_name': last['month_name'],
+                'total_plan': yrow['plan'],
+                'total_fact': yrow['fact'],
+                'kpi_pct': yrow['kpi_pct'],
+                'years_with_data': 1,
+                'years_total': 1,
             }
         else:
-            entry['ytd'] = {
-                'total_plan': None,
-                'total_fact': None,
-                'kpi_pct': None,
-                'months_with_data': 0,
-                'months_total': 0,
-            }
+            plan = 100.0
+            entry['monthly_data'] = _generate_monthly_data(plan)
+            last = entry['monthly_data'][-1] if entry['monthly_data'] else None
+            if last:
+                entry['ytd'] = {
+                    'total_plan': last['plan'],
+                    'total_fact': last['fact'],
+                    'kpi_pct': last['kpi_pct'],
+                    'months_with_data': 1,
+                    'months_total': 1,
+                }
+                entry['kpi_period'] = {
+                    'type': 'last_full_month',
+                    'year': last['year'],
+                    'month': last['month'],
+                    'month_name': last['month_name'],
+                }
+            else:
+                entry['ytd'] = {
+                    'total_plan': None,
+                    'total_fact': None,
+                    'kpi_pct': None,
+                    'months_with_data': 0,
+                    'months_total': 0,
+                }
 
     return entry
 
@@ -295,6 +504,20 @@ def get_kpi(request):
 
     if requested_dept not in allowed:
         return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    ck = commercial_kpi_key(requested_dept)
+    if ck is None:
+        return JsonResponse(
+            {
+                'department': requested_dept,
+                'kpi_count': 0,
+                'message': 'Информация по KPI для этого подразделения не найдена',
+                'Плитки': {'count': 0, 'items': []},
+            },
+            json_dumps_params={'ensure_ascii': False},
+        )
+    if isinstance(ck, str):
+        return _commercial_tiles_json_response(requested_dept, ck)
 
     kpis = _lookup_kpi_data(requested_dept)
     if kpis is None:
@@ -343,6 +566,20 @@ def get_all_departments(request):
         if requested_dept not in allowed:
             return JsonResponse({'error': 'Permission denied'}, status=403)
 
+        ck = commercial_kpi_key(requested_dept)
+        if ck is None:
+            return JsonResponse(
+                {
+                    'department': requested_dept,
+                    'kpi_count': 0,
+                    'message': 'Информация по KPI для этого подразделения не найдена',
+                    'Плитки': {'count': 0, 'items': []},
+                },
+                json_dumps_params={'ensure_ascii': False},
+            )
+        if isinstance(ck, str):
+            return _commercial_tiles_json_response(requested_dept, ck)
+
         kpis = _lookup_kpi_data(requested_dept)
         if kpis is None:
             return JsonResponse({
@@ -378,6 +615,17 @@ def get_all_departments(request):
                 'department': dept,
                 'kpi_count': payload['Плитки']['count'],
                 **payload,
+            })
+        elif isinstance((ck := commercial_kpi_key(dept)), str):
+            kmeta = _ordered_commercial_kpi_dicts(ck)
+            entries = [_build_kpi_entry(k, 'плитка') for k in kmeta]
+            items = _build_commercial_plitki_items(kmeta, entries)
+            summary.append({
+                'department': dept,
+                'kpi_storage_key': ck,
+                'kpi_count': len(items),
+                'Плитки': {'count': len(items), 'items': items},
+                'kpis': entries,
             })
         else:
             fkpis = _filter_kpis_for_department(dept, kpis)

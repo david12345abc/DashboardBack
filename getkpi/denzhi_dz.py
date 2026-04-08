@@ -15,7 +15,7 @@ from .kpi_periods import vp_months_for_api
 
 logger = logging.getLogger(__name__)
 
-KD_M2_CACHE_VERSION = 2
+KD_M2_CACHE_VERSION = 4
 
 DASHBOARD_DIR = Path(__file__).resolve().parent / 'dashboard'
 FACT_DIR = DASHBOARD_DIR / 'факт'
@@ -221,9 +221,28 @@ def get_kd_m2_ytd() -> dict:
         total_fact = 0.0
         n_kpi = 0
 
+    last_full_month_row = None
+    if ref_row and ref_row.get('has_data'):
+        last_full_month_row = {
+            'month': ref_row['month'],
+            'year': ref_row['year'],
+            'month_name': ref_row['month_name'],
+            'plan': ref_row['plan'],
+            'fact': ref_row['fact'],
+            'kpi_pct': ref_row['kpi_pct'],
+            'has_data': True,
+            'money_fact': ref_row.get('money_fact'),
+            'shipment_fact': ref_row.get('shipment_fact'),
+            'plan_shipment': ref_row.get('plan_shipment'),
+            'ds_fact': ref_row.get('ds_fact'),
+            'plan_ds': ref_row.get('plan_ds'),
+            'kpi_dz_placeholder': ref_row.get('kpi_dz_placeholder'),
+        }
+
     out = {
         'year': ref_y,
         'months': months_out,
+        'last_full_month_row': last_full_month_row,
         'kpi_period': {
             'type': 'last_full_month',
             'year': ref_y,

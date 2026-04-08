@@ -206,16 +206,17 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
         fallback_label="График тренда",
     )
     points_m1 = []
-    for row in vp["months"]:
-        if not row.get("has_data"):
-            continue
+    m1_rows = vp.get("months_calendar") or vp["months"]
+    for row in m1_rows:
         points_m1.append({
             "month": row["month"],
             "month_name": row["month_name"],
-            "year": row.get("year", vp["year"]),
+            "year": row.get("year", vp.get("calendar_year", vp["year"])),
             "plan": row.get("plan"),
             "fact": row.get("fact"),
             "kpi_pct": row.get("kpi_pct"),
+            "has_data": row.get("has_data", False),
+            "month_complete": row.get("month_complete"),
         })
 
     points_m2 = []
@@ -335,8 +336,83 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
         },
     }
 
-    # --- Таблицы
+    # --- Таблица сводки: помесячные KPI — только последний полный месяц; KD-Q1 — только последний квартал
+    vp_lm = vp.get("last_full_month_row")
+    m2_lm = m2.get("last_full_month_row")
+    m3_last = m3_monthly[-1] if m3_monthly else None
+    q1r = qq1["quarterly_data"][0] if qq1.get("quarterly_data") else None
+    q2_month = komdir_quarterly.turnover_last_full_month_row()
+
+    kpi_summary_rows: list[dict] = []
+    if vp_lm and vp_lm.get("has_data"):
+        kpi_summary_rows.append({
+            "kpi_id": "KD-M1",
+            "name": by_id["KD-M1"]["name"],
+            "period_type": "month",
+            "kpi_period": vp.get("kpi_period"),
+            "plan": vp_lm.get("plan"),
+            "fact": vp_lm.get("fact"),
+            "kpi_pct": vp_lm.get("kpi_pct"),
+        })
+    if m2_lm and m2_lm.get("has_data"):
+        kpi_summary_rows.append({
+            "kpi_id": "KD-M2",
+            "name": by_id["KD-M2"]["name"],
+            "period_type": "month",
+            "kpi_period": m2.get("kpi_period"),
+            "plan": m2_lm.get("plan"),
+            "fact": m2_lm.get("fact"),
+            "kpi_pct": m2_lm.get("kpi_pct"),
+        })
+    if m3_last:
+        kpi_summary_rows.append({
+            "kpi_id": "KD-M3",
+            "name": by_id["KD-M3"]["name"],
+            "period_type": "month",
+            "kpi_period": {
+                "type": "last_full_month",
+                "year": m3_last["year"],
+                "month": m3_last["month"],
+                "month_name": m3_last["month_name"],
+            },
+            "plan": m3_last.get("plan"),
+            "fact": m3_last.get("fact"),
+            "kpi_pct": m3_last.get("kpi_pct"),
+        })
+    if q1r:
+        kpi_summary_rows.append({
+            "kpi_id": "KD-Q1",
+            "name": by_id["KD-Q1"]["name"],
+            "period_type": "quarter",
+            "kpi_period": qq1.get("kpi_period"),
+            "label": q1r.get("label"),
+            "year": q1r.get("year"),
+            "quarter": q1r.get("quarter"),
+            "plan": q1r.get("vp_plan"),
+            "fact": q1r.get("vp_fact"),
+            "kpi_pct": q1r.get("kpi_pct"),
+        })
+    kpi_summary_rows.append({
+        "kpi_id": "KD-Q2",
+        "name": by_id["KD-Q2"]["name"],
+        "period_type": "month",
+        "kpi_period": q2_month["kpi_period"],
+        "label": q2_month.get("label"),
+        "plan": q2_month.get("plan_max_turnover_pct"),
+        "fact": q2_month.get("fact_turnover_pct"),
+        "kpi_pct": q2_month.get("kpi_pct"),
+        "unit": "%",
+    })
+
     tablitsy = {
+        "KD-T-KPI-SUMMARY": {
+            "name": "Сводка KPI по периодам (последний месяц / последний квартал для Q1)",
+            "description": (
+                "KD-M1, KD-M2, KD-M3, KD-Q2 — последний полный календарный месяц; "
+                "KD-Q1 — последний полный календарный квартал."
+            ),
+            "rows": kpi_summary_rows,
+        },
         "KD-B1": {
             "kpi_id": "KD-B1",
             "name": by_id["KD-B1"]["name"],

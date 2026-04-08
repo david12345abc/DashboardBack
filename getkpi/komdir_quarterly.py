@@ -10,7 +10,13 @@ KD-Q2: целевой порог текучести ≤5% (квартал), KPI 
 import random
 from datetime import date
 
-from .kpi_periods import last_full_quarter, quarter_month_tuples
+from .kpi_periods import last_full_month, last_full_quarter, quarter_month_tuples
+
+_MONTH_RU = {
+    1: "январь", 2: "февраль", 3: "март", 4: "апрель",
+    5: "май", 6: "июнь", 7: "июль", 8: "август",
+    9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
+}
 
 
 def _vp_month_map(vp_months: list[dict]) -> dict[tuple[int, int], dict]:
@@ -111,6 +117,37 @@ def quarterly_q1(vp_months: list[dict]) -> dict:
             'kpi_pct': kpi,
             'quarters_with_data': 1 if has_vp else 0,
             'quarters_total': 1,
+        },
+    }
+
+
+def turnover_last_full_month_row() -> dict:
+    """Одна строка текучести за последний полный месяц (для таблицы; плитка KD-Q2 — по-прежнему квартал)."""
+    today = date.today()
+    ry, rm = last_full_month(today)
+    random.seed(hash((ry, rm, "KD-Q2-month-table")))
+
+    fact = round(random.uniform(2.0, 8.0), 2)
+    target = 5.0
+    if fact <= target:
+        kpi = 100.0
+    else:
+        kpi = round(min(100.0, target / fact * 100), 1)
+
+    mn = _MONTH_RU[rm]
+    return {
+        "month": rm,
+        "year": ry,
+        "month_name": mn,
+        "label": f"{mn} {ry}",
+        "plan_max_turnover_pct": target,
+        "fact_turnover_pct": fact,
+        "kpi_pct": kpi,
+        "kpi_period": {
+            "type": "last_full_month",
+            "year": ry,
+            "month": rm,
+            "month_name": mn,
         },
     }
 
