@@ -7,4 +7,9 @@ urlpatterns = [
     path('all/', views.get_all_departments, name='get-all-kpi'),
     path('departments/', views.get_departments_list, name='departments-list'),
     path('structure/', views.get_structure, name='departments-structure'),
+    path(
+        'immediate-subordinates/',
+        views.get_immediate_subordinates,
+        name='immediate-subordinates',
+    ),
 ]

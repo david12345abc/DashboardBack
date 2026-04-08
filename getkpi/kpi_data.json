@@ -4190,7 +4190,9 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 50
+      "weight_pct": 50,
+      "chart_type": "line_plan_fact_monthly",
+      "chart_type_label": "Линейный тренд: план и факт по месяцам"
     },
     {
       "kpi_id": "KD-M2",
@@ -4208,7 +4210,9 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "chart_type": "line_plan_fact_monthly",
+      "chart_type_label": "Линейный тренд: план и факт по месяцам"
     },
     {
       "kpi_id": "KD-M3",
@@ -4226,7 +4230,9 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 20
+      "weight_pct": 20,
+      "chart_type": "line_plan_fact_monthly",
+      "chart_type_label": "Линейный тренд: план и факт по месяцам"
     },
     {
       "kpi_id": "KD-Q1",
@@ -4244,7 +4250,9 @@
       "green_threshold": "≥100%",
       "yellow_threshold": "90–99,9%",
       "red_threshold": "<90%",
-      "weight_pct": 70
+      "weight_pct": 70,
+      "chart_type": "column_plan_fact_quarterly",
+      "chart_type_label": "Столбцы: план/факт по кварталам (валовая прибыль, деньги)"
     },
     {
       "kpi_id": "KD-Q2",
@@ -4262,7 +4270,9 @@
       "green_threshold": "≤5%",
       "yellow_threshold": "5,1–7%",
       "red_threshold": ">7%",
-      "weight_pct": 30
+      "weight_pct": 30,
+      "chart_type": "column_plan_fact_quarterly_percent",
+      "chart_type_label": "Столбцы: план/факт по кварталам (текучесть, %)"
     },
     {
       "kpi_id": "KD-Y1",
@@ -4316,7 +4326,9 @@
       "green_threshold": "По порогам KPI",
       "yellow_threshold": "По порогам KPI",
       "red_threshold": "По порогам KPI",
-      "weight_pct": null
+      "weight_pct": null,
+      "chart_type": "multi_line_plan_fact_monthly",
+      "chart_type_label": "График тренда (несколько KPI, план/факт, ежемесячно)"
     },
     {
       "kpi_id": "KD-C2",
@@ -4334,7 +4346,9 @@
       "green_threshold": "По порогам KPI",
       "yellow_threshold": "По порогам KPI",
       "red_threshold": "По порогам KPI",
-      "weight_pct": null
+      "weight_pct": null,
+      "chart_type": "column_plan_fact_waterfall_quarterly",
+      "chart_type_label": "План/факт / waterfall (квартальный контроль)"
     },
     {
       "kpi_id": "KD-C3",

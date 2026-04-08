@@ -7,7 +7,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from User.views import login_required
-from . import denzhi_dz, komdir_quarterly, valovaya_pribyl
+from . import denzhi_dz, komdir_dashboard, komdir_quarterly, valovaya_pribyl
 
 # Только плитки дашборда коммерческого директора (KD-Y1 дублирует KD-M1)
 KOMDIR_TILE_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-Q1', 'KD-Q2'})
@@ -99,6 +99,47 @@ def _get_allowed_departments(user_department: str) -> set[str]:
         result.add(user_kpi_key)
 
     return result
+
+
+def _immediate_children_of_node(children) -> list[str]:
+    """Только непосредственные дочерние подразделения (без рекурсии вглубь)."""
+    if children is None:
+        return []
+    if isinstance(children, dict):
+        return list(children.keys())
+    if isinstance(children, list):
+        out: list[str] = []
+        for item in children:
+            if isinstance(item, str):
+                out.append(item)
+            elif isinstance(item, dict):
+                out.extend(item.keys())
+        return out
+    return []
+
+
+def _find_immediate_children(tree, target: str) -> tuple[str, list[str]] | None:
+    """
+    Находит подразделение в дереве (без учёта регистра) и возвращает
+    (каноническое имя из JSON, список непосредственных потомков).
+    """
+    target_lower = target.strip().lower()
+    if isinstance(tree, dict):
+        for key, child_tree in tree.items():
+            if key.lower() == target_lower:
+                return key, _immediate_children_of_node(child_tree)
+            found = _find_immediate_children(child_tree, target)
+            if found is not None:
+                return found
+    elif isinstance(tree, list):
+        for item in tree:
+            if isinstance(item, str) and item.lower() == target_lower:
+                return item, []
+            if isinstance(item, dict):
+                found = _find_immediate_children(item, target)
+                if found is not None:
+                    return found
+    return None
 
 
 def _is_komdir_department(dept: str) -> bool:
@@ -222,6 +263,17 @@ def get_kpi(request):
             'available_departments': DEPARTMENTS,
         }, status=404)
 
+    if _is_komdir_department(requested_dept):
+        payload = komdir_dashboard.build_komdir_payload(kpis)
+        return JsonResponse(
+            {
+                'department': requested_dept,
+                'kpi_count': payload['Плитки']['count'],
+                **payload,
+            },
+            json_dumps_params={'ensure_ascii': False},
+        )
+
     kpis = _filter_kpis_for_department(requested_dept, kpis)
     result = []
     for kpi in kpis:
@@ -257,6 +309,17 @@ def get_all_departments(request):
                 'error': f'Department "{requested_dept}" not found in KPI database',
             }, status=404)
 
+        if _is_komdir_department(requested_dept):
+            payload = komdir_dashboard.build_komdir_payload(kpis)
+            return JsonResponse(
+                {
+                    'department': requested_dept,
+                    'kpi_count': payload['Плитки']['count'],
+                    **payload,
+                },
+                json_dumps_params={'ensure_ascii': False},
+            )
+
         kpis = _filter_kpis_for_department(requested_dept, kpis)
         dept_kpis = [_build_kpi_entry(kpi, kpi.get('block', 'плитка')) for kpi in kpis]
         return JsonResponse({
@@ -269,15 +332,26 @@ def get_all_departments(request):
     for dept, kpis in KPI_DATA.items():
         if dept not in allowed:
             continue
-        fkpis = _filter_kpis_for_department(dept, kpis)
-        dept_kpis = [_build_kpi_entry(kpi, kpi.get('block', 'плитка')) for kpi in fkpis]
-        summary.append({
-            'department': dept,
-            'kpi_count': len(dept_kpis),
-            'kpis': dept_kpis,
-        })
+        if _is_komdir_department(dept):
+            payload = komdir_dashboard.build_komdir_payload(kpis)
+            summary.append({
+                'department': dept,
+                'kpi_count': payload['Плитки']['count'],
+                **payload,
+            })
+        else:
+            fkpis = _filter_kpis_for_department(dept, kpis)
+            dept_kpis = [_build_kpi_entry(kpi, kpi.get('block', 'плитка')) for kpi in fkpis]
+            summary.append({
+                'department': dept,
+                'kpi_count': len(dept_kpis),
+                'kpis': dept_kpis,
+            })
 
-    return JsonResponse({'departments': summary})
+    return JsonResponse(
+        {'departments': summary},
+        json_dumps_params={'ensure_ascii': False},
+    )
 
 
 @require_GET
@@ -290,3 +364,32 @@ def get_departments_list(request):
 @login_required
 def get_structure(request):
     return JsonResponse({'structure': STRUCTURE})
+
+
+@require_GET
+@login_required
+def get_immediate_subordinates(request):
+    """
+    GET ?department=<название> — непосредственные дочерние подразделения
+    (только один уровень вниз по structure.json).
+    """
+    raw = request.GET.get('department', '').strip()
+    if not raw:
+        return JsonResponse({'error': 'department query parameter is required'}, status=400)
+
+    found = _find_immediate_children(STRUCTURE, raw)
+    if found is None:
+        return JsonResponse(
+            {'error': f'Department "{raw}" not found in structure'},
+            status=404,
+        )
+
+    canonical, children = found
+    return JsonResponse(
+        {
+            'department': canonical,
+            'immediate_children': children,
+            'count': len(children),
+        },
+        json_dumps_params={'ensure_ascii': False},
+    )
