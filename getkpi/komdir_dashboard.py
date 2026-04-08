@@ -7,6 +7,7 @@ import random
 from datetime import date
 
 from . import denzhi_dz, komdir_quarterly, valovaya_pribyl
+from .kpi_periods import last_full_month
 
 MONTH_NAMES_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -68,13 +69,16 @@ def _chart_type_bundle(meta: dict, *, fallback_type: str, fallback_label: str) -
 
 
 def monthly_m3_chart_series() -> list[dict]:
-    """Помесячный план/факт для графика KD-C1 (бюджет/ФОТ) — до текущего месяца."""
+    """Помесячный план/факт для графика KD-M3 — только завершённые месяцы (до последнего полного)."""
     today = date.today()
-    year = today.year
-    cur = today.month
-    random.seed(hash((year, "KD-M3-monthly-chart", today.toordinal())))
+    ref_y, ref_m = last_full_month(today)
+    if ref_y == today.year:
+        pairs = [(today.year, mm) for mm in range(1, ref_m + 1)]
+    else:
+        pairs = [(ref_y, ref_m)]
+    random.seed(hash((ref_y, "KD-M3-monthly-chart", ref_m)))
     out = []
-    for m in range(1, cur + 1):
+    for y, m in pairs:
         fact_z = round(random.uniform(0.85, 1.15) * 800_000, 2)
         fact_fot = round(random.uniform(0.88, 1.12) * 400_000, 2)
         plan_z = round(fact_z * random.uniform(0.92, 1.08), 2)
@@ -87,7 +91,7 @@ def monthly_m3_chart_series() -> list[dict]:
         out.append({
             "month": m,
             "month_name": MONTH_NAMES_RU[m],
-            "year": year,
+            "year": y,
             "plan": round(plan_total, 2),
             "fact": round(fact_total, 2),
             "kpi_pct": kpi,
@@ -208,7 +212,7 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
         points_m1.append({
             "month": row["month"],
             "month_name": row["month_name"],
-            "year": vp["year"],
+            "year": row.get("year", vp["year"]),
             "plan": row.get("plan"),
             "fact": row.get("fact"),
             "kpi_pct": row.get("kpi_pct"),
@@ -221,7 +225,7 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
         points_m2.append({
             "month": row["month"],
             "month_name": row["month_name"],
-            "year": m2["year"],
+            "year": row.get("year", m2["year"]),
             "plan": row.get("plan"),
             "fact": row.get("fact"),
             "kpi_pct": row.get("kpi_pct"),

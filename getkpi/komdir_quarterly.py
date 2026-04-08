@@ -4,152 +4,150 @@
 KD-M3: 0,5 × MIN(1; План затрат / Факт затрат) + 0,5 × MIN(1; План ФОТ / Факт ФОТ) × 100%
 KD-Q1: 0,6 × KPI(ВП квартал) + 0,25 × KPI(ДЗ+ТОП‑5) + 0,15 × KPI(издержки) — части без данных = 100%
 KD-Q2: целевой порог текучести ≤5% (квартал), KPI = min(100, 5/fact×100) при fact > 0
+
+Итоговый KPI по квартальным плиткам — только за последний полный календарный квартал.
 """
 import random
 from datetime import date
 
-
-def _current_quarter(month: int) -> int:
-    return (month - 1) // 3 + 1
+from .kpi_periods import last_full_quarter, quarter_month_tuples
 
 
-def _quarter_months(q: int) -> list[int]:
-    return [3 * (q - 1) + 1, 3 * (q - 1) + 2, 3 * q]
-
-
-def _vp_month_map(vp_months: list[dict]) -> dict[int, dict]:
-    return {x['month']: x for x in vp_months}
-
-
-def quarterly_m3(year: int | None = None) -> dict:
-    """KD-M3 — поквартально; факт/план пока синтетика (план = факт → KPI 100%)."""
+def _vp_month_map(vp_months: list[dict]) -> dict[tuple[int, int], dict]:
+    """Ключ (год, месяц); year в строке опционален (старые ответы — текущий год)."""
     today = date.today()
-    year = year or today.year
-    cq = _current_quarter(today.month)
-    random.seed(hash((year, 'KD-M3', today.toordinal())))
+    default_y = today.year
+    out: dict[tuple[int, int], dict] = {}
+    for x in vp_months:
+        m = x['month']
+        y = x.get('year', default_y)
+        out[(y, m)] = x
+    return out
 
-    quarters = []
-    sum_kpi = 0.0
 
-    for q in range(1, cq + 1):
-        fact_z = round(random.uniform(0.85, 1.15) * 1_000_000, 2)
-        fact_fot = round(random.uniform(0.88, 1.12) * 500_000, 2)
-        plan_z = round(fact_z * random.uniform(0.92, 1.08), 2)
-        plan_fot = round(fact_fot * random.uniform(0.92, 1.08), 2)
-        term1 = min(1.0, plan_z / fact_z) if fact_z else 0.0
-        term2 = min(1.0, plan_fot / fact_fot) if fact_fot else 0.0
-        kpi = round((0.5 * term1 + 0.5 * term2) * 100, 1)
+def quarterly_m3() -> dict:
+    """KD-M3 — только последний полный квартал; факт/план пока синтетика."""
+    today = date.today()
+    lq_y, lq_q = last_full_quarter(today)
+    random.seed(hash((lq_y, 'KD-M3', lq_q)))
 
-        quarters.append({
-            'quarter': q,
-            'year': year,
-            'label': f'Q{q} {year}',
-            'plan_zatraty': plan_z,
-            'fact_zatraty': fact_z,
-            'plan_fot': plan_fot,
-            'fact_fot': fact_fot,
-            'kpi_pct': kpi,
-        })
-        sum_kpi += kpi
+    fact_z = round(random.uniform(0.85, 1.15) * 1_000_000, 2)
+    fact_fot = round(random.uniform(0.88, 1.12) * 500_000, 2)
+    plan_z = round(fact_z * random.uniform(0.92, 1.08), 2)
+    plan_fot = round(fact_fot * random.uniform(0.92, 1.08), 2)
+    term1 = min(1.0, plan_z / fact_z) if fact_z else 0.0
+    term2 = min(1.0, plan_fot / fact_fot) if fact_fot else 0.0
+    kpi = round((0.5 * term1 + 0.5 * term2) * 100, 1)
+
+    quarter_row = {
+        'quarter': lq_q,
+        'year': lq_y,
+        'label': f'Q{lq_q} {lq_y}',
+        'plan_zatraty': plan_z,
+        'fact_zatraty': fact_z,
+        'plan_fot': plan_fot,
+        'fact_fot': fact_fot,
+        'kpi_pct': kpi,
+    }
 
     return {
-        'year': year,
-        'quarterly_data': quarters,
+        'year': lq_y,
+        'quarterly_data': [quarter_row],
+        'kpi_period': {
+            'type': 'last_full_quarter',
+            'year': lq_y,
+            'quarter': lq_q,
+        },
         'ytd': {
-            'kpi_pct': round(sum_kpi / len(quarters), 1) if quarters else None,
-            'quarters_with_data': len(quarters),
-            'quarters_total': cq,
+            'kpi_pct': kpi,
+            'quarters_with_data': 1,
+            'quarters_total': 1,
         },
     }
 
 
-def quarterly_q1(vp_ytd_months: list[dict], year: int | None = None) -> dict:
-    """KD-Q1 с KPI ВП по кварталам из реальных месяцев valovaya_pribyl."""
+def quarterly_q1(vp_months: list[dict]) -> dict:
+    """KD-Q1: ВП за последний полный квартал из реальных месяцев valovaya_pribyl."""
     today = date.today()
-    year = year or today.year
-    cq = _current_quarter(today.month)
-    by_m = _vp_month_map(vp_ytd_months)
-    random.seed(hash((year, 'KD-Q1', today.toordinal())))
+    lq_y, lq_q = last_full_quarter(today)
+    by_m = _vp_month_map(vp_months)
 
-    quarters = []
-    sum_kpi = 0.0
+    qmonths = quarter_month_tuples(lq_y, lq_q)
+    pf = pp = 0.0
+    has_vp = False
+    for y, m in qmonths:
+        row = by_m.get((y, m))
+        if row and row.get('has_data') and row.get('fact') is not None:
+            pf += float(row['fact'])
+            pp += float(row.get('plan') or 0)
+            has_vp = True
 
-    for q in range(1, cq + 1):
-        qmonths = _quarter_months(q)
-        pf = pp = 0.0
-        has_vp = False
-        for m in qmonths:
-            if m > today.month:
-                break
-            row = by_m.get(m)
-            if row and row.get('has_data') and row.get('fact') is not None:
-                pf += float(row['fact'])
-                pp += float(row.get('plan') or 0)
-                has_vp = True
+    k_vp = round(pf / pp * 100, 1) if has_vp and pp > 0 else 100.0
+    k_dz = 100.0
+    k_cost = 100.0
+    kpi = round(0.6 * k_vp + 0.25 * k_dz + 0.15 * k_cost, 1)
 
-        k_vp = round(pf / pp * 100, 1) if has_vp and pp > 0 else 100.0
-        k_dz = 100.0
-        k_cost = 100.0
-        kpi = round(0.6 * k_vp + 0.25 * k_dz + 0.15 * k_cost, 1)
-
-        quarters.append({
-            'quarter': q,
-            'year': year,
-            'label': f'Q{q} {year}',
-            'vp_fact': round(pf, 2) if has_vp else None,
-            'vp_plan': round(pp, 2) if has_vp else None,
-            'kpi_vp_pct': k_vp,
-            'kpi_dz_portfolio_pct': k_dz,
-            'kpi_izderzhki_pct': k_cost,
-            'kpi_pct': kpi,
-        })
-        sum_kpi += kpi
+    quarter_row = {
+        'quarter': lq_q,
+        'year': lq_y,
+        'label': f'Q{lq_q} {lq_y}',
+        'vp_fact': round(pf, 2) if has_vp else None,
+        'vp_plan': round(pp, 2) if has_vp else None,
+        'kpi_vp_pct': k_vp,
+        'kpi_dz_portfolio_pct': k_dz,
+        'kpi_izderzhki_pct': k_cost,
+        'kpi_pct': kpi,
+    }
 
     return {
-        'year': year,
-        'quarterly_data': quarters,
+        'year': lq_y,
+        'quarterly_data': [quarter_row],
+        'kpi_period': {
+            'type': 'last_full_quarter',
+            'year': lq_y,
+            'quarter': lq_q,
+        },
         'ytd': {
-            'kpi_pct': round(sum_kpi / len(quarters), 1) if quarters else None,
-            'quarters_with_data': len(quarters),
-            'quarters_total': cq,
+            'kpi_pct': kpi,
+            'quarters_with_data': 1 if has_vp else 0,
+            'quarters_total': 1,
         },
     }
 
 
-def quarterly_q2(year: int | None = None) -> dict:
-    """KD-Q2 — текучесть %; цель ≤5%."""
+def quarterly_q2() -> dict:
+    """KD-Q2 — текучесть % за последний полный квартал; цель ≤5%."""
     today = date.today()
-    year = year or today.year
-    cq = _current_quarter(today.month)
-    random.seed(hash((year, 'KD-Q2', today.toordinal())))
+    lq_y, lq_q = last_full_quarter(today)
+    random.seed(hash((lq_y, 'KD-Q2', lq_q)))
 
-    quarters = []
-    sum_kpi = 0.0
+    fact = round(random.uniform(2.0, 8.0), 2)
+    target = 5.0
+    if fact <= target:
+        kpi = 100.0
+    else:
+        kpi = round(min(100.0, target / fact * 100), 1)
 
-    for q in range(1, cq + 1):
-        fact = round(random.uniform(2.0, 8.0), 2)
-        target = 5.0
-        if fact <= target:
-            kpi = 100.0
-        else:
-            kpi = round(min(100.0, target / fact * 100), 1)
-
-        quarters.append({
-            'quarter': q,
-            'year': year,
-            'label': f'Q{q} {year}',
-            'plan_max_turnover_pct': target,
-            'fact_turnover_pct': fact,
-            'kpi_pct': kpi,
-        })
-        sum_kpi += kpi
+    quarter_row = {
+        'quarter': lq_q,
+        'year': lq_y,
+        'label': f'Q{lq_q} {lq_y}',
+        'plan_max_turnover_pct': target,
+        'fact_turnover_pct': fact,
+        'kpi_pct': kpi,
+    }
 
     return {
-        'year': year,
-        'quarterly_data': quarters,
+        'year': lq_y,
+        'quarterly_data': [quarter_row],
+        'kpi_period': {
+            'type': 'last_full_quarter',
+            'year': lq_y,
+            'quarter': lq_q,
+        },
         'ytd': {
-            'kpi_pct': round(sum_kpi / len(quarters), 1) if quarters else None,
-            'quarters_with_data': len(quarters),
-            'quarters_total': cq,
+            'kpi_pct': kpi,
+            'quarters_with_data': 1,
+            'quarters_total': 1,
         },
     }

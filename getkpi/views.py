@@ -8,6 +8,7 @@ from django.views.decorators.http import require_GET
 
 from User.views import login_required
 from . import denzhi_dz, komdir_dashboard, komdir_quarterly, valovaya_pribyl
+from .kpi_periods import last_full_month
 
 # Только плитки дашборда коммерческого директора (KD-Y1 дублирует KD-M1)
 KOMDIR_TILE_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-Q1', 'KD-Q2'})
@@ -17,8 +18,23 @@ with open(_KPI_FILE, encoding='utf-8') as _f:
     KPI_DATA: dict[str, list[dict]] = json.load(_f)
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
-with open(_STRUCTURE_FILE, encoding='utf-8') as _f:
-    STRUCTURE: dict = json.load(_f)
+_structure_cache: dict | None = None
+_structure_mtime: float | None = None
+
+
+def get_structure_data() -> dict:
+    """
+    Иерархия подразделений всегда из structure.json на диске.
+    Кэш сбрасывается при изменении файла — правки JSON видны без перезапуска сервера.
+    """
+    global _structure_cache, _structure_mtime
+    mtime = _STRUCTURE_FILE.stat().st_mtime
+    if _structure_cache is not None and mtime == _structure_mtime:
+        return _structure_cache
+    with open(_STRUCTURE_FILE, encoding='utf-8') as _f:
+        _structure_cache = json.load(_f)
+    _structure_mtime = mtime
+    return _structure_cache
 
 DEPARTMENTS = sorted(KPI_DATA.keys())
 _KPI_LOWER_MAP = {k.lower(): k for k in KPI_DATA.keys()}
@@ -83,7 +99,7 @@ def _get_allowed_departments(user_department: str) -> set[str]:
     Включает как ключи из structure.json, так и соответствующие ключи из KPI_DATA
     (case-insensitive matching).
     """
-    subordinates = _find_subordinates(STRUCTURE, user_department)
+    subordinates = _find_subordinates(get_structure_data(), user_department)
     if subordinates is None:
         subordinates = {user_department}
 
@@ -161,15 +177,20 @@ MONTH_NAMES = {
 
 
 def _generate_monthly_data(plan: float) -> list[dict]:
-    """План/факт за каждый месяц с января по текущий (2026)."""
+    """Помесячные точки только за завершённые месяцы (январь — последний полный месяц)."""
     today = date.today()
-    current_month = today.month
+    ref_y, ref_m = last_full_month(today)
+    if ref_y == today.year:
+        pairs = [(today.year, mm) for mm in range(1, ref_m + 1)]
+    else:
+        pairs = [(ref_y, ref_m)]
     result = []
-    for m in range(1, current_month + 1):
+    for y, m in pairs:
         fact = round(random.uniform(plan * 0.8, plan * 1.2), 2)
         pct = round(fact / plan * 100, 1) if plan else None
         result.append({
             "month": m,
+            "year": y,
             "month_name": MONTH_NAMES[m],
             "plan": plan,
             "fact": round(fact, 2),
@@ -205,39 +226,58 @@ def _build_kpi_entry(kpi: dict, block: str) -> dict:
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = vp_data['months']
         entry['ytd'] = vp_data['ytd']
+        entry['kpi_period'] = vp_data.get('kpi_period')
     elif kpi_id == 'KD-M2':
         m2 = denzhi_dz.get_kd_m2_ytd()
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = m2['months']
         entry['ytd'] = m2['ytd']
+        entry['kpi_period'] = m2.get('kpi_period')
     elif kpi_id == 'KD-M3':
         qd = komdir_quarterly.quarterly_m3()
         entry['data_granularity'] = 'quarterly'
         entry['quarterly_data'] = qd['quarterly_data']
         entry['ytd'] = qd['ytd']
+        entry['kpi_period'] = qd.get('kpi_period')
     elif kpi_id == 'KD-Q1':
         vp_data = valovaya_pribyl.get_vp_ytd()
         qd = komdir_quarterly.quarterly_q1(vp_data['months'])
         entry['data_granularity'] = 'quarterly'
         entry['quarterly_data'] = qd['quarterly_data']
         entry['ytd'] = qd['ytd']
+        entry['kpi_period'] = qd.get('kpi_period')
     elif kpi_id == 'KD-Q2':
         qd = komdir_quarterly.quarterly_q2()
         entry['data_granularity'] = 'quarterly'
         entry['quarterly_data'] = qd['quarterly_data']
         entry['ytd'] = qd['ytd']
+        entry['kpi_period'] = qd.get('kpi_period')
     else:
         plan = 100.0
         entry['monthly_data'] = _generate_monthly_data(plan)
-        facts = [m['fact'] for m in entry['monthly_data']]
-        plans = [m['plan'] for m in entry['monthly_data']]
-        total_fact = sum(facts)
-        total_plan = sum(plans)
-        entry['ytd'] = {
-            'total_plan': round(total_plan, 2),
-            'total_fact': round(total_fact, 2),
-            'kpi_pct': round(total_fact / total_plan * 100, 1) if total_plan else None,
-        }
+        last = entry['monthly_data'][-1] if entry['monthly_data'] else None
+        if last:
+            entry['ytd'] = {
+                'total_plan': last['plan'],
+                'total_fact': last['fact'],
+                'kpi_pct': last['kpi_pct'],
+                'months_with_data': 1,
+                'months_total': 1,
+            }
+            entry['kpi_period'] = {
+                'type': 'last_full_month',
+                'year': last['year'],
+                'month': last['month'],
+                'month_name': last['month_name'],
+            }
+        else:
+            entry['ytd'] = {
+                'total_plan': None,
+                'total_fact': None,
+                'kpi_pct': None,
+                'months_with_data': 0,
+                'months_total': 0,
+            }
 
     return entry
 
@@ -363,7 +403,7 @@ def get_departments_list(request):
 @require_GET
 @login_required
 def get_structure(request):
-    return JsonResponse({'structure': STRUCTURE})
+    return JsonResponse({'structure': get_structure_data()})
 
 
 @require_GET
@@ -377,7 +417,7 @@ def get_immediate_subordinates(request):
     if not raw:
         return JsonResponse({'error': 'department query parameter is required'}, status=400)
 
-    found = _find_immediate_children(STRUCTURE, raw)
+    found = _find_immediate_children(get_structure_data(), raw)
     if found is None:
         return JsonResponse(
             {'error': f'Department "{raw}" not found in structure'},

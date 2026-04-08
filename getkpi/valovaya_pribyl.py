@@ -12,7 +12,11 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from .kpi_periods import vp_months_for_api
+
 logger = logging.getLogger(__name__)
+
+RESULT_CACHE_VERSION = 2
 
 DASHBOARD_DIR = Path(__file__).resolve().parent / 'dashboard'
 FAST_SCRIPT = DASHBOARD_DIR / 'calc_vp_fast.py'
@@ -193,7 +197,10 @@ def _load_result_cache() -> dict | None:
     try:
         with open(RESULT_CACHE, "r", encoding="utf-8") as f:
             cached = json.load(f)
-        if cached.get("date") == date.today().isoformat():
+        if (
+            cached.get("date") == date.today().isoformat()
+            and cached.get("cache_version") == RESULT_CACHE_VERSION
+        ):
             return cached["data"]
     except (json.JSONDecodeError, KeyError, OSError):
         pass
@@ -204,14 +211,26 @@ def _save_result_cache(data: dict) -> None:
     """Сохраняет результат ВП с пометкой сегодняшней даты."""
     try:
         with open(RESULT_CACHE, "w", encoding="utf-8") as f:
-            json.dump({"date": date.today().isoformat(), "data": data}, f, ensure_ascii=False)
+            json.dump(
+                {
+                    "date": date.today().isoformat(),
+                    "cache_version": RESULT_CACHE_VERSION,
+                    "data": data,
+                },
+                f,
+                ensure_ascii=False,
+            )
     except OSError:
         pass
 
 
 def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
     """
-    Валовая прибыль с начала года по текущий месяц.
+    Помесячные ряды ВП для графиков (объединение: январь..последний полный месяц
+    в его году + месяцы последнего полного квартала).
+
+    Итоговый KPI (ytd) — только за последний полный месяц: факт/план этого месяца.
+
     Кэшируется на день. Если кэша 1С нет — запускает calc_vp_fast.py.
     """
     cached = _load_result_cache()
@@ -219,21 +238,20 @@ def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
         return cached
 
     today = date.today()
-    year = today.year
-    current_month = today.month
+    month_tuples, (ref_y, ref_m), _ = vp_months_for_api(today)
 
     months_data = []
-    total_fact = 0.0
-    months_with_data = 0
+    ref_row: dict | None = None
 
-    for m in range(1, current_month + 1):
-        vp = _ensure_month_data(m, year)
+    for y, m in month_tuples:
+        vp = _ensure_month_data(m, y)
         plan = plan_monthly
         fact = vp["valovaya_pribyl"] if vp else None
         pct = round(fact / plan * 100, 1) if fact is not None and plan > 0 else None
 
         month_entry = {
             "month": m,
+            "year": y,
             "month_name": MONTH_NAMES[m],
             "plan": plan,
             "fact": fact,
@@ -245,24 +263,36 @@ def get_vp_ytd(plan_monthly: int = PLAN_VP_MONTHLY) -> dict:
             month_entry["sebestoimost"] = vp["sebestoimost"]
 
         months_data.append(month_entry)
+        if y == ref_y and m == ref_m:
+            ref_row = month_entry
 
-        if fact is not None:
-            total_fact += fact
-            months_with_data += 1
-
-    plan_available = plan_monthly * months_with_data
-    ytd_pct = round(total_fact / plan_available * 100, 1) if plan_available > 0 else None
+    if ref_row and ref_row.get("fact") is not None:
+        total_fact = float(ref_row["fact"])
+        plan_one = float(ref_row.get("plan") or plan_monthly)
+        ytd_pct = round(total_fact / plan_one * 100, 1) if plan_one > 0 else None
+        months_with_data = 1
+    else:
+        total_fact = 0.0
+        plan_one = float(plan_monthly)
+        ytd_pct = None
+        months_with_data = 0
 
     result = {
-        "year": year,
+        "year": ref_y,
         "plan_monthly": plan_monthly,
         "months": months_data,
+        "kpi_period": {
+            "type": "last_full_month",
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
         "ytd": {
-            "total_plan": round(plan_available, 2),
+            "total_plan": round(plan_one, 2) if months_with_data else round(plan_monthly, 2),
             "total_fact": round(total_fact, 2),
             "kpi_pct": ytd_pct,
             "months_with_data": months_with_data,
-            "months_total": current_month,
+            "months_total": 1,
         },
     }
 

@@ -166,6 +166,8 @@ Authorization: Bearer <token>
 
 Права доступа определяются по `structure.json`: пользователь видит KPI **своего** подразделения и **всех подчинённых** по дереву иерархии.
 
+Иерархия для API (`/api/kpi/structure/`, `/api/kpi/immediate-subordinates/`, проверка прав) **читается с диска**; при изменении `structure.json` данные подхватываются на следующем запросе (перезапуск сервера не обязателен).
+
 ---
 
 ### 8. `GET /api/kpi/` — KPI подразделения
@@ -176,7 +178,10 @@ Authorization: Bearer <token>
 |----------------|----------|
 | `department` | Подразделение (по умолчанию — своё). Должно быть в ветке иерархии. |
 
-Каждый KPI содержит `monthly_data` — массив план/факт за каждый месяц с января по текущий (2026).
+**Период расчёта KPI**
+
+- **Помесячные** показатели: итоговый `kpi_pct` в `ytd` считается **только за последний полный календарный месяц** (например, в середине апреля — за март). В `monthly_data`/`months` — завершённые месяцы: с января текущего года до этого месяца; если «последний полный месяц» в прошлом году (например, январь после декабря) — в ряду только он плюс при необходимости месяцы последнего полного квартала для связки с квартальными KPI.
+- **Квартальные** (KD-M3, KD-Q1, KD-Q2): итог — **за последний полный календарный квартал**; в `quarterly_data` обычно одна запись. Поле `kpi_period` в ответе указывает тип периода (`last_full_month` / `last_full_quarter`).
 
 **Ответ 200 (обычный KPI):**
 
@@ -191,12 +196,12 @@ Authorization: Bearer <token>
       "block": "плитка",
       "frequency": "ежемесячно",
       "monthly_data": [
-        {"month": 1, "month_name": "январь", "plan": 100.0, "fact": 108.14, "kpi_pct": 108.1},
-        {"month": 2, "month_name": "февраль", "plan": 100.0, "fact": 97.22, "kpi_pct": 97.2},
-        {"month": 3, "month_name": "март", "plan": 100.0, "fact": 96.0, "kpi_pct": 96.0},
-        {"month": 4, "month_name": "апрель", "plan": 100.0, "fact": 90.34, "kpi_pct": 90.3}
+        {"month": 1, "year": 2026, "month_name": "январь", "plan": 100.0, "fact": 108.14, "kpi_pct": 108.1},
+        {"month": 2, "year": 2026, "month_name": "февраль", "plan": 100.0, "fact": 97.22, "kpi_pct": 97.2},
+        {"month": 3, "year": 2026, "month_name": "март", "plan": 100.0, "fact": 96.0, "kpi_pct": 96.0}
       ],
-      "ytd": {"total_plan": 400.0, "total_fact": 391.7, "kpi_pct": 97.9},
+      "kpi_period": {"type": "last_full_month", "year": 2026, "month": 3, "month_name": "март"},
+      "ytd": {"total_plan": 100.0, "total_fact": 96.0, "kpi_pct": 96.0, "months_with_data": 1, "months_total": 1},
       "formula": "...", "unit": "%", "weight_pct": 35, "..."
     }
   ]
@@ -210,15 +215,16 @@ Authorization: Bearer <token>
   "kpi_id": "KD-M1",
   "name": "Валовая прибыль коммерческого блока",
   "monthly_data": [
-    {"month": 1, "month_name": "январь", "plan": 28450241, "fact": null, "kpi_pct": null, "has_data": false},
-    {"month": 3, "month_name": "март", "plan": 28450241, "fact": 100847809.68, "kpi_pct": 354.5, "has_data": true, "vyruchka": 136503177.67, "sebestoimost": 35655367.99}
+    {"month": 1, "year": 2026, "month_name": "январь", "plan": 28450241, "fact": null, "kpi_pct": null, "has_data": false},
+    {"month": 3, "year": 2026, "month_name": "март", "plan": 28450241, "fact": 100847809.68, "kpi_pct": 354.5, "has_data": true, "vyruchka": 136503177.67, "sebestoimost": 35655367.99}
   ],
-  "ytd": {"total_plan": 28450241, "total_fact": 100847809.68, "kpi_pct": 354.5, "months_with_data": 1, "months_total": 4}
+  "kpi_period": {"type": "last_full_month", "year": 2026, "month": 3, "month_name": "март"},
+  "ytd": {"total_plan": 28450241, "total_fact": 100847809.68, "kpi_pct": 354.5, "months_with_data": 1, "months_total": 1}
 }
 ```
 
 > **KD-M1 / KD-Y1:** данные **реальные** из 1С. Кэш на день. Нет кэша — скрипты 1С запускаются автоматически. План: 28 450 241 руб/мес.
-> **Остальные KPI:** `plan = 100`, `fact` — генерируется (80–120). Данные помесячные с января по текущий месяц.
+> **Остальные KPI:** `plan = 100`, `fact` — генерируется (80–120). Помесячные ряды — по завершённым месяцам; `ytd.kpi_pct` — за последний полный месяц.
 
 | Код | Причина |
 |-----|---------|

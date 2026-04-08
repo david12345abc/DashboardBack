@@ -11,7 +11,11 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from .kpi_periods import vp_months_for_api
+
 logger = logging.getLogger(__name__)
+
+KD_M2_CACHE_VERSION = 2
 
 DASHBOARD_DIR = Path(__file__).resolve().parent / 'dashboard'
 FACT_DIR = DASHBOARD_DIR / 'факт'
@@ -126,7 +130,10 @@ def _load_ytd_cache() -> dict | None:
     try:
         with open(RESULT_CACHE, encoding='utf-8') as f:
             c = json.load(f)
-        if c.get('date') == date.today().isoformat():
+        if (
+            c.get('date') == date.today().isoformat()
+            and c.get('cache_version') == KD_M2_CACHE_VERSION
+        ):
             return c.get('data')
     except (json.JSONDecodeError, OSError, KeyError):
         pass
@@ -136,32 +143,40 @@ def _load_ytd_cache() -> dict | None:
 def _save_ytd_cache(data: dict) -> None:
     try:
         with open(RESULT_CACHE, 'w', encoding='utf-8') as f:
-            json.dump({'date': date.today().isoformat(), 'data': data}, f, ensure_ascii=False)
+            json.dump(
+                {
+                    'date': date.today().isoformat(),
+                    'cache_version': KD_M2_CACHE_VERSION,
+                    'data': data,
+                },
+                f,
+                ensure_ascii=False,
+            )
     except OSError:
         pass
 
 
 def get_kd_m2_ytd() -> dict:
-    """Помесячно январь → текущий месяц; кэш суточный."""
+    """
+    Помесячные точки — тот же охват, что у ВП (графики).
+    KPI в ytd — только за последний полный месяц (один месяц, не среднее и не YTD).
+    """
     cached = _load_ytd_cache()
     if cached is not None:
         return cached
 
     today = date.today()
-    year = today.year
-    cur_m = today.month
+    month_tuples, (ref_y, ref_m), _ = vp_months_for_api(today)
 
     months_out = []
-    sum_kpi = 0.0
-    n_kpi = 0
-    total_plan = 0.0
-    total_fact = 0.0
+    ref_row: dict | None = None
 
-    for m in range(1, cur_m + 1):
-        raw = _ensure_month(m, year)
+    for y, m in month_tuples:
+        raw = _ensure_month(m, y)
         if raw is None:
             months_out.append({
                 'month': m,
+                'year': y,
                 'month_name': MONTH_NAMES[m],
                 'plan': None,
                 'fact': None,
@@ -178,6 +193,7 @@ def get_kd_m2_ytd() -> dict:
 
         row = {
             'month': m,
+            'year': y,
             'month_name': MONTH_NAMES[m],
             'plan': round(plan_money, 2),
             'fact': round(money_f, 2),
@@ -191,22 +207,35 @@ def get_kd_m2_ytd() -> dict:
             'kpi_dz_placeholder': 100.0,
         }
         months_out.append(row)
-        sum_kpi += kpi
-        n_kpi += 1
-        total_plan += plan_money
-        total_fact += money_f
+        if y == ref_y and m == ref_m:
+            ref_row = row
 
-    ytd_pct = round(sum_kpi / n_kpi, 1) if n_kpi else None
+    if ref_row and ref_row.get('has_data'):
+        ytd_pct = ref_row.get('kpi_pct')
+        total_plan = float(ref_row['plan'] or 0)
+        total_fact = float(ref_row['fact'] or 0)
+        n_kpi = 1
+    else:
+        ytd_pct = None
+        total_plan = 0.0
+        total_fact = 0.0
+        n_kpi = 0
 
     out = {
-        'year': year,
+        'year': ref_y,
         'months': months_out,
+        'kpi_period': {
+            'type': 'last_full_month',
+            'year': ref_y,
+            'month': ref_m,
+            'month_name': MONTH_NAMES[ref_m],
+        },
         'ytd': {
             'total_plan': round(total_plan, 2),
             'total_fact': round(total_fact, 2),
             'kpi_pct': ytd_pct,
             'months_with_data': n_kpi,
-            'months_total': cur_m,
+            'months_total': 1,
         },
     }
     _save_ytd_cache(out)
