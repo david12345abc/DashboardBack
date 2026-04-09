@@ -86,7 +86,7 @@ def _points_from_monthly_entry(entry: dict) -> list[dict]:
     out: list[dict] = []
     for row in rows:
         y = row.get("year", default_year)
-        out.append({
+        pt = {
             "month": row["month"],
             "month_name": row["month_name"],
             "year": y,
@@ -94,7 +94,10 @@ def _points_from_monthly_entry(entry: dict) -> list[dict]:
             "fact": row.get("fact"),
             "kpi_pct": row.get("kpi_pct"),
             "has_data": row.get("has_data", True),
-        })
+        }
+        if row.get("values_unit"):
+            pt["values_unit"] = row["values_unit"]
+        out.append(pt)
     return out
 
 
@@ -110,14 +113,19 @@ def _points_from_quarterly_entry(entry: dict) -> list[dict]:
     points: list[dict] = []
     for p in qd:
         if p.get("fact_turnover_pct") is not None:
-            points.append({
+            pt = {
                 "quarter": p["quarter"],
                 "year": p["year"],
                 "label": p.get("label"),
                 "plan": p.get("plan_max_turnover_pct"),
                 "fact": p.get("fact_turnover_pct"),
                 "kpi_pct": p.get("kpi_pct"),
-            })
+            }
+            if p.get("data_complete") is not None:
+                pt["data_complete"] = p["data_complete"]
+            if p.get("months_with_turnover_data") is not None:
+                pt["months_with_turnover_data"] = p["months_with_turnover_data"]
+            points.append(pt)
         else:
             points.append({
                 "quarter": p["quarter"],
@@ -135,7 +143,7 @@ def _table_row_last_month(kpi: dict, entry: dict) -> dict | None:
     lm = entry.get("last_full_month_row")
     if lm and lm.get("has_data", True):
         pl, fc = lm.get("plan"), lm.get("fact")
-        return {
+        out = {
             "kpi_id": kpi["kpi_id"],
             "name": kpi["name"],
             "period_type": "month",
@@ -145,6 +153,9 @@ def _table_row_last_month(kpi: dict, entry: dict) -> dict | None:
             "kpi_pct": lm.get("kpi_pct"),
             "deviation_pct": deviation_pct(pl, fc),
         }
+        if lm.get("values_unit"):
+            out["values_unit"] = lm["values_unit"]
+        return out
     md = entry.get("monthly_data") or []
     if not md:
         return None
@@ -154,7 +165,7 @@ def _table_row_last_month(kpi: dict, entry: dict) -> dict | None:
         for row in md:
             if row.get("year", ry) == ry and row.get("month") == rm:
                 pl, fc = row.get("plan"), row.get("fact")
-                return {
+                out = {
                     "kpi_id": kpi["kpi_id"],
                     "name": kpi["name"],
                     "period_type": "month",
@@ -164,9 +175,12 @@ def _table_row_last_month(kpi: dict, entry: dict) -> dict | None:
                     "kpi_pct": row.get("kpi_pct"),
                     "deviation_pct": deviation_pct(pl, fc),
                 }
+                if row.get("values_unit"):
+                    out["values_unit"] = row["values_unit"]
+                return out
     row = md[-1]
     pl, fc = row.get("plan"), row.get("fact")
-    return {
+    out = {
         "kpi_id": kpi["kpi_id"],
         "name": kpi["name"],
         "period_type": "month",
@@ -176,6 +190,9 @@ def _table_row_last_month(kpi: dict, entry: dict) -> dict | None:
         "kpi_pct": row.get("kpi_pct"),
         "deviation_pct": deviation_pct(pl, fc),
     }
+    if row.get("values_unit"):
+        out["values_unit"] = row["values_unit"]
+    return out
 
 
 def build_commercial_branch_payload(

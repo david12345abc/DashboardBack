@@ -7,7 +7,16 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from User.views import login_required
-from . import commercial_branch_dashboard, denzhi_dz, dept_dz, komdir_dashboard, komdir_quarterly, valovaya_pribyl
+from . import (
+    commercial_branch_dashboard,
+    denzhi_dz,
+    dept_budget_m3,
+    dept_dz,
+    dept_turnover_q5,
+    komdir_dashboard,
+    komdir_quarterly,
+    valovaya_pribyl,
+)
 from .commercial_tiles import commercial_kpi_key, tile_order_for_kpi_key
 from .kpi_periods import last_full_month, last_full_quarter
 
@@ -227,6 +236,11 @@ def _rag_lower_turnover(fact_pct: float | None) -> str:
     return 'red'
 
 
+def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
+    """Плитки «бюджет в пределах лимита» (*-M3-1): пороги <=100% как у ДЗ."""
+    return kpi_id.endswith('-M3-1')
+
+
 def _is_turnover_style_tile(kpi: dict) -> bool:
     kid = kpi.get('kpi_id') or ''
     nm = (kpi.get('name') or '').lower()
@@ -257,14 +271,14 @@ def _synthetic_quarter_row_for_tile(kpi: dict) -> tuple[dict, dict]:
     if 'текучесть' in nm or kid.endswith('-Q5') or kid == 'ZKD-Q2':
         fact = round(random.uniform(2.0, 8.0), 2)
         target = 5.0
-        kpi_pct = 100.0 if fact <= target else round(min(100.0, target / fact * 100), 1)
+        # На плитке — сама текучесть (%); не «выполнение плана» до 100.
         row = {
             'quarter': lq,
             'year': ly,
             'label': f'Q{lq} {ly}',
             'plan_max_turnover_pct': target,
             'fact_turnover_pct': fact,
-            'kpi_pct': kpi_pct,
+            'kpi_pct': fact,
         }
         return row, period
     plan = 100.0
@@ -307,11 +321,12 @@ def _build_commercial_plitki_items(kpis_meta: list[dict], entries: list[dict]) -
         if _is_turnover_style_tile(kpi):
             qd = entry.get('quarterly_data') or []
             turnover = qd[-1].get('fact_turnover_pct') if qd else None
-            if turnover is not None:
-                color = _rag_lower_turnover(float(turnover))
-            else:
-                color = _rag_lower_turnover(pct)
+            # Цвет от KPI на плитке (kpi_pct), если задан — иначе от fact в точке квартала.
+            color_src = pct if pct is not None else turnover
+            color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
         elif dept_dz.is_dz_kpi(kid):
+            color = _rag_dz_lower_better(pct)
+        elif _is_budget_limit_m3_kpi(kid):
             color = _rag_dz_lower_better(pct)
         else:
             color = _rag_higher_better(pct)
@@ -416,6 +431,25 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
             entry['last_full_month_row'] = dz.get('last_full_month_row')
             entry['ytd'] = dz['ytd']
             entry['kpi_period'] = dz.get('kpi_period')
+            return entry
+
+    if dept_key and _is_budget_limit_m3_kpi(kpi_id):
+        bm = dept_budget_m3.get_dept_budget_m3_ytd(dept_key)
+        if bm is not None:
+            entry['data_granularity'] = 'monthly'
+            entry['monthly_data'] = bm['months']
+            entry['last_full_month_row'] = bm.get('last_full_month_row')
+            entry['ytd'] = bm['ytd']
+            entry['kpi_period'] = bm.get('kpi_period')
+            return entry
+
+    if dept_key and dept_turnover_q5.is_turnover_q5_kpi(kpi_id):
+        tq = dept_turnover_q5.build_turnover_q5_entry(dept_key)
+        if tq is not None:
+            entry['data_granularity'] = tq['data_granularity']
+            entry['quarterly_data'] = tq['quarterly_data']
+            entry['ytd'] = tq['ytd']
+            entry['kpi_period'] = tq['kpi_period']
             return entry
 
     if kpi_id == 'KD-M1':

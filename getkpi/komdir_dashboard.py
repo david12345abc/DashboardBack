@@ -8,7 +8,6 @@ from datetime import date
 
 from . import denzhi_dz, komdir_quarterly, valovaya_pribyl
 from .kpi_periods import last_full_month
-from .table_metrics import deviation_pct
 
 MONTH_NAMES_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -348,94 +347,87 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
         },
     }
 
-    # --- Таблица сводки: помесячные KPI — только последний полный месяц; KD-Q1 — только последний квартал
+    # --- Таблица сводки: та же последовательность, что и плитки; только plan, fact, kpi_pct, color
     vp_lm = vp.get("last_full_month_row")
     m2_lm = m2.get("last_full_month_row")
     m3_last = m3_monthly[-1] if m3_monthly else None
     q1r = qq1["quarterly_data"][0] if qq1.get("quarterly_data") else None
     q2_summary = komdir_quarterly.kd_q2_summary_for_table()
-
-    kpi_summary_rows: list[dict] = []
-    if vp_lm and vp_lm.get("has_data"):
-        pl, fc = vp_lm.get("plan"), vp_lm.get("fact")
-        kpi_summary_rows.append({
-            "kpi_id": "KD-M1",
-            "name": by_id["KD-M1"]["name"],
-            "period_type": "month",
-            "kpi_period": vp.get("kpi_period"),
-            "plan": pl,
-            "fact": fc,
-            "kpi_pct": vp_lm.get("kpi_pct"),
-            "deviation_pct": deviation_pct(pl, fc),
-        })
-    if m2_lm and m2_lm.get("has_data"):
-        pl, fc = m2_lm.get("plan"), m2_lm.get("fact")
-        kpi_summary_rows.append({
-            "kpi_id": "KD-M2",
-            "name": by_id["KD-M2"]["name"],
-            "period_type": "month",
-            "kpi_period": m2.get("kpi_period"),
-            "plan": pl,
-            "fact": fc,
-            "kpi_pct": m2_lm.get("kpi_pct"),
-            "deviation_pct": deviation_pct(pl, fc),
-        })
-    if m3_last:
-        pl, fc = m3_last.get("plan"), m3_last.get("fact")
-        kpi_summary_rows.append({
-            "kpi_id": "KD-M3",
-            "name": by_id["KD-M3"]["name"],
-            "period_type": "month",
-            "kpi_period": {
-                "type": "last_full_month",
-                "year": m3_last["year"],
-                "month": m3_last["month"],
-                "month_name": m3_last["month_name"],
-            },
-            "plan": pl,
-            "fact": fc,
-            "kpi_pct": m3_last.get("kpi_pct"),
-            "deviation_pct": deviation_pct(pl, fc),
-        })
-    if q1r:
-        pl, fc = q1r.get("vp_plan"), q1r.get("vp_fact")
-        kpi_summary_rows.append({
-            "kpi_id": "KD-Q1",
-            "name": by_id["KD-Q1"]["name"],
-            "period_type": "quarter",
-            "kpi_period": qq1.get("kpi_period"),
-            "label": q1r.get("label"),
-            "year": q1r.get("year"),
-            "quarter": q1r.get("quarter"),
-            "plan": pl,
-            "fact": fc,
-            "kpi_pct": q1r.get("kpi_pct"),
-            "deviation_pct": deviation_pct(pl, fc),
-        })
     pl_q2 = q2_summary["plan_max_turnover_pct"]
     fc_q2 = q2_summary["fact_turnover_pct"]
-    kpi_summary_rows.append({
-        "kpi_id": "KD-Q2",
-        "name": by_id["KD-Q2"]["name"],
-        "period_type": "quarter",
-        "kpi_period": q2_summary["kpi_period"],
-        "label": q2_summary["label"],
-        "year": q2_summary["year"],
-        "quarter": q2_summary["quarter"],
-        "plan": pl_q2,
-        "fact": fc_q2,
-        "kpi_pct": q2_summary["kpi_pct"],
-        "deviation_pct": deviation_pct(pl_q2, fc_q2),
-        "unit": "%",
-    })
+
+    def _pf_month(row: dict | None) -> tuple[float | None, float | None]:
+        if not row or not row.get("has_data"):
+            return None, None
+        return row.get("plan"), row.get("fact")
+
+    pl_m1, fc_m1 = _pf_month(vp_lm)
+    pl_m2, fc_m2 = _pf_month(m2_lm)
+    pl_m3 = fc_m3 = None
+    if m3_last:
+        pl_m3, fc_m3 = m3_last.get("plan"), m3_last.get("fact")
+    pl_q1 = fc_q1 = None
+    if q1r:
+        pl_q1, fc_q1 = q1r.get("vp_plan"), q1r.get("vp_fact")
+
+    kpi_summary_rows: list[dict] = [
+        {
+            "kpi_id": "KD-M1",
+            "name": by_id["KD-M1"]["name"],
+            "plan": pl_m1,
+            "fact": fc_m1,
+            "kpi_pct": y1m,
+            "color": _rag_higher_better(y1m),
+        },
+        {
+            "kpi_id": "KD-M2",
+            "name": by_id["KD-M2"]["name"],
+            "plan": pl_m2,
+            "fact": fc_m2,
+            "kpi_pct": y2m,
+            "color": _rag_m2_debt(y2m),
+        },
+        {
+            "kpi_id": "KD-M3",
+            "name": by_id["KD-M3"]["name"],
+            "plan": pl_m3,
+            "fact": fc_m3,
+            "kpi_pct": y3m,
+            "color": _rag_higher_better(y3m),
+        },
+        {
+            "kpi_id": "KD-Q1",
+            "name": by_id["KD-Q1"]["name"],
+            "plan": pl_q1,
+            "fact": fc_q1,
+            "kpi_pct": yq1,
+            "color": _rag_higher_better(yq1),
+        },
+        {
+            "kpi_id": "KD-Q2",
+            "name": by_id["KD-Q2"]["name"],
+            "plan": pl_q2,
+            "fact": fc_q2,
+            "kpi_pct": yq2_kpi,
+            "color": _rag_lower_turnover(q2_turnover),
+        },
+        {
+            "kpi_id": "KD-AVG",
+            "name": "Среднее по плиткам KPI",
+            "plan": None,
+            "fact": None,
+            "kpi_pct": avg_pct,
+            "color": _rag_higher_better(avg_pct),
+        },
+    ]
 
     tablitsy = {
         "KD-T-KPI-SUMMARY": {
-            "name": "Сводка KPI по периодам (последний месяц / последний квартал для Q1)",
+            "name": "Сводка KPI (как плитки)",
             "description": (
-                "KD-M1, KD-M2, KD-M3 — последний полный месяц; "
-                "KD-Q1 и KD-Q2 — квартал (KD-Q2: 1-й квартал, данные могут быть неполными, см. data_complete). "
-                "deviation_pct = (факт − план) / план × 100."
+                "Строки в том же порядке, что и плитки: KD-M1…KD-Q2 — план/факт за последний полный месяц "
+                "(M1–M3) или за квартал (Q1–Q2); kpi_pct и color совпадают с плитками. "
+                "KD-AVG — только kpi_pct и color, без плана/факта. При неполных данных plan/fact могут быть null."
             ),
             "rows": kpi_summary_rows,
         },
