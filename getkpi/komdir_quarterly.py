@@ -3,20 +3,27 @@
 
 KD-M3: 0,5 × MIN(1; План затрат / Факт затрат) + 0,5 × MIN(1; План ФОТ / Факт ФОТ) × 100%
 KD-Q1: 0,6 × KPI(ВП квартал) + 0,25 × KPI(ДЗ+ТОП‑5) + 0,15 × KPI(издержки) — части без данных = 100%
-KD-Q2: целевой порог текучести ≤5% (квартал), KPI = min(100, 5/fact×100) при fact > 0
-
-Итоговый KPI по квартальным плиткам — только за последний полный календарный квартал.
+KD-Q2 (текучесть): пока данные только за **март 2026** — план 4,3 %, факт 22 %, KPI 19 %.
+Плитка и график KD-C2 используют эту точку (метка «март 2026», квартал Q1).
+Пороги цвета факта: ≤5 % зелёный, 5,1–7 % жёлтый, >7 % красный.
 """
 import random
 from datetime import date
 
-from .kpi_periods import last_full_month, last_full_quarter, quarter_month_tuples
+from .kpi_periods import last_full_quarter, quarter_month_tuples
 
 _MONTH_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
     5: "май", 6: "июнь", 7: "июль", 8: "август",
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
+
+# KD-Q2 коммерческого директора — фиксированный снимок (пока только март).
+KD_Q2_REF_YEAR = 2026
+KD_Q2_REF_MONTH = 3
+KD_Q2_PLAN_TURNOVER_PCT = 4.3
+KD_Q2_FACT_TURNOVER_PCT = 22.0
+KD_Q2_KPI_PCT = 19.0
 
 
 def _vp_month_map(vp_months: list[dict]) -> dict[tuple[int, int], dict]:
@@ -122,68 +129,54 @@ def quarterly_q1(vp_months: list[dict]) -> dict:
 
 
 def turnover_last_full_month_row() -> dict:
-    """Одна строка текучести за последний полный месяц (для таблицы; плитка KD-Q2 — по-прежнему квартал)."""
-    today = date.today()
-    ry, rm = last_full_month(today)
-    random.seed(hash((ry, rm, "KD-Q2-month-table")))
-
-    fact = round(random.uniform(2.0, 8.0), 2)
-    target = 5.0
-    if fact <= target:
-        kpi = 100.0
-    else:
-        kpi = round(min(100.0, target / fact * 100), 1)
-
-    mn = _MONTH_RU[rm]
+    """Строка текучести для таблицы KD-T-KPI-SUMMARY (сейчас только март 2026)."""
+    y, m = KD_Q2_REF_YEAR, KD_Q2_REF_MONTH
+    mn = _MONTH_RU[m]
     return {
-        "month": rm,
-        "year": ry,
+        "month": m,
+        "year": y,
         "month_name": mn,
-        "label": f"{mn} {ry}",
-        "plan_max_turnover_pct": target,
-        "fact_turnover_pct": fact,
-        "kpi_pct": kpi,
+        "label": f"{mn} {y}",
+        "plan_max_turnover_pct": KD_Q2_PLAN_TURNOVER_PCT,
+        "fact_turnover_pct": KD_Q2_FACT_TURNOVER_PCT,
+        "kpi_pct": KD_Q2_KPI_PCT,
         "kpi_period": {
-            "type": "last_full_month",
-            "year": ry,
-            "month": rm,
+            "type": "reference_month",
+            "year": y,
+            "month": m,
             "month_name": mn,
+            "label": f"{mn} {y}",
         },
     }
 
 
 def quarterly_q2() -> dict:
-    """KD-Q2 — текучесть % за последний полный квартал; цель ≤5%."""
-    today = date.today()
-    lq_y, lq_q = last_full_quarter(today)
-    random.seed(hash((lq_y, 'KD-Q2', lq_q)))
-
-    fact = round(random.uniform(2.0, 8.0), 2)
-    target = 5.0
-    if fact <= target:
-        kpi = 100.0
-    else:
-        kpi = round(min(100.0, target / fact * 100), 1)
-
+    """KD-Q2 — текучесть; пока одна точка за март 2026 (внутри Q1)."""
+    y = KD_Q2_REF_YEAR
+    q = 1  # март ∈ Q1
+    mn = _MONTH_RU[KD_Q2_REF_MONTH]
     quarter_row = {
-        'quarter': lq_q,
-        'year': lq_y,
-        'label': f'Q{lq_q} {lq_y}',
-        'plan_max_turnover_pct': target,
-        'fact_turnover_pct': fact,
-        'kpi_pct': kpi,
+        'quarter': q,
+        'year': y,
+        'label': f'{mn} {y}',
+        'plan_max_turnover_pct': KD_Q2_PLAN_TURNOVER_PCT,
+        'fact_turnover_pct': KD_Q2_FACT_TURNOVER_PCT,
+        'kpi_pct': KD_Q2_KPI_PCT,
     }
 
     return {
-        'year': lq_y,
+        'year': y,
         'quarterly_data': [quarter_row],
         'kpi_period': {
-            'type': 'last_full_quarter',
-            'year': lq_y,
-            'quarter': lq_q,
+            'type': 'reference_month',
+            'year': y,
+            'month': KD_Q2_REF_MONTH,
+            'month_name': mn,
+            'quarter': q,
+            'label': quarter_row['label'],
         },
         'ytd': {
-            'kpi_pct': kpi,
+            'kpi_pct': KD_Q2_KPI_PCT,
             'quarters_with_data': 1,
             'quarters_total': 1,
         },

@@ -8,6 +8,7 @@ from datetime import date
 
 from . import denzhi_dz, komdir_quarterly, valovaya_pribyl
 from .kpi_periods import last_full_month
+from .table_metrics import deviation_pct
 
 MONTH_NAMES_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -26,11 +27,13 @@ def _rag_higher_better(pct: float | None) -> str:
 
 
 def _rag_m2_debt(pct: float | None) -> str:
-    """KD-M2: < 90 % → зелёный, ≥ 90 % → красный."""
+    """KD-M2: < 100 % → зелёный, 100–110 % → жёлтый, > 110 % → красный."""
     if pct is None:
         return "unknown"
-    if pct < 90:
+    if pct < 100:
         return "green"
+    if pct <= 110:
+        return "yellow"
     return "red"
 
 
@@ -353,26 +356,31 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
 
     kpi_summary_rows: list[dict] = []
     if vp_lm and vp_lm.get("has_data"):
+        pl, fc = vp_lm.get("plan"), vp_lm.get("fact")
         kpi_summary_rows.append({
             "kpi_id": "KD-M1",
             "name": by_id["KD-M1"]["name"],
             "period_type": "month",
             "kpi_period": vp.get("kpi_period"),
-            "plan": vp_lm.get("plan"),
-            "fact": vp_lm.get("fact"),
+            "plan": pl,
+            "fact": fc,
             "kpi_pct": vp_lm.get("kpi_pct"),
+            "deviation_pct": deviation_pct(pl, fc),
         })
     if m2_lm and m2_lm.get("has_data"):
+        pl, fc = m2_lm.get("plan"), m2_lm.get("fact")
         kpi_summary_rows.append({
             "kpi_id": "KD-M2",
             "name": by_id["KD-M2"]["name"],
             "period_type": "month",
             "kpi_period": m2.get("kpi_period"),
-            "plan": m2_lm.get("plan"),
-            "fact": m2_lm.get("fact"),
+            "plan": pl,
+            "fact": fc,
             "kpi_pct": m2_lm.get("kpi_pct"),
+            "deviation_pct": deviation_pct(pl, fc),
         })
     if m3_last:
+        pl, fc = m3_last.get("plan"), m3_last.get("fact")
         kpi_summary_rows.append({
             "kpi_id": "KD-M3",
             "name": by_id["KD-M3"]["name"],
@@ -383,11 +391,13 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
                 "month": m3_last["month"],
                 "month_name": m3_last["month_name"],
             },
-            "plan": m3_last.get("plan"),
-            "fact": m3_last.get("fact"),
+            "plan": pl,
+            "fact": fc,
             "kpi_pct": m3_last.get("kpi_pct"),
+            "deviation_pct": deviation_pct(pl, fc),
         })
     if q1r:
+        pl, fc = q1r.get("vp_plan"), q1r.get("vp_fact")
         kpi_summary_rows.append({
             "kpi_id": "KD-Q1",
             "name": by_id["KD-Q1"]["name"],
@@ -396,19 +406,23 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
             "label": q1r.get("label"),
             "year": q1r.get("year"),
             "quarter": q1r.get("quarter"),
-            "plan": q1r.get("vp_plan"),
-            "fact": q1r.get("vp_fact"),
+            "plan": pl,
+            "fact": fc,
             "kpi_pct": q1r.get("kpi_pct"),
+            "deviation_pct": deviation_pct(pl, fc),
         })
+    pl_q2 = q2_month.get("plan_max_turnover_pct")
+    fc_q2 = q2_month.get("fact_turnover_pct")
     kpi_summary_rows.append({
         "kpi_id": "KD-Q2",
         "name": by_id["KD-Q2"]["name"],
         "period_type": "month",
         "kpi_period": q2_month["kpi_period"],
         "label": q2_month.get("label"),
-        "plan": q2_month.get("plan_max_turnover_pct"),
-        "fact": q2_month.get("fact_turnover_pct"),
+        "plan": pl_q2,
+        "fact": fc_q2,
         "kpi_pct": q2_month.get("kpi_pct"),
+        "deviation_pct": deviation_pct(pl_q2, fc_q2),
         "unit": "%",
     })
 
@@ -417,7 +431,8 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
             "name": "Сводка KPI по периодам (последний месяц / последний квартал для Q1)",
             "description": (
                 "KD-M1, KD-M2, KD-M3, KD-Q2 — последний полный календарный месяц; "
-                "KD-Q1 — последний полный календарный квартал."
+                "KD-Q1 — последний полный календарный квартал. "
+                "deviation_pct = (факт − план) / план × 100."
             ),
             "rows": kpi_summary_rows,
         },

@@ -7,7 +7,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from User.views import login_required
-from . import denzhi_dz, dept_dz, komdir_dashboard, komdir_quarterly, valovaya_pribyl
+from . import commercial_branch_dashboard, denzhi_dz, dept_dz, komdir_dashboard, komdir_quarterly, valovaya_pribyl
 from .commercial_tiles import commercial_kpi_key, tile_order_for_kpi_key
 from .kpi_periods import last_full_month, last_full_quarter
 
@@ -238,11 +238,13 @@ def _is_turnover_style_tile(kpi: dict) -> bool:
 
 
 def _rag_dz_lower_better(pct: float | None) -> str:
-    """ДЗ: < 90 % → зелёный, ≥ 90 % → красный."""
+    """ДЗ: < 100 % → зелёный, 100–110 % → жёлтый, > 110 % → красный."""
     if pct is None:
         return 'unknown'
-    if pct < 90:
+    if pct < 100:
         return 'green'
+    if pct <= 110:
+        return 'yellow'
     return 'red'
 
 
@@ -336,12 +338,17 @@ def _commercial_tiles_json_response(requested_dept: str, kpi_storage_key: str) -
         }, status=404)
     entries = [_build_kpi_entry(k, 'плитка', dept_key=kpi_storage_key) for k in kpis_meta]
     items = _build_commercial_plitki_items(kpis_meta, entries)
+    raw_dept = KPI_DATA.get(kpi_storage_key, [])
+    branch_extra = commercial_branch_dashboard.build_commercial_branch_payload(
+        kpi_storage_key, kpis_meta, entries, raw_dept,
+    )
     return JsonResponse(
         {
             'department': requested_dept,
             'kpi_storage_key': kpi_storage_key,
             'kpi_count': len(items),
             'Плитки': {'count': len(items), 'items': items},
+            **branch_extra,
             'kpis': entries,
         },
         json_dumps_params={'ensure_ascii': False},
@@ -642,11 +649,16 @@ def get_all_departments(request):
             kmeta = _ordered_commercial_kpi_dicts(ck)
             entries = [_build_kpi_entry(k, 'плитка', dept_key=ck) for k in kmeta]
             items = _build_commercial_plitki_items(kmeta, entries)
+            raw_dept = KPI_DATA.get(ck, [])
+            branch_extra = commercial_branch_dashboard.build_commercial_branch_payload(
+                ck, kmeta, entries, raw_dept,
+            )
             summary.append({
                 'department': dept,
                 'kpi_storage_key': ck,
                 'kpi_count': len(items),
                 'Плитки': {'count': len(items), 'items': items},
+                **branch_extra,
                 'kpis': entries,
             })
         else:
