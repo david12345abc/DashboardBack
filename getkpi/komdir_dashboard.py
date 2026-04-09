@@ -25,6 +25,15 @@ def _rag_higher_better(pct: float | None) -> str:
     return "red"
 
 
+def _rag_m2_debt(pct: float | None) -> str:
+    """KD-M2: < 90 % → зелёный, ≥ 90 % → красный."""
+    if pct is None:
+        return "unknown"
+    if pct < 90:
+        return "green"
+    return "red"
+
+
 def _rag_lower_turnover(fact_pct: float | None) -> str:
     """Пороги как в Excel: ≤5% зелёный, 5,1–7% жёлтый, >7% красный."""
     if fact_pct is None:
@@ -155,7 +164,7 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
     tile_values.append(("KD-M1", y1m, _rag_higher_better(y1m), by_id["KD-M1"]))
 
     y2m = m2["ytd"].get("kpi_pct")
-    tile_values.append(("KD-M2", y2m, _rag_higher_better(y2m), by_id["KD-M2"]))
+    tile_values.append(("KD-M2", y2m, _rag_m2_debt(y2m), by_id["KD-M2"]))
 
     y3m = qm3["ytd"].get("kpi_pct")
     tile_values.append(("KD-M3", y3m, _rag_higher_better(y3m), by_id["KD-M3"]))
@@ -221,8 +230,6 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
 
     points_m2 = []
     for row in m2["months"]:
-        if not row.get("has_data"):
-            continue
         points_m2.append({
             "month": row["month"],
             "month_name": row["month_name"],
@@ -230,6 +237,7 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
             "plan": row.get("plan"),
             "fact": row.get("fact"),
             "kpi_pct": row.get("kpi_pct"),
+            "has_data": row.get("has_data", False),
         })
 
     points_m3 = m3_monthly

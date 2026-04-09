@@ -7,7 +7,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 from User.views import login_required
-from . import denzhi_dz, komdir_dashboard, komdir_quarterly, valovaya_pribyl
+from . import denzhi_dz, dept_dz, komdir_dashboard, komdir_quarterly, valovaya_pribyl
 from .commercial_tiles import commercial_kpi_key, tile_order_for_kpi_key
 from .kpi_periods import last_full_month, last_full_quarter
 
@@ -237,6 +237,15 @@ def _is_turnover_style_tile(kpi: dict) -> bool:
     return False
 
 
+def _rag_dz_lower_better(pct: float | None) -> str:
+    """ДЗ: < 90 % → зелёный, ≥ 90 % → красный."""
+    if pct is None:
+        return 'unknown'
+    if pct < 90:
+        return 'green'
+    return 'red'
+
+
 def _synthetic_quarter_row_for_tile(kpi: dict) -> tuple[dict, dict]:
     ly, lq = last_full_quarter(date.today())
     random.seed(hash((kpi.get('kpi_id'), ly, lq)))
@@ -300,6 +309,8 @@ def _build_commercial_plitki_items(kpis_meta: list[dict], entries: list[dict]) -
                 color = _rag_lower_turnover(float(turnover))
             else:
                 color = _rag_lower_turnover(pct)
+        elif dept_dz.is_dz_kpi(kid):
+            color = _rag_dz_lower_better(pct)
         else:
             color = _rag_higher_better(pct)
         items.append({
@@ -323,7 +334,7 @@ def _commercial_tiles_json_response(requested_dept: str, kpi_storage_key: str) -
         return JsonResponse({
             'error': f'No tile KPIs configured for department key "{kpi_storage_key}"',
         }, status=404)
-    entries = [_build_kpi_entry(k, 'плитка') for k in kpis_meta]
+    entries = [_build_kpi_entry(k, 'плитка', dept_key=kpi_storage_key) for k in kpis_meta]
     items = _build_commercial_plitki_items(kpis_meta, entries)
     return JsonResponse(
         {
@@ -367,7 +378,7 @@ def _generate_monthly_data(plan: float) -> list[dict]:
     return result
 
 
-def _build_kpi_entry(kpi: dict, block: str) -> dict:
+def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> dict:
     freq = kpi['frequency']
     entry = {
         'kpi_id': kpi['kpi_id'],
@@ -389,6 +400,17 @@ def _build_kpi_entry(kpi: dict, block: str) -> dict:
     }
 
     kpi_id = kpi['kpi_id']
+
+    if dept_key and dept_dz.is_dz_kpi(kpi_id):
+        dz = dept_dz.get_dept_dz_ytd(dept_key)
+        if dz is not None:
+            entry['data_granularity'] = 'monthly'
+            entry['monthly_data'] = dz['months']
+            entry['last_full_month_row'] = dz.get('last_full_month_row')
+            entry['ytd'] = dz['ytd']
+            entry['kpi_period'] = dz.get('kpi_period')
+            return entry
+
     if kpi_id == 'KD-M1':
         vp_data = valovaya_pribyl.get_vp_ytd()
         entry['data_granularity'] = 'monthly'
@@ -618,7 +640,7 @@ def get_all_departments(request):
             })
         elif isinstance((ck := commercial_kpi_key(dept)), str):
             kmeta = _ordered_commercial_kpi_dicts(ck)
-            entries = [_build_kpi_entry(k, 'плитка') for k in kmeta]
+            entries = [_build_kpi_entry(k, 'плитка', dept_key=ck) for k in kmeta]
             items = _build_commercial_plitki_items(kmeta, entries)
             summary.append({
                 'department': dept,
