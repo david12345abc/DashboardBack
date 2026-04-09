@@ -339,6 +339,7 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
                             "plan": p.get("plan_max_turnover_pct"),
                             "fact": p.get("fact_turnover_pct"),
                             "kpi_pct": p.get("kpi_pct"),
+                            "data_complete": p.get("data_complete"),
                         }
                         for p in qq2["quarterly_data"]
                     ],
@@ -352,7 +353,7 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
     m2_lm = m2.get("last_full_month_row")
     m3_last = m3_monthly[-1] if m3_monthly else None
     q1r = qq1["quarterly_data"][0] if qq1.get("quarterly_data") else None
-    q2_month = komdir_quarterly.turnover_last_full_month_row()
+    q2_summary = komdir_quarterly.kd_q2_summary_for_table()
 
     kpi_summary_rows: list[dict] = []
     if vp_lm and vp_lm.get("has_data"):
@@ -411,17 +412,19 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
             "kpi_pct": q1r.get("kpi_pct"),
             "deviation_pct": deviation_pct(pl, fc),
         })
-    pl_q2 = q2_month.get("plan_max_turnover_pct")
-    fc_q2 = q2_month.get("fact_turnover_pct")
+    pl_q2 = q2_summary["plan_max_turnover_pct"]
+    fc_q2 = q2_summary["fact_turnover_pct"]
     kpi_summary_rows.append({
         "kpi_id": "KD-Q2",
         "name": by_id["KD-Q2"]["name"],
-        "period_type": "month",
-        "kpi_period": q2_month["kpi_period"],
-        "label": q2_month.get("label"),
+        "period_type": "quarter",
+        "kpi_period": q2_summary["kpi_period"],
+        "label": q2_summary["label"],
+        "year": q2_summary["year"],
+        "quarter": q2_summary["quarter"],
         "plan": pl_q2,
         "fact": fc_q2,
-        "kpi_pct": q2_month.get("kpi_pct"),
+        "kpi_pct": q2_summary["kpi_pct"],
         "deviation_pct": deviation_pct(pl_q2, fc_q2),
         "unit": "%",
     })
@@ -430,8 +433,8 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
         "KD-T-KPI-SUMMARY": {
             "name": "Сводка KPI по периодам (последний месяц / последний квартал для Q1)",
             "description": (
-                "KD-M1, KD-M2, KD-M3, KD-Q2 — последний полный календарный месяц; "
-                "KD-Q1 — последний полный календарный квартал. "
+                "KD-M1, KD-M2, KD-M3 — последний полный месяц; "
+                "KD-Q1 и KD-Q2 — квартал (KD-Q2: 1-й квартал, данные могут быть неполными, см. data_complete). "
                 "deviation_pct = (факт − план) / план × 100."
             ),
             "rows": kpi_summary_rows,

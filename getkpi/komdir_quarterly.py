@@ -3,9 +3,9 @@
 
 KD-M3: 0,5 × MIN(1; План затрат / Факт затрат) + 0,5 × MIN(1; План ФОТ / Факт ФОТ) × 100%
 KD-Q1: 0,6 × KPI(ВП квартал) + 0,25 × KPI(ДЗ+ТОП‑5) + 0,15 × KPI(издержки) — части без данных = 100%
-KD-Q2 (текучесть): пока данные только за **март 2026** — план 4,3 %, факт 22 %, KPI 19 %.
-Плитка и график KD-C2 используют эту точку (метка «март 2026», квартал Q1).
-Пороги цвета факта: ≤5 % зелёный, 5,1–7 % жёлтый, >7 % красный.
+KD-Q2 (текучесть): **1-й квартал 2026** — одна точка на графике; данные могут быть **неполными**
+(`data_complete`: false). Снимок: план 4,3 %, факт 22 %, KPI 19 %.
+Пороги цвета по факту: ≤5 % зелёный, 5,1–7 % жёлтый, >7 % красный.
 """
 import random
 from datetime import date
@@ -18,11 +18,11 @@ _MONTH_RU = {
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
 
-# KD-Q2 коммерческого директора — фиксированный снимок (пока только март).
+# KD-Q2 коммерческого директора — снимок по 1-му кварталу (вводятся вручную, пока неполный).
 KD_Q2_REF_YEAR = 2026
-KD_Q2_REF_MONTH = 3
+KD_Q2_REF_QUARTER = 1
 KD_Q2_PLAN_TURNOVER_PCT = 4.3
-KD_Q2_FACT_TURNOVER_PCT = 22.0
+KD_Q2_FACT_TURNOVER_PCT = 22.9
 KD_Q2_KPI_PCT = 19.0
 
 
@@ -128,56 +128,52 @@ def quarterly_q1(vp_months: list[dict]) -> dict:
     }
 
 
-def turnover_last_full_month_row() -> dict:
-    """Строка текучести для таблицы KD-T-KPI-SUMMARY (сейчас только март 2026)."""
-    y, m = KD_Q2_REF_YEAR, KD_Q2_REF_MONTH
-    mn = _MONTH_RU[m]
+def kd_q2_summary_for_table() -> dict:
+    """Строка для KD-T-KPI-SUMMARY: KD-Q2 = 1-й квартал (данные могут быть неполными)."""
+    y, q = KD_Q2_REF_YEAR, KD_Q2_REF_QUARTER
     return {
-        "month": m,
+        "label": f"Q{q} {y}",
         "year": y,
-        "month_name": mn,
-        "label": f"{mn} {y}",
+        "quarter": q,
         "plan_max_turnover_pct": KD_Q2_PLAN_TURNOVER_PCT,
         "fact_turnover_pct": KD_Q2_FACT_TURNOVER_PCT,
         "kpi_pct": KD_Q2_KPI_PCT,
         "kpi_period": {
-            "type": "reference_month",
+            "type": "quarter",
             "year": y,
-            "month": m,
-            "month_name": mn,
-            "label": f"{mn} {y}",
+            "quarter": q,
+            "label": f"Q{q} {y}",
+            "data_complete": False,
         },
     }
 
 
 def quarterly_q2() -> dict:
-    """KD-Q2 — текучесть; пока одна точка за март 2026 (внутри Q1)."""
-    y = KD_Q2_REF_YEAR
-    q = 1  # март ∈ Q1
-    mn = _MONTH_RU[KD_Q2_REF_MONTH]
+    """KD-Q2 — текучесть за 1-й квартал; одна точка, неполные данные допустимы."""
+    y, q = KD_Q2_REF_YEAR, KD_Q2_REF_QUARTER
     quarter_row = {
-        'quarter': q,
-        'year': y,
-        'label': f'{mn} {y}',
-        'plan_max_turnover_pct': KD_Q2_PLAN_TURNOVER_PCT,
-        'fact_turnover_pct': KD_Q2_FACT_TURNOVER_PCT,
-        'kpi_pct': KD_Q2_KPI_PCT,
+        "quarter": q,
+        "year": y,
+        "label": f"Q{q} {y}",
+        "plan_max_turnover_pct": KD_Q2_PLAN_TURNOVER_PCT,
+        "fact_turnover_pct": KD_Q2_FACT_TURNOVER_PCT,
+        "kpi_pct": KD_Q2_KPI_PCT,
+        "data_complete": False,
     }
 
     return {
-        'year': y,
-        'quarterly_data': [quarter_row],
-        'kpi_period': {
-            'type': 'reference_month',
-            'year': y,
-            'month': KD_Q2_REF_MONTH,
-            'month_name': mn,
-            'quarter': q,
-            'label': quarter_row['label'],
+        "year": y,
+        "quarterly_data": [quarter_row],
+        "kpi_period": {
+            "type": "quarter",
+            "year": y,
+            "quarter": q,
+            "label": f"Q{q} {y}",
+            "data_complete": False,
         },
-        'ytd': {
-            'kpi_pct': KD_Q2_KPI_PCT,
-            'quarters_with_data': 1,
-            'quarters_total': 1,
+        "ytd": {
+            "kpi_pct": KD_Q2_KPI_PCT,
+            "quarters_with_data": 1,
+            "quarters_total": 1,
         },
     }
