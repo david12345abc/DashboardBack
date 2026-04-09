@@ -271,7 +271,7 @@ def get_vp_ytd() -> dict:
 
     Итоговый KPI (ytd) — тот же последний полный месяц.
 
-    Кэшируется на день. Если кэша 1С нет — запускает calc_vp_fast.py.
+    Кэшируется на день. Если кэша д1С нет — запускает calc_vp_fast.py.
     """
     cached = _load_result_cache()
     if cached is not None:
