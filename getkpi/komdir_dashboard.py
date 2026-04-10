@@ -110,43 +110,6 @@ def monthly_m3_chart_series() -> list[dict]:
     return out
 
 
-def _table_b1_rows() -> list[dict]:
-    random.seed(date.today().toordinal())
-    statuses = ["Зелёный", "Жёлтый", "Красный"]
-    actions = [
-        "Скорректировать план",
-        "Провести анализ причин",
-        "Назначить ответственного",
-        "Усилить контроль",
-    ]
-    n = random.randint(3, 5)
-    rows = []
-    for i in range(1, n + 1):
-        rows.append({
-            "rank": i,
-            "kpi_name": random.choice(["KD-M1", "KD-M2", "KD-Q1"]),
-            "status": random.choice(statuses),
-            "deviation_pct": round(random.uniform(-15, -1), 1),
-            "action": random.choice(actions),
-        })
-    return rows
-
-
-def _table_b2_rows() -> list[dict]:
-    random.seed(date.today().toordinal() + 1)
-    n = random.randint(2, 4)
-    rows = []
-    for i in range(1, n + 1):
-        rows.append({
-            "rank": i,
-            "risk": f"Риск зона {i}",
-            "decision": "Эскалация / согласование",
-            "deadline": f"2026-{date.today().month + 1:02d}-15",
-            "owner": "Ответственный",
-            "status": random.choice(["Открыто", "В работе", "Закрыто"]),
-        })
-    return rows
-
 
 def build_komdir_payload(kpi_list: list[dict]) -> dict:
     by_id = {k["kpi_id"]: k for k in kpi_list}
@@ -193,6 +156,10 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
             "color": color,
             "period": _period_label(meta),
             "thresholds": _thresholds_block(meta),
+            "formula": meta.get("formula"),
+            "unit": meta.get("unit"),
+            "source": meta.get("source"),
+            "frequency": meta.get("frequency"),
         })
 
     avg_pct = round(sum(numeric_for_avg) / len(numeric_for_avg), 1) if numeric_for_avg else None
@@ -207,6 +174,10 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
             "yellow": "90–99,9%",
             "red": "<90%",
         },
+        "formula": "Среднее арифметическое kpi_pct всех плиток (KD-M1 … KD-Q2)",
+        "unit": "%",
+        "source": "Расчётный показатель",
+        "frequency": "агрегат",
     })
 
     # --- График KD-C1 (ежемесячно)
@@ -370,79 +341,56 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
     if q1r:
         pl_q1, fc_q1 = q1r.get("vp_plan"), q1r.get("vp_fact")
 
-    kpi_summary_rows: list[dict] = [
-        {
-            "kpi_id": "KD-M1",
-            "name": by_id["KD-M1"]["name"],
-            "plan": pl_m1,
-            "fact": fc_m1,
-            "kpi_pct": y1m,
-            "color": _rag_higher_better(y1m),
-        },
-        {
-            "kpi_id": "KD-M2",
-            "name": by_id["KD-M2"]["name"],
-            "plan": pl_m2,
-            "fact": fc_m2,
-            "kpi_pct": y2m,
-            "color": _rag_m2_debt(y2m),
-        },
-        {
-            "kpi_id": "KD-M3",
-            "name": by_id["KD-M3"]["name"],
-            "plan": pl_m3,
-            "fact": fc_m3,
-            "kpi_pct": y3m,
-            "color": _rag_higher_better(y3m),
-        },
-        {
-            "kpi_id": "KD-Q1",
-            "name": by_id["KD-Q1"]["name"],
-            "plan": pl_q1,
-            "fact": fc_q1,
-            "kpi_pct": yq1,
-            "color": _rag_higher_better(yq1),
-        },
-        {
-            "kpi_id": "KD-Q2",
-            "name": by_id["KD-Q2"]["name"],
-            "plan": pl_q2,
-            "fact": fc_q2,
-            "kpi_pct": yq2_kpi,
-            "color": _rag_lower_turnover(q2_turnover),
-        },
-        {
-            "kpi_id": "KD-AVG",
-            "name": "Среднее по плиткам KPI",
-            "plan": None,
-            "fact": None,
-            "kpi_pct": avg_pct,
-            "color": _rag_higher_better(avg_pct),
-        },
-    ]
-
     tablitsy = {
-        "KD-T-KPI-SUMMARY": {
-            "name": "Сводка KPI (как плитки)",
-            "description": (
-                "Строки в том же порядке, что и плитки: KD-M1…KD-Q2 — план/факт за последний полный месяц "
-                "(M1–M3) или за квартал (Q1–Q2); kpi_pct и color совпадают с плитками. "
-                "KD-AVG — только kpi_pct и color, без плана/факта. При неполных данных plan/fact могут быть null."
-            ),
-            "rows": kpi_summary_rows,
-        },
-        "KD-B1": {
-            "kpi_id": "KD-B1",
-            "name": by_id["KD-B1"]["name"],
-            "periodicity": _period_label(by_id["KD-B1"]),
-            "rows": _table_b1_rows(),
-        },
-        "KD-B2": {
-            "kpi_id": "KD-B2",
-            "name": by_id["KD-B2"]["name"],
-            "periodicity": _period_label(by_id["KD-B2"]),
-            "rows": _table_b2_rows(),
-        },
+        "месяц": [
+            {
+                "kpi_id": "KD-M1",
+                "name": by_id["KD-M1"]["name"],
+                "plan": pl_m1,
+                "fact": fc_m1,
+                "kpi_pct": y1m,
+                "color": _rag_higher_better(y1m),
+                "formula": by_id["KD-M1"].get("formula"),
+            },
+            {
+                "kpi_id": "KD-M2",
+                "name": by_id["KD-M2"]["name"],
+                "plan": pl_m2,
+                "fact": fc_m2,
+                "kpi_pct": y2m,
+                "color": _rag_m2_debt(y2m),
+                "formula": by_id["KD-M2"].get("formula"),
+            },
+            {
+                "kpi_id": "KD-M3",
+                "name": by_id["KD-M3"]["name"],
+                "plan": pl_m3,
+                "fact": fc_m3,
+                "kpi_pct": y3m,
+                "color": _rag_higher_better(y3m),
+                "formula": by_id["KD-M3"].get("formula"),
+            },
+        ],
+        "квартал": [
+            {
+                "kpi_id": "KD-Q1",
+                "name": by_id["KD-Q1"]["name"],
+                "plan": pl_q1,
+                "fact": fc_q1,
+                "kpi_pct": yq1,
+                "color": _rag_higher_better(yq1),
+                "formula": by_id["KD-Q1"].get("formula"),
+            },
+            {
+                "kpi_id": "KD-Q2",
+                "name": by_id["KD-Q2"]["name"],
+                "plan": pl_q2,
+                "fact": fc_q2,
+                "kpi_pct": yq2_kpi,
+                "color": _rag_lower_turnover(q2_turnover),
+                "formula": by_id["KD-Q2"].get("formula"),
+            },
+        ],
     }
 
     return {
