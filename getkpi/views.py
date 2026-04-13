@@ -8,7 +8,6 @@ from django.views.decorators.http import require_GET
 
 from User.views import login_required
 from . import (
-    commercial_branch_dashboard,
     denzhi_dz,
     dept_budget_m3,
     dept_dz,
@@ -17,15 +16,9 @@ from . import (
     komdir_quarterly,
     valovaya_pribyl,
 )
-from .commercial_tiles import commercial_kpi_key, tile_order_for_kpi_key
+from .commercial_tiles import commercial_kpi_key
 from .kpi_periods import last_full_month, last_full_quarter
-
-# Только плитки дашборда коммерческого директора (KD-Y1 дублирует KD-M1)
-KOMDIR_TILE_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-Q1', 'KD-Q2'})
-
-_KPI_FILE = Path(__file__).resolve().parent / 'kpi_data.json'
-with open(_KPI_FILE, encoding='utf-8') as _f:
-    KPI_DATA: dict[str, list[dict]] = json.load(_f)
+from .models import KpiDefinition
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
 _structure_cache: dict | None = None
@@ -46,19 +39,33 @@ def get_structure_data() -> dict:
     _structure_mtime = mtime
     return _structure_cache
 
-DEPARTMENTS = sorted(KPI_DATA.keys())
-_KPI_LOWER_MAP = {k.lower(): k for k in KPI_DATA.keys()}
+def _get_departments() -> list[str]:
+    return list(
+        KpiDefinition.objects.values_list('department', flat=True)
+        .distinct().order_by('department')
+    )
+
+
+def _get_kpi_dicts(department: str) -> list[dict]:
+    """Все KPI подразделения из БД в формате dict (как был kpi_data.json)."""
+    return [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
 
 
 def _lookup_kpi_data(department: str) -> list[dict] | None:
-    """Case-insensitive lookup in KPI_DATA."""
-    kpis = KPI_DATA.get(department)
-    if kpis is not None:
-        return kpis
-    real_key = _KPI_LOWER_MAP.get(department.lower())
-    if real_key:
-        return KPI_DATA[real_key]
-    return None
+    """Case-insensitive lookup в таблице kpi_definition."""
+    qs = KpiDefinition.objects.filter(department=department)
+    if not qs.exists():
+        qs = KpiDefinition.objects.filter(department__iexact=department)
+    if not qs.exists():
+        return None
+    return [obj.to_dict() for obj in qs]
+
+
+def _all_department_names() -> set[str]:
+    """Множество всех уникальных department из БД."""
+    return set(
+        KpiDefinition.objects.values_list('department', flat=True).distinct()
+    )
 
 
 def _collect_all_keys(tree) -> set[str]:
@@ -106,7 +113,7 @@ def _find_subordinates(tree, target: str) -> set[str] | None:
 def _get_allowed_departments(user_department: str) -> set[str]:
     """
     Возвращает множество подразделений, которые пользователь имеет право просматривать.
-    Включает как ключи из structure.json, так и соответствующие ключи из KPI_DATA
+    Включает как ключи из structure.json, так и соответствующие ключи из БД KPI
     (case-insensitive matching).
     """
     subordinates = _find_subordinates(get_structure_data(), user_department)
@@ -115,7 +122,8 @@ def _get_allowed_departments(user_department: str) -> set[str]:
 
     result = set(subordinates)
     result.add(user_department)
-    lower_map = {d.lower(): d for d in KPI_DATA.keys()}
+    db_depts = _all_department_names()
+    lower_map = {d.lower(): d for d in db_depts}
     for sub in subordinates:
         kpi_key = lower_map.get(sub.lower())
         if kpi_key:
@@ -179,22 +187,6 @@ def _is_komdir_department(dept: str) -> bool:
     d = dept.strip().lower()
     return 'коммерческий' in d and 'директор' in d
 
-
-def _filter_kpis_for_department(dept: str, kpis: list[dict]) -> list[dict]:
-    if _is_komdir_department(dept):
-        return [k for k in kpis if k.get('kpi_id') in KOMDIR_TILE_IDS]
-    return kpis
-
-
-def _ordered_commercial_kpi_dicts(kpi_storage_key: str) -> list[dict]:
-    order = tile_order_for_kpi_key(kpi_storage_key)
-    if not order:
-        return []
-    raw = KPI_DATA.get(kpi_storage_key)
-    if not raw:
-        return []
-    by_id = {k['kpi_id']: k for k in raw}
-    return [by_id[i] for i in order if i in by_id]
 
 
 def _thresholds_block(kpi: dict) -> dict:
@@ -306,68 +298,113 @@ def _synthetic_year_row_for_tile(kpi: dict) -> tuple[dict, dict]:
     return row, period
 
 
-def _build_commercial_plitki_items(kpis_meta: list[dict], entries: list[dict]) -> list[dict]:
-    by_id = {e['kpi_id']: e for e in entries}
-    items = []
-    for kpi in kpis_meta:
-        kid = kpi['kpi_id']
-        entry = by_id.get(kid)
-        if not entry:
-            continue
-        y = entry.get('ytd') or {}
-        pct = y.get('kpi_pct')
+def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
+    """Вычислить kpi_pct и RAG-цвет для плитки."""
+    ytd = entry.get('ytd') or {}
+    pct = ytd.get('kpi_pct')
+    if pct is not None:
+        pct = float(pct)
+    kid = kpi.get('kpi_id', '')
+    if _is_turnover_style_tile(kpi):
+        qd = entry.get('quarterly_data') or []
+        turnover = qd[-1].get('fact_turnover_pct') if qd else None
+        color_src = pct if pct is not None else turnover
+        color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
+    elif dept_dz.is_dz_kpi(kid):
+        color = _rag_dz_lower_better(pct)
+    elif _is_budget_limit_m3_kpi(kid):
+        color = _rag_dz_lower_better(pct)
+    else:
+        color = _rag_higher_better(pct)
+    return pct, color
+
+
+def _build_tile_item(kpi: dict, pct: float | None, color: str) -> dict:
+    return {
+        'kpi_id': kpi['kpi_id'],
+        'name': kpi['name'],
+        'kpi_pct': pct,
+        'color': color,
+        'period': _period_label_from_kpi(kpi),
+        'thresholds': _thresholds_block(kpi),
+        'formula': kpi.get('formula'),
+        'unit': kpi.get('unit'),
+        'source': kpi.get('source'),
+        'frequency': kpi.get('frequency'),
+    }
+
+
+def _build_universal_payload(dept: str, all_kpis: list[dict]) -> dict:
+    """
+    Универсальный билдер: Плитки (+ AVG), Графики, Таблицы.
+    Формат полностью совпадает с комдиром.
+    """
+    tiles_meta = [k for k in all_kpis if k.get('block', 'плитка') == 'плитка']
+    charts_meta = [k for k in all_kpis if k.get('block') == 'график']
+    tables_meta = [k for k in all_kpis if k.get('block') == 'таблица']
+
+    plitki_items: list[dict] = []
+    numeric_for_avg: list[float] = []
+
+    for kpi in tiles_meta:
+        entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept)
+        pct, color = _tile_color(kpi, entry)
         if pct is not None:
-            pct = float(pct)
-        if _is_turnover_style_tile(kpi):
-            qd = entry.get('quarterly_data') or []
-            turnover = qd[-1].get('fact_turnover_pct') if qd else None
-            # Цвет от KPI на плитке (kpi_pct), если задан — иначе от fact в точке квартала.
-            color_src = pct if pct is not None else turnover
-            color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
-        elif dept_dz.is_dz_kpi(kid):
-            color = _rag_dz_lower_better(pct)
-        elif _is_budget_limit_m3_kpi(kid):
-            color = _rag_dz_lower_better(pct)
+            numeric_for_avg.append(pct)
+        plitki_items.append(_build_tile_item(kpi, pct, color))
+
+    prefix = tiles_meta[0]['kpi_id'].split('-')[0] if tiles_meta else 'KPI'
+    avg_pct = round(sum(numeric_for_avg) / len(numeric_for_avg), 1) if numeric_for_avg else None
+    plitki_items.append({
+        'kpi_id': f'{prefix}-AVG',
+        'name': 'Среднее по плиткам KPI',
+        'kpi_pct': avg_pct,
+        'color': _rag_higher_better(avg_pct),
+        'period': 'агрегат',
+        'thresholds': {'green': '≥100%', 'yellow': '90–99,9%', 'red': '<90%'},
+        'formula': 'Среднее арифметическое kpi_pct всех плиток',
+        'unit': '%',
+        'source': 'Расчётный показатель',
+        'frequency': 'агрегат',
+    })
+
+    grafiki = {}
+    for chart_kpi in charts_meta:
+        cid = chart_kpi['kpi_id']
+        grafiki[cid] = {
+            'kpi_id': cid,
+            'name': chart_kpi['name'],
+            'periodicity': _period_label_from_kpi(chart_kpi),
+            'chart_type': chart_kpi.get('chart_type', ''),
+            'chart_type_label': chart_kpi.get('chart_type_label', ''),
+            'formula': chart_kpi.get('formula'),
+        }
+
+    monthly_rows: list[dict] = []
+    quarterly_rows: list[dict] = []
+    for tile in plitki_items:
+        if tile['kpi_id'].endswith('-AVG'):
+            continue
+        freq = (tile.get('frequency') or '').lower()
+        row = {
+            'kpi_id': tile['kpi_id'],
+            'name': tile['name'],
+            'kpi_pct': tile['kpi_pct'],
+            'color': tile['color'],
+            'formula': tile.get('formula'),
+        }
+        if 'квартал' in freq or 'год' in freq or 'ежегодн' in freq:
+            quarterly_rows.append(row)
         else:
-            color = _rag_higher_better(pct)
-        items.append({
-            'kpi_id': kid,
-            'name': kpi['name'],
-            'kpi_pct': pct,
-            'color': color,
-            'period': _period_label_from_kpi(kpi),
-            'thresholds': _thresholds_block(kpi),
-            'formula': kpi.get('formula'),
-            'unit': kpi.get('unit'),
-            'source': kpi.get('source'),
-            'frequency': kpi.get('frequency'),
-        })
-    return items
+            monthly_rows.append(row)
 
+    tablitsy = {'месяц': monthly_rows, 'квартал': quarterly_rows}
 
-def _commercial_tiles_json_response(requested_dept: str, kpi_storage_key: str) -> JsonResponse:
-    kpis_meta = _ordered_commercial_kpi_dicts(kpi_storage_key)
-    if not kpis_meta:
-        return JsonResponse({
-            'error': f'No tile KPIs configured for department key "{kpi_storage_key}"',
-        }, status=404)
-    entries = [_build_kpi_entry(k, 'плитка', dept_key=kpi_storage_key) for k in kpis_meta]
-    items = _build_commercial_plitki_items(kpis_meta, entries)
-    raw_dept = KPI_DATA.get(kpi_storage_key, [])
-    branch_extra = commercial_branch_dashboard.build_commercial_branch_payload(
-        kpi_storage_key, kpis_meta, entries, raw_dept,
-    )
-    return JsonResponse(
-        {
-            'department': requested_dept,
-            'kpi_storage_key': kpi_storage_key,
-            'kpi_count': len(items),
-            'Плитки': {'count': len(items), 'items': items},
-            **branch_extra,
-            'kpis': entries,
-        },
-        json_dumps_params={'ensure_ascii': False},
-    )
+    return {
+        'Плитки': {'count': len(plitki_items), 'items': plitki_items},
+        'Графики': grafiki,
+        'Таблицы': tablitsy,
+    }
 
 
 MONTH_NAMES = {
@@ -576,42 +613,43 @@ def get_kpi(request):
                 'kpi_count': 0,
                 'message': 'Информация по KPI для этого подразделения не найдена',
                 'Плитки': {'count': 0, 'items': []},
+                'Графики': {},
+                'Таблицы': {'месяц': [], 'квартал': []},
             },
             json_dumps_params={'ensure_ascii': False},
         )
+
     if isinstance(ck, str):
-        return _commercial_tiles_json_response(requested_dept, ck)
+        kpis = _get_kpi_dicts(ck)
+        if not kpis:
+            return JsonResponse({
+                'error': f'No KPIs configured for department key "{ck}"',
+            }, status=404)
+        payload = _build_universal_payload(ck, kpis)
+        return JsonResponse(
+            {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+            json_dumps_params={'ensure_ascii': False},
+        )
 
     kpis = _lookup_kpi_data(requested_dept)
     if kpis is None:
         return JsonResponse({
             'error': f'Department "{requested_dept}" not found in KPI database',
-            'available_departments': DEPARTMENTS,
+            'available_departments': _get_departments(),
         }, status=404)
 
     if _is_komdir_department(requested_dept):
         payload = komdir_dashboard.build_komdir_payload(kpis)
         return JsonResponse(
-            {
-                'department': requested_dept,
-                'kpi_count': payload['Плитки']['count'],
-                **payload,
-            },
+            {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
             json_dumps_params={'ensure_ascii': False},
         )
 
-    kpis = _filter_kpis_for_department(requested_dept, kpis)
-    result = []
-    for kpi in kpis:
-        block = kpi.get('block', 'плитка')
-        entry = _build_kpi_entry(kpi, block)
-        result.append(entry)
-
-    return JsonResponse({
-        'department': requested_dept,
-        'kpi_count': len(result),
-        'kpis': result,
-    })
+    payload = _build_universal_payload(requested_dept, kpis)
+    return JsonResponse(
+        {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+        json_dumps_params={'ensure_ascii': False},
+    )
 
 
 @require_GET
@@ -637,11 +675,23 @@ def get_all_departments(request):
                     'kpi_count': 0,
                     'message': 'Информация по KPI для этого подразделения не найдена',
                     'Плитки': {'count': 0, 'items': []},
+                    'Графики': {},
+                    'Таблицы': {'месяц': [], 'квартал': []},
                 },
                 json_dumps_params={'ensure_ascii': False},
             )
+
         if isinstance(ck, str):
-            return _commercial_tiles_json_response(requested_dept, ck)
+            kpis = _get_kpi_dicts(ck)
+            if not kpis:
+                return JsonResponse({
+                    'error': f'No KPIs configured for department key "{ck}"',
+                }, status=404)
+            payload = _build_universal_payload(ck, kpis)
+            return JsonResponse(
+                {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+                json_dumps_params={'ensure_ascii': False},
+            )
 
         kpis = _lookup_kpi_data(requested_dept)
         if kpis is None:
@@ -652,57 +702,32 @@ def get_all_departments(request):
         if _is_komdir_department(requested_dept):
             payload = komdir_dashboard.build_komdir_payload(kpis)
             return JsonResponse(
-                {
-                    'department': requested_dept,
-                    'kpi_count': payload['Плитки']['count'],
-                    **payload,
-                },
+                {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
                 json_dumps_params={'ensure_ascii': False},
             )
 
-        kpis = _filter_kpis_for_department(requested_dept, kpis)
-        dept_kpis = [_build_kpi_entry(kpi, kpi.get('block', 'плитка')) for kpi in kpis]
-        return JsonResponse({
-            'department': requested_dept,
-            'kpi_count': len(dept_kpis),
-            'kpis': dept_kpis,
-        })
+        payload = _build_universal_payload(requested_dept, kpis)
+        return JsonResponse(
+            {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+            json_dumps_params={'ensure_ascii': False},
+        )
 
     summary = []
-    for dept, kpis in KPI_DATA.items():
+    all_depts = _get_departments()
+    for dept in all_depts:
         if dept not in allowed:
             continue
+        kpis = _get_kpi_dicts(dept)
         if _is_komdir_department(dept):
             payload = komdir_dashboard.build_komdir_payload(kpis)
-            summary.append({
-                'department': dept,
-                'kpi_count': payload['Плитки']['count'],
-                **payload,
-            })
+            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
         elif isinstance((ck := commercial_kpi_key(dept)), str):
-            kmeta = _ordered_commercial_kpi_dicts(ck)
-            entries = [_build_kpi_entry(k, 'плитка', dept_key=ck) for k in kmeta]
-            items = _build_commercial_plitki_items(kmeta, entries)
-            raw_dept = KPI_DATA.get(ck, [])
-            branch_extra = commercial_branch_dashboard.build_commercial_branch_payload(
-                ck, kmeta, entries, raw_dept,
-            )
-            summary.append({
-                'department': dept,
-                'kpi_storage_key': ck,
-                'kpi_count': len(items),
-                'Плитки': {'count': len(items), 'items': items},
-                **branch_extra,
-                'kpis': entries,
-            })
+            ck_kpis = _get_kpi_dicts(ck)
+            payload = _build_universal_payload(ck, ck_kpis)
+            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
         else:
-            fkpis = _filter_kpis_for_department(dept, kpis)
-            dept_kpis = [_build_kpi_entry(kpi, kpi.get('block', 'плитка')) for kpi in fkpis]
-            summary.append({
-                'department': dept,
-                'kpi_count': len(dept_kpis),
-                'kpis': dept_kpis,
-            })
+            payload = _build_universal_payload(dept, kpis)
+            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
 
     return JsonResponse(
         {'departments': summary},
@@ -713,7 +738,7 @@ def get_all_departments(request):
 @require_GET
 @login_required
 def get_departments_list(request):
-    return JsonResponse({'departments': DEPARTMENTS})
+    return JsonResponse({'departments': _get_departments()})
 
 
 @require_GET
@@ -747,5 +772,20 @@ def get_immediate_subordinates(request):
             'immediate_children': children,
             'count': len(children),
         },
+        json_dumps_params={'ensure_ascii': False},
+    )
+
+
+@require_GET
+def get_users_departments(request):
+    """Список пользователей и их подразделений (без авторизации)."""
+    from User.models import User as AppUser
+
+    users = list(
+        AppUser.objects.values('nickname', 'department')
+        .order_by('department', 'nickname')
+    )
+    return JsonResponse(
+        {'users': users, 'count': len(users)},
         json_dumps_params={'ensure_ascii': False},
     )

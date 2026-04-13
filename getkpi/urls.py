@@ -12,4 +12,5 @@ urlpatterns = [
         views.get_immediate_subordinates,
         name='immediate-subordinates',
     ),
+    path('users/', views.get_users_departments, name='users-departments'),
 ]
