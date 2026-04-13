@@ -563,15 +563,23 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
             }
         else:
             plan = 100.0
+            entry['data_granularity'] = 'monthly'
             entry['monthly_data'] = _generate_monthly_data(plan)
-            last = entry['monthly_data'][-1] if entry['monthly_data'] else None
-            if last:
+            months = entry['monthly_data']
+            with_data = [r for r in months if r.get('kpi_pct') is not None]
+            last = months[-1] if months else None
+            if with_data:
+                total_plan = sum(r['plan'] for r in with_data)
+                total_fact = sum(r['fact'] for r in with_data)
+                avg_kpi = round(
+                    sum(r['kpi_pct'] for r in with_data) / len(with_data), 1
+                )
                 entry['ytd'] = {
-                    'total_plan': last['plan'],
-                    'total_fact': last['fact'],
-                    'kpi_pct': last['kpi_pct'],
-                    'months_with_data': 1,
-                    'months_total': 1,
+                    'total_plan': total_plan,
+                    'total_fact': total_fact,
+                    'kpi_pct': avg_kpi,
+                    'months_with_data': len(with_data),
+                    'months_total': len(months),
                 }
                 entry['kpi_period'] = {
                     'type': 'last_full_month',
