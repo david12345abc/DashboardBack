@@ -28,7 +28,8 @@ from __future__ import annotations
 import random
 from datetime import date
 
-from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_otgruzki_fact, valovaya_pribyl
+from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_otgruzki_fact, calc_plan, valovaya_pribyl
+from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
 from .kpi_periods import last_full_month
 
 MONTH_NAMES_RU = {
@@ -129,136 +130,84 @@ def _generate_tile_monthly_data(kpi_id: str, plan: float,
     return result
 
 
+def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, float],
+                          ref_y: int, ref_m: int) -> dict:
+    """Общая логика сборки плитки план/факт для KD-M1/M2/M3."""
+    months = []
+    ref_row = None
+    for row in raw_months:
+        m = row.get('month')
+        fact = row.get('fact')
+        plan = plans_by_month.get(m, 0)
+        pct = round(fact / plan * 100, 1) if plan and fact is not None else None
+        mrow = {
+            'month': m,
+            'year': row.get('year'),
+            'month_name': MONTH_NAMES_RU.get(m, ''),
+            'plan': plan,
+            'fact': fact,
+            'kpi_pct': pct,
+            'has_data': fact is not None,
+        }
+        months.append(mrow)
+        if row.get('year') == ref_y and m == ref_m:
+            ref_row = mrow
+
+    with_data = [r for r in months if r.get('kpi_pct') is not None]
+    fallback_plan = plans_by_month.get(ref_m, 0)
+    return {
+        'monthly_data': months,
+        'last_full_month_row': dict(ref_row) if ref_row else None,
+        'ytd': {
+            'total_plan': ref_row['plan'] if ref_row else fallback_plan,
+            'total_fact': ref_row['fact'] if ref_row else 0,
+            'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+            'months_with_data': len(with_data),
+            'months_total': len(months),
+        },
+        'kpi_period': {
+            'type': 'last_full_month',
+            'year': ref_y,
+            'month': ref_m,
+            'month_name': MONTH_NAMES_RU[ref_m],
+        },
+    }
+
+
 def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
-                   ref_y: int, ref_m: int, dz_payload: dict | None = None) -> dict:
+                   ref_y: int, ref_m: int, dz_payload: dict | None = None,
+                   dept_guid: str | None = None,
+                   plans_payload: dict | None = None) -> dict:
     """Получить данные для одной плитки.
-    KD-M3 — из calc_dogovory_fact,
+    KD-M1/M2/M3 — факт из calc-модулей + план из plans_payload,
     KD-M4/KD-M5 — из calc_debitorka,
     KD-M6 — из valovaya_pribyl,
     остальные — синтетика.
+    dept_guid — GUID подразделения для фильтрации (None = агрегат).
+    plans_payload — результат calc_plan.get_plans_monthly().
     """
-    if kpi_id == 'KD-M1':
-        dengi = calc_dengi_fact.get_dengi_monthly(year=ref_y, month=ref_m)
-        raw_months = dengi.get('months', [])
-        plan = 100_000_000.0
-        months = []
-        ref_row = None
-        for row in raw_months:
-            fact = row.get('fact')
-            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
-            mrow = {
-                'month': row.get('month'),
-                'year': row.get('year'),
-                'month_name': MONTH_NAMES_RU.get(row.get('month'), ''),
-                'plan': plan,
-                'fact': fact,
-                'kpi_pct': pct,
-                'has_data': fact is not None,
-            }
-            months.append(mrow)
-            if row.get('year') == ref_y and row.get('month') == ref_m:
-                ref_row = mrow
+    plans_months = (plans_payload or {}).get('months', [])
 
-        with_data = [r for r in months if r.get('kpi_pct') is not None]
-        return {
-            'monthly_data': months,
-            'last_full_month_row': dict(ref_row) if ref_row else None,
-            'ytd': {
-                'total_plan': ref_row['plan'] if ref_row else plan,
-                'total_fact': ref_row['fact'] if ref_row else 0,
-                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
-                'months_with_data': len(with_data),
-                'months_total': len(months),
-            },
-            'kpi_period': {
-                'type': 'last_full_month',
-                'year': ref_y,
-                'month': ref_m,
-                'month_name': MONTH_NAMES_RU[ref_m],
-            },
-        }
+    if kpi_id == 'KD-M1':
+        dengi = calc_dengi_fact.get_dengi_monthly(year=ref_y, month=ref_m,
+                                                   dept_guid=dept_guid)
+        plans_by_month = {r['month']: r.get('dengi', 0) for r in plans_months}
+        return _build_plan_fact_tile(dengi.get('months', []), plans_by_month,
+                                     ref_y, ref_m)
 
     if kpi_id == 'KD-M2':
-        otg = calc_otgruzki_fact.get_otgruzki_monthly(year=ref_y, month=ref_m)
-        raw_months = otg.get('months', [])
-        plan = 100_000_000.0
-        months = []
-        ref_row = None
-        for row in raw_months:
-            fact = row.get('fact')
-            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
-            mrow = {
-                'month': row.get('month'),
-                'year': row.get('year'),
-                'month_name': MONTH_NAMES_RU.get(row.get('month'), ''),
-                'plan': plan,
-                'fact': fact,
-                'kpi_pct': pct,
-                'has_data': fact is not None,
-            }
-            months.append(mrow)
-            if row.get('year') == ref_y and row.get('month') == ref_m:
-                ref_row = mrow
-
-        with_data = [r for r in months if r.get('kpi_pct') is not None]
-        return {
-            'monthly_data': months,
-            'last_full_month_row': dict(ref_row) if ref_row else None,
-            'ytd': {
-                'total_plan': ref_row['plan'] if ref_row else plan,
-                'total_fact': ref_row['fact'] if ref_row else 0,
-                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
-                'months_with_data': len(with_data),
-                'months_total': len(months),
-            },
-            'kpi_period': {
-                'type': 'last_full_month',
-                'year': ref_y,
-                'month': ref_m,
-                'month_name': MONTH_NAMES_RU[ref_m],
-            },
-        }
+        otg = calc_otgruzki_fact.get_otgruzki_monthly(year=ref_y, month=ref_m,
+                                                       dept_guid=dept_guid)
+        plans_by_month = {r['month']: r.get('otgruzki', 0) for r in plans_months}
+        return _build_plan_fact_tile(otg.get('months', []), plans_by_month,
+                                     ref_y, ref_m)
 
     if kpi_id == 'KD-M3':
-        dog = calc_dogovory_fact.get_dogovory_monthly(year=ref_y, month=ref_m)
-        raw_months = dog.get('months', [])
-        plan = 100_000_000.0
-        months = []
-        ref_row = None
-        for row in raw_months:
-            fact = row.get('fact')
-            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
-            mrow = {
-                'month': row.get('month'),
-                'year': row.get('year'),
-                'month_name': MONTH_NAMES_RU.get(row.get('month'), ''),
-                'plan': plan,
-                'fact': fact,
-                'kpi_pct': pct,
-                'has_data': fact is not None,
-            }
-            months.append(mrow)
-            if row.get('year') == ref_y and row.get('month') == ref_m:
-                ref_row = mrow
-
-        with_data = [r for r in months if r.get('kpi_pct') is not None]
-        return {
-            'monthly_data': months,
-            'last_full_month_row': dict(ref_row) if ref_row else None,
-            'ytd': {
-                'total_plan': ref_row['plan'] if ref_row else plan,
-                'total_fact': ref_row['fact'] if ref_row else 0,
-                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
-                'months_with_data': len(with_data),
-                'months_total': len(months),
-            },
-            'kpi_period': {
-                'type': 'last_full_month',
-                'year': ref_y,
-                'month': ref_m,
-                'month_name': MONTH_NAMES_RU[ref_m],
-            },
-        }
+        dog = calc_dogovory_fact.get_dogovory_monthly(year=ref_y, month=ref_m,
+                                                       dept_guid=dept_guid)
+        plans_by_month = {r['month']: r.get('dogovory', 0) for r in plans_months}
+        return _build_plan_fact_tile(dog.get('months', []), plans_by_month,
+                                     ref_y, ref_m)
 
     if kpi_id == 'KD-M6':
         vp = valovaya_pribyl.get_vp_ytd()
@@ -477,8 +426,11 @@ def _build_claims_table(ref_y: int, ref_m: int) -> dict:
 
 def build_komdir_payload(kpi_list: list[dict],
                          month: int | None = None,
-                         year: int | None = None) -> dict:
-    """Полный payload для ответа API коммерческого директора."""
+                         year: int | None = None,
+                         dept_guid: str | None = None) -> dict:
+    """Полный payload для ответа API коммерческого директора.
+    dept_guid — GUID подразделения для фильтрации (None = агрегат всех отделов).
+    """
     by_id = {k["kpi_id"]: k for k in kpi_list}
 
     if month and year:
@@ -495,11 +447,20 @@ def build_komdir_payload(kpi_list: list[dict],
         if kid in by_id
     ]
 
-    dz_payload = calc_debitorka.get_komdir_dz_monthly(year=ref_y, month=ref_m)
+    dz_dept_name = DEPT_GUID_TO_DZ_NAME.get(dept_guid) if dept_guid else None
+    dz_payload = calc_debitorka.get_komdir_dz_monthly(
+        year=ref_y, month=ref_m, dept_name=dz_dept_name,
+    )
+    plans_payload = calc_plan.get_plans_monthly(
+        year=ref_y, month=ref_m, dept_guid=dept_guid,
+    )
 
     tiles_data: dict[str, dict] = {}
     for kid in tile_ids:
-        tiles_data[kid] = _get_tile_data(kid, pairs, ref_y, ref_m, dz_payload=dz_payload)
+        tiles_data[kid] = _get_tile_data(kid, pairs, ref_y, ref_m,
+                                         dz_payload=dz_payload,
+                                         dept_guid=dept_guid,
+                                         plans_payload=plans_payload)
 
     plitki_items = []
     numeric_for_avg: list[float] = []

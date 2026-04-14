@@ -1,0 +1,20 @@
+{
+  "year": 2026,
+  "ref_month": 2,
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "na_datu": "2026-01-31",
+      "dz_fact": 549729119.15,
+      "overdue_fact": 209194330.52
+    },
+    {
+      "year": 2026,
+      "month": 2,
+      "na_datu": "2026-02-28",
+      "dz_fact": 398506669.39,
+      "overdue_fact": 260806072.93
+    }
+  ]
+}

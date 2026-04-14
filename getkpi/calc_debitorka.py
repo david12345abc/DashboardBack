@@ -314,33 +314,45 @@ def get_snapshot_for_date(na_datu: date) -> dict:
     return payload
 
 
-def get_komdir_dz_monthly(year: int | None = None, month: int | None = None) -> dict:
+def get_komdir_dz_monthly(year: int | None = None,
+                          month: int | None = None,
+                          dept_name: str | None = None) -> dict:
     """
-    Помесячные ДЗ/просрочка (январь → последний полный месяц).
-    Результат кэшируется целиком и поснимочно.
+    Помесячные ДЗ/просрочка (январь -> последний полный месяц).
+    dept_name=None — агрегат по всем отделам (коммерческий директор).
+    dept_name='Отдел ВЭД' — факт только по указанному подразделению.
     """
     today = date.today()
     ref_y, ref_m = _last_full_month(today)
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
-    cached = _load_json(_cache_path_monthly(ref_y, ref_m))
-    if cached is not None:
-        return cached
+    if dept_name is None:
+        cached = _load_json(_cache_path_monthly(ref_y, ref_m))
+        if cached is not None:
+            return cached
 
     out_rows = []
     for mm in range(1, ref_m + 1):
         snapshot = get_snapshot_for_date(_month_end(ref_y, mm))
+        if dept_name is not None:
+            dept_data = snapshot.get("by_dept", {}).get(dept_name, {})
+            dz = float(dept_data.get("dz", 0))
+            overdue = float(dept_data.get("overdue", 0))
+        else:
+            dz = float(snapshot.get("total_dz") or 0)
+            overdue = float(snapshot.get("total_overdue") or 0)
         out_rows.append({
             "year": ref_y,
             "month": mm,
             "na_datu": snapshot.get("na_datu"),
-            "dz_fact": float(snapshot.get("total_dz") or 0),
-            "overdue_fact": float(snapshot.get("total_overdue") or 0),
+            "dz_fact": dz,
+            "overdue_fact": overdue,
         })
 
     payload = {"year": ref_y, "ref_month": ref_m, "months": out_rows}
-    _save_json(_cache_path_monthly(ref_y, ref_m), payload)
+    if dept_name is None:
+        _save_json(_cache_path_monthly(ref_y, ref_m), payload)
     return payload
 
 

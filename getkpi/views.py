@@ -16,7 +16,7 @@ from . import (
     komdir_quarterly,
     valovaya_pribyl,
 )
-from .commercial_tiles import commercial_kpi_key, is_komdir_child
+from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
 from .kpi_periods import last_full_month, last_full_quarter
 from .models import KpiDefinition
 
@@ -652,7 +652,10 @@ def get_kpi(request):
             return JsonResponse({
                 'error': f'No KPIs configured for department key "{ck}"',
             }, status=404)
-        payload = komdir_dashboard.build_komdir_payload(kpis, month=req_month, year=req_year)
+        dg = dept_guid_for_kpi_key(ck)
+        payload = komdir_dashboard.build_komdir_payload(
+            kpis, month=req_month, year=req_year, dept_guid=dg,
+        )
         return JsonResponse(
             {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
             json_dumps_params={'ensure_ascii': False},
@@ -679,13 +682,16 @@ def get_kpi(request):
     )
 
 
-def _build_komdir_style_payload(dept: str, kpis: list[dict], request) -> dict:
+def _build_komdir_style_payload(dept: str, kpis: list[dict], request,
+                                dept_guid: str | None = None) -> dict:
     """Payload в стиле коммерческого директора (10 плиток + графики + претензии)."""
     month_param = request.GET.get('month')
     year_param = request.GET.get('year')
     req_month = int(month_param) if month_param else None
     req_year = int(year_param) if year_param else None
-    return komdir_dashboard.build_komdir_payload(kpis, month=req_month, year=req_year)
+    return komdir_dashboard.build_komdir_payload(
+        kpis, month=req_month, year=req_year, dept_guid=dept_guid,
+    )
 
 
 @require_GET
@@ -723,7 +729,8 @@ def get_all_departments(request):
                 return JsonResponse({
                     'error': f'No KPIs configured for department key "{ck}"',
                 }, status=404)
-            payload = _build_komdir_style_payload(ck, kpis, request)
+            dg = dept_guid_for_kpi_key(ck)
+            payload = _build_komdir_style_payload(ck, kpis, request, dept_guid=dg)
             return JsonResponse(
                 {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
                 json_dumps_params={'ensure_ascii': False},
@@ -763,12 +770,17 @@ def get_all_departments(request):
         if dept not in allowed:
             continue
         kpis = _get_kpi_dicts(dept)
-        if _is_komdir_department(dept) or is_komdir_child(dept):
+        if _is_komdir_department(dept):
             payload = _build_komdir_style_payload(dept, kpis, request)
+            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
+        elif is_komdir_child(dept):
+            dg = dept_guid_for_kpi_key(commercial_kpi_key(dept))
+            payload = _build_komdir_style_payload(dept, kpis, request, dept_guid=dg)
             summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
         elif isinstance((ck := commercial_kpi_key(dept)), str):
             ck_kpis = _get_kpi_dicts(ck)
-            payload = _build_komdir_style_payload(ck, ck_kpis, request)
+            dg = dept_guid_for_kpi_key(ck)
+            payload = _build_komdir_style_payload(ck, ck_kpis, request, dept_guid=dg)
             summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
         else:
             payload = _build_universal_payload(dept, kpis, month=req_month_all, year=req_year_all)

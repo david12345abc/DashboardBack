@@ -89,23 +89,27 @@ def _monthly_cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"dengi_monthly_{year}_{month:02d}.json"
 
 
-def _load_cache(year: int, month: int) -> float | None:
+def _load_cache(year: int, month: int) -> dict | None:
+    """Загрузить кэш месяца. Возвращает dict с total и by_dept, или None."""
     p = _cache_path(year, month)
     if not p.exists():
         return None
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return data.get("total")
+        if "by_dept" not in data:
+            return None
+        return data
     except (OSError, json.JSONDecodeError):
         return None
 
 
-def _save_cache(year: int, month: int, total: float) -> None:
+def _save_cache(year: int, month: int, total: float,
+                by_dept: dict[str, float]) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
         with open(_cache_path(year, month), "w", encoding="utf-8") as f:
-            json.dump({"total": total}, f, ensure_ascii=False)
+            json.dump({"total": total, "by_dept": by_dept}, f, ensure_ascii=False)
     except OSError:
         pass
 
@@ -294,9 +298,11 @@ def _batch_load_partners(session: requests.Session,
 
 def _calc_branch1(ds_rows: list[dict], catalog: dict, orders: dict,
                   excl_full: set, excl_no_mgs: set,
-                  max_month: int) -> dict[int, float]:
-    """Ветка 1: Клиентские оплаты (СуммаОплатыРегл)."""
-    monthly: dict[int, float] = {m: 0.0 for m in range(1, max_month + 1)}
+                  max_month: int) -> dict[str, dict[int, float]]:
+    """Ветка 1: Клиентские оплаты (СуммаОплатыРегл). Возвращает by_dept."""
+    monthly: dict[str, dict[int, float]] = {
+        d: {m: 0.0 for m in range(1, max_month + 1)} for d in DEPT_SET
+    }
 
     for row in ds_rows:
         m = _period_month(row)
@@ -331,22 +337,26 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict, orders: dict,
             if cat_partner in excl_full and not order["soprovozhd"]:
                 continue
 
+        effective_dept = order_dept if order_dept in DEPT_SET else cat["dept"]
+
         amt = float(row.get("СуммаОплатыРегл") or row.get("СуммаОплаты") or 0)
         if not amt:
             continue
         if row.get("ХозяйственнаяОперация") == "ВозвратОплатыКлиенту":
             amt = -amt
 
-        monthly[m] += amt
+        monthly[effective_dept][m] += amt
 
     return monthly
 
 
 def _calc_branch2(ds_rows: list[dict], catalog: dict, orders: dict,
                   excl_full: set,
-                  max_month: int) -> dict[int, float]:
-    """Ветка 2: Комиссия (СуммаПостоплатыРегл)."""
-    monthly: dict[int, float] = {m: 0.0 for m in range(1, max_month + 1)}
+                  max_month: int) -> dict[str, dict[int, float]]:
+    """Ветка 2: Комиссия (СуммаПостоплатыРегл). Возвращает by_dept."""
+    monthly: dict[str, dict[int, float]] = {
+        d: {m: 0.0 for m in range(1, max_month + 1)} for d in DEPT_SET
+    }
 
     for row in ds_rows:
         m = _period_month(row)
@@ -383,16 +393,18 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders: dict,
         if not amt:
             continue
 
-        monthly[m] += amt
+        monthly[reg_dept][m] += amt
 
     return monthly
 
 
 def _calc_branch3(kk_rows: list[dict], catalog: dict, orders: dict,
                   excl_full: set,
-                  max_month: int) -> dict[int, float]:
-    """Ветка 3: Взаимозачёты (СуммаРегл)."""
-    monthly: dict[int, float] = {m: 0.0 for m in range(1, max_month + 1)}
+                  max_month: int) -> dict[str, dict[int, float]]:
+    """Ветка 3: Взаимозачёты (СуммаРегл). Возвращает by_dept."""
+    monthly: dict[str, dict[int, float]] = {
+        d: {m: 0.0 for m in range(1, max_month + 1)} for d in DEPT_SET
+    }
 
     for row in kk_rows:
         m = _period_month(row)
@@ -420,11 +432,15 @@ def _calc_branch3(kk_rows: list[dict], catalog: dict, orders: dict,
         if order["ne_uchit"] or order["soprovozhd"]:
             continue
 
+        effective_dept = order.get("dept", "")
+        if effective_dept not in DEPT_SET:
+            effective_dept = cat["dept"]
+
         amt = float(row.get("СуммаРегл") or row.get("Сумма") or 0)
         if not amt:
             continue
 
-        monthly[m] += amt
+        monthly[effective_dept][m] += amt
 
     return monthly
 
@@ -433,11 +449,30 @@ def _calc_branch3(kk_rows: list[dict], catalog: dict, orders: dict,
 # Публичный API
 # ═══════════════════════════════════════════════════════
 
+def _merge_by_dept(b1: dict[str, dict[int, float]],
+                   b2: dict[str, dict[int, float]],
+                   b3: dict[str, dict[int, float]],
+                   max_month: int) -> dict[str, dict[int, float]]:
+    """Объединить три ветки в by_dept[guid][month] = сумма."""
+    merged: dict[str, dict[int, float]] = {}
+    for d in DEPT_SET:
+        merged[d] = {}
+        for m in range(1, max_month + 1):
+            merged[d][m] = round(
+                b1.get(d, {}).get(m, 0)
+                + b2.get(d, {}).get(m, 0)
+                + b3.get(d, {}).get(m, 0), 2,
+            )
+    return merged
+
+
 def get_dengi_monthly(year: int | None = None,
-                      month: int | None = None) -> dict:
+                      month: int | None = None,
+                      dept_guid: str | None = None) -> dict:
     """
     Помесячные факты ДС (январь..ref_month).
-    Результат кэшируется.
+    dept_guid=None — агрегат по всем отделам (коммерческий директор).
+    dept_guid='...' — факт только по указанному подразделению.
     """
     today = date.today()
     ref_y, ref_m = _last_full_month(today)
@@ -449,7 +484,9 @@ def get_dengi_monthly(year: int | None = None,
         try:
             with open(mc, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return data
+            first_m = (data.get("months") or [{}])[0]
+            if "by_dept" in first_m:
+                return _slice_payload(data, dept_guid)
         except (OSError, json.JSONDecodeError):
             pass
 
@@ -462,14 +499,19 @@ def get_dengi_monthly(year: int | None = None,
     if all_cached:
         out_months = []
         for m in range(1, ref_m + 1):
-            out_months.append({"year": ref_y, "month": m, "fact": _load_cache(ref_y, m)})
+            cd = _load_cache(ref_y, m)
+            out_months.append({
+                "year": ref_y, "month": m,
+                "fact": cd["total"],
+                "by_dept": cd.get("by_dept", {}),
+            })
         payload = {"year": ref_y, "ref_month": ref_m, "months": out_months}
         try:
             with open(mc, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
         except OSError:
             pass
-        return payload
+        return _slice_payload(payload, dept_guid)
 
     session = requests.Session()
     session.auth = AUTH
@@ -517,15 +559,23 @@ def get_dengi_monthly(year: int | None = None,
     b2 = _calc_branch2(ds_rows, catalog, orders, excl_full, ref_m)
     b3 = _calc_branch3(kk_rows, catalog, orders, excl_full, ref_m)
 
+    merged = _merge_by_dept(b1, b2, b3, ref_m)
+
     out_months = []
     for m in range(1, ref_m + 1):
         cached = _load_cache(ref_y, m)
         if cached is not None:
-            fact = cached
+            total = cached["total"]
+            by_dept = cached.get("by_dept", {})
         else:
-            fact = round(b1.get(m, 0) + b2.get(m, 0) + b3.get(m, 0), 2)
-            _save_cache(ref_y, m, fact)
-        out_months.append({"year": ref_y, "month": m, "fact": fact})
+            by_dept = {d: merged[d][m] for d in DEPT_SET}
+            total = round(sum(by_dept.values()), 2)
+            _save_cache(ref_y, m, total, by_dept)
+        out_months.append({
+            "year": ref_y, "month": m,
+            "fact": total,
+            "by_dept": by_dept,
+        })
 
     payload = {"year": ref_y, "ref_month": ref_m, "months": out_months}
     try:
@@ -533,7 +583,26 @@ def get_dengi_monthly(year: int | None = None,
             json.dump(payload, f, ensure_ascii=False, indent=2)
     except OSError:
         pass
-    return payload
+    return _slice_payload(payload, dept_guid)
+
+
+def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
+    """Вернуть полный агрегат или срез по одному подразделению."""
+    if dept_guid is None:
+        return payload
+    sliced_months = []
+    for row in payload.get("months", []):
+        dept_val = row.get("by_dept", {}).get(dept_guid, 0)
+        sliced_months.append({
+            "year": row["year"],
+            "month": row["month"],
+            "fact": dept_val,
+        })
+    return {
+        "year": payload.get("year"),
+        "ref_month": payload.get("ref_month"),
+        "months": sliced_months,
+    }
 
 
 if __name__ == "__main__":

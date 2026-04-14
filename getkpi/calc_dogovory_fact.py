@@ -101,25 +101,28 @@ def _cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"dogovory_{year}_{month:02d}.json"
 
 
-def _load_cache(year: int, month: int) -> float | None:
+def _load_cache(year: int, month: int) -> dict | None:
+    """Загрузить кэш месяца. Возвращает dict с total и by_dept, или None."""
     p = _cache_path(year, month)
     if not p.exists():
         return None
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if data.get("cache_date") == date.today().isoformat():
-            return data.get("total")
+        if data.get("cache_date") == date.today().isoformat() and "by_dept" in data:
+            return data
     except (OSError, json.JSONDecodeError):
         pass
     return None
 
 
-def _save_cache(year: int, month: int, total: float) -> None:
+def _save_cache(year: int, month: int, total: float,
+                by_dept: dict[str, float]) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
         with open(_cache_path(year, month), "w", encoding="utf-8") as f:
-            json.dump({"cache_date": date.today().isoformat(), "total": total},
+            json.dump({"cache_date": date.today().isoformat(),
+                       "total": total, "by_dept": by_dept},
                       f, ensure_ascii=False)
     except OSError:
         pass
@@ -149,8 +152,8 @@ def _load_register(session: requests.Session) -> list[dict]:
 
 
 def _calc_month_total(session: requests.Session, all_rows: list[dict],
-                      year: int, month: int) -> float:
-    """Посчитать итого договоров за конкретный месяц (полная фильтрация)."""
+                      year: int, month: int) -> tuple[float, dict[str, float]]:
+    """Посчитать итого договоров за конкретный месяц. Возвращает (total, by_dept)."""
     last_day = calendar.monthrange(year, month)[1]
     d_from = f"{year}-{month:02d}-01"
     d_to = f"{year}-{month:02d}-{last_day}"
@@ -252,7 +255,7 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
         except Exception:
             pass
 
-    total = 0.0
+    by_dept: dict[str, float] = {d: 0.0 for d in DEPT_SET}
     for x in partner_ok:
         ok = x.get("ЗаказКлиента_Key", "")
         amt = float(x.get("СуммаДоговора") or 0)
@@ -268,9 +271,13 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
                 rate = 1.0
         else:
             rate = 1.0
-        total += amt * rate
 
-    return round(total, 2)
+        dept = x.get("Подразделение_Key", "")
+        by_dept[dept] += amt * rate
+
+    by_dept = {d: round(v, 2) for d, v in by_dept.items()}
+    total = round(sum(by_dept.values()), 2)
+    return total, by_dept
 
 
 def _monthly_cache_path(year: int, month: int) -> Path:
@@ -282,20 +289,43 @@ def get_dogovory_fact_for_month(year: int, month: int) -> float:
     """Факт договоров за один месяц (с кэшем на день)."""
     cached = _load_cache(year, month)
     if cached is not None:
-        return cached
+        return cached["total"]
 
     session = requests.Session()
     session.auth = AUTH
     all_rows = _load_register(session)
-    total = _calc_month_total(session, all_rows, year, month)
-    _save_cache(year, month, total)
+    total, by_dept = _calc_month_total(session, all_rows, year, month)
+    _save_cache(year, month, total, by_dept)
     return total
 
 
-def get_dogovory_monthly(year: int | None = None, month: int | None = None) -> dict:
+def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
+    """Вернуть полный агрегат или срез по одному подразделению."""
+    if dept_guid is None:
+        return payload
+    sliced_months = []
+    for row in payload.get("months", []):
+        dept_val = row.get("by_dept", {}).get(dept_guid, 0)
+        sliced_months.append({
+            "year": row["year"],
+            "month": row["month"],
+            "fact": dept_val,
+        })
+    return {
+        "cache_date": payload.get("cache_date"),
+        "year": payload.get("year"),
+        "ref_month": payload.get("ref_month"),
+        "months": sliced_months,
+    }
+
+
+def get_dogovory_monthly(year: int | None = None,
+                         month: int | None = None,
+                         dept_guid: str | None = None) -> dict:
     """
     Помесячные факты договоров (январь..last full month).
-    Кэшируется весь набор.
+    dept_guid=None — агрегат по всем отделам.
+    dept_guid='...' — факт только по указанному подразделению.
     """
     today = date.today()
     if today.month == 1:
@@ -310,10 +340,38 @@ def get_dogovory_monthly(year: int | None = None, month: int | None = None) -> d
         try:
             with open(mc, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if data.get("cache_date") == today.isoformat():
-                return data
+            first_m = (data.get("months") or [{}])[0]
+            if data.get("cache_date") == today.isoformat() and "by_dept" in first_m:
+                return _slice_payload(data, dept_guid)
         except (OSError, json.JSONDecodeError):
             pass
+
+    all_cached = True
+    for m in range(1, ref_m + 1):
+        if _load_cache(ref_y, m) is None:
+            all_cached = False
+            break
+
+    if all_cached:
+        out_months = []
+        for m in range(1, ref_m + 1):
+            cd = _load_cache(ref_y, m)
+            out_months.append({
+                "year": ref_y, "month": m,
+                "fact": cd["total"],
+                "by_dept": cd.get("by_dept", {}),
+            })
+        payload = {
+            "cache_date": today.isoformat(),
+            "year": ref_y, "ref_month": ref_m,
+            "months": out_months,
+        }
+        try:
+            with open(mc, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
+        return _slice_payload(payload, dept_guid)
 
     session = requests.Session()
     session.auth = AUTH
@@ -323,16 +381,20 @@ def get_dogovory_monthly(year: int | None = None, month: int | None = None) -> d
     for m in range(1, ref_m + 1):
         cached = _load_cache(ref_y, m)
         if cached is not None:
-            fact = cached
+            total = cached["total"]
+            by_dept = cached.get("by_dept", {})
         else:
-            fact = _calc_month_total(session, all_rows, ref_y, m)
-            _save_cache(ref_y, m, fact)
-        out_months.append({"year": ref_y, "month": m, "fact": fact})
+            total, by_dept = _calc_month_total(session, all_rows, ref_y, m)
+            _save_cache(ref_y, m, total, by_dept)
+        out_months.append({
+            "year": ref_y, "month": m,
+            "fact": total,
+            "by_dept": by_dept,
+        })
 
     payload = {
         "cache_date": today.isoformat(),
-        "year": ref_y,
-        "ref_month": ref_m,
+        "year": ref_y, "ref_month": ref_m,
         "months": out_months,
     }
     try:
@@ -340,7 +402,7 @@ def get_dogovory_monthly(year: int | None = None, month: int | None = None) -> d
             json.dump(payload, f, ensure_ascii=False, indent=2)
     except OSError:
         pass
-    return payload
+    return _slice_payload(payload, dept_guid)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -380,8 +442,8 @@ def main():
     _print(f"  ✓ Загружено: {len(all_rows)} записей · {time.time()-t0:.1f}с")
 
     _print(f"\n▸ Расчёт...")
-    total = _calc_month_total(session, all_rows, year, month)
-    _save_cache(year, month, total)
+    total, by_dept = _calc_month_total(session, all_rows, year, month)
+    _save_cache(year, month, total, by_dept)
 
     _print(f"\n{'═' * 60}")
     _print(f"  ИТОГО ДОГОВОРОВ (руб.):  {total:>20,.2f}")
