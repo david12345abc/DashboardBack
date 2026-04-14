@@ -1,12 +1,33 @@
 """
-Сборка ответа get_kpi для «Коммерческий директор»: Плитки, Графики, Таблицы.
+Сборка ответа get_kpi для «Коммерческий директор» и дочерних отделов:
+10 ежемесячных KPI-плиток, 3 графика, таблица претензий.
+
+Плитки:
+  KD-M1  Деньги (План/Факт)
+  KD-M2  Отгрузки (План/Факт)
+  KD-M3  Договоры (План/Факт)
+  KD-M4  ДЗ Факт на дату (Факт на дату)
+  KD-M5  Просроч. ДЗ (Факт/лимит)
+  KD-M6  Валовая прибыль (План/Факт)
+  KD-M7  Расходы (Факт/лимит)
+  KD-M8  ФОТ (Факт/лимит)
+  KD-M9  Скидка / МЦР (Факт/норма)
+  KD-M10 ТКП в SLA (Факт/норма)
+
+Графики:
+  KD-C1  Линейный: по месяцам Деньги, Отгрузки, Договоры (факт)
+  KD-C2  Круговые: 5 диаграмм (Дилеры, Страны, Газпром, Холдинги, БМИ)
+  KD-C3  Столбчатый: KPI за месяц (Деньги, Отгрузки, Договоры, Валовая прибыль)
+
+Таблица:
+  Претензии (Catalog_Претензии) за выбранный месяц — логика export_claims.py
 """
 from __future__ import annotations
 
 import random
 from datetime import date
 
-from . import denzhi_dz, komdir_quarterly, valovaya_pribyl
+from . import valovaya_pribyl
 from .kpi_periods import last_full_month
 
 MONTH_NAMES_RU = {
@@ -14,6 +35,18 @@ MONTH_NAMES_RU = {
     5: "май", 6: "июнь", 7: "июль", 8: "август",
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
+
+LOWER_IS_BETTER_IDS = frozenset({'KD-M4', 'KD-M5', 'KD-M7', 'KD-M8', 'KD-M9'})
+HIGHER_IS_BETTER_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-M6', 'KD-M10'})
+
+PIE_CHART_CATEGORIES = [
+    'Развитие дилеров',
+    'Развитие стран',
+    'Закладки Газпром',
+    'Развитие холдингов',
+    'Закладки БМИ',
+]
+
 
 def _rag_higher_better(pct: float | None) -> str:
     if pct is None:
@@ -25,8 +58,7 @@ def _rag_higher_better(pct: float | None) -> str:
     return "red"
 
 
-def _rag_m2_debt(pct: float | None) -> str:
-    """KD-M2: < 100 % → зелёный, 100–110 % → жёлтый, > 110 % → красный."""
+def _rag_lower_better(pct: float | None) -> str:
     if pct is None:
         return "unknown"
     if pct < 100:
@@ -36,15 +68,10 @@ def _rag_m2_debt(pct: float | None) -> str:
     return "red"
 
 
-def _rag_lower_turnover(fact_pct: float | None) -> str:
-    """Пороги как в Excel: ≤5% зелёный, 5,1–7% жёлтый, >7% красный."""
-    if fact_pct is None:
-        return "unknown"
-    if fact_pct <= 5:
-        return "green"
-    if fact_pct <= 7:
-        return "yellow"
-    return "red"
+def _tile_rag(kpi_id: str, pct: float | None) -> str:
+    if kpi_id in LOWER_IS_BETTER_IDS:
+        return _rag_lower_better(pct)
+    return _rag_higher_better(pct)
 
 
 def _thresholds_block(kpi: dict) -> dict:
@@ -67,89 +94,254 @@ def _period_label(kpi: dict) -> str:
     return f
 
 
-def _chart_type_bundle(meta: dict, *, fallback_type: str, fallback_label: str) -> dict[str, str]:
-    """Тип графика из kpi_data (chart_type / chart_type_label) с запасными значениями."""
-    ct = meta.get("chart_type") or fallback_type
-    ctl = meta.get("chart_type_label")
-    if not ctl:
-        if meta.get("block") == "график":
-            ctl = meta.get("perspective") or fallback_label
-        else:
-            ctl = fallback_label
-    return {"chart_type": ct, "chart_type_label": ctl}
-
-
-def monthly_m3_chart_series() -> list[dict]:
-    """Помесячный план/факт для графика KD-M3 — только завершённые месяцы (до последнего полного)."""
+def _get_monthly_pairs() -> tuple[list[tuple[int, int]], int, int]:
+    """Возвращает (пары месяцев, ref_year, ref_month)."""
     today = date.today()
     ref_y, ref_m = last_full_month(today)
     if ref_y == today.year:
         pairs = [(today.year, mm) for mm in range(1, ref_m + 1)]
     else:
         pairs = [(ref_y, ref_m)]
-    random.seed(hash((ref_y, "KD-M3-monthly-chart", ref_m)))
-    out = []
+    return pairs, ref_y, ref_m
+
+
+def _generate_tile_monthly_data(kpi_id: str, plan: float,
+                                pairs: list[tuple[int, int]]) -> list[dict]:
+    """Генерирует помесячные точки для плитки (синтетика)."""
+    result = []
     for y, m in pairs:
-        fact_z = round(random.uniform(0.85, 1.15) * 800_000, 2)
-        fact_fot = round(random.uniform(0.88, 1.12) * 400_000, 2)
-        plan_z = round(fact_z * random.uniform(0.92, 1.08), 2)
-        plan_fot = round(fact_fot * random.uniform(0.92, 1.08), 2)
-        fact_total = fact_z + fact_fot
-        plan_total = plan_z + plan_fot
-        t1 = min(1.0, plan_z / fact_z) if fact_z else 0.0
-        t2 = min(1.0, plan_fot / fact_fot) if fact_fot else 0.0
-        kpi = round((0.5 * t1 + 0.5 * t2) * 100, 1)
-        out.append({
+        random.seed(hash((kpi_id, y, m)))
+        if kpi_id in LOWER_IS_BETTER_IDS:
+            fact = round(random.uniform(plan * 0.75, plan * 1.15), 2)
+        else:
+            fact = round(random.uniform(plan * 0.80, plan * 1.20), 2)
+        pct = round(fact / plan * 100, 1) if plan else None
+        result.append({
             "month": m,
-            "month_name": MONTH_NAMES_RU[m],
             "year": y,
-            "plan": round(plan_total, 2),
-            "fact": round(fact_total, 2),
-            "kpi_pct": kpi,
+            "month_name": MONTH_NAMES_RU[m],
+            "plan": plan,
+            "fact": round(fact, 2),
+            "kpi_pct": pct,
+            "has_data": True,
         })
-    return out
+    return result
 
 
+def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
+                   ref_y: int, ref_m: int) -> dict:
+    """Получить данные для одной плитки.
+    Для KD-M6 (Валовая прибыль) — из valovaya_pribyl, остальные — синтетика.
+    """
+    if kpi_id == 'KD-M6':
+        vp = valovaya_pribyl.get_vp_ytd()
+        return {
+            'monthly_data': vp.get('months_calendar') or vp['months'],
+            'last_full_month_row': vp.get('last_full_month_row'),
+            'ytd': vp['ytd'],
+            'kpi_period': vp.get('kpi_period'),
+        }
 
-def build_komdir_payload(kpi_list: list[dict]) -> dict:
+    plan = 100_000_000.0
+    months = _generate_tile_monthly_data(kpi_id, plan, pairs)
+    ref_row = None
+    for r in months:
+        if r['year'] == ref_y and r['month'] == ref_m:
+            ref_row = r
+            break
+
+    with_data = [r for r in months if r.get('kpi_pct') is not None]
+    if with_data:
+        avg_kpi = round(sum(r['kpi_pct'] for r in with_data) / len(with_data), 1)
+    else:
+        avg_kpi = None
+
+    return {
+        'monthly_data': months,
+        'last_full_month_row': dict(ref_row) if ref_row else None,
+        'ytd': {
+            'total_plan': ref_row['plan'] if ref_row else plan,
+            'total_fact': ref_row['fact'] if ref_row else 0,
+            'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+            'months_with_data': len(with_data),
+            'months_total': len(months),
+        },
+        'kpi_period': {
+            'type': 'last_full_month',
+            'year': ref_y,
+            'month': ref_m,
+            'month_name': MONTH_NAMES_RU[ref_m],
+        },
+    }
+
+
+def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
+    """KD-C1: линейный график — Деньги, Отгрузки, Договоры (факт по месяцам)."""
+    meta = by_id.get('KD-C1', {})
+    series = []
+    colors = ['#2b5ca6', '#e6863a', '#5aad5e']
+    for i, kid in enumerate(['KD-M1', 'KD-M2', 'KD-M3']):
+        kpi_meta = by_id.get(kid, {})
+        td = tiles_data.get(kid, {})
+        monthly = td.get('monthly_data') or []
+        points = []
+        for row in monthly:
+            points.append({
+                "month": row.get("month"),
+                "month_name": row.get("month_name"),
+                "year": row.get("year"),
+                "plan": row.get("plan"),
+                "fact": row.get("fact"),
+                "kpi_pct": row.get("kpi_pct"),
+                "has_data": row.get("has_data", True),
+            })
+        series.append({
+            "kpi_id": kid,
+            "name": kpi_meta.get("name", kid),
+            "chart_type": "line_plan_fact_monthly",
+            "chart_type_label": f"Факт по месяцам: {kpi_meta.get('name', kid)}",
+            "points": points,
+        })
+
+    return {
+        "kpi_id": "KD-C1",
+        "name": meta.get("name", "Динамика: Деньги, Отгрузки, Договоры"),
+        "periodicity": "ежемесячно",
+        "chart_type": meta.get("chart_type", "multi_line_plan_fact_monthly"),
+        "chart_type_label": meta.get("chart_type_label", "Линейный тренд по месяцам"),
+        "series": series,
+    }
+
+
+def _build_pie_charts(ref_y: int, ref_m: int) -> dict:
+    """KD-C2: круговые диаграммы — 5 направлений."""
+    random.seed(hash(('KD-C2-pies', ref_y, ref_m)))
+    pie_data = []
+    for cat in PIE_CHART_CATEGORIES:
+        value = round(random.uniform(5, 35), 1)
+        pie_data.append({"name": cat, "value": value})
+
+    total = sum(d['value'] for d in pie_data)
+    for d in pie_data:
+        d['pct'] = round(d['value'] / total * 100, 1) if total > 0 else 0
+
+    return {
+        "kpi_id": "KD-C2",
+        "name": "Круговые диаграммы по направлениям",
+        "periodicity": "ежемесячно",
+        "chart_type": "donut_multiple",
+        "chart_type_label": "Круговые диаграммы",
+        "pie_data": pie_data,
+        "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES_RU[ref_m]},
+    }
+
+
+def _build_bar_chart(by_id: dict, tiles_data: dict,
+                     ref_y: int, ref_m: int) -> dict:
+    """KD-C3: столбчатый — KPI за месяц для Деньги, Отгрузки, Договоры, Валовая прибыль."""
+    kids = ['KD-M1', 'KD-M2', 'KD-M3', 'KD-M6']
+    categories = []
+    plan_values = []
+    fact_values = []
+    points = []
+
+    for kid in kids:
+        meta = by_id.get(kid, {})
+        td = tiles_data.get(kid, {})
+        lm = td.get('last_full_month_row')
+        name = meta.get('name', kid)
+        categories.append(name)
+        plan_val = lm.get('plan') if lm else None
+        fact_val = lm.get('fact') if lm else None
+        plan_values.append(plan_val)
+        fact_values.append(fact_val)
+        points.append({
+            "kpi_id": kid,
+            "name": name,
+            "month": ref_m,
+            "year": ref_y,
+            "plan": plan_val,
+            "fact": fact_val,
+            "kpi_pct": lm.get('kpi_pct') if lm else None,
+        })
+
+    return {
+        "kpi_id": "KD-C3",
+        "name": "KPI за месяц: Деньги, Отгрузки, Договоры, Валовая прибыль",
+        "periodicity": "ежемесячно",
+        "chart_type": "column_plan_fact_monthly",
+        "chart_type_label": "Столбцы: план/факт за месяц",
+        "series": [{
+            "kpi_id": "KD-C3",
+            "name": "План/факт за месяц",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "Столбцы",
+            "categories": categories,
+            "plan": plan_values,
+            "fact": fact_values,
+            "points": points,
+        }],
+    }
+
+
+def _build_claims_table(ref_y: int, ref_m: int) -> dict:
+    """Таблица претензий за выбранный месяц — логика export_claims.py, но в JSON."""
+    from .komdir_claims import fetch_claims_for_month
+
+    rows = fetch_claims_for_month(ref_y, ref_m)
+    return {
+        "KD-T-CLAIMS": {
+            "name": f"Претензии за {MONTH_NAMES_RU[ref_m]} {ref_y}",
+            "periodicity": "ежемесячно",
+            "description": "Претензии из 1С (Catalog_Претензии) за выбранный месяц",
+            "period": {
+                "year": ref_y,
+                "month": ref_m,
+                "month_name": MONTH_NAMES_RU[ref_m],
+            },
+            "rows": rows,
+        },
+    }
+
+
+def build_komdir_payload(kpi_list: list[dict],
+                         month: int | None = None,
+                         year: int | None = None) -> dict:
+    """Полный payload для ответа API коммерческого директора."""
     by_id = {k["kpi_id"]: k for k in kpi_list}
 
-    vp = valovaya_pribyl.get_vp_ytd()
-    m2 = denzhi_dz.get_kd_m2_ytd()
-    qm3 = komdir_quarterly.quarterly_m3()
-    qq1 = komdir_quarterly.quarterly_q1(vp["months"])
-    qq2 = komdir_quarterly.quarterly_q2()
-    m3_monthly = monthly_m3_chart_series()
+    if month and year:
+        ref_y, ref_m = year, month
+        pairs = [(year, mm) for mm in range(1, month + 1)]
+    else:
+        pairs, ref_y, ref_m = _get_monthly_pairs()
 
-    # --- Плитки: KPI % для отображения
-    tile_values: list[tuple[str, float | None, str, dict]] = []
-    # (kpi_id, kpi_pct, color, kpi_meta)
+    tile_ids = [
+        'KD-M1', 'KD-M2', 'KD-M3', 'KD-M4', 'KD-M5',
+        'KD-M6', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M10',
+    ]
 
-    y1m = vp["ytd"].get("kpi_pct")
-    tile_values.append(("KD-M1", y1m, _rag_higher_better(y1m), by_id["KD-M1"]))
-
-    y2m = m2["ytd"].get("kpi_pct")
-    tile_values.append(("KD-M2", y2m, _rag_m2_debt(y2m), by_id["KD-M2"]))
-
-    y3m = qm3["ytd"].get("kpi_pct")
-    tile_values.append(("KD-M3", y3m, _rag_higher_better(y3m), by_id["KD-M3"]))
-
-    yq1 = qq1["ytd"].get("kpi_pct")
-    tile_values.append(("KD-Q1", yq1, _rag_higher_better(yq1), by_id["KD-Q1"]))
-
-    q2_last = qq2["quarterly_data"][-1] if qq2["quarterly_data"] else None
-    yq2_kpi = qq2["ytd"].get("kpi_pct")
-    q2_turnover = q2_last["fact_turnover_pct"] if q2_last else None
-    tile_values.append(
-        ("KD-Q2", yq2_kpi, _rag_lower_turnover(q2_turnover), by_id["KD-Q2"]),
-    )
+    tiles_data: dict[str, dict] = {}
+    for kid in tile_ids:
+        tiles_data[kid] = _get_tile_data(kid, pairs, ref_y, ref_m)
 
     plitki_items = []
     numeric_for_avg: list[float] = []
-    for kid, pct, color, meta in tile_values:
+
+    for kid in tile_ids:
+        meta = by_id.get(kid)
+        if not meta:
+            continue
+        td = tiles_data[kid]
+        pct = td['ytd'].get('kpi_pct')
+        if pct is not None:
+            pct = float(pct)
+        color = _tile_rag(kid, pct)
         if pct is not None:
             numeric_for_avg.append(pct)
-        plitki_items.append({
+
+        lm = td.get('last_full_month_row')
+        tile_item = {
             "kpi_id": kid,
             "name": meta["name"],
             "kpi_pct": pct,
@@ -160,7 +352,12 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
             "unit": meta.get("unit"),
             "source": meta.get("source"),
             "frequency": meta.get("frequency"),
-        })
+            "plan": lm.get("plan") if lm else None,
+            "fact": lm.get("fact") if lm else None,
+            "has_data": lm.get("has_data", True) if lm else False,
+            "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
+        }
+        plitki_items.append(tile_item)
 
     avg_pct = round(sum(numeric_for_avg) / len(numeric_for_avg), 1) if numeric_for_avg else None
     plitki_items.append({
@@ -169,235 +366,39 @@ def build_komdir_payload(kpi_list: list[dict]) -> dict:
         "kpi_pct": avg_pct,
         "color": _rag_higher_better(avg_pct),
         "period": "агрегат",
-        "thresholds": {
-            "green": "≥100%",
-            "yellow": "90–99,9%",
-            "red": "<90%",
-        },
-        "formula": "Среднее арифметическое kpi_pct всех плиток (KD-M1 … KD-Q2)",
+        "thresholds": {"green": "≥100%", "yellow": "90–99,9%", "red": "<90%"},
+        "formula": "Среднее арифметическое kpi_pct всех плиток",
         "unit": "%",
         "source": "Расчётный показатель",
         "frequency": "агрегат",
     })
 
-    # --- График KD-C1 (ежемесячно)
-    meta_c1 = by_id["KD-C1"]
-    c1_types = _chart_type_bundle(
-        meta_c1,
-        fallback_type="multi_line_plan_fact_monthly",
-        fallback_label="График тренда",
-    )
-    points_m1 = []
-    m1_rows = vp.get("months_calendar") or vp["months"]
-    for row in m1_rows:
-        points_m1.append({
-            "month": row["month"],
-            "month_name": row["month_name"],
-            "year": row.get("year", vp.get("calendar_year", vp["year"])),
-            "plan": row.get("plan"),
-            "fact": row.get("fact"),
-            "kpi_pct": row.get("kpi_pct"),
-            "has_data": row.get("has_data", False),
-            "month_complete": row.get("month_complete"),
-        })
-
-    points_m2 = []
-    for row in m2["months"]:
-        points_m2.append({
-            "month": row["month"],
-            "month_name": row["month_name"],
-            "year": row.get("year", m2["year"]),
-            "plan": row.get("plan"),
-            "fact": row.get("fact"),
-            "kpi_pct": row.get("kpi_pct"),
-            "has_data": row.get("has_data", False),
-        })
-
-    points_m3 = m3_monthly
-
-    meta_c2 = by_id["KD-C2"]
-    c2_types = _chart_type_bundle(
-        meta_c2,
-        fallback_type="column_plan_fact_waterfall_quarterly",
-        fallback_label="План/факт / waterfall",
-    )
-
-    ser_m1 = _chart_type_bundle(
-        by_id["KD-M1"],
-        fallback_type="line_plan_fact_monthly",
-        fallback_label="Линейный тренд: план и факт по месяцам",
-    )
-    ser_m2 = _chart_type_bundle(
-        by_id["KD-M2"],
-        fallback_type="line_plan_fact_monthly",
-        fallback_label="Линейный тренд: план и факт по месяцам",
-    )
-    ser_m3 = _chart_type_bundle(
-        by_id["KD-M3"],
-        fallback_type="line_plan_fact_monthly",
-        fallback_label="Линейный тренд: план и факт по месяцам",
-    )
-    ser_q1 = _chart_type_bundle(
-        by_id["KD-Q1"],
-        fallback_type="column_plan_fact_quarterly",
-        fallback_label="Столбцы: план/факт по кварталам (деньги)",
-    )
-    ser_q2 = _chart_type_bundle(
-        by_id["KD-Q2"],
-        fallback_type="column_plan_fact_quarterly_percent",
-        fallback_label="Столбцы: план/факт по кварталам (%)",
-    )
-
     grafiki = {
-        "KD-C1": {
-            "kpi_id": "KD-C1",
-            "name": meta_c1["name"],
-            "periodicity": "ежемесячно",
-            **c1_types,
-            "series": [
-                {
-                    "kpi_id": "KD-M1",
-                    "name": by_id["KD-M1"]["name"],
-                    **ser_m1,
-                    "points": points_m1,
-                },
-                {
-                    "kpi_id": "KD-M2",
-                    "name": by_id["KD-M2"]["name"],
-                    **ser_m2,
-                    "points": points_m2,
-                },
-                {
-                    "kpi_id": "KD-M3",
-                    "name": by_id["KD-M3"]["name"],
-                    **ser_m3,
-                    "points": points_m3,
-                },
-            ],
-        },
-        "KD-C2": {
-            "kpi_id": "KD-C2",
-            "name": meta_c2["name"],
-            "periodicity": "ежеквартально",
-            **c2_types,
-            "series": [
-                {
-                    "kpi_id": "KD-Q1",
-                    "name": by_id["KD-Q1"]["name"],
-                    **ser_q1,
-                    "points": [
-                        {
-                            "quarter": p["quarter"],
-                            "year": p["year"],
-                            "label": p["label"],
-                            "plan": p.get("vp_plan"),
-                            "fact": p.get("vp_fact"),
-                            "kpi_pct": p.get("kpi_pct"),
-                        }
-                        for p in qq1["quarterly_data"]
-                    ],
-                },
-                {
-                    "kpi_id": "KD-Q2",
-                    "name": by_id["KD-Q2"]["name"],
-                    **ser_q2,
-                    "points": [
-                        {
-                            "quarter": p["quarter"],
-                            "year": p["year"],
-                            "label": p["label"],
-                            "plan": p.get("plan_max_turnover_pct"),
-                            "fact": p.get("fact_turnover_pct"),
-                            "kpi_pct": p.get("kpi_pct"),
-                            "data_complete": p.get("data_complete"),
-                        }
-                        for p in qq2["quarterly_data"]
-                    ],
-                },
-            ],
-        },
+        "KD-C1": _build_line_chart(by_id, tiles_data),
+        "KD-C2": _build_pie_charts(ref_y, ref_m),
+        "KD-C3": _build_bar_chart(by_id, tiles_data, ref_y, ref_m),
     }
 
-    # --- Таблица сводки: та же последовательность, что и плитки; только plan, fact, kpi_pct, color
-    vp_lm = vp.get("last_full_month_row")
-    m2_lm = m2.get("last_full_month_row")
-    m3_last = m3_monthly[-1] if m3_monthly else None
-    q1r = qq1["quarterly_data"][0] if qq1.get("quarterly_data") else None
-    q2_summary = komdir_quarterly.kd_q2_summary_for_table()
-    pl_q2 = q2_summary["plan_max_turnover_pct"]
-    fc_q2 = q2_summary["fact_turnover_pct"]
-
-    def _pf_month(row: dict | None) -> tuple[float | None, float | None]:
-        if not row or not row.get("has_data"):
-            return None, None
-        return row.get("plan"), row.get("fact")
-
-    pl_m1, fc_m1 = _pf_month(vp_lm)
-    pl_m2, fc_m2 = _pf_month(m2_lm)
-    pl_m3 = fc_m3 = None
-    if m3_last:
-        pl_m3, fc_m3 = m3_last.get("plan"), m3_last.get("fact")
-    pl_q1 = fc_q1 = None
-    if q1r:
-        pl_q1, fc_q1 = q1r.get("vp_plan"), q1r.get("vp_fact")
-
-    tablitsy = {
-        "месяц": [
-            {
-                "kpi_id": "KD-M1",
-                "name": by_id["KD-M1"]["name"],
-                "plan": pl_m1,
-                "fact": fc_m1,
-                "kpi_pct": y1m,
-                "color": _rag_higher_better(y1m),
-                "formula": by_id["KD-M1"].get("formula"),
-            },
-            {
-                "kpi_id": "KD-M2",
-                "name": by_id["KD-M2"]["name"],
-                "plan": pl_m2,
-                "fact": fc_m2,
-                "kpi_pct": y2m,
-                "color": _rag_m2_debt(y2m),
-                "formula": by_id["KD-M2"].get("formula"),
-            },
-            {
-                "kpi_id": "KD-M3",
-                "name": by_id["KD-M3"]["name"],
-                "plan": pl_m3,
-                "fact": fc_m3,
-                "kpi_pct": y3m,
-                "color": _rag_higher_better(y3m),
-                "formula": by_id["KD-M3"].get("formula"),
-            },
-        ],
-        "квартал": [
-            {
-                "kpi_id": "KD-Q1",
-                "name": by_id["KD-Q1"]["name"],
-                "plan": pl_q1,
-                "fact": fc_q1,
-                "kpi_pct": yq1,
-                "color": _rag_higher_better(yq1),
-                "formula": by_id["KD-Q1"].get("formula"),
-            },
-            {
-                "kpi_id": "KD-Q2",
-                "name": by_id["KD-Q2"]["name"],
-                "plan": pl_q2,
-                "fact": fc_q2,
-                "kpi_pct": yq2_kpi,
-                "color": _rag_lower_turnover(q2_turnover),
-                "formula": by_id["KD-Q2"].get("formula"),
-            },
-        ],
-    }
+    try:
+        tablitsy = _build_claims_table(ref_y, ref_m)
+    except Exception:
+        tablitsy = {
+            "месяц": [
+                {
+                    "kpi_id": kid,
+                    "name": by_id[kid]["name"] if kid in by_id else kid,
+                    "plan": td.get('last_full_month_row', {}).get('plan') if (td := tiles_data.get(kid)) else None,
+                    "fact": td.get('last_full_month_row', {}).get('fact') if (td := tiles_data.get(kid)) else None,
+                    "kpi_pct": tiles_data.get(kid, {}).get('ytd', {}).get('kpi_pct'),
+                    "color": _tile_rag(kid, tiles_data.get(kid, {}).get('ytd', {}).get('kpi_pct')),
+                    "formula": by_id.get(kid, {}).get("formula"),
+                }
+                for kid in tile_ids if kid in by_id
+            ],
+        }
 
     return {
-        "Плитки": {
-            "count": len(plitki_items),
-            "items": plitki_items,
-        },
+        "Плитки": {"count": len(plitki_items), "items": plitki_items},
         "Графики": grafiki,
         "Таблицы": tablitsy,
     }
