@@ -1,0 +1,31 @@
+{
+  "cache_date": "2026-04-14",
+  "year": 2026,
+  "ref_month": 3,
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "month_name": "январь",
+      "plan_money": 0.0,
+      "plan_shipments": 0.0,
+      "plan_contracts": 0.0
+    },
+    {
+      "year": 2026,
+      "month": 2,
+      "month_name": "февраль",
+      "plan_money": 0.0,
+      "plan_shipments": 0.0,
+      "plan_contracts": 0.0
+    },
+    {
+      "year": 2026,
+      "month": 3,
+      "month_name": "март",
+      "plan_money": 0.0,
+      "plan_shipments": 0.0,
+      "plan_contracts": 0.0
+    }
+  ]
+}

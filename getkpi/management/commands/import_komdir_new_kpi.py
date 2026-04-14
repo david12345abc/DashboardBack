@@ -2,7 +2,8 @@
 Замена KPI коммерческого директора и его дочерних отделов.
 
 Удаляет все предыдущие KPI для коммерческого директора и его детей,
-создаёт 10 новых ежемесячных KPI + 3 контейнера графиков.
+создаёт 10 общих ежемесячных KPI + KD-M11 «Текучесть персонала» (только комдир)
++ 3 контейнера графиков.
 
     py manage.py import_komdir_new_kpi
 """
@@ -89,7 +90,7 @@ TILE_KPIS = [
     },
     {
         'kpi_id': 'KD-M4',
-        'name': 'ДЗ Факт на дату',
+        'name': 'Дебиторская задолженность',
         'block': 'плитка',
         'frequency': 'Ежемесячно',
         'perspective': 'Финансы',
@@ -104,7 +105,7 @@ TILE_KPIS = [
     },
     {
         'kpi_id': 'KD-M5',
-        'name': 'Просроч. ДЗ',
+        'name': 'Просроченная Дебиторская Задолженность',
         'block': 'плитка',
         'frequency': 'Ежемесячно',
         'perspective': 'Финансы',
@@ -194,6 +195,24 @@ TILE_KPIS = [
     },
 ]
 
+KOMDIR_ONLY_KPIS = [
+    {
+        'kpi_id': 'KD-M11',
+        'name': 'Текучесть персонала',
+        'block': 'плитка',
+        'frequency': 'Ежемесячно',
+        'perspective': 'Персонал',
+        'goal': 'Контроль текучести персонала коммерческой службы',
+        'formula': r'\mathrm{KPI} = \dfrac{\text{Факт}}{\text{Норма}} \times 100\%',
+        'unit': '%',
+        'source': '1С ЗУП / HR',
+        'green_threshold': '≤100%',
+        'yellow_threshold': '100,1–110%',
+        'red_threshold': '>110%',
+        'weight_pct': 5.0,
+    },
+]
+
 CHART_KPIS = [
     {
         'kpi_id': 'KD-C1',
@@ -226,7 +245,7 @@ CHART_KPIS = [
 
 
 class Command(BaseCommand):
-    help = 'Замена KPI коммерческого директора и дочерних отделов на новые 10 ежемесячных'
+    help = 'Замена KPI коммерческого директора и дочерних отделов (10 общих + KD-M11 только комдир)'
 
     def handle(self, *args, **options):
         deleted_total = 0
@@ -247,7 +266,11 @@ class Command(BaseCommand):
         created = 0
 
         for dept in all_depts:
-            for pos, kpi in enumerate(TILE_KPIS):
+            tiles_for_dept = list(TILE_KPIS)
+            if dept == KOMDIR_DEPT:
+                tiles_for_dept += KOMDIR_ONLY_KPIS
+
+            for pos, kpi in enumerate(tiles_for_dept):
                 KpiDefinition.objects.update_or_create(
                     department=dept,
                     kpi_id=kpi['kpi_id'],
@@ -269,7 +292,7 @@ class Command(BaseCommand):
                 )
                 created += 1
 
-            for pos, chart in enumerate(CHART_KPIS, start=len(TILE_KPIS)):
+            for pos, chart in enumerate(CHART_KPIS, start=len(tiles_for_dept)):
                 KpiDefinition.objects.update_or_create(
                     department=dept,
                     kpi_id=chart['kpi_id'],

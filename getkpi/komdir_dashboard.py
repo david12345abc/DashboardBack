@@ -1,18 +1,19 @@
 """
 Сборка ответа get_kpi для «Коммерческий директор» и дочерних отделов:
-10 ежемесячных KPI-плиток, 3 графика, таблица претензий.
+11 ежемесячных KPI-плиток (KD-M11 только комдир), 3 графика, таблица претензий.
 
 Плитки:
   KD-M1  Деньги (План/Факт)
   KD-M2  Отгрузки (План/Факт)
   KD-M3  Договоры (План/Факт)
-  KD-M4  ДЗ Факт на дату (Факт на дату)
-  KD-M5  Просроч. ДЗ (Факт/лимит)
+  KD-M4  Дебиторская задолженность (Факт на дату)
+  KD-M5  Просроченная Дебиторская Задолженность (Факт/лимит)
   KD-M6  Валовая прибыль (План/Факт)
   KD-M7  Расходы (Факт/лимит)
   KD-M8  ФОТ (Факт/лимит)
   KD-M9  Скидка / МЦР (Факт/норма)
   KD-M10 ТКП в SLA (Факт/норма)
+  KD-M11 Текучесть персонала (Факт/норма) — только коммерческий директор
 
 Графики:
   KD-C1  Линейный: по месяцам Деньги, Отгрузки, Договоры (факт)
@@ -27,7 +28,7 @@ from __future__ import annotations
 import random
 from datetime import date
 
-from . import valovaya_pribyl
+from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_otgruzki_fact, valovaya_pribyl
 from .kpi_periods import last_full_month
 
 MONTH_NAMES_RU = {
@@ -36,7 +37,7 @@ MONTH_NAMES_RU = {
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
 
-LOWER_IS_BETTER_IDS = frozenset({'KD-M4', 'KD-M5', 'KD-M7', 'KD-M8', 'KD-M9'})
+LOWER_IS_BETTER_IDS = frozenset({'KD-M4', 'KD-M5', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M11'})
 HIGHER_IS_BETTER_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-M6', 'KD-M10'})
 
 PIE_CHART_CATEGORIES = [
@@ -129,10 +130,136 @@ def _generate_tile_monthly_data(kpi_id: str, plan: float,
 
 
 def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
-                   ref_y: int, ref_m: int) -> dict:
+                   ref_y: int, ref_m: int, dz_payload: dict | None = None) -> dict:
     """Получить данные для одной плитки.
-    Для KD-M6 (Валовая прибыль) — из valovaya_pribyl, остальные — синтетика.
+    KD-M3 — из calc_dogovory_fact,
+    KD-M4/KD-M5 — из calc_debitorka,
+    KD-M6 — из valovaya_pribyl,
+    остальные — синтетика.
     """
+    if kpi_id == 'KD-M1':
+        dengi = calc_dengi_fact.get_dengi_monthly(year=ref_y, month=ref_m)
+        raw_months = dengi.get('months', [])
+        plan = 100_000_000.0
+        months = []
+        ref_row = None
+        for row in raw_months:
+            fact = row.get('fact')
+            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
+            mrow = {
+                'month': row.get('month'),
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(row.get('month'), ''),
+                'plan': plan,
+                'fact': fact,
+                'kpi_pct': pct,
+                'has_data': fact is not None,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and row.get('month') == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else plan,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
+        }
+
+    if kpi_id == 'KD-M2':
+        otg = calc_otgruzki_fact.get_otgruzki_monthly(year=ref_y, month=ref_m)
+        raw_months = otg.get('months', [])
+        plan = 100_000_000.0
+        months = []
+        ref_row = None
+        for row in raw_months:
+            fact = row.get('fact')
+            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
+            mrow = {
+                'month': row.get('month'),
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(row.get('month'), ''),
+                'plan': plan,
+                'fact': fact,
+                'kpi_pct': pct,
+                'has_data': fact is not None,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and row.get('month') == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else plan,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
+        }
+
+    if kpi_id == 'KD-M3':
+        dog = calc_dogovory_fact.get_dogovory_monthly(year=ref_y, month=ref_m)
+        raw_months = dog.get('months', [])
+        plan = 100_000_000.0
+        months = []
+        ref_row = None
+        for row in raw_months:
+            fact = row.get('fact')
+            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
+            mrow = {
+                'month': row.get('month'),
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(row.get('month'), ''),
+                'plan': plan,
+                'fact': fact,
+                'kpi_pct': pct,
+                'has_data': fact is not None,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and row.get('month') == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else plan,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
+        }
+
     if kpi_id == 'KD-M6':
         vp = valovaya_pribyl.get_vp_ytd()
         return {
@@ -140,6 +267,54 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             'last_full_month_row': vp.get('last_full_month_row'),
             'ytd': vp['ytd'],
             'kpi_period': vp.get('kpi_period'),
+        }
+
+    if kpi_id in {'KD-M4', 'KD-M5'}:
+        if dz_payload is None:
+            dz_payload = calc_debitorka.get_komdir_dz_monthly(year=ref_y, month=ref_m)
+        raw_months = dz_payload.get('months', [])
+
+        if kpi_id == 'KD-M5':
+            plan = calc_dz_limits.get_total_overdue_limit()
+        else:
+            plan = 100_000_000.0
+
+        months = []
+        ref_row = None
+        for row in raw_months:
+            fact = row.get('dz_fact') if kpi_id == 'KD-M4' else row.get('overdue_fact')
+            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
+
+            mrow = {
+                'month': row.get('month'),
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(row.get('month'), ''),
+                'plan': plan,
+                'fact': fact,
+                'kpi_pct': pct,
+                'has_data': fact is not None,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and row.get('month') == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else plan,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
         }
 
     plan = 100_000_000.0
@@ -313,13 +488,18 @@ def build_komdir_payload(kpi_list: list[dict],
         pairs, ref_y, ref_m = _get_monthly_pairs()
 
     tile_ids = [
-        'KD-M1', 'KD-M2', 'KD-M3', 'KD-M4', 'KD-M5',
-        'KD-M6', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M10',
+        kid for kid in [
+            'KD-M1', 'KD-M2', 'KD-M3', 'KD-M4', 'KD-M5',
+            'KD-M6', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M10', 'KD-M11',
+        ]
+        if kid in by_id
     ]
+
+    dz_payload = calc_debitorka.get_komdir_dz_monthly(year=ref_y, month=ref_m)
 
     tiles_data: dict[str, dict] = {}
     for kid in tile_ids:
-        tiles_data[kid] = _get_tile_data(kid, pairs, ref_y, ref_m)
+        tiles_data[kid] = _get_tile_data(kid, pairs, ref_y, ref_m, dz_payload=dz_payload)
 
     plitki_items = []
     numeric_for_avg: list[float] = []
