@@ -176,11 +176,10 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
 
 def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
-    """KD-C1: линейный график — Деньги, Отгрузки, Договоры (факт по месяцам)."""
+    """KD-C1: линейный график — Деньги, Отгрузки, Договоры (только факт по месяцам)."""
     meta = by_id.get('KD-C1', {})
     series = []
-    colors = ['#2b5ca6', '#e6863a', '#5aad5e']
-    for i, kid in enumerate(['KD-M1', 'KD-M2', 'KD-M3']):
+    for kid in ['KD-M1', 'KD-M2', 'KD-M3']:
         kpi_meta = by_id.get(kid, {})
         td = tiles_data.get(kid, {})
         monthly = td.get('monthly_data') or []
@@ -190,15 +189,12 @@ def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
                 "month": row.get("month"),
                 "month_name": row.get("month_name"),
                 "year": row.get("year"),
-                "plan": row.get("plan"),
                 "fact": row.get("fact"),
-                "kpi_pct": row.get("kpi_pct"),
-                "has_data": row.get("has_data", True),
             })
         series.append({
             "kpi_id": kid,
             "name": kpi_meta.get("name", kid),
-            "chart_type": "line_plan_fact_monthly",
+            "chart_type": "line_fact_monthly",
             "chart_type_label": f"Факт по месяцам: {kpi_meta.get('name', kid)}",
             "points": points,
         })
@@ -207,8 +203,8 @@ def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
         "kpi_id": "KD-C1",
         "name": meta.get("name", "Динамика: Деньги, Отгрузки, Договоры"),
         "periodicity": "ежемесячно",
-        "chart_type": meta.get("chart_type", "multi_line_plan_fact_monthly"),
-        "chart_type_label": meta.get("chart_type_label", "Линейный тренд по месяцам"),
+        "chart_type": meta.get("chart_type", "multi_line_fact_monthly"),
+        "chart_type_label": "Линейный тренд по месяцам (факт)",
         "series": series,
     }
 
