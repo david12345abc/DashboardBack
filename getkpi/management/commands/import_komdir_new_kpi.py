@@ -2,7 +2,7 @@
 Замена KPI коммерческого директора и его дочерних отделов.
 
 Удаляет все предыдущие KPI для коммерческого директора и его детей,
-создаёт 10 общих ежемесячных KPI + KD-M11 «Текучесть персонала» (только комдир)
+создаёт 11 общих ежемесячных KPI (включая KD-M11 «Текучесть персонала»)
 + 3 контейнера графиков.
 
     py manage.py import_komdir_new_kpi
@@ -193,9 +193,6 @@ TILE_KPIS = [
         'red_threshold': '<90%',
         'weight_pct': 5.0,
     },
-]
-
-KOMDIR_ONLY_KPIS = [
     {
         'kpi_id': 'KD-M11',
         'name': 'Текучесть персонала',
@@ -212,6 +209,8 @@ KOMDIR_ONLY_KPIS = [
         'weight_pct': 5.0,
     },
 ]
+
+KOMDIR_ONLY_KPIS: list[dict] = []
 
 CHART_KPIS = [
     {
@@ -245,7 +244,7 @@ CHART_KPIS = [
 
 
 class Command(BaseCommand):
-    help = 'Замена KPI коммерческого директора и дочерних отделов (10 общих + KD-M11 только комдир)'
+    help = 'Замена KPI коммерческого директора и дочерних отделов (11 общих KPI + 3 графика)'
 
     def handle(self, *args, **options):
         deleted_total = 0

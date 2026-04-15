@@ -13,7 +13,7 @@
   KD-M8  ФОТ (Факт/лимит)
   KD-M9  Скидка / МЦР (Факт/норма)
   KD-M10 ТКП в SLA (Факт/норма)
-  KD-M11 Текучесть персонала (Факт/норма) — только коммерческий директор
+  KD-M11 Текучесть персонала (План/Факт) — комдир: сумма всех отделов; дети: свои
 
 Графики:
   KD-C1  Линейный: по месяцам Деньги, Отгрузки, Договоры (факт)
@@ -28,7 +28,7 @@ from __future__ import annotations
 import random
 from datetime import date
 
-from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_otgruzki_fact, calc_plan, valovaya_pribyl
+from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_otgruzki_fact, calc_plan, calc_tekuchest, valovaya_pribyl
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
 from .kpi_periods import last_full_month
 
@@ -266,6 +266,50 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             },
         }
 
+    if kpi_id == 'KD-M11':
+        tek = calc_tekuchest.get_tekuchest_monthly(
+            year=ref_y, month=ref_m, dept_guid=dept_guid,
+        )
+        raw_months = tek.get('months', [])
+        months = []
+        ref_row = None
+        for row in raw_months:
+            m = row.get('month')
+            p = row.get('plan')
+            f = row.get('fact')
+            pct = round(f / p * 100, 1) if p and f is not None else None
+            mrow = {
+                'month': m,
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(m, ''),
+                'plan': p,
+                'fact': f,
+                'kpi_pct': pct,
+                'has_data': f is not None and f != 0 or p is not None and p != 0,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and m == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else 0,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
+        }
+
     plan = 100_000_000.0
     months = _generate_tile_monthly_data(kpi_id, plan, pairs)
     ref_row = None
@@ -404,11 +448,19 @@ def _build_bar_chart(by_id: dict, tiles_data: dict,
     }
 
 
-def _build_claims_table(ref_y: int, ref_m: int) -> dict:
-    """Таблица претензий за выбранный месяц — логика export_claims.py, но в JSON."""
+def _build_claims_table(ref_y: int, ref_m: int,
+                        dept_guid: str | None = None) -> dict:
+    """Таблица претензий за выбранный месяц.
+    dept_guid=None  → коммерческий директор, все претензии;
+    dept_guid='...' → дочернее подразделение, только его претензии.
+    """
     from .komdir_claims import fetch_claims_for_month
 
     rows = fetch_claims_for_month(ref_y, ref_m)
+
+    if dept_guid:
+        rows = [r for r in rows if r.get("order_dept_key") == dept_guid]
+
     return {
         "KD-T-CLAIMS": {
             "name": f"Претензии за {MONTH_NAMES_RU[ref_m]} {ref_y}",
@@ -517,7 +569,7 @@ def build_komdir_payload(kpi_list: list[dict],
     }
 
     try:
-        tablitsy = _build_claims_table(ref_y, ref_m)
+        tablitsy = _build_claims_table(ref_y, ref_m, dept_guid=dept_guid)
     except Exception:
         tablitsy = {
             "месяц": [

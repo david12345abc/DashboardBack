@@ -232,6 +232,7 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
             "date_end": date_end,
             "order_num": order_num,
             "order_dept": order_dept,
+            "order_dept_key": order_dept_key,
             "nomenclature": nom,
             "characteristic": char,
             "order_sum": order_sum,
