@@ -28,7 +28,7 @@ from __future__ import annotations
 import random
 from datetime import date
 
-from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_otgruzki_fact, calc_plan, calc_tekuchest, valovaya_pribyl
+from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_fot, calc_kp_price, calc_otgruzki_fact, calc_plan, calc_rashody, calc_tekuchest, valovaya_pribyl
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
 from .kpi_periods import last_full_month
 
@@ -266,6 +266,50 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             },
         }
 
+    if kpi_id == 'KD-M8':
+        fot = calc_fot.get_fot_monthly(
+            year=ref_y, month=ref_m, dept_guid=dept_guid,
+        )
+        raw_months = fot.get('months', [])
+        months = []
+        ref_row = None
+        for row in raw_months:
+            m = row.get('month')
+            plan = row.get('plan')
+            fact = row.get('fact')
+            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
+            mrow = {
+                'month': m,
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(m, ''),
+                'plan': plan,
+                'fact': fact,
+                'kpi_pct': pct,
+                'has_data': fact is not None and fact != 0,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and m == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else 0,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
+        }
+
     if kpi_id == 'KD-M11':
         tek = calc_tekuchest.get_tekuchest_monthly(
             year=ref_y, month=ref_m, dept_guid=dept_guid,
@@ -286,6 +330,94 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
                 'fact': f,
                 'kpi_pct': pct,
                 'has_data': f is not None and f != 0 or p is not None and p != 0,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and m == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else 0,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
+        }
+
+    if kpi_id == 'KD-M7':
+        rash = calc_rashody.get_rashody_monthly(
+            year=ref_y, month=ref_m, dept_guid=dept_guid,
+        )
+        raw_months = rash.get('months', [])
+        months = []
+        ref_row = None
+        for row in raw_months:
+            m = row.get('month')
+            plan = row.get('plan')
+            fact = row.get('fact', 0)
+            pct = round(fact / plan * 100, 1) if plan and fact is not None else None
+            mrow = {
+                'month': m,
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(m, ''),
+                'plan': plan,
+                'fact': fact,
+                'kpi_pct': pct,
+                'has_data': fact != 0,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and m == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else 0,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
+        }
+
+    if kpi_id == 'KD-M9':
+        kp = calc_kp_price.get_kp_price_monthly(
+            year=ref_y, month=ref_m, dept_guid=dept_guid,
+        )
+        raw_months = kp.get('months', [])
+        months = []
+        ref_row = None
+        for row in raw_months:
+            m = row.get('month')
+            fact = row.get('fact', 0)
+            calc = row.get('calc', 0)
+            pct = round(fact / calc * 100, 1) if calc else None
+            mrow = {
+                'month': m,
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(m, ''),
+                'plan': calc,
+                'fact': fact,
+                'kpi_pct': pct,
+                'has_data': fact != 0 or calc != 0,
             }
             months.append(mrow)
             if row.get('year') == ref_y and m == ref_m:
@@ -344,7 +476,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
 
 def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
-    """KD-C1: линейный график — Деньги, Отгрузки, Договоры (только факт по месяцам)."""
+    """KD-C1: линейный график — Деньги, Отгрузки, Договоры (план + факт по месяцам)."""
     meta = by_id.get('KD-C1', {})
     series = []
     for kid in ['KD-M1', 'KD-M2', 'KD-M3']:
@@ -357,13 +489,14 @@ def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
                 "month": row.get("month"),
                 "month_name": row.get("month_name"),
                 "year": row.get("year"),
+                "plan": row.get("plan"),
                 "fact": row.get("fact"),
             })
         series.append({
             "kpi_id": kid,
             "name": kpi_meta.get("name", kid),
-            "chart_type": "line_fact_monthly",
-            "chart_type_label": f"Факт по месяцам: {kpi_meta.get('name', kid)}",
+            "chart_type": "line_plan_fact_monthly",
+            "chart_type_label": f"План/Факт по месяцам: {kpi_meta.get('name', kid)}",
             "points": points,
         })
 
@@ -371,8 +504,8 @@ def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
         "kpi_id": "KD-C1",
         "name": meta.get("name", "Динамика: Деньги, Отгрузки, Договоры"),
         "periodicity": "ежемесячно",
-        "chart_type": meta.get("chart_type", "multi_line_fact_monthly"),
-        "chart_type_label": "Линейный тренд по месяцам (факт)",
+        "chart_type": meta.get("chart_type", "multi_line_plan_fact_monthly"),
+        "chart_type_label": "Линейный тренд по месяцам (план/факт)",
         "series": series,
     }
 
