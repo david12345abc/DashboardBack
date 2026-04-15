@@ -125,7 +125,7 @@ def _generate_tile_monthly_data(kpi_id: str, plan: float,
             "plan": plan,
             "fact": round(fact, 2),
             "kpi_pct": pct,
-            "has_data": True,
+            "has_data": False,
         })
     return result
 

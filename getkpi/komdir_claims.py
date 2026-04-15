@@ -1,7 +1,7 @@
 """
 Получение претензий (Catalog_Претензии) из 1С OData за указанный месяц.
 
-Логика повторяет export_claims.py, но возвращает список dict (для JSON API),
+Логика идентична export_claims2.py, но возвращает список dict (для JSON API),
 а не записывает CSV. Результат кэшируется на день в JSON-файл.
 """
 from __future__ import annotations
@@ -9,9 +9,9 @@ from __future__ import annotations
 import calendar
 import json
 import logging
-import time
 from datetime import date
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -67,6 +67,54 @@ def _save_cache(year: int, month: int, rows: list[dict]) -> None:
         pass
 
 
+def _load_catalog_full(session: requests.Session,
+                       entity: str, select_fields: str) -> dict[str, dict]:
+    """Загрузка справочника целиком с пагинацией и $orderby."""
+    result: dict[str, dict] = {}
+    skip = 0
+    PAGE = 5000
+    while True:
+        url = (
+            f"{BASE}/{quote(entity)}?$format=json"
+            f"&$top={PAGE}&$skip={skip}"
+            f"&$select={quote(select_fields, safe=',_')}"
+            f"&$orderby=Ref_Key"
+        )
+        try:
+            r = session.get(url, timeout=120)
+        except Exception as e:
+            logger.error("%s HTTP error: %s", entity, e)
+            break
+        if not r.ok:
+            logger.error("%s HTTP %d", entity, r.status_code)
+            break
+        rows = r.json().get("value", [])
+        if not rows:
+            break
+        for item in rows:
+            result[item["Ref_Key"]] = item
+        if len(rows) < PAGE:
+            break
+        skip += len(rows)
+    return result
+
+
+def _fetch_single(session: requests.Session,
+                  entity: str, guid: str, select_fields: str) -> dict | None:
+    """Точечная загрузка одной записи по GUID."""
+    url = (
+        f"{BASE}/{quote(entity)}(guid'{guid}')"
+        f"?$format=json&$select={quote(select_fields, safe=',_')}"
+    )
+    try:
+        r = session.get(url, timeout=15)
+        if r.ok:
+            return r.json()
+    except Exception:
+        pass
+    return None
+
+
 def _fetch_from_odata(year: int, month: int) -> list[dict]:
     """Загружает претензии из 1С OData за указанный месяц."""
     last_day = calendar.monthrange(year, month)[1]
@@ -109,46 +157,38 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
             break
         skip += 5000
 
-    partners = {}
-    p_skip = 0
-    while True:
-        url = f"{BASE}/Catalog_Партнеры?$format=json&$top=5000&$skip={p_skip}&$select=Ref_Key,Description"
-        try:
-            r = session.get(url, timeout=60)
-        except Exception:
-            break
-        if not r.ok:
-            break
-        rows = r.json().get("value", [])
-        for p in rows:
-            partners[p["Ref_Key"]] = p.get("Description", "").strip()
-        if len(rows) < 5000:
-            break
-        p_skip += 5000
+    # ── Партнёры (bulk + дозагрузка поштучно) ──
+    raw_partners = _load_catalog_full(session, "Catalog_Партнеры", "Ref_Key,Description")
+    partners = {k: v.get("Description", "").strip() for k, v in raw_partners.items()}
 
-    depts = {}
-    try:
-        r = session.get(
-            f"{BASE}/Catalog_СтруктураПредприятия?$format=json&$top=5000&$select=Ref_Key,Description",
-            timeout=30,
-        )
-        if r.ok:
-            for d in r.json().get("value", []):
-                depts[d["Ref_Key"]] = d.get("Description", "").strip()
-    except Exception:
-        pass
+    needed_p = {
+        c.get("Партнер_Key")
+        for c in claims if c.get("Партнер_Key") and c.get("Партнер_Key") != EMPTY
+    }
+    for pk in needed_p - set(partners.keys()):
+        item = _fetch_single(session, "Catalog_Партнеры", pk, "Ref_Key,Description")
+        if item:
+            partners[pk] = (item.get("Description") or "").strip()
 
+    # ── Подразделения ──
+    raw_depts = _load_catalog_full(session, "Catalog_СтруктураПредприятия", "Ref_Key,Description")
+    depts = {k: v.get("Description", "").strip() for k, v in raw_depts.items()}
+
+    # ── Заказы клиентов ──
     order_keys_needed = set()
     for c in claims:
         ok = c.get("ТД_ЗаказКлиента_Key")
         if ok and ok != EMPTY:
             order_keys_needed.add(ok)
 
-    orders_info = {}
+    orders_info: dict[str, dict] = {}
     o_skip = 0
     o_select = "Ref_Key,Number,Date,Подразделение_Key,СуммаДокумента"
     while True:
-        url = f"{BASE}/Document_ЗаказКлиента?$format=json&$top=500&$skip={o_skip}&$select={o_select}"
+        url = (
+            f"{BASE}/{quote('Document_ЗаказКлиента')}?$format=json"
+            f"&$top=500&$skip={o_skip}&$select={o_select}"
+        )
         try:
             r = session.get(url, timeout=120)
         except Exception:
@@ -166,34 +206,43 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
         if len(orders_info) >= len(order_keys_needed):
             break
 
-    nom_names: dict[str, str] = {}
-    char_names: dict[str, str] = {}
-    for cat_name, target in [
-        ("Catalog_Номенклатура", nom_names),
-        ("Catalog_ХарактеристикиНоменклатуры", char_names),
-    ]:
-        try:
-            r = session.get(f"{BASE}/{cat_name}?$format=json&$top=1", timeout=10)
-        except Exception:
-            continue
-        if not r.ok:
-            continue
-        c_skip = 0
-        while True:
-            url = f"{BASE}/{cat_name}?$format=json&$top=5000&$skip={c_skip}&$select=Ref_Key,Description"
-            try:
-                r2 = session.get(url, timeout=60)
-            except Exception:
-                break
-            if not r2.ok:
-                break
-            rows = r2.json().get("value", [])
-            for item in rows:
-                target[item["Ref_Key"]] = item.get("Description", "").strip()
-            if len(rows) < 5000:
-                break
-            c_skip += 5000
+    # ── Номенклатура: Description + Code (bulk + дозагрузка) ──
+    raw_nom = _load_catalog_full(session, "Catalog_Номенклатура", "Ref_Key,Description,Code")
+    nom_display: dict[str, str] = {}
+    for k, v in raw_nom.items():
+        desc = (v.get("Description") or "").strip()
+        code = (v.get("Code") or "").strip()
+        nom_display[k] = f"{desc} ({code})" if desc and code else desc or code
 
+    needed_n = {
+        c.get("ТД_Номенклатура_Key")
+        for c in claims if c.get("ТД_Номенклатура_Key") and c.get("ТД_Номенклатура_Key") != EMPTY
+    }
+    for nk in needed_n - set(nom_display.keys()):
+        item = _fetch_single(session, "Catalog_Номенклатура", nk, "Ref_Key,Description,Code")
+        if item:
+            desc = (item.get("Description") or "").strip()
+            code = (item.get("Code") or "").strip()
+            nom_display[nk] = f"{desc} ({code})" if desc and code else desc or code
+
+    # ── Характеристики номенклатуры (bulk + дозагрузка) ──
+    raw_char = _load_catalog_full(
+        session, "Catalog_ХарактеристикиНоменклатуры", "Ref_Key,Description",
+    )
+    char_names = {k: v.get("Description", "").strip() for k, v in raw_char.items()}
+
+    needed_c = {
+        c.get("ТД_Характеристика_Key")
+        for c in claims if c.get("ТД_Характеристика_Key") and c.get("ТД_Характеристика_Key") != EMPTY
+    }
+    for ck in needed_c - set(char_names.keys()):
+        item = _fetch_single(
+            session, "Catalog_ХарактеристикиНоменклатуры", ck, "Ref_Key,Description",
+        )
+        if item:
+            char_names[ck] = (item.get("Description") or "").strip()
+
+    # ── Сборка результата ──
     result_rows = []
     for c in claims:
         order_key = c.get("ТД_ЗаказКлиента_Key", "")
@@ -215,7 +264,7 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
         order_sum = order.get("СуммаДокумента", 0)
 
         nom_key = c.get("ТД_Номенклатура_Key", "")
-        nom = nom_names.get(nom_key, nom_key if nom_key and nom_key != EMPTY else "")
+        nom = nom_display.get(nom_key, nom_key if nom_key and nom_key != EMPTY else "")
 
         char_key = c.get("ТД_Характеристика_Key", "")
         char = char_names.get(char_key, char_key if char_key and char_key != EMPTY else "")

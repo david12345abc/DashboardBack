@@ -263,7 +263,6 @@ def _synthetic_quarter_row_for_tile(kpi: dict) -> tuple[dict, dict]:
     if 'текучесть' in nm or kid.endswith('-Q5') or kid == 'ZKD-Q2':
         fact = round(random.uniform(2.0, 8.0), 2)
         target = 5.0
-        # На плитке — сама текучесть (%); не «выполнение плана» до 100.
         row = {
             'quarter': lq,
             'year': ly,
@@ -271,6 +270,7 @@ def _synthetic_quarter_row_for_tile(kpi: dict) -> tuple[dict, dict]:
             'plan_max_turnover_pct': target,
             'fact_turnover_pct': fact,
             'kpi_pct': fact,
+            'has_data': False,
         }
         return row, period
     plan = 100.0
@@ -283,6 +283,7 @@ def _synthetic_quarter_row_for_tile(kpi: dict) -> tuple[dict, dict]:
         'plan': plan,
         'fact': fact,
         'kpi_pct': kpi_pct,
+        'has_data': False,
     }
     return row, period
 
@@ -294,7 +295,7 @@ def _synthetic_year_row_for_tile(kpi: dict) -> tuple[dict, dict]:
     fact = round(random.uniform(90, 118), 1)
     kpi_pct = round(fact / plan * 100, 1)
     period = {'type': 'last_full_year', 'year': ref_year}
-    row = {'year': ref_year, 'plan': plan, 'fact': fact, 'kpi_pct': kpi_pct}
+    row = {'year': ref_year, 'plan': plan, 'fact': fact, 'kpi_pct': kpi_pct, 'has_data': False}
     return row, period
 
 
@@ -447,6 +448,7 @@ def _generate_monthly_data(plan: float) -> list[dict]:
             "plan": plan,
             "fact": round(fact, 2),
             "kpi_pct": pct,
+            "has_data": False,
         })
     return result
 
