@@ -356,6 +356,122 @@ def get_komdir_dz_monthly(year: int | None = None,
     return payload
 
 
+def _cache_path_overdue_detail(na_datu: date) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / f"overdue_detail_{na_datu.isoformat()}.json"
+
+
+def _calc_overdue_detail(na_datu: date) -> dict:
+    """Детализация просроченной ДЗ по контрагентам на дату.
+
+    Возвращает список строк (partner_name, amount, days_overdue)
+    с разбивкой по подразделениям.
+    """
+    session = requests.Session()
+    session.auth = AUTH
+    na_datu_str = na_datu.isoformat()
+    logger.info("calc_debitorka: overdue detail for %s", na_datu_str)
+
+    records = fetch_all_register(session, na_datu_str)
+    balances = aggregate_balances(records)
+
+    obj_keys = {obj for (obj, _) in balances.keys()}
+    obj_catalog = resolve_objects(session, obj_keys)
+
+    overdue_cutoff = f"{na_datu_str}T00:00:00"
+    dept_keys_lower = {d.lower() for d in DEPARTMENTS}
+
+    by_partner: dict[tuple[str, str], dict] = defaultdict(
+        lambda: {"amount": 0.0, "max_days": 0, "dept": "", "dept_name": ""}
+    )
+    partner_keys_used: set[str] = set()
+
+    for (obj_key, planned_dt), balance in balances.items():
+        cat = obj_catalog.get(obj_key)
+        if not cat:
+            continue
+        dept = cat["dept"]
+        if dept not in dept_keys_lower:
+            continue
+        if balance < TOLERANCE:
+            continue
+        if not planned_dt or planned_dt <= "0001-01-02" or planned_dt >= overdue_cutoff:
+            continue
+
+        days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
+        dept_name = DEPARTMENTS.get(dept, dept[:8])
+        partner_key = cat["partner"]
+        partner_keys_used.add(partner_key)
+
+        key = (dept, partner_key)
+        entry = by_partner[key]
+        entry["amount"] += balance
+        entry["max_days"] = max(entry["max_days"], days_overdue)
+        entry["dept"] = dept
+        entry["dept_name"] = dept_name
+
+    partner_names = resolve_partner_names(session, partner_keys_used)
+
+    rows = []
+    for (dept, partner_key), data in by_partner.items():
+        rows.append({
+            "dept_key": dept,
+            "dept_name": data["dept_name"],
+            "partner_key": partner_key,
+            "partner_name": partner_names.get(partner_key, partner_key[:8]),
+            "amount": round(data["amount"], 2),
+            "days_overdue": data["max_days"],
+        })
+
+    rows.sort(key=lambda x: -x["amount"])
+    total = round(sum(r["amount"] for r in rows), 2)
+
+    return {
+        "na_datu": na_datu_str,
+        "cache_date": date.today().isoformat(),
+        "total_overdue": total,
+        "rows": rows,
+    }
+
+
+def get_overdue_detail(year: int | None = None,
+                       month: int | None = None,
+                       dept_guid: str | None = None) -> dict:
+    """Детализация просроченной ДЗ по контрагентам.
+
+    dept_guid=None → все отделы (коммерческий директор),
+    dept_guid='...' → только указанный отдел.
+    Результат кэшируется на день.
+    """
+    today = date.today()
+    ref_y, ref_m = _last_full_month(today)
+    if year is not None and month is not None:
+        ref_y, ref_m = year, month
+
+    na_datu = _month_end(ref_y, ref_m)
+    cache_path = _cache_path_overdue_detail(na_datu)
+    cached = _load_json(cache_path)
+
+    if cached is not None and cached.get("cache_date") == today.isoformat():
+        data = cached
+    else:
+        data = _calc_overdue_detail(na_datu)
+        _save_json(cache_path, data)
+
+    rows = data.get("rows", [])
+    if dept_guid:
+        dept_lower = dept_guid.lower()
+        rows = [r for r in rows if r.get("dept_key") == dept_lower]
+
+    total = round(sum(r["amount"] for r in rows), 2)
+
+    return {
+        "na_datu": data.get("na_datu"),
+        "total_overdue": total,
+        "rows": rows,
+    }
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     _print = functools.partial(print, flush=True)

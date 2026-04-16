@@ -653,6 +653,41 @@ def _build_claims_table(ref_y: int, ref_m: int,
     }
 
 
+def _build_overdue_table(ref_y: int, ref_m: int,
+                         dept_guid: str | None = None) -> dict:
+    """Таблица детализации просроченной ДЗ по контрагентам.
+
+    Сумма строк совпадает с KD-M5 (просроченная ДЗ).
+    dept_guid=None → все отделы, dept_guid='...' → один отдел.
+    """
+    detail = calc_debitorka.get_overdue_detail(
+        year=ref_y, month=ref_m, dept_guid=dept_guid,
+    )
+
+    rows = []
+    for r in detail.get("rows", []):
+        rows.append({
+            "counterparty": r["partner_name"],
+            "amount": r["amount"],
+            "days_overdue": r["days_overdue"],
+            "reason": None,
+        })
+
+    return {
+        "name": f"Просроченная дебиторская задолженность на {detail.get('na_datu', '')}",
+        "periodicity": "ежемесячно",
+        "description": "Детализация просроченной ДЗ по контрагентам",
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES_RU[ref_m],
+        },
+        "total_overdue": detail.get("total_overdue", 0),
+        "columns": ["Контрагент", "Сумма", "Дн. просрочки", "Причина"],
+        "rows": rows,
+    }
+
+
 def build_komdir_payload(kpi_list: list[dict],
                          month: int | None = None,
                          year: int | None = None,
@@ -745,9 +780,21 @@ def build_komdir_payload(kpi_list: list[dict],
         "KD-C3": _build_bar_chart(by_id, tiles_data, ref_y, ref_m),
     }
 
+    tablitsy: dict = {}
+
     try:
-        tablitsy = _build_claims_table(ref_y, ref_m, dept_guid=dept_guid)
+        tablitsy.update(_build_claims_table(ref_y, ref_m, dept_guid=dept_guid))
     except Exception:
+        pass
+
+    try:
+        tablitsy["KD-T-OVERDUE"] = _build_overdue_table(
+            ref_y, ref_m, dept_guid=dept_guid,
+        )
+    except Exception:
+        pass
+
+    if not tablitsy:
         tablitsy = {
             "месяц": [
                 {
