@@ -226,6 +226,22 @@ def get_total_overdue_limit() -> float:
     return sum(get_overdue_limits().values())
 
 
+def get_dept_overdue_limit(dept_guid: str | None) -> float:
+    """Лимит просроченной ДЗ для конкретного подразделения (по GUID).
+    dept_guid=None → суммарный лимит всех отделов.
+    """
+    if dept_guid is None:
+        return get_total_overdue_limit()
+    limits = get_overdue_limits()
+    dept_name = DEPT_GUID_TO_SHORT.get(dept_guid.lower())
+    if dept_name and dept_name in limits:
+        return limits[dept_name]
+    dept_name_upper = DEPT_GUID_TO_SHORT.get(dept_guid)
+    if dept_name_upper and dept_name_upper in limits:
+        return limits[dept_name_upper]
+    return get_total_overdue_limit()
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     import functools

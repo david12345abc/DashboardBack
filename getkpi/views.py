@@ -506,16 +506,6 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
             entry['kpi_period'] = tq['kpi_period']
             return entry
 
-    if chairman_data.is_chairman_kpi(kpi_id):
-        ch = chairman_data.get_chairman_kpi_data(kpi_id)
-        if ch is not None:
-            entry['data_granularity'] = 'monthly'
-            entry['monthly_data'] = ch['months']
-            entry['last_full_month_row'] = ch.get('last_full_month_row')
-            entry['ytd'] = ch['ytd']
-            entry['kpi_period'] = ch.get('kpi_period')
-            return entry
-
     if kpi_id == 'KD-M1':
         vp_data = valovaya_pribyl.get_vp_ytd()
         entry['data_granularity'] = 'monthly'
@@ -688,6 +678,13 @@ def get_kpi(request):
             json_dumps_params={'ensure_ascii': False},
         )
 
+    if chairman_data.is_chairman_department(requested_dept):
+        payload = chairman_data.build_chairman_payload(kpis, month=req_month, year=req_year)
+        return JsonResponse(
+            {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+            json_dumps_params={'ensure_ascii': False},
+        )
+
     payload = _build_universal_payload(requested_dept, kpis, month=req_month, year=req_year)
     return JsonResponse(
         {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
@@ -762,6 +759,17 @@ def get_all_departments(request):
                 json_dumps_params={'ensure_ascii': False},
             )
 
+        if chairman_data.is_chairman_department(requested_dept):
+            month_param = request.GET.get('month')
+            year_param = request.GET.get('year')
+            req_m = int(month_param) if month_param else None
+            req_yr = int(year_param) if year_param else None
+            payload = chairman_data.build_chairman_payload(kpis, month=req_m, year=req_yr)
+            return JsonResponse(
+                {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+                json_dumps_params={'ensure_ascii': False},
+            )
+
         month_param = request.GET.get('month')
         year_param = request.GET.get('year')
         req_month_all = int(month_param) if month_param else None
@@ -785,6 +793,9 @@ def get_all_departments(request):
         kpis = _get_kpi_dicts(dept)
         if _is_komdir_department(dept):
             payload = _build_komdir_style_payload(dept, kpis, request)
+            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
+        elif chairman_data.is_chairman_department(dept):
+            payload = chairman_data.build_chairman_payload(kpis, month=req_month_all, year=req_year_all)
             summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
         elif is_komdir_child(dept):
             dg = dept_guid_for_kpi_key(commercial_kpi_key(dept))

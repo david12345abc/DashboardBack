@@ -28,7 +28,7 @@ from __future__ import annotations
 import random
 from datetime import date
 
-from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_fot, calc_kp_price, calc_otgruzki_fact, calc_plan, calc_rashody, calc_tekuchest, valovaya_pribyl
+from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_fot, calc_kp_price, calc_otgruzki_fact, calc_plan, calc_rashody, calc_tekuchest, calc_tkp_sla, valovaya_pribyl
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
 from .kpi_periods import last_full_month
 
@@ -224,7 +224,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         raw_months = dz_payload.get('months', [])
 
         if kpi_id == 'KD-M5':
-            plan = calc_dz_limits.get_total_overdue_limit()
+            plan = calc_dz_limits.get_dept_overdue_limit(dept_guid)
         else:
             plan = 100_000_000.0
 
@@ -418,6 +418,50 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
                 'fact': fact,
                 'kpi_pct': pct,
                 'has_data': fact != 0 or calc != 0,
+            }
+            months.append(mrow)
+            if row.get('year') == ref_y and m == ref_m:
+                ref_row = mrow
+
+        with_data = [r for r in months if r.get('kpi_pct') is not None]
+        return {
+            'monthly_data': months,
+            'last_full_month_row': dict(ref_row) if ref_row else None,
+            'ytd': {
+                'total_plan': ref_row['plan'] if ref_row else 0,
+                'total_fact': ref_row['fact'] if ref_row else 0,
+                'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
+                'months_with_data': len(with_data),
+                'months_total': len(months),
+            },
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
+        }
+
+    if kpi_id == 'KD-M10':
+        sla = calc_tkp_sla.get_tkp_sla_monthly(
+            year=ref_y, month=ref_m, dept_guid=dept_guid,
+        )
+        raw_months = sla.get('months', [])
+        months = []
+        ref_row = None
+        for row in raw_months:
+            m = row.get('month')
+            plan_val = row.get('plan', 0)
+            fact_val = row.get('fact', 0)
+            pct = row.get('pct')
+            mrow = {
+                'month': m,
+                'year': row.get('year'),
+                'month_name': MONTH_NAMES_RU.get(m, ''),
+                'plan': plan_val,
+                'fact': fact_val,
+                'kpi_pct': pct,
+                'has_data': plan_val > 0 or fact_val > 0,
             }
             months.append(mrow)
             if row.get('year') == ref_y and m == ref_m:
