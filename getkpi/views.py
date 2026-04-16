@@ -8,6 +8,7 @@ from django.views.decorators.http import require_GET
 
 from User.views import login_required
 from . import (
+    chairman_data,
     denzhi_dz,
     dept_budget_m3,
     dept_dz,
@@ -503,6 +504,16 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
             entry['quarterly_data'] = tq['quarterly_data']
             entry['ytd'] = tq['ytd']
             entry['kpi_period'] = tq['kpi_period']
+            return entry
+
+    if chairman_data.is_chairman_kpi(kpi_id):
+        ch = chairman_data.get_chairman_kpi_data(kpi_id)
+        if ch is not None:
+            entry['data_granularity'] = 'monthly'
+            entry['monthly_data'] = ch['months']
+            entry['last_full_month_row'] = ch.get('last_full_month_row')
+            entry['ytd'] = ch['ytd']
+            entry['kpi_period'] = ch.get('kpi_period')
             return entry
 
     if kpi_id == 'KD-M1':
