@@ -743,6 +743,51 @@ def _build_claims_table(ref_y: int, ref_m: int,
     }
 
 
+def _build_lawsuits_table(ref_y: int, ref_m: int,
+                          dept_guid: str | None = None) -> dict:
+    """Таблица судов за выбранный месяц.
+
+    Источник — Document_ТД_ПретензииСудебныеСпорыИсковаяРабота (через komdir_lawsuits).
+    Оставляем только документы, подразделение инициатора которых входит в
+    множество дочерних отделов коммерческого директора.
+
+    dept_guid=None  → все дочерние отделы коммерческого директора;
+    dept_guid='...' → оставляем только суды конкретного отдела (инициатор).
+    """
+    from .komdir_lawsuits import fetch_lawsuits_for_month
+
+    rows = cache_manager.locked_call(
+        f'lawsuits_{ref_y}_{ref_m}',
+        fetch_lawsuits_for_month, ref_y, ref_m,
+    )
+
+    if dept_guid:
+        rows = [r for r in rows if r.get("initiator_dept_key") == dept_guid]
+
+    return {
+        "KD-T-LAWSUITS": {
+            "name": f"Суды за {MONTH_NAMES_RU[ref_m]} {ref_y}",
+            "periodicity": "ежемесячно",
+            "description": (
+                "Судебные споры и исковая работа из 1С "
+                "(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц"
+            ),
+            "period": {
+                "year": ref_y,
+                "month": ref_m,
+                "month_name": MONTH_NAMES_RU[ref_m],
+            },
+            "columns": [
+                "Номер", "Статус", "Тип документа", "Контрагент",
+                "Предмет спора", "Сумма требований",
+                "Роль ГК в споре", "Площадка (юрлицо ГК)",
+                "Подразделение инициатора",
+            ],
+            "rows": rows,
+        },
+    }
+
+
 _CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
 
 TILE_NAMES_RU = {
@@ -995,6 +1040,11 @@ def build_komdir_payload(kpi_list: list[dict],
 
     try:
         tablitsy.update(_build_claims_table(ref_y, series_m, dept_guid=dept_guid))
+    except Exception:
+        pass
+
+    try:
+        tablitsy.update(_build_lawsuits_table(ref_y, series_m, dept_guid=dept_guid))
     except Exception:
         pass
 

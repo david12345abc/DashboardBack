@@ -87,6 +87,32 @@ def _collect_all_keys(tree) -> set[str]:
     return result
 
 
+def _chairman_and_immediate_children() -> list[str]:
+    """Сам ПСД (каноническое имя из structure.json) + только его непосредственные дети (первый уровень)."""
+    tree = get_structure_data()
+
+    def find(node) -> tuple[str, object] | None:
+        if isinstance(node, dict):
+            for key, child in node.items():
+                if chairman_data.is_chairman_department(key):
+                    return key, child
+                found = find(child)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for it in node:
+                found = find(it)
+                if found is not None:
+                    return found
+        return None
+
+    pair = find(tree)
+    if pair is None:
+        return []
+    root_name, children_tree = pair
+    return [root_name] + _immediate_children_of_node(children_tree)
+
+
 def _find_subordinates(tree, target: str) -> set[str] | None:
     """
     Находит target в дереве (case-insensitive) и возвращает множество всех подразделений
@@ -404,6 +430,12 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
     except Exception:
         rows = []
 
+    try:
+        from .komdir_lawsuits import fetch_lawsuits_for_month
+        lawsuit_rows = fetch_lawsuits_for_month(ref_y, ref_m)
+    except Exception:
+        lawsuit_rows = []
+
     tablitsy = {
         "KD-T-CLAIMS": {
             "name": f"Претензии за {month_names[ref_m]} {ref_y}",
@@ -415,6 +447,26 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
                 "month_name": month_names[ref_m],
             },
             "rows": rows,
+        },
+        "KD-T-LAWSUITS": {
+            "name": f"Суды за {month_names[ref_m]} {ref_y}",
+            "periodicity": "ежемесячно",
+            "description": (
+                "Судебные споры и исковая работа из 1С "
+                "(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц"
+            ),
+            "period": {
+                "year": ref_y,
+                "month": ref_m,
+                "month_name": month_names[ref_m],
+            },
+            "columns": [
+                "Номер", "Статус", "Тип документа", "Контрагент",
+                "Предмет спора", "Сумма требований",
+                "Роль ГК в споре", "Площадка (юрлицо ГК)",
+                "Подразделение инициатора",
+            ],
+            "rows": lawsuit_rows,
         },
     }
 
@@ -726,9 +778,17 @@ def get_kpi(request):
         )
 
     if chairman_data.is_chairman_department(requested_dept):
-        payload = chairman_data.build_chairman_payload(kpis, month=req_month, year=req_year)
+        for_raw = request.GET.get('for')
+        payload, for_block = chairman_data.build_chairman_payload_by_for(
+            kpis, month=req_month, year=req_year, for_raw=for_raw,
+        )
         return JsonResponse(
-            {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+            {
+                'department': requested_dept,
+                'for': for_block,
+                'kpi_count': payload['Плитки']['count'],
+                **payload,
+            },
             json_dumps_params={'ensure_ascii': False},
         )
 
@@ -795,9 +855,17 @@ def get_all_departments(request):
 
         kpis = _lookup_kpi_data(requested_dept)
         if kpis is None:
-            return JsonResponse({
-                'error': f'Department "{requested_dept}" not found in KPI database',
-            }, status=404)
+            return JsonResponse(
+                {
+                    'department': requested_dept,
+                    'kpi_count': 0,
+                    'message': 'Информация по KPI для этого подразделения не найдена',
+                    'Плитки': {'count': 0, 'items': []},
+                    'Графики': {},
+                    'Таблицы': {'месяц': [], 'квартал': []},
+                },
+                json_dumps_params={'ensure_ascii': False},
+            )
 
         if _is_komdir_department(requested_dept):
             payload = _build_komdir_style_payload(requested_dept, kpis, request)
@@ -811,9 +879,17 @@ def get_all_departments(request):
             year_param = request.GET.get('year')
             req_m = int(month_param) if month_param else None
             req_yr = int(year_param) if year_param else None
-            payload = chairman_data.build_chairman_payload(kpis, month=req_m, year=req_yr)
+            for_raw = request.GET.get('for')
+            payload, for_block = chairman_data.build_chairman_payload_by_for(
+                kpis, month=req_m, year=req_yr, for_raw=for_raw,
+            )
             return JsonResponse(
-                {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+                {
+                    'department': requested_dept,
+                    'for': for_block,
+                    'kpi_count': payload['Плитки']['count'],
+                    **payload,
+                },
                 json_dumps_params={'ensure_ascii': False},
             )
 
@@ -831,31 +907,72 @@ def get_all_departments(request):
     year_param = request.GET.get('year')
     req_month_all = int(month_param) if month_param else None
     req_year_all = int(year_param) if year_param else None
+    chairman_for_raw = request.GET.get('for')
+    chairman_for_norm = chairman_data.normalize_chairman_for_param(chairman_for_raw)
 
-    summary = []
-    all_depts = _get_departments()
-    for dept in all_depts:
-        if dept not in allowed:
-            continue
+    db_depts_lower = {d.lower(): d for d in _get_departments()}
+
+    def _build_one(dept: str) -> dict:
+        """Payload для одного подразделения (как в основном цикле ниже)."""
         kpis = _get_kpi_dicts(dept)
         if _is_komdir_department(dept):
             payload = _build_komdir_style_payload(dept, kpis, request)
-            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
-        elif chairman_data.is_chairman_department(dept):
-            payload = chairman_data.build_chairman_payload(kpis, month=req_month_all, year=req_year_all)
-            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
-        elif is_komdir_child(dept):
+            return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
+        if chairman_data.is_chairman_department(dept):
+            payload, for_block = chairman_data.build_chairman_payload_by_for(
+                kpis, month=req_month_all, year=req_year_all, for_raw=chairman_for_raw,
+            )
+            return {
+                'department': dept,
+                'for': for_block,
+                'kpi_count': payload['Плитки']['count'],
+                **payload,
+            }
+        if is_komdir_child(dept):
             dg = dept_guid_for_kpi_key(commercial_kpi_key(dept))
             payload = _build_komdir_style_payload(dept, kpis, request, dept_guid=dg)
-            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
-        elif isinstance((ck := commercial_kpi_key(dept)), str):
+            return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
+        if isinstance((ck := commercial_kpi_key(dept)), str):
             ck_kpis = _get_kpi_dicts(ck)
             dg = dept_guid_for_kpi_key(ck)
             payload = _build_komdir_style_payload(ck, ck_kpis, request, dept_guid=dg)
-            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
-        else:
-            payload = _build_universal_payload(dept, kpis, month=req_month_all, year=req_year_all)
-            summary.append({'department': dept, 'kpi_count': payload['Плитки']['count'], **payload})
+            return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
+        payload = _build_universal_payload(dept, kpis, month=req_month_all, year=req_year_all)
+        return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
+
+    def _empty_entry(dept: str) -> dict:
+        """Заглушка для подразделения из structure.json, у которого нет KPI в БД."""
+        return {
+            'department': dept,
+            'kpi_count': 0,
+            'message': 'Информация по KPI для этого подразделения не найдена',
+            'Плитки': {'count': 0, 'items': []},
+            'Графики': {},
+            'Таблицы': {'месяц': [], 'квартал': []},
+        }
+
+    summary: list[dict] = []
+    chairman_in_allowed = any(chairman_data.is_chairman_department(d) for d in allowed)
+
+    if (
+        chairman_for_norm == chairman_data.CHAIRMAN_BLOCK_COMMERCE
+        and chairman_in_allowed
+    ):
+        chairman_tree_list = _chairman_and_immediate_children()
+
+        for struct_name in chairman_tree_list:
+            if struct_name not in allowed:
+                continue
+            db_name = db_depts_lower.get(struct_name.lower())
+            if db_name is not None:
+                summary.append(_build_one(db_name))
+            else:
+                summary.append(_empty_entry(struct_name))
+    else:
+        for dept in _get_departments():
+            if dept not in allowed:
+                continue
+            summary.append(_build_one(dept))
 
     return JsonResponse(
         {'departments': summary},
@@ -871,6 +988,19 @@ def get_departments_list(request):
 
 @require_GET
 @login_required
+def get_chairman_for_catalog(request):
+    """
+    Справочник значений query-параметра `for` для дашборда председателя совета директоров.
+
+    Ответ: ``items`` (упорядоченный список блоков), ``labels`` (id → подпись для UI).
+    Расширяется правкой ``CHAIRMAN_FOR_BLOCKS`` в ``chairman_data``.
+    """
+    cat = chairman_data.get_chairman_for_catalog()
+    return JsonResponse(cat, json_dumps_params={'ensure_ascii': False})
+
+
+@require_GET
+@login_required
 def get_structure(request):
     return JsonResponse({'structure': get_structure_data()})
 
@@ -879,17 +1009,29 @@ def get_structure(request):
 @login_required
 def get_immediate_subordinates(request):
     """
-    GET ?department=<название> — непосредственные дочерние подразделения
+    GET ?department=<название>[&for=<блок>] — непосредственные дочерние подразделения
     (только один уровень вниз по structure.json).
+
+    Если запрос пришёл от ПСД и указан виртуальный блок `for` (например, commerce),
+    возвращаем детей соответствующего «реального» подразделения (коммерческого директора),
+    а не самого ПСД: именно эту ветку ПСД сейчас просматривает.
     """
     raw = request.GET.get('department', '').strip()
     if not raw:
         return JsonResponse({'error': 'department query parameter is required'}, status=400)
 
-    found = _find_immediate_children(get_structure_data(), raw)
+    for_raw = request.GET.get('for')
+    effective = raw
+    user_dept = getattr(request.user, 'department', '') or ''
+    if chairman_data.is_chairman_department(user_dept) and for_raw:
+        target = chairman_data.chairman_for_target_department(for_raw)
+        if target:
+            effective = target
+
+    found = _find_immediate_children(get_structure_data(), effective)
     if found is None:
         return JsonResponse(
-            {'error': f'Department "{raw}" not found in structure'},
+            {'error': f'Department "{effective}" not found in structure'},
             status=404,
         )
 
@@ -899,6 +1041,7 @@ def get_immediate_subordinates(request):
             'department': canonical,
             'immediate_children': children,
             'count': len(children),
+            'for': chairman_data.normalize_chairman_for_param(for_raw) if for_raw else None,
         },
         json_dumps_params={'ensure_ascii': False},
     )
