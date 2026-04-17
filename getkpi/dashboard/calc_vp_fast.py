@@ -25,15 +25,6 @@ print = functools.partial(print, flush=True)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 
-DEPARTMENTS = {
-    "49480c10-e401-11e8-8283-ac1f6b05524d",
-    "34497ef7-810f-11e4-80d6-001e67112509",
-    "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
-    "639ec87b-67b6-11eb-8523-ac1f6b05524d",
-    "7587c178-92f6-11f0-96f9-6cb31113810e",
-    "bd7b5184-9f9c-11e4-80da-001e67112509",
-}
-
 NASHE = "5fc811cd-6251-11e7-812d-001e67112509"
 
 PRELIM_ORGS = {
@@ -255,10 +246,10 @@ else:
 
 print(f"\n▸ Шаг 3 · Маппинг организаций")
 
-dept_entries = [e for e in entries if e.get("Подразделение_Key") in DEPARTMENTS]
+# Все строки периода — маппинг организаций для любых подразделений (как в valovaya_pribyl).
 needed_keys = {
     e.get("АналитикаУчетаПоПартнерам_Key")
-    for e in dept_entries
+    for e in entries
     if e.get("АналитикаУчетаПоПартнерам_Key")
 }
 
@@ -346,8 +337,8 @@ else:
 
 print(f"\n▸ Шаг 5 · Расчёт")
 
-filtered = [e for e in entries if e.get("Подразделение_Key") in DEPARTMENTS]
-print(f"  отделы:  {len(entries)} → {len(filtered)}")
+filtered = list(entries)
+print(f"  строк регистра (все подразделения): {len(filtered)}")
 
 before = len(filtered)
 filtered = [

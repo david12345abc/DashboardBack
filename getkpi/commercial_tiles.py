@@ -79,6 +79,11 @@ KPI_KEY_TO_DEPT_GUID: dict[str, str | None] = {
     'Заместитель коммерческого директора по развитию продаж': None,
 }
 
+# Подразделения коммерческого блока с отдельной ВП в регистре (для суммы «комдира» и calc_vp_fast).
+COMMERCIAL_BLOCK_VP_GUIDS: frozenset[str] = frozenset(
+    g for g in KPI_KEY_TO_DEPT_GUID.values() if g
+)
+
 DEPT_GUID_TO_DZ_NAME: dict[str, str] = {
     '49480c10-e401-11e8-8283-ac1f6b05524d': 'Отдел ВЭД',
     '34497ef7-810f-11e4-80d6-001e67112509': 'Отдел эталонного оборудования',

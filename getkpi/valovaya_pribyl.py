@@ -16,7 +16,7 @@ from .kpi_periods import last_full_month, vp_months_for_api
 
 logger = logging.getLogger(__name__)
 
-RESULT_CACHE_VERSION = 4
+RESULT_CACHE_VERSION = 8
 
 DASHBOARD_DIR = Path(__file__).resolve().parent / 'dashboard'
 FAST_SCRIPT = DASHBOARD_DIR / 'calc_vp_fast.py'
@@ -27,15 +27,6 @@ MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
     5: "май", 6: "июнь", 7: "июль", 8: "август",
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
-}
-
-DEPARTMENTS = {
-    "49480c10-e401-11e8-8283-ac1f6b05524d",
-    "34497ef7-810f-11e4-80d6-001e67112509",
-    "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
-    "639ec87b-67b6-11eb-8523-ac1f6b05524d",
-    "7587c178-92f6-11f0-96f9-6cb31113810e",
-    "bd7b5184-9f9c-11e4-80da-001e67112509",
 }
 
 PRELIM_ORGS = {
@@ -91,6 +82,29 @@ def _org_path(month: int, year: int) -> Path:
     return DASHBOARD_DIR / f"аналитика_орг_{MONTH_NAMES[month]}_{year}.json"
 
 
+def _entries_for_vp(entries: list, dept_guid: str | None) -> list:
+    """Строки регистра для ВП.
+
+    Для дочернего отдела — только строки с ``Подразделение_Key`` = GUID отдела.
+
+    Для агрегата (``dept_guid is None``) — **все** строки кэша регистра за месяц (кроме
+    исключений в расчётном цикле: комиссия, «Наше предприятие»). Фиксированный список
+    COMMERCIAL_BLOCK_VP_GUIDS даёт занижение: в выгрузке за март встречаются десятки
+    других подразделений; сумма только по «матричным» GUID совпадает с ~68–69 млн, тогда
+    как полная сумма по файлу кэша ближе к управленческому отчёту по регистру.
+    """
+    if dept_guid:
+        return [e for e in entries if e.get("Подразделение_Key") == dept_guid]
+    return list(entries)
+
+
+def _result_cache_path(dept_guid: str | None = None) -> Path:
+    if not dept_guid:
+        return RESULT_CACHE
+    safe = "".join(c for c in dept_guid if c.isalnum())
+    return DASHBOARD_DIR / f"vp_result_cache_{safe}.json"
+
+
 def _load_nashe_keys() -> set[str]:
     """Загружает ключи «Наше предприятие» из кэша."""
     if NASHE_CACHE.exists():
@@ -129,7 +143,8 @@ def _run_1c_fast(month: int, year: int) -> bool:
     return True
 
 
-def _calculate_vp_from_cache(month: int, year: int) -> dict | None:
+def _calculate_vp_from_cache(month: int, year: int,
+                             dept_guid: str | None = None) -> dict | None:
     """Рассчитывает ВП за один месяц из локальных кэш-файлов."""
     cache_file = _cache_path(month, year)
     if not cache_file.exists():
@@ -153,7 +168,7 @@ def _calculate_vp_from_cache(month: int, year: int) -> dict | None:
 
     nashe_keys = _load_nashe_keys()
 
-    filtered = [e for e in entries if e.get("Подразделение_Key") in DEPARTMENTS]
+    filtered = _entries_for_vp(entries, dept_guid)
 
     total_vp = 0.0
     total_vyruchka = 0.0
@@ -208,25 +223,27 @@ def _calculate_vp_from_cache(month: int, year: int) -> dict | None:
     }
 
 
-def _ensure_month_data(month: int, year: int) -> dict | None:
+def _ensure_month_data(month: int, year: int,
+                       dept_guid: str | None = None) -> dict | None:
     """Гарантирует наличие данных за месяц. Если кэша нет — качает из 1С."""
-    result = _calculate_vp_from_cache(month, year)
+    result = _calculate_vp_from_cache(month, year, dept_guid)
     if result is not None:
         return result
 
     logger.info("No cache for %s %d, fetching from 1C...", MONTH_NAMES[month], year)
     if _run_1c_fast(month, year):
-        return _calculate_vp_from_cache(month, year)
+        return _calculate_vp_from_cache(month, year, dept_guid)
 
     return None
 
 
-def _load_result_cache() -> dict | None:
+def _load_result_cache(dept_guid: str | None = None) -> dict | None:
     """Загружает результат ВП, если он был рассчитан сегодня."""
-    if not RESULT_CACHE.exists():
+    path = _result_cache_path(dept_guid)
+    if not path.exists():
         return None
     try:
-        with open(RESULT_CACHE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             cached = json.load(f)
         if (
             cached.get("date") == date.today().isoformat()
@@ -238,10 +255,11 @@ def _load_result_cache() -> dict | None:
     return None
 
 
-def _save_result_cache(data: dict) -> None:
+def _save_result_cache(data: dict, dept_guid: str | None = None) -> None:
     """Сохраняет результат ВП с пометкой сегодняшней даты."""
+    path = _result_cache_path(dept_guid)
     try:
-        with open(RESULT_CACHE, "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "date": date.today().isoformat(),
@@ -255,7 +273,7 @@ def _save_result_cache(data: dict) -> None:
         pass
 
 
-def get_vp_ytd() -> dict:
+def get_vp_ytd(dept_guid: str | None = None) -> dict:
     """
     Помесячные ряды ВП для графиков (объединение: январь..последний полный месяц
     в его году + месяцы последнего полного квартала).
@@ -271,9 +289,12 @@ def get_vp_ytd() -> dict:
 
     Итоговый KPI (ytd) — тот же последний полный месяц.
 
+    dept_guid — фильтр по подразделению 1С; None — сумма по **всем** строкам регистра
+    в кэше месяца (агрегат дашборда коммерческого директора).
+
     Кэшируется на день. Если кэша д1С нет — запускает calc_vp_fast.py.
     """
-    cached = _load_result_cache()
+    cached = _load_result_cache(dept_guid)
     if cached is not None:
         return cached
 
@@ -286,7 +307,7 @@ def get_vp_ytd() -> dict:
     for y, m in month_tuples:
         plan = vp_plan_for_month(m, y)
         complete = _month_is_complete(y, m, today)
-        vp = _ensure_month_data(m, y) if complete else None
+        vp = _ensure_month_data(m, y, dept_guid) if complete else None
         fact = vp["valovaya_pribyl"] if vp else None
         pct = round(fact / plan * 100, 1) if fact is not None and plan > 0 else None
 
@@ -325,7 +346,7 @@ def get_vp_ytd() -> dict:
     for m in range(1, 13):
         plan = vp_plan_for_month(m, calendar_year)
         complete = _month_is_complete(calendar_year, m, today)
-        vp = _ensure_month_data(m, calendar_year) if complete else None
+        vp = _ensure_month_data(m, calendar_year, dept_guid) if complete else None
         fact = vp["valovaya_pribyl"] if vp else None
         pct = round(fact / plan * 100, 1) if fact is not None and plan > 0 else None
         row = {
@@ -384,5 +405,5 @@ def get_vp_ytd() -> dict:
         },
     }
 
-    _save_result_cache(result)
+    _save_result_cache(result, dept_guid)
     return result

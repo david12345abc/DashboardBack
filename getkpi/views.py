@@ -8,6 +8,8 @@ from django.views.decorators.http import require_GET
 
 from User.views import login_required
 from . import (
+    calc_dengi_fact,
+    calc_plan,
     chairman_data,
     denzhi_dz,
     dept_budget_m3,
@@ -430,6 +432,16 @@ MONTH_NAMES = {
 }
 
 
+def _dept_guid_for_universal(dept_key: str | None) -> str | None:
+    """GUID 1С для KPI дочернего отдела; для агрегата комдира — None."""
+    if not dept_key:
+        return None
+    ck = commercial_kpi_key(dept_key)
+    if not isinstance(ck, str):
+        return None
+    return dept_guid_for_kpi_key(ck)
+
+
 def _generate_monthly_data(plan: float) -> list[dict]:
     """Помесячные точки только за завершённые месяцы (январь — последний полный месяц)."""
     today = date.today()
@@ -476,6 +488,7 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
     }
 
     kpi_id = kpi['kpi_id']
+    dg = _dept_guid_for_universal(dept_key)
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
         dz = dept_dz.get_dept_dz_ytd(dept_key)
@@ -507,16 +520,50 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
             return entry
 
     if kpi_id == 'KD-M1':
-        vp_data = valovaya_pribyl.get_vp_ytd()
+        today = date.today()
+        _, ref_y, ref_m = komdir_dashboard._get_monthly_pairs()
+        series_m = komdir_dashboard._series_through_month(today, ref_y, ref_m)
+        dengi = calc_dengi_fact.get_dengi_monthly(
+            year=ref_y, month=series_m, dept_guid=dg,
+        )
+        plans_payload = calc_plan.get_plans_monthly(
+            year=ref_y, month=series_m, dept_guid=dg,
+        )
+        plans_months = (plans_payload or {}).get('months', [])
+        plans_by_month = {r['month']: (r.get('dengi') or 0) for r in plans_months}
+        tile = komdir_dashboard._build_plan_fact_tile(
+            dengi.get('months', []), plans_by_month, ref_y, ref_m,
+        )
         entry['data_granularity'] = 'monthly'
-        lm = vp_data.get('last_full_month_row')
-        entry['monthly_data'] = [lm] if lm else []
+        entry['monthly_data'] = tile['monthly_data']
+        entry['last_full_month_row'] = tile.get('last_full_month_row')
+        entry['ytd'] = tile['ytd']
+        entry['kpi_period'] = tile.get('kpi_period')
+    elif kpi_id == 'KD-M6':
+        vp_data = valovaya_pribyl.get_vp_ytd(dept_guid=dg)
+        ry, rm = last_full_month(date.today())
+        lm = komdir_dashboard._vp_row_for_period(vp_data, ry, rm) or vp_data.get('last_full_month_row')
+        pct = lm.get('kpi_pct') if lm else None
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = vp_data.get('months_calendar') or vp_data.get('months') or []
+        entry['last_full_month_row'] = lm
         entry['months_calendar'] = vp_data.get('months_calendar')
         entry['calendar_year'] = vp_data.get('calendar_year')
         entry['plans_apply_to_year'] = vp_data.get('plans_apply_to_year')
         entry['plans_by_month'] = vp_data.get('plans_by_month')
-        entry['ytd'] = vp_data['ytd']
-        entry['kpi_period'] = vp_data.get('kpi_period')
+        entry['ytd'] = {
+            'total_plan': lm.get('plan') if lm else None,
+            'total_fact': lm.get('fact') if lm else None,
+            'kpi_pct': pct,
+            'months_with_data': 1 if lm and lm.get('fact') is not None else 0,
+            'months_total': 1,
+        }
+        entry['kpi_period'] = {
+            'type': 'last_full_month',
+            'year': ry,
+            'month': rm,
+            'month_name': MONTH_NAMES[rm],
+        }
     elif kpi_id == 'KD-M2':
         m2 = denzhi_dz.get_kd_m2_ytd()
         entry['data_granularity'] = 'monthly'
@@ -530,7 +577,7 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
         entry['ytd'] = qd['ytd']
         entry['kpi_period'] = qd.get('kpi_period')
     elif kpi_id == 'KD-Q1':
-        vp_data = valovaya_pribyl.get_vp_ytd()
+        vp_data = valovaya_pribyl.get_vp_ytd(dept_guid=dg)
         qd = komdir_quarterly.quarterly_q1(vp_data['months'])
         entry['data_granularity'] = 'quarterly'
         entry['quarterly_data'] = qd['quarterly_data']

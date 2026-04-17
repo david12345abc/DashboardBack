@@ -99,12 +99,23 @@ def _period_label(kpi: dict) -> str:
 
 
 def _get_monthly_pairs() -> tuple[list[tuple[int, int]], int, int]:
-    """Возвращает (пары месяцев, ref_year, ref_month) включая текущий неполный месяц."""
+    """Пары (год, месяц) с января по последний полный месяц — в одной логике с ВП, ФОТ, ДЗ."""
     today = date.today()
-    ref_y = today.year
-    ref_m = today.month
-    pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
+    ref_y, ref_m = last_full_month(today)
+    if ref_y == today.year:
+        pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
+    else:
+        pairs = [(ref_y, ref_m)]
     return pairs, ref_y, ref_m
+
+
+def _series_through_month(today: date, ref_y: int, ref_m: int) -> int:
+    """Последний месяц в рядах графиков/кэшей: не раньше последнего полного и не позже текущего календарного."""
+    if ref_y < today.year:
+        return ref_m
+    if ref_y > today.year:
+        return ref_m
+    return min(12, max(ref_m, today.month))
 
 
 def _prorate_if_current(plan: float | None, year: int, month: int) -> float | None:
@@ -152,7 +163,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
         m = row.get('month')
         y = row.get('year', ref_y)
         fact = row.get('fact')
-        plan = _prorate_if_current(plans_by_month.get(m, 0), y, m)
+        plan = _prorate_if_current(plans_by_month.get(m) or 0, y, m)
         pct = round(fact / plan * 100, 1) if plan and fact is not None else None
         mrow = {
             'month': m,
@@ -168,7 +179,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             ref_row = mrow
 
     with_data = [r for r in months if r.get('kpi_pct') is not None]
-    fallback_plan = _prorate_if_current(plans_by_month.get(ref_m, 0), ref_y, ref_m)
+    fallback_plan = _prorate_if_current(plans_by_month.get(ref_m) or 0, ref_y, ref_m)
     return {
         'monthly_data': months,
         'last_full_month_row': dict(ref_row) if ref_row else None,
@@ -188,11 +199,24 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
     }
 
 
+def _vp_row_for_period(vp: dict, ref_y: int, ref_m: int) -> dict | None:
+    """Строка ВП за выбранный в API (ref_y, ref_m) из months_calendar / months."""
+    cal = vp.get('months_calendar') or vp.get('months') or []
+    for row in cal:
+        if row.get('year') == ref_y and row.get('month') == ref_m:
+            return row
+    return None
+
+
 def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
-                   ref_y: int, ref_m: int, dz_payload: dict | None = None,
+                   ref_y: int, ref_m: int, series_m: int,
+                   dz_payload: dict | None = None,
                    dept_guid: str | None = None,
                    plans_payload: dict | None = None) -> dict:
     """Получить данные для одной плитки.
+    ref_y/ref_m — последний полный месяц (план/факт на плитке, KPI %).
+    series_m — последний месяц в загрузке фактов (включает текущий неполный для графиков).
+
     KD-M1/M2/M3 — факт из calc-модулей + план из plans_payload,
     KD-M4/KD-M5 — из calc_debitorka,
     KD-M6 — из valovaya_pribyl,
@@ -204,46 +228,67 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M1':
         dengi = cache_manager.locked_call(
-            f'dengi_{ref_y}_{ref_m}',
+            f'dengi_{ref_y}_{series_m}',
             calc_dengi_fact.get_dengi_monthly,
-            year=ref_y, month=ref_m, dept_guid=dept_guid,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
-        plans_by_month = {r['month']: r.get('dengi', 0) for r in plans_months}
+        plans_by_month = {r['month']: (r.get('dengi') or 0) for r in plans_months}
         return _build_plan_fact_tile(dengi.get('months', []), plans_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M2':
         otg = cache_manager.locked_call(
-            f'otgruzki_{ref_y}_{ref_m}',
+            f'otgruzki_{ref_y}_{series_m}',
             calc_otgruzki_fact.get_otgruzki_monthly,
-            year=ref_y, month=ref_m, dept_guid=dept_guid,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
-        plans_by_month = {r['month']: r.get('otgruzki', 0) for r in plans_months}
+        plans_by_month = {r['month']: (r.get('otgruzki') or 0) for r in plans_months}
         return _build_plan_fact_tile(otg.get('months', []), plans_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M3':
         dog = cache_manager.locked_call(
-            f'dogovory_{ref_y}_{ref_m}',
+            f'dogovory_{ref_y}_{series_m}',
             calc_dogovory_fact.get_dogovory_monthly,
-            year=ref_y, month=ref_m, dept_guid=dept_guid,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
-        plans_by_month = {r['month']: r.get('dogovory', 0) for r in plans_months}
+        plans_by_month = {r['month']: (r.get('dogovory') or 0) for r in plans_months}
         return _build_plan_fact_tile(dog.get('months', []), plans_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M6':
-        vp = cache_manager.locked_call('vp', valovaya_pribyl.get_vp_ytd)
+        vp = cache_manager.locked_call(
+            f'vp_{dept_guid}' if dept_guid else 'vp',
+            valovaya_pribyl.get_vp_ytd,
+            dept_guid=dept_guid,
+        )
+        cal = vp.get('months_calendar') or vp.get('months') or []
+        # last_full_month_row в get_vp_ytd привязан к «сегодня», а не к ?month=&year= —
+        # без замены плитка показывала один и тот же факт при любом выбранном месяце.
+        lm = _vp_row_for_period(vp, ref_y, ref_m) or vp.get('last_full_month_row')
+        pct = lm.get('kpi_pct') if lm else None
+        ytd = {
+            'total_plan': lm.get('plan') if lm else None,
+            'total_fact': lm.get('fact') if lm else None,
+            'kpi_pct': pct,
+            'months_with_data': 1 if lm and lm.get('fact') is not None else 0,
+            'months_total': 1,
+        }
         return {
-            'monthly_data': vp.get('months_calendar') or vp['months'],
-            'last_full_month_row': vp.get('last_full_month_row'),
-            'ytd': vp['ytd'],
-            'kpi_period': vp.get('kpi_period'),
+            'monthly_data': cal,
+            'last_full_month_row': lm,
+            'ytd': ytd,
+            'kpi_period': {
+                'type': 'last_full_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES_RU[ref_m],
+            },
         }
 
     if kpi_id in {'KD-M4', 'KD-M5'}:
         if dz_payload is None:
-            dz_payload = calc_debitorka.get_komdir_dz_monthly(year=ref_y, month=ref_m)
+            dz_payload = calc_debitorka.get_komdir_dz_monthly(year=ref_y, month=series_m)
         raw_months = dz_payload.get('months', [])
 
         if kpi_id == 'KD-M5':
@@ -291,9 +336,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M8':
         fot = cache_manager.locked_call(
-            f'fot_{ref_y}_{ref_m}',
+            f'fot_{ref_y}_{series_m}',
             calc_fot.get_fot_monthly,
-            year=ref_y, month=ref_m, dept_guid=dept_guid,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = fot.get('months', [])
         months = []
@@ -338,9 +383,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M11':
         tek = cache_manager.locked_call(
-            f'tekuchest_{ref_y}_{ref_m}',
+            f'tekuchest_{ref_y}_{series_m}',
             calc_tekuchest.get_tekuchest_monthly,
-            year=ref_y, month=ref_m, dept_guid=dept_guid,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = tek.get('months', [])
         months = []
@@ -385,9 +430,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M7':
         rash = cache_manager.locked_call(
-            f'rashody_{ref_y}_{ref_m}',
+            f'rashody_{ref_y}_{series_m}',
             calc_rashody.get_rashody_monthly,
-            year=ref_y, month=ref_m, dept_guid=dept_guid,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = rash.get('months', [])
         months = []
@@ -432,9 +477,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M9':
         kp = cache_manager.locked_call(
-            f'kp_price_{ref_y}_{ref_m}',
+            f'kp_price_{ref_y}_{series_m}',
             calc_kp_price.get_kp_price_monthly,
-            year=ref_y, month=ref_m, dept_guid=dept_guid,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = kp.get('months', [])
         months = []
@@ -478,9 +523,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M10':
         sla = cache_manager.locked_call(
-            f'tkp_sla_{ref_y}_{ref_m}',
+            f'tkp_sla_{ref_y}_{series_m}',
             calc_tkp_sla.get_tkp_sla_monthly,
-            year=ref_y, month=ref_m, dept_guid=dept_guid,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = sla.get('months', [])
         months = []
@@ -843,11 +888,18 @@ def build_komdir_payload(kpi_list: list[dict],
     """
     by_id = {k["kpi_id"]: k for k in kpi_list}
 
+    today = date.today()
     if month and year:
         ref_y, ref_m = year, month
         pairs = [(year, mm) for mm in range(1, month + 1)]
+        series_m = month
     else:
-        pairs, ref_y, ref_m = _get_monthly_pairs()
+        pairs_lm, ref_y, ref_m = _get_monthly_pairs()
+        series_m = _series_through_month(today, ref_y, ref_m)
+        if ref_y == today.year:
+            pairs = [(ref_y, mm) for mm in range(1, series_m + 1)]
+        else:
+            pairs = pairs_lm
 
     tile_ids = [
         kid for kid in [
@@ -859,22 +911,24 @@ def build_komdir_payload(kpi_list: list[dict],
 
     dz_dept_name = DEPT_GUID_TO_DZ_NAME.get(dept_guid) if dept_guid else None
     dz_payload = cache_manager.locked_call(
-        f'debitorka_{ref_y}_{ref_m}',
+        f'debitorka_{ref_y}_{series_m}',
         calc_debitorka.get_komdir_dz_monthly,
-        year=ref_y, month=ref_m, dept_name=dz_dept_name,
+        year=ref_y, month=series_m, dept_name=dz_dept_name,
     )
     plans_payload = cache_manager.locked_call(
-        f'plans_{ref_y}_{ref_m}',
+        f'plans_{ref_y}_{series_m}',
         calc_plan.get_plans_monthly,
-        year=ref_y, month=ref_m, dept_guid=dept_guid,
+        year=ref_y, month=series_m, dept_guid=dept_guid,
     )
 
     tiles_data: dict[str, dict] = {}
     for kid in tile_ids:
-        tiles_data[kid] = _get_tile_data(kid, pairs, ref_y, ref_m,
-                                         dz_payload=dz_payload,
-                                         dept_guid=dept_guid,
-                                         plans_payload=plans_payload)
+        tiles_data[kid] = _get_tile_data(
+            kid, pairs, ref_y, ref_m, series_m,
+            dz_payload=dz_payload,
+            dept_guid=dept_guid,
+            plans_payload=plans_payload,
+        )
 
     plitki_items = []
     numeric_for_avg: list[float] = []
@@ -907,7 +961,7 @@ def build_komdir_payload(kpi_list: list[dict],
             "fact": lm.get("fact") if lm else None,
             "has_data": lm.get("has_data", True) if lm else False,
             "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
-            "cache_updated_at": _tile_cache_updated_at(kid, ref_y, ref_m),
+            "cache_updated_at": _tile_cache_updated_at(kid, ref_y, series_m),
         }
         plitki_items.append(tile_item)
 
@@ -927,20 +981,20 @@ def build_komdir_payload(kpi_list: list[dict],
 
     grafiki = {
         "KD-C1": _build_line_chart(by_id, tiles_data),
-        "KD-C2": _build_pie_charts(ref_y, ref_m),
+        "KD-C2": _build_pie_charts(ref_y, series_m),
         "KD-C3": _build_bar_chart(by_id, tiles_data, ref_y, ref_m),
     }
 
     tablitsy: dict = {}
 
     try:
-        tablitsy.update(_build_claims_table(ref_y, ref_m, dept_guid=dept_guid))
+        tablitsy.update(_build_claims_table(ref_y, series_m, dept_guid=dept_guid))
     except Exception:
         pass
 
     try:
         tablitsy["KD-T-OVERDUE"] = _build_overdue_table(
-            ref_y, ref_m, dept_guid=dept_guid,
+            ref_y, series_m, dept_guid=dept_guid,
         )
     except Exception:
         pass
@@ -962,6 +1016,9 @@ def build_komdir_payload(kpi_list: list[dict],
         }
 
     return {
+        "month": series_m,
+        "year": ref_y,
+        "kpi_ref_month": ref_m,
         "Плитки": {"count": len(plitki_items), "items": plitki_items},
         "Графики": grafiki,
         "Таблицы": tablitsy,
