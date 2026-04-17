@@ -43,6 +43,12 @@ MONTH_NAMES_RU = {
 LOWER_IS_BETTER_IDS = frozenset({'KD-M4', 'KD-M5', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M11'})
 HIGHER_IS_BETTER_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-M6', 'KD-M10'})
 
+# Единицы измерения в ответе build_komdir_payload (плитки коммерческого директора / дочерних отделов).
+KOMDIR_TILE_UNITS: dict[str, str] = {
+    'KD-M9': 'руб.',  # цена фактическая / цена расчётная
+    'KD-M10': 'шт',   # ТКП в SLA
+}
+
 PIE_CHART_CATEGORIES = [
     'Развитие дилеров',
     'Развитие стран',
@@ -954,7 +960,7 @@ def build_komdir_payload(kpi_list: list[dict],
             "period": _period_label(meta),
             "thresholds": _thresholds_block(meta),
             "formula": meta.get("formula"),
-            "unit": meta.get("unit"),
+            "unit": KOMDIR_TILE_UNITS.get(kid) or meta.get("unit"),
             "source": meta.get("source"),
             "frequency": meta.get("frequency"),
             "plan": lm.get("plan") if lm else None,
