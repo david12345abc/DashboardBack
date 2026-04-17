@@ -1,0 +1,34 @@
+{
+  "year": 2026,
+  "ref_month": 4,
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "na_datu": "2026-01-31",
+      "dz_fact": 241356791.5,
+      "overdue_fact": 147380003.71
+    },
+    {
+      "year": 2026,
+      "month": 2,
+      "na_datu": "2026-02-28",
+      "dz_fact": 323356322.01,
+      "overdue_fact": 223361938.61
+    },
+    {
+      "year": 2026,
+      "month": 3,
+      "na_datu": "2026-03-31",
+      "dz_fact": 328641637.15,
+      "overdue_fact": 203296617.86
+    },
+    {
+      "year": 2026,
+      "month": 4,
+      "na_datu": "2026-04-16",
+      "dz_fact": 336116340.35,
+      "overdue_fact": 209919984.44
+    }
+  ]
+}

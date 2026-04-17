@@ -13,4 +13,5 @@ urlpatterns = [
         name='immediate-subordinates',
     ),
     path('users/', views.get_users_departments, name='users-departments'),
+    path('cache-status/', views.get_cache_status, name='cache-status'),
 ]

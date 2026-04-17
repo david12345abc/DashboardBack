@@ -870,3 +870,18 @@ def get_users_departments(request):
         {'users': users, 'count': len(users)},
         json_dumps_params={'ensure_ascii': False},
     )
+
+
+@require_GET
+@login_required
+def get_cache_status(request):
+    """Статус кэшей: когда обновлялся кэш по каждой плитке коммерческого директора."""
+    month_param = request.GET.get('month')
+    year_param = request.GET.get('year')
+    ref_month = int(month_param) if month_param else None
+    ref_year = int(year_param) if year_param else None
+
+    status = komdir_dashboard.get_tiles_cache_status(
+        ref_y=ref_year, ref_m=ref_month,
+    )
+    return JsonResponse(status, json_dumps_params={'ensure_ascii': False})

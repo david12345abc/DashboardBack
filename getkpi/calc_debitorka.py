@@ -304,6 +304,165 @@ def _calc_snapshot_for_date(na_datu: date) -> dict:
     }
 
 
+def _build_snapshot_from_data(na_datu: date, records: list, obj_catalog: dict) -> dict:
+    """Построить снимок ДЗ из предзагруженных записей + каталога."""
+    na_datu_str = na_datu.isoformat()
+    cutoff_period = f"{na_datu_str}T23:59:59"
+
+    filtered = [r for r in records if (r.get("Period") or "") <= cutoff_period]
+    balances = aggregate_balances(filtered)
+
+    overdue_cutoff = f"{na_datu_str}T00:00:00"
+    dept_keys_lower = {d.lower() for d in DEPARTMENTS}
+
+    dz_by_dept: dict[str, float] = defaultdict(float)
+    overdue_by_dept: dict[str, float] = defaultdict(float)
+    aging_by_dept: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+
+    for (obj_key, planned_dt), balance in balances.items():
+        cat = obj_catalog.get(obj_key)
+        if not cat:
+            continue
+        dept = cat["dept"]
+        if dept not in dept_keys_lower:
+            continue
+        if balance < TOLERANCE:
+            continue
+
+        dept_name = DEPARTMENTS.get(dept, dept[:8])
+        dz_by_dept[dept_name] += balance
+
+        if planned_dt and planned_dt > "0001-01-02" and planned_dt < overdue_cutoff:
+            overdue_by_dept[dept_name] += balance
+            days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
+            aging_by_dept[dept_name][aging_bucket(days_overdue)] += balance
+
+    return {
+        "na_datu": na_datu_str,
+        "total_dz": round(sum(dz_by_dept.values()), 2),
+        "total_overdue": round(sum(overdue_by_dept.values()), 2),
+        "by_dept": {
+            d: {
+                "dz": round(dz_by_dept.get(d, 0), 2),
+                "overdue": round(overdue_by_dept.get(d, 0), 2),
+                "aging": {b: round(aging_by_dept[d].get(b, 0), 2) for b in BUCKETS},
+            }
+            for d in sorted(set(list(dz_by_dept.keys()) + list(overdue_by_dept.keys())))
+        },
+    }
+
+
+def _build_overdue_detail_from_data(na_datu: date, records: list,
+                                    obj_catalog: dict,
+                                    session) -> dict:
+    """Построить детализацию просрочки из предзагруженных данных."""
+    na_datu_str = na_datu.isoformat()
+    cutoff_period = f"{na_datu_str}T23:59:59"
+
+    filtered = [r for r in records if (r.get("Period") or "") <= cutoff_period]
+    balances = aggregate_balances(filtered)
+
+    overdue_cutoff = f"{na_datu_str}T00:00:00"
+    dept_keys_lower = {d.lower() for d in DEPARTMENTS}
+
+    by_partner: dict[tuple[str, str], dict] = defaultdict(
+        lambda: {"amount": 0.0, "max_days": 0, "dept": "", "dept_name": ""}
+    )
+    partner_keys_used: set[str] = set()
+
+    for (obj_key, planned_dt), balance in balances.items():
+        cat = obj_catalog.get(obj_key)
+        if not cat:
+            continue
+        dept = cat["dept"]
+        if dept not in dept_keys_lower:
+            continue
+        if balance < TOLERANCE:
+            continue
+        if not planned_dt or planned_dt <= "0001-01-02" or planned_dt >= overdue_cutoff:
+            continue
+
+        days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
+        dept_name = DEPARTMENTS.get(dept, dept[:8])
+        partner_key = cat["partner"]
+        partner_keys_used.add(partner_key)
+
+        key = (dept, partner_key)
+        entry = by_partner[key]
+        entry["amount"] += balance
+        entry["max_days"] = max(entry["max_days"], days_overdue)
+        entry["dept"] = dept
+        entry["dept_name"] = dept_name
+
+    partner_names = resolve_partner_names(session, partner_keys_used)
+
+    rows = []
+    for (dept, partner_key), data in by_partner.items():
+        rows.append({
+            "dept_key": dept,
+            "dept_name": data["dept_name"],
+            "partner_key": partner_key,
+            "partner_name": partner_names.get(partner_key, partner_key[:8]),
+            "amount": round(data["amount"], 2),
+            "days_overdue": data["max_days"],
+        })
+
+    rows.sort(key=lambda x: -x["amount"])
+    total = round(sum(r["amount"] for r in rows), 2)
+
+    detail = {
+        "na_datu": na_datu_str,
+        "cache_date": date.today().isoformat(),
+        "total_overdue": total,
+        "rows": rows,
+    }
+    _save_json(_cache_path_overdue_detail(na_datu), detail)
+    logger.info("calc_debitorka: batch overdue detail %s (%d rows)", na_datu_str, len(rows))
+    return detail
+
+
+def _calc_snapshots_batch(dates_to_compute: list[date],
+                          also_overdue_detail: bool = False) -> dict[date, dict]:
+    """Один fetch из OData → снимки для всех дат + опционально overdue detail.
+
+    Загружает реестр и каталог один раз (по самой поздней дате),
+    затем фильтрует записи по Period для каждой более ранней даты.
+    """
+    if not dates_to_compute:
+        return {}
+
+    sorted_dates = sorted(dates_to_compute)
+    latest = sorted_dates[-1]
+
+    session = requests.Session()
+    session.auth = AUTH
+
+    logger.info("calc_debitorka: batch %d snapshots (latest=%s)",
+                len(dates_to_compute), latest)
+
+    records = fetch_all_register(session, latest.isoformat())
+
+    full_balances = aggregate_balances(records)
+    all_obj_keys = {obj for (obj, _) in full_balances.keys()}
+    obj_catalog = resolve_objects(session, all_obj_keys)
+
+    results: dict[date, dict] = {}
+    for na_datu in sorted_dates:
+        if na_datu == latest:
+            snapshot = _build_snapshot_from_data(na_datu, records, obj_catalog)
+        else:
+            snapshot = _build_snapshot_from_data(na_datu, records, obj_catalog)
+        _save_json(_cache_path_snapshot(na_datu), snapshot)
+        results[na_datu] = snapshot
+        logger.info("calc_debitorka: batch snapshot %s done", na_datu.isoformat())
+
+    if also_overdue_detail:
+        for na_datu in sorted_dates:
+            _build_overdue_detail_from_data(na_datu, records, obj_catalog, session)
+
+    return results
+
+
 def get_snapshot_for_date(na_datu: date) -> dict:
     """Кэшируемый снимок ДЗ/просрочки на дату."""
     cached = _load_json(_cache_path_snapshot(na_datu))
@@ -318,23 +477,30 @@ def get_komdir_dz_monthly(year: int | None = None,
                           month: int | None = None,
                           dept_name: str | None = None) -> dict:
     """
-    Помесячные ДЗ/просрочка (январь -> последний полный месяц).
+    Помесячные ДЗ/просрочка (январь -> ref_month).
     dept_name=None — агрегат по всем отделам (коммерческий директор).
     dept_name='Отдел ВЭД' — факт только по указанному подразделению.
+
+    Если часть снимков отсутствует — загружает ВСЕ разом (batch),
+    вместо отдельной загрузки регистра+каталога на каждый месяц.
     """
     today = date.today()
     ref_y, ref_m = _last_full_month(today)
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
+    _ensure_debitorka_caches_for_period(ref_y, ref_m)
+
     if dept_name is None:
         cached = _load_json(_cache_path_monthly(ref_y, ref_m))
         if cached is not None:
             return cached
 
+    snap_dates = _snap_dates_for_year_through_month(ref_y, ref_m)
+
     out_rows = []
-    for mm in range(1, ref_m + 1):
-        snapshot = get_snapshot_for_date(_month_end(ref_y, mm))
+    for mm, snap_date in snap_dates:
+        snapshot = get_snapshot_for_date(snap_date)
         if dept_name is not None:
             dept_data = snapshot.get("by_dept", {}).get(dept_name, {})
             dz = float(dept_data.get("dz", 0))
@@ -359,6 +525,52 @@ def get_komdir_dz_monthly(year: int | None = None,
 def _cache_path_overdue_detail(na_datu: date) -> Path:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return CACHE_DIR / f"overdue_detail_{na_datu.isoformat()}.json"
+
+
+def overdue_detail_cache_path(year: int, month: int) -> Path:
+    """Путь к файлу кэша детализации просрочки для календарного месяца."""
+    na = _month_end(year, month)
+    today = date.today()
+    if na > today:
+        na = today
+    return _cache_path_overdue_detail(na)
+
+
+def _snap_dates_for_year_through_month(ref_y: int, ref_m: int) -> list[tuple[int, date]]:
+    """Пары (номер месяца, дата снимка) для января..ref_m (конец месяца, не позже сегодня)."""
+    today = date.today()
+    out: list[tuple[int, date]] = []
+    for mm in range(1, ref_m + 1):
+        d = _month_end(ref_y, mm)
+        if d > today:
+            d = today
+        out.append((mm, d))
+    return out
+
+
+def _ensure_debitorka_caches_for_period(ref_y: int, ref_m: int) -> None:
+    """Один запрос к OData: снимки ДЗ и детализация просрочки за все месяцы 1..ref_m.
+
+    Если каких-то снимков или файлов overdue_detail нет / устарели (не сегодняшняя
+    дата кэша) — загружаем регистр по самой поздней нужной дате и строим всё разом.
+    """
+    today = date.today()
+    snap_dates = _snap_dates_for_year_through_month(ref_y, ref_m)
+
+    uncached = [d for _, d in snap_dates if _load_json(_cache_path_snapshot(d)) is None]
+
+    def _overdue_needs_refresh(d: date) -> bool:
+        od = _load_json(_cache_path_overdue_detail(d))
+        return od is None or od.get("cache_date") != today.isoformat()
+
+    overdue_stale = [d for _, d in snap_dates if _overdue_needs_refresh(d)]
+
+    if not uncached and not overdue_stale:
+        return
+
+    work_dates = sorted(set(uncached + overdue_stale))
+    need_overdue = bool(overdue_stale)
+    _calc_snapshots_batch(work_dates, also_overdue_detail=need_overdue)
 
 
 def _calc_overdue_detail(na_datu: date) -> dict:
@@ -448,7 +660,11 @@ def get_overdue_detail(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
+    _ensure_debitorka_caches_for_period(ref_y, ref_m)
+
     na_datu = _month_end(ref_y, ref_m)
+    if na_datu > today:
+        na_datu = today
     cache_path = _cache_path_overdue_detail(na_datu)
     cached = _load_json(cache_path)
 

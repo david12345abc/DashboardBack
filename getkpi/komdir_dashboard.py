@@ -25,10 +25,12 @@
 """
 from __future__ import annotations
 
+import calendar
 import random
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 
-from . import calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_fot, calc_kp_price, calc_otgruzki_fact, calc_plan, calc_rashody, calc_tekuchest, calc_tkp_sla, valovaya_pribyl
+from . import cache_manager, calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_fot, calc_kp_price, calc_otgruzki_fact, calc_plan, calc_rashody, calc_tekuchest, calc_tkp_sla, valovaya_pribyl
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
 from .kpi_periods import last_full_month
 
@@ -97,14 +99,25 @@ def _period_label(kpi: dict) -> str:
 
 
 def _get_monthly_pairs() -> tuple[list[tuple[int, int]], int, int]:
-    """Возвращает (пары месяцев, ref_year, ref_month)."""
+    """Возвращает (пары месяцев, ref_year, ref_month) включая текущий неполный месяц."""
     today = date.today()
-    ref_y, ref_m = last_full_month(today)
-    if ref_y == today.year:
-        pairs = [(today.year, mm) for mm in range(1, ref_m + 1)]
-    else:
-        pairs = [(ref_y, ref_m)]
+    ref_y = today.year
+    ref_m = today.month
+    pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
     return pairs, ref_y, ref_m
+
+
+def _prorate_if_current(plan: float | None, year: int, month: int) -> float | None:
+    """Прорейтить план для неполного (текущего) месяца.
+    plan_prorated = plan / дней_в_месяце * дней_прошло.
+    """
+    if plan is None:
+        return None
+    today = date.today()
+    if year == today.year and month == today.month:
+        total_days = calendar.monthrange(year, month)[1]
+        return round(plan * today.day / total_days, 2)
+    return plan
 
 
 def _generate_tile_monthly_data(kpi_id: str, plan: float,
@@ -137,12 +150,13 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
     ref_row = None
     for row in raw_months:
         m = row.get('month')
+        y = row.get('year', ref_y)
         fact = row.get('fact')
-        plan = plans_by_month.get(m, 0)
+        plan = _prorate_if_current(plans_by_month.get(m, 0), y, m)
         pct = round(fact / plan * 100, 1) if plan and fact is not None else None
         mrow = {
             'month': m,
-            'year': row.get('year'),
+            'year': y,
             'month_name': MONTH_NAMES_RU.get(m, ''),
             'plan': plan,
             'fact': fact,
@@ -150,11 +164,11 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             'has_data': fact is not None,
         }
         months.append(mrow)
-        if row.get('year') == ref_y and m == ref_m:
+        if y == ref_y and m == ref_m:
             ref_row = mrow
 
     with_data = [r for r in months if r.get('kpi_pct') is not None]
-    fallback_plan = plans_by_month.get(ref_m, 0)
+    fallback_plan = _prorate_if_current(plans_by_month.get(ref_m, 0), ref_y, ref_m)
     return {
         'monthly_data': months,
         'last_full_month_row': dict(ref_row) if ref_row else None,
@@ -189,28 +203,37 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
     plans_months = (plans_payload or {}).get('months', [])
 
     if kpi_id == 'KD-M1':
-        dengi = calc_dengi_fact.get_dengi_monthly(year=ref_y, month=ref_m,
-                                                   dept_guid=dept_guid)
+        dengi = cache_manager.locked_call(
+            f'dengi_{ref_y}_{ref_m}',
+            calc_dengi_fact.get_dengi_monthly,
+            year=ref_y, month=ref_m, dept_guid=dept_guid,
+        )
         plans_by_month = {r['month']: r.get('dengi', 0) for r in plans_months}
         return _build_plan_fact_tile(dengi.get('months', []), plans_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M2':
-        otg = calc_otgruzki_fact.get_otgruzki_monthly(year=ref_y, month=ref_m,
-                                                       dept_guid=dept_guid)
+        otg = cache_manager.locked_call(
+            f'otgruzki_{ref_y}_{ref_m}',
+            calc_otgruzki_fact.get_otgruzki_monthly,
+            year=ref_y, month=ref_m, dept_guid=dept_guid,
+        )
         plans_by_month = {r['month']: r.get('otgruzki', 0) for r in plans_months}
         return _build_plan_fact_tile(otg.get('months', []), plans_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M3':
-        dog = calc_dogovory_fact.get_dogovory_monthly(year=ref_y, month=ref_m,
-                                                       dept_guid=dept_guid)
+        dog = cache_manager.locked_call(
+            f'dogovory_{ref_y}_{ref_m}',
+            calc_dogovory_fact.get_dogovory_monthly,
+            year=ref_y, month=ref_m, dept_guid=dept_guid,
+        )
         plans_by_month = {r['month']: r.get('dogovory', 0) for r in plans_months}
         return _build_plan_fact_tile(dog.get('months', []), plans_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M6':
-        vp = valovaya_pribyl.get_vp_ytd()
+        vp = cache_manager.locked_call('vp', valovaya_pribyl.get_vp_ytd)
         return {
             'monthly_data': vp.get('months_calendar') or vp['months'],
             'last_full_month_row': vp.get('last_full_month_row'),
@@ -267,7 +290,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         }
 
     if kpi_id == 'KD-M8':
-        fot = calc_fot.get_fot_monthly(
+        fot = cache_manager.locked_call(
+            f'fot_{ref_y}_{ref_m}',
+            calc_fot.get_fot_monthly,
             year=ref_y, month=ref_m, dept_guid=dept_guid,
         )
         raw_months = fot.get('months', [])
@@ -275,12 +300,13 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         ref_row = None
         for row in raw_months:
             m = row.get('month')
-            plan = row.get('plan')
+            y = row.get('year', ref_y)
+            plan = _prorate_if_current(row.get('plan'), y, m)
             fact = row.get('fact')
             pct = round(fact / plan * 100, 1) if plan and fact is not None else None
             mrow = {
                 'month': m,
-                'year': row.get('year'),
+                'year': y,
                 'month_name': MONTH_NAMES_RU.get(m, ''),
                 'plan': plan,
                 'fact': fact,
@@ -311,7 +337,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         }
 
     if kpi_id == 'KD-M11':
-        tek = calc_tekuchest.get_tekuchest_monthly(
+        tek = cache_manager.locked_call(
+            f'tekuchest_{ref_y}_{ref_m}',
+            calc_tekuchest.get_tekuchest_monthly,
             year=ref_y, month=ref_m, dept_guid=dept_guid,
         )
         raw_months = tek.get('months', [])
@@ -319,12 +347,13 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         ref_row = None
         for row in raw_months:
             m = row.get('month')
-            p = row.get('plan')
+            y = row.get('year', ref_y)
+            p = _prorate_if_current(row.get('plan'), y, m)
             f = row.get('fact')
             pct = round(f / p * 100, 1) if p and f is not None else None
             mrow = {
                 'month': m,
-                'year': row.get('year'),
+                'year': y,
                 'month_name': MONTH_NAMES_RU.get(m, ''),
                 'plan': p,
                 'fact': f,
@@ -355,7 +384,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         }
 
     if kpi_id == 'KD-M7':
-        rash = calc_rashody.get_rashody_monthly(
+        rash = cache_manager.locked_call(
+            f'rashody_{ref_y}_{ref_m}',
+            calc_rashody.get_rashody_monthly,
             year=ref_y, month=ref_m, dept_guid=dept_guid,
         )
         raw_months = rash.get('months', [])
@@ -363,12 +394,13 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         ref_row = None
         for row in raw_months:
             m = row.get('month')
-            plan = row.get('plan')
+            y = row.get('year', ref_y)
+            plan = _prorate_if_current(row.get('plan'), y, m)
             fact = row.get('fact', 0)
             pct = round(fact / plan * 100, 1) if plan and fact is not None else None
             mrow = {
                 'month': m,
-                'year': row.get('year'),
+                'year': y,
                 'month_name': MONTH_NAMES_RU.get(m, ''),
                 'plan': plan,
                 'fact': fact,
@@ -399,7 +431,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         }
 
     if kpi_id == 'KD-M9':
-        kp = calc_kp_price.get_kp_price_monthly(
+        kp = cache_manager.locked_call(
+            f'kp_price_{ref_y}_{ref_m}',
+            calc_kp_price.get_kp_price_monthly,
             year=ref_y, month=ref_m, dept_guid=dept_guid,
         )
         raw_months = kp.get('months', [])
@@ -443,7 +477,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         }
 
     if kpi_id == 'KD-M10':
-        sla = calc_tkp_sla.get_tkp_sla_monthly(
+        sla = cache_manager.locked_call(
+            f'tkp_sla_{ref_y}_{ref_m}',
+            calc_tkp_sla.get_tkp_sla_monthly,
             year=ref_y, month=ref_m, dept_guid=dept_guid,
         )
         raw_months = sla.get('months', [])
@@ -633,7 +669,10 @@ def _build_claims_table(ref_y: int, ref_m: int,
     """
     from .komdir_claims import fetch_claims_for_month
 
-    rows = fetch_claims_for_month(ref_y, ref_m)
+    rows = cache_manager.locked_call(
+        f'claims_{ref_y}_{ref_m}',
+        fetch_claims_for_month, ref_y, ref_m,
+    )
 
     if dept_guid:
         rows = [r for r in rows if r.get("order_dept_key") == dept_guid]
@@ -653,6 +692,111 @@ def _build_claims_table(ref_y: int, ref_m: int,
     }
 
 
+_CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
+
+TILE_NAMES_RU = {
+    'KD-M1': 'Деньги',
+    'KD-M2': 'Отгрузки',
+    'KD-M3': 'Договоры',
+    'KD-M4': 'Дебиторская задолженность',
+    'KD-M5': 'Просроченная ДЗ',
+    'KD-M6': 'Валовая прибыль',
+    'KD-M7': 'Расходы',
+    'KD-M8': 'ФОТ',
+    'KD-M9': 'Скидка / МЦР',
+    'KD-M10': 'ТКП в SLA',
+    'KD-M11': 'Текучесть персонала',
+}
+
+
+def _tile_cache_files(kpi_id: str, ref_y: int, ref_m: int) -> list[str]:
+    """Кандидаты кэш-файлов для плитки."""
+    today = date.today()
+    if ref_y == today.year and ref_m == today.month:
+        snap = today.isoformat()
+    else:
+        snap = f"{ref_y}-{ref_m:02d}-{calendar.monthrange(ref_y, ref_m)[1]:02d}"
+
+    return {
+        'KD-M1': [f'dengi_monthly_{ref_y}_{ref_m:02d}.json',
+                   f'dengi_{ref_y}_{ref_m:02d}.json'],
+        'KD-M2': [f'otgruzki_monthly_{ref_y}_{ref_m:02d}.json',
+                   f'otgruzki_{ref_y}_{ref_m:02d}.json'],
+        'KD-M3': [f'dogovory_monthly_{ref_y}_{ref_m:02d}.json',
+                   f'dogovory_{ref_y}_{ref_m:02d}.json'],
+        'KD-M4': [f'debitorka_monthly_{ref_y}_{ref_m:02d}.json',
+                   f'debitorka_{snap}.json'],
+        'KD-M5': [f'debitorka_monthly_{ref_y}_{ref_m:02d}.json',
+                   f'debitorka_{snap}.json',
+                   'dz_limits_latest.json'],
+        'KD-M6': ['vp_result_cache.json'],
+        'KD-M7': [f'rashody_{ref_y}_{ref_m:02d}.json'],
+        'KD-M8': [f'fot_{ref_y}_{ref_m:02d}.json'],
+        'KD-M9': [f'kp_price_{ref_y}_{ref_m:02d}.json'],
+        'KD-M10': [f'tkp_sla_{ref_y}_{ref_m:02d}.json'],
+        'KD-M11': [f'tekuchest_{ref_y}_{ref_m:02d}.json'],
+    }.get(kpi_id, [])
+
+
+def _tile_cache_updated_at(kpi_id: str, ref_y: int, ref_m: int) -> str | None:
+    """ISO-timestamp последнего обновления кэша для плитки (по mtime файла)."""
+    latest_mtime: float | None = None
+    for fname in _tile_cache_files(kpi_id, ref_y, ref_m):
+        p = _CACHE_DIR / fname
+        if p.exists():
+            mt = p.stat().st_mtime
+            if latest_mtime is None or mt > latest_mtime:
+                latest_mtime = mt
+    if latest_mtime is None:
+        return None
+    return datetime.fromtimestamp(latest_mtime).isoformat(timespec='seconds')
+
+
+def get_tiles_cache_status(ref_y: int | None = None,
+                           ref_m: int | None = None) -> dict:
+    """Статус кэшей по всем плиткам коммерческого директора."""
+    today = date.today()
+    if ref_y is None:
+        ref_y = today.year
+    if ref_m is None:
+        ref_m = today.month
+
+    tile_ids = [
+        'KD-M1', 'KD-M2', 'KD-M3', 'KD-M4', 'KD-M5',
+        'KD-M6', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M10', 'KD-M11',
+    ]
+
+    items = []
+    for kid in tile_ids:
+        files_info = []
+        for fname in _tile_cache_files(kid, ref_y, ref_m):
+            p = _CACHE_DIR / fname
+            if p.exists():
+                st = p.stat()
+                files_info.append({
+                    'file': fname,
+                    'updated_at': datetime.fromtimestamp(st.st_mtime).isoformat(timespec='seconds'),
+                    'size_kb': round(st.st_size / 1024, 1),
+                })
+
+        items.append({
+            'kpi_id': kid,
+            'name': TILE_NAMES_RU.get(kid, kid),
+            'cache_updated_at': _tile_cache_updated_at(kid, ref_y, ref_m),
+            'cache_exists': bool(files_info),
+            'cache_files': files_info,
+        })
+
+    return {
+        'period': {
+            'year': ref_y,
+            'month': ref_m,
+            'month_name': MONTH_NAMES_RU.get(ref_m, ''),
+        },
+        'tiles': items,
+    }
+
+
 def _build_overdue_table(ref_y: int, ref_m: int,
                          dept_guid: str | None = None) -> dict:
     """Таблица детализации просроченной ДЗ по контрагентам.
@@ -660,7 +804,9 @@ def _build_overdue_table(ref_y: int, ref_m: int,
     Сумма строк совпадает с KD-M5 (просроченная ДЗ).
     dept_guid=None → все отделы, dept_guid='...' → один отдел.
     """
-    detail = calc_debitorka.get_overdue_detail(
+    detail = cache_manager.locked_call(
+        f'overdue_detail_{ref_y}_{ref_m}',
+        calc_debitorka.get_overdue_detail,
         year=ref_y, month=ref_m, dept_guid=dept_guid,
     )
 
@@ -712,10 +858,14 @@ def build_komdir_payload(kpi_list: list[dict],
     ]
 
     dz_dept_name = DEPT_GUID_TO_DZ_NAME.get(dept_guid) if dept_guid else None
-    dz_payload = calc_debitorka.get_komdir_dz_monthly(
+    dz_payload = cache_manager.locked_call(
+        f'debitorka_{ref_y}_{ref_m}',
+        calc_debitorka.get_komdir_dz_monthly,
         year=ref_y, month=ref_m, dept_name=dz_dept_name,
     )
-    plans_payload = calc_plan.get_plans_monthly(
+    plans_payload = cache_manager.locked_call(
+        f'plans_{ref_y}_{ref_m}',
+        calc_plan.get_plans_monthly,
         year=ref_y, month=ref_m, dept_guid=dept_guid,
     )
 
@@ -757,6 +907,7 @@ def build_komdir_payload(kpi_list: list[dict],
             "fact": lm.get("fact") if lm else None,
             "has_data": lm.get("has_data", True) if lm else False,
             "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
+            "cache_updated_at": _tile_cache_updated_at(kid, ref_y, ref_m),
         }
         plitki_items.append(tile_item)
 
