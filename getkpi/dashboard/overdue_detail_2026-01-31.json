@@ -1,0 +1,71 @@
+{
+  "na_datu": "2026-01-31",
+  "cache_date": "2026-04-20",
+  "total_overdue": 147380003.71,
+  "rows": [
+    {
+      "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
+      "dept_name": "Отдел БМИ",
+      "partner_key": "9c8295b1-32c8-11ef-951d-6cb31113810c",
+      "partner_name": "РГП ООО",
+      "amount": 50725837.1,
+      "days_overdue": 375
+    },
+    {
+      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
+      "dept_name": "Отдел ПАО Газпром",
+      "partner_key": "1a6c0dc7-677a-11e1-ae59-001e67112509",
+      "partner_name": "Газпром автоматизация, ПАО",
+      "amount": 43500000.0,
+      "days_overdue": 268
+    },
+    {
+      "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
+      "dept_name": "Отдел БМИ",
+      "partner_key": "9223c944-62bc-11ee-9402-6cb31113810c",
+      "partner_name": "СТРОЙПРОЕКТГРУПП ООО",
+      "amount": 42000000.0,
+      "days_overdue": 370
+    },
+    {
+      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
+      "dept_name": "Отдел ПАО Газпром",
+      "partner_key": "00f26d25-f9b4-11ef-9623-6cb31113810c",
+      "partner_name": "ЧЕРНОМОРТРАНСГАЗ",
+      "amount": 5167500.0,
+      "days_overdue": 11
+    },
+    {
+      "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "dept_name": "Отдел ВЭД",
+      "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
+      "partner_name": "КомплексСтор ООО",
+      "amount": 2965293.63,
+      "days_overdue": 1286
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "0a625046-8f74-11ef-959b-6cb31113810e",
+      "partner_name": "СТРОЙ-ГАЗ-СЕРВИС ООО",
+      "amount": 2674247.98,
+      "days_overdue": 229
+    },
+    {
+      "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "dept_name": "Отдел ВЭД",
+      "partner_key": "91fbcd96-35e2-11ee-93d2-6cb31113810e",
+      "partner_name": "ТермТеплоСистем ООО",
+      "amount": 290485.0,
+      "days_overdue": 240
+    },
+    {
+      "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "dept_name": "Отдел эталонного оборудования",
+      "partner_key": "a3ae98af-54e0-11e8-8273-ac1f6b05524d",
+      "partner_name": "ТЕПЛО МКП",
+      "amount": 56640.0,
+      "days_overdue": 2747
+    }
+  ]
+}

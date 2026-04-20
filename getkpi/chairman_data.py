@@ -653,7 +653,7 @@ def build_chairman_commerce_payload(
 ) -> dict:
     """
     Блок «Председатель / коммерция»: MRK-01…03 из тех же данных, что KD-M2/M3/M1 у коммерческого директора;
-    на плитках — накопительная сумма план/факт с начала года по опорный месяц; в monthly_data — помесячно для графиков.
+    на плитках — план/факт за опорный месяц; в monthly_data — помесячно для графиков.
     MRK-04 — рост отгрузок (сумма Jan..m 2026 к Jan..m 2025). MRK-05…10 — заглушки.
     """
     by_id = {k["kpi_id"]: k for k in kpi_list}
@@ -681,20 +681,13 @@ def build_chairman_commerce_payload(
     )
 
     komdir_for_chart = {"KD-M1": td_m1, "KD-M2": td_m2, "KD-M3": td_m3}
-    ytd_m1 = _ytd_sum_plan_fact(td_m1.get("monthly_data") or [])
-    ytd_m2 = _ytd_sum_plan_fact(td_m2.get("monthly_data") or [])
-    ytd_m3 = _ytd_sum_plan_fact(td_m3.get("monthly_data") or [])
-
-    mrk_from_komdir: dict[str, tuple[str, dict, dict]] = {
-        "MRK-01": ("KD-M2", td_m2, ytd_m2),
-        "MRK-02": ("KD-M3", td_m3, ytd_m3),
-        "MRK-03": ("KD-M1", td_m1, ytd_m1),
+    mrk_from_komdir: dict[str, tuple[str, dict]] = {
+        "MRK-01": ("KD-M2", td_m2),
+        "MRK-02": ("KD-M3", td_m3),
+        "MRK-03": ("KD-M1", td_m1),
     }
 
-    ytd_label = (
-        f"Накопительно с начала {ref_y} г. "
-        f"(янв.–{MONTH_NAMES_RU[ref_m]})"
-    )
+    month_label = f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}"
 
     plitki_items: list[dict] = []
     months_stub = _month_pairs(ref_y, ref_m)
@@ -706,23 +699,25 @@ def build_chairman_commerce_payload(
             continue
 
         if kid in mrk_from_komdir:
-            kd_id, _td, ytd_agg = mrk_from_komdir[kid]
+            kd_id, _td = mrk_from_komdir[kid]
+            lm = _td.get("last_full_month_row") or {}
+            kpi_pct = lm.get("kpi_pct")
             plitki_items.append({
                 "kpi_id": kid,
                 "name": meta["name"],
                 "goal": meta.get("goal"),
-                "kpi_pct": ytd_agg.get("kpi_pct"),
-                "color": _tile_rag(kd_id, ytd_agg.get("kpi_pct")),
+                "kpi_pct": kpi_pct,
+                "color": _tile_rag(kd_id, kpi_pct),
                 "period": _period_label(meta),
                 "thresholds": _thresholds(meta),
                 "formula": meta.get("formula"),
-                "unit": meta.get("unit"),
+                "unit": "руб.",
                 "source": meta.get("source"),
                 "frequency": meta.get("frequency"),
-                "plan": _to_int_or_none(ytd_agg.get("total_plan")),
-                "fact": _to_int_or_none(ytd_agg.get("total_fact")),
-                "has_data": ytd_agg.get("total_fact") is not None,
-                "plan_fact_period_label": ytd_label,
+                "plan": _to_int_or_none(lm.get("plan")),
+                "fact": _to_int_or_none(lm.get("fact")),
+                "has_data": bool(lm.get("has_data")),
+                "plan_fact_period_label": month_label,
                 "monthly_data": _td.get("monthly_data"),
             })
             continue

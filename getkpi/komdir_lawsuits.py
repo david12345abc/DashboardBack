@@ -53,6 +53,65 @@ ALLOWED_DEPARTMENTS = {
 CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
 
 DOC_ENTITY = "Document_ТД_ПретензииСудебныеСпорыИсковаяРабота"
+_DISCOVERED_ENTITY: str | None = None
+
+
+def _discover_doc_entity(session: requests.Session) -> str:
+    """
+    В некоторых базах OData имя набора сущностей для документа отличается от ожидаемого.
+    Пробуем найти реальный EntitySet по $metadata по ключевым словам.
+    """
+    global _DISCOVERED_ENTITY
+    if _DISCOVERED_ENTITY:
+        return _DISCOVERED_ENTITY
+
+    # 1) Попробовать $metadata (самый надёжный способ).
+    try:
+        url = f"{BASE}/$metadata"
+        r = session.get(url, timeout=30)
+        if r.ok and r.text:
+            text = r.text
+            # EntitySet Name="Document_...."
+            import re
+
+            # Сначала точное имя
+            if f'Name="{DOC_ENTITY}"' in text or f"Name='{DOC_ENTITY}'" in text:
+                _DISCOVERED_ENTITY = DOC_ENTITY
+                return _DISCOVERED_ENTITY
+
+            # Затем любой Document_*, где есть ключевые слова
+            patterns = [
+                r'EntitySet\s+Name="(?P<name>Document_[^"]*(?:Претенз|Судебн|Исков)[^"]*)"',
+                r"EntitySet\s+Name='(?P<name>Document_[^']*(?:Претенз|Судебн|Исков)[^']*)'",
+            ]
+            for pat in patterns:
+                m = re.search(pat, text)
+                if m and m.group("name"):
+                    _DISCOVERED_ENTITY = m.group("name")
+                    return _DISCOVERED_ENTITY
+    except Exception:
+        pass
+
+    # 2) Фоллбек: несколько типовых вариантов именования.
+    candidates = [
+        DOC_ENTITY,
+        "Document_ПретензииСудебныеСпорыИсковаяРабота",
+        "Document_ТД_ПретензииСудебныеСпорыИсковаяРаботаТД",
+        "Document_ТД_ПретензииСудебныеСпорыИсковаяРабота_ТД",
+        "Document_ПретензииСудебныеСпорыИсковаяРабота_ТД",
+    ]
+    for name in candidates:
+        try:
+            probe = f"{BASE}/{quote(name)}?$top=1&$format=json"
+            pr = session.get(probe, timeout=15)
+            if pr.ok:
+                _DISCOVERED_ENTITY = name
+                return _DISCOVERED_ENTITY
+        except Exception:
+            continue
+
+    _DISCOVERED_ENTITY = DOC_ENTITY
+    return _DISCOVERED_ENTITY
 
 
 def _cache_path(year: int, month: int) -> Path:
@@ -149,6 +208,7 @@ def _fetch_documents(session: requests.Session,
         "ИнициаторЗаказчикВнутриГК_Key"
     )
 
+    entity = _discover_doc_entity(session)
     docs: list[dict] = []
     skip = 0
     while True:
@@ -157,7 +217,7 @@ def _fetch_documents(session: requests.Session,
             f" and Date le datetime'{date_to}'"
         )
         url = (
-            f"{BASE}/{quote(DOC_ENTITY)}?$format=json"
+            f"{BASE}/{quote(entity)}?$format=json"
             f"&$select={quote(select_doc, safe=',_')}&$top=5000&$skip={skip}"
             f"&$filter={quote(odata_filter, safe='')}"
         )
@@ -167,7 +227,7 @@ def _fetch_documents(session: requests.Session,
             logger.error("Lawsuits HTTP error: %s", e)
             break
         if not r.ok:
-            logger.error("Lawsuits HTTP %d: %s", r.status_code, r.text[:300])
+            logger.error("Lawsuits entity=%s HTTP %d: %s", entity, r.status_code, r.text[:300])
             break
         rows = r.json().get("value", [])
         docs.extend(rows)
