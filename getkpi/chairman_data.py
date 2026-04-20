@@ -427,11 +427,8 @@ COMMERCE_TILE_IDS = [f"MRK-{i:02d}" for i in range(1, 11)]
 # ВАЖНО: MRK-01/02/03 считаются по данным КомДира, MRK-04 — из _mrk04_shipment_growth_yoy,
 # MRK-06 — из calc_shipment_share_bmi_gazprom, MRK-09 — из calc_tenders_bmi.
 # Числа ниже остаются только для плиток, у которых ещё нет реальных калькуляторов
-# (MRK-05, MRK-07, MRK-08, MRK-10) — fallback-ветка в конце цикла.
+# (MRK-10) — fallback-ветка в конце цикла.
 _COMMERCE_FACT: dict[str, float | int] = {
-    "MRK-05": -42_000_000,
-    "MRK-07": 94.7,
-    "MRK-08": 98.6,
     "MRK-10": 4,
 }
 
@@ -493,38 +490,245 @@ def _ytd_sum_plan_fact(monthly_data: list[dict]) -> dict[str, float | None]:
     return {"total_plan": sp, "total_fact": sf, "kpi_pct": kpi_pct}
 
 
-def _mrk04_shipment_growth_yoy(ref_m: int) -> tuple[float | None, dict]:
+def _to_float_or_none(x) -> float | None:
+    if x is None:
+        return None
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mrk_conversion_rag(pct: float | None) -> str:
+    """RAG для MRK-07/08: ≥95 — зелёный, 90–94.9 — жёлтый, <90 — красный."""
+    if pct is None:
+        return "unknown"
+    if pct >= 95:
+        return "green"
+    if pct >= 90:
+        return "yellow"
+    return "red"
+
+
+def _mrk05_cash_gap_rag(value: float | None) -> str:
+    """RAG для MRK-05: неотрицательный разрыв — зелёный, отрицательный — красный."""
+    if value is None:
+        return "unknown"
+    return "green" if value >= 0 else "red"
+
+
+def _build_cash_gap_detail(
+    money_monthly: list[dict],
+    shipments_monthly: list[dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    """MRK-05: кассовый разрыв по месяцам = деньги факт - отгрузки факт."""
+    months = _month_pairs(ref_y, ref_m)
+    money_by_month = {
+        int(row.get("month")): _to_float_or_none(row.get("fact"))
+        for row in (money_monthly or [])
+        if row.get("month") is not None
+    }
+    ship_by_month = {
+        int(row.get("month")): _to_float_or_none(row.get("fact"))
+        for row in (shipments_monthly or [])
+        if row.get("month") is not None
+    }
+
+    monthly_rows: list[dict] = []
+    ref_row = None
+    months_with_data = 0
+    for mm in months:
+        money = money_by_month.get(mm)
+        ship = ship_by_month.get(mm)
+        has_data = money is not None or ship is not None
+        gap = None if (money is None and ship is None) else (money or 0.0) - (ship or 0.0)
+        row = {
+            "month": mm,
+            "year": ref_y,
+            "month_name": MONTH_NAMES_RU[mm],
+            "plan": None,
+            "fact": _to_int_or_none(gap),
+            "kpi_pct": None,
+            "has_data": has_data,
+            "money_fact": _to_int_or_none(money),
+            "shipments_fact": _to_int_or_none(ship),
+        }
+        monthly_rows.append(row)
+        if has_data:
+            months_with_data += 1
+        if mm == ref_m:
+            ref_row = row
+
+    return {
+        "monthly_data": monthly_rows,
+        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+        "ytd": {
+            "total_plan": None,
+            "total_fact": ref_row.get("fact") if ref_row else None,
+            "kpi_pct": None,
+            "months_with_data": months_with_data,
+            "months_total": len(monthly_rows),
+        },
+        "cash_gap_detail": {
+            "money_label": "Деньги полученные",
+            "shipments_label": "Отгрузки произведенные",
+            "period_start": f"{ref_y}-01-01",
+            "period_end": f"{ref_y}-{ref_m:02d}-01",
+        },
+    }
+
+
+def _build_ytd_conversion_detail(
+    numerator_monthly: list[dict],
+    denominator_monthly: list[dict],
+    ref_y: int,
+    ref_m: int,
+    *,
+    numerator_label: str,
+    denominator_label: str,
+) -> dict:
+    """
+    Накопительная конверсия по месяцам: Jan..m numerator_fact / denominator_fact * 100.
+    Используется для MRK-07 и MRK-08 в коммерческом блоке ПСД.
+    """
+    months = _month_pairs(ref_y, ref_m)
+    num_by_month = {
+        int(row.get("month")): _to_float_or_none(row.get("fact"))
+        for row in (numerator_monthly or [])
+        if row.get("month") is not None
+    }
+    den_by_month = {
+        int(row.get("month")): _to_float_or_none(row.get("fact"))
+        for row in (denominator_monthly or [])
+        if row.get("month") is not None
+    }
+
+    monthly_rows: list[dict] = []
+    ytd_num = 0.0
+    ytd_den = 0.0
+    ref_row = None
+    months_with_data = 0
+
+    for mm in months:
+        num = num_by_month.get(mm)
+        den = den_by_month.get(mm)
+        has_data = num is not None or den is not None
+        if num is not None:
+            ytd_num += num
+        if den is not None:
+            ytd_den += den
+        pct = round(ytd_num / ytd_den * 100, 1) if ytd_den > 0 else None
+        row = {
+            "month": mm,
+            "year": ref_y,
+            "month_name": MONTH_NAMES_RU[mm],
+            "plan": None,
+            "fact": None,
+            "kpi_pct": pct,
+            "has_data": has_data,
+            "numerator_fact": _to_int_or_none(num),
+            "denominator_fact": _to_int_or_none(den),
+            "ytd_numerator_fact": _to_int_or_none(ytd_num),
+            "ytd_denominator_fact": _to_int_or_none(ytd_den),
+            "numerator_label": numerator_label,
+            "denominator_label": denominator_label,
+        }
+        monthly_rows.append(row)
+        if has_data:
+            months_with_data += 1
+        if mm == ref_m:
+            ref_row = row
+
+    pct = ref_row.get("kpi_pct") if ref_row else None
+    return {
+        "monthly_data": monthly_rows,
+        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+        "ytd": {
+            "total_plan": None,
+            "total_fact": None,
+            "kpi_pct": pct,
+            "months_with_data": months_with_data,
+            "months_total": len(monthly_rows),
+        },
+        "conversion_detail": {
+            "numerator_label": numerator_label,
+            "denominator_label": denominator_label,
+            "ytd_numerator_fact": _to_int_or_none(ytd_num),
+            "ytd_denominator_fact": _to_int_or_none(ytd_den),
+            "period_start": f"{ref_y}-01-01",
+            "period_end": f"{ref_y}-{ref_m:02d}-01",
+        },
+    }
+
+
+def _mrk04_shipment_growth_yoy(ref_y: int, ref_m: int, series_m: int) -> tuple[float | None, dict]:
     """
     Рост отгрузок 2026 к 2025: отношение факт/план, где
-      план = сумма отгрузок за весь 2025,
-      факт = сумма отгрузок за весь 2026 (все доступные месяцы до последнего полного).
+      план = сумма отгрузок за янв..m 2025,
+      факт = сумма отгрузок за янв..m 2026,
+      m — «текущий период» (в контексте коммерции берём series_m из komdir_dashboard:
+           не раньше последнего полного месяца и не позже текущего календарного).
     Возвращает одну цифру kpi_pct = факт / план * 100 (%).
     Источники и dept_guid=None — те же, что у плитки KD-M2 коммерческого директора.
+
+    Дополнительно в detail кладётся помесячная разбивка отгрузок по 2025 и 2026 за янв..m.
     """
     today = date.today()
-    m_2026 = 12 if today.year > 2026 else max(1, min(12, int(ref_m) if ref_m else today.month))
+    # Сравниваем одинаковое количество месяцев в обоих годах (янв..m).
+    m = max(1, min(12, int(series_m) if series_m else int(ref_m) if ref_m else today.month))
+
     o25 = cache_manager.locked_call(
-        "otgruzki_2025_12",
+        f"otgruzki_2025_{m}",
         calc_otgruzki_fact.get_otgruzki_monthly,
         year=2025,
-        month=12,
+        month=m,
         dept_guid=None,
     )
     o26 = cache_manager.locked_call(
-        f"otgruzki_2026_{m_2026}",
+        f"otgruzki_2026_{m}",
         calc_otgruzki_fact.get_otgruzki_monthly,
         year=2026,
-        month=m_2026,
+        month=m,
         dept_guid=None,
     )
-    s25 = sum((r.get("fact") or 0) for r in (o25.get("months") or []))
-    s26 = sum((r.get("fact") or 0) for r in (o26.get("months") or []))
+
+    def _by_month(rows: list[dict]) -> dict[int, float]:
+        out: dict[int, float] = {}
+        for r in rows or []:
+            mm = int(r.get("month") or 0)
+            if 1 <= mm <= 12:
+                out[mm] = float(r.get("fact") or 0)
+        return out
+
+    m25 = _by_month(o25.get("months") or [])
+    m26 = _by_month(o26.get("months") or [])
+
+    monthly_rows: list[dict] = []
+    for mm in range(1, m + 1):
+        v25 = m25.get(mm, 0.0)
+        v26 = m26.get(mm, 0.0)
+        monthly_rows.append({
+            "month": mm,
+            "year": 2026,
+            "month_name": MONTH_NAMES_RU[mm],
+            "fact_2025": _to_int_or_none(v25),
+            "fact_2026": _to_int_or_none(v26),
+            "kpi_pct": round(v26 / v25 * 100, 1) if v25 > 0 else None,
+            "has_data": True,
+        })
+
+    s25 = sum((r.get("fact_2025") or 0) for r in monthly_rows)
+    s26 = sum((r.get("fact_2026") or 0) for r in monthly_rows)
     detail = {
-        "months_2025": 12,
-        "months_2026": m_2026,
+        "compare_months": m,
+        "months_2025": m,
+        "months_2026": m,
         "sum_shipments_rub_2025": s25,
         "sum_shipments_rub_2026": s26,
-        "label": "Весь 2026 к всему 2025",
+        "label": f"Янв.–{MONTH_NAMES_RU[m]} 2026 к янв.–{MONTH_NAMES_RU[m]} 2025",
+        "monthly_comparison": monthly_rows,
     }
     if s25 <= 0:
         return None, detail
@@ -543,26 +747,31 @@ def _mrk04_rag(growth_pct: float | None) -> str:
     return "red"
 
 
+def _mrk_plan_fact_rag(kpi_pct: float | None) -> str:
+    """
+    RAG для MRK-01/02/03 (коммерческий блок ПСД): исполнение плана в %.
+    ≥100 — зелёный, 90–100 — жёлтый, <90 — красный.
+    """
+    if kpi_pct is None:
+        return "unknown"
+    if kpi_pct >= 100:
+        return "green"
+    if kpi_pct >= 90:
+        return "yellow"
+    return "red"
+
+
 def _mrk09_tenders_bmi(ref_y: int, ref_m: int) -> dict:
     """
     Данные плитки MRK-09 «% выигранных тендеров БМИ».
-    Окно всегда «с 01.01 ref_y по сегодня» для текущего года и «весь год» для прошлых —
-    независимо от выбранного опорного месяца ref_m (это не помесячная плитка).
+    Окно всегда «с 01.01 ref_y по конец выбранного месяца ref_m»,
+    а для текущего месяца текущего года calc-модуль сам ограничит период сегодняшней датой.
     """
-    today = date.today()
-    if ref_y == today.year:
-        cache_key = f"tenders_bmi_{ref_y}_{today.isoformat()}"
-        return cache_manager.locked_call(
-            cache_key,
-            calc_tenders_bmi.get_tenders_bmi,
-            year=ref_y,
-            month=today.month,
-        )
     return cache_manager.locked_call(
-        f"tenders_bmi_{ref_y}_12",
+        f"tenders_bmi_{ref_y}_{ref_m}",
         calc_tenders_bmi.get_tenders_bmi,
         year=ref_y,
-        month=12,
+        month=ref_m,
     )
 
 
@@ -654,7 +863,8 @@ def build_chairman_commerce_payload(
     """
     Блок «Председатель / коммерция»: MRK-01…03 из тех же данных, что KD-M2/M3/M1 у коммерческого директора;
     на плитках — план/факт за опорный месяц; в monthly_data — помесячно для графиков.
-    MRK-04 — рост отгрузок (сумма Jan..m 2026 к Jan..m 2025). MRK-05…10 — заглушки.
+    MRK-04 — рост отгрузок (сумма Jan..m 2026 к Jan..m 2025) + помесячные отгрузки 2025/2026.
+    MRK-05…10 — заглушки.
     """
     by_id = {k["kpi_id"]: k for k in kpi_list}
 
@@ -707,7 +917,7 @@ def build_chairman_commerce_payload(
                 "name": meta["name"],
                 "goal": meta.get("goal"),
                 "kpi_pct": kpi_pct,
-                "color": _tile_rag(kd_id, kpi_pct),
+                "color": _mrk_plan_fact_rag(kpi_pct),
                 "period": _period_label(meta),
                 "thresholds": _thresholds(meta),
                 "formula": meta.get("formula"),
@@ -723,7 +933,7 @@ def build_chairman_commerce_payload(
             continue
 
         if kid == "MRK-04":
-            growth_pct, growth_detail = _mrk04_shipment_growth_yoy(ref_m)
+            growth_pct, growth_detail = _mrk04_shipment_growth_yoy(ref_y, ref_m, series_m)
             plitki_items.append({
                 "kpi_id": kid,
                 "name": meta["name"],
@@ -740,8 +950,38 @@ def build_chairman_commerce_payload(
                 "fact": _to_int_or_none(growth_detail.get("sum_shipments_rub_2026")),
                 "has_data": growth_pct is not None,
                 "plan_fact_period_label": growth_detail.get("label", ""),
-                "monthly_data": [],
+                "monthly_data": growth_detail.get("monthly_comparison") or [],
                 "yoy_detail": growth_detail,
+            })
+            continue
+
+        if kid == "MRK-05":
+            cash_gap = _build_cash_gap_detail(
+                td_m1.get("monthly_data") or [],
+                td_m2.get("monthly_data") or [],
+                ref_y,
+                ref_m,
+            )
+            lm = cash_gap.get("last_full_month_row") or {}
+            fact = lm.get("fact")
+            plitki_items.append({
+                "kpi_id": kid,
+                "name": meta["name"],
+                "goal": meta.get("goal"),
+                "kpi_pct": None,
+                "color": _mrk05_cash_gap_rag(_to_float_or_none(fact)),
+                "period": _period_label(meta),
+                "thresholds": _thresholds(meta),
+                "formula": "Деньги полученные (факт) − Отгрузки произведенные (факт)",
+                "unit": "руб.",
+                "source": "1С / коммерция",
+                "frequency": meta.get("frequency"),
+                "plan": None,
+                "fact": fact,
+                "has_data": fact is not None,
+                "plan_fact_period_label": month_label,
+                "monthly_data": cash_gap.get("monthly_data") or [],
+                "cash_gap_detail": cash_gap.get("cash_gap_detail") or {},
             })
             continue
 
@@ -749,7 +989,6 @@ def build_chairman_commerce_payload(
             share = _mrk06_share_bmi_gazprom(ref_y, ref_m)
             pct = share.get("pct_pair")
             total = share.get("total") or 0
-            pair = share.get("pair") or 0
             plitki_items.append({
                 "kpi_id": kid,
                 "name": meta["name"],
@@ -762,9 +1001,9 @@ def build_chairman_commerce_payload(
                 "unit": meta.get("unit"),
                 "source": meta.get("source"),
                 "frequency": meta.get("frequency"),
-                "plan": _to_int_or_none(total),
-                "fact": _to_int_or_none(pair),
-                "has_data": total > 0,
+                "plan": None,
+                "fact": None,
+                "has_data": pct is not None,
                 "plan_fact_period_label": f"{ref_y} г. (янв.–{MONTH_NAMES_RU[ref_m]})",
                 "monthly_data": [],
                 "share_detail": {
@@ -777,6 +1016,70 @@ def build_chairman_commerce_payload(
                     "period_end": share.get("period_end"),
                     "counted_rows": share.get("counted_rows"),
                 },
+            })
+            continue
+
+        if kid == "MRK-07":
+            conv = _build_ytd_conversion_detail(
+                td_m2.get("monthly_data") or [],
+                td_m3.get("monthly_data") or [],
+                ref_y,
+                ref_m,
+                numerator_label="Отгрузки произведенные",
+                denominator_label="Договоры заключенные",
+            )
+            lm = conv.get("last_full_month_row") or {}
+            pct = lm.get("kpi_pct")
+            plitki_items.append({
+                "kpi_id": kid,
+                "name": meta["name"],
+                "goal": meta.get("goal"),
+                "kpi_pct": pct,
+                "color": _mrk_conversion_rag(pct),
+                "period": _period_label(meta),
+                "thresholds": _thresholds(meta),
+                "formula": "Отгрузки произведенные (факт) / Договоры заключенные (факт) * 100 (с начала года)",
+                "unit": meta.get("unit"),
+                "source": meta.get("source"),
+                "frequency": meta.get("frequency"),
+                "plan": None,
+                "fact": None,
+                "has_data": pct is not None,
+                "plan_fact_period_label": f"Янв.–{MONTH_NAMES_RU[ref_m]} {ref_y}",
+                "monthly_data": conv.get("monthly_data") or [],
+                "conversion_detail": conv.get("conversion_detail") or {},
+            })
+            continue
+
+        if kid == "MRK-08":
+            conv = _build_ytd_conversion_detail(
+                td_m2.get("monthly_data") or [],
+                td_m1.get("monthly_data") or [],
+                ref_y,
+                ref_m,
+                numerator_label="Отгрузки произведенные",
+                denominator_label="Деньги полученные",
+            )
+            lm = conv.get("last_full_month_row") or {}
+            pct = lm.get("kpi_pct")
+            plitki_items.append({
+                "kpi_id": kid,
+                "name": meta["name"],
+                "goal": meta.get("goal"),
+                "kpi_pct": pct,
+                "color": _mrk_conversion_rag(pct),
+                "period": _period_label(meta),
+                "thresholds": _thresholds(meta),
+                "formula": "Отгрузки произведенные (факт) / Деньги полученные (факт) * 100 (с начала года)",
+                "unit": meta.get("unit"),
+                "source": meta.get("source"),
+                "frequency": meta.get("frequency"),
+                "plan": None,
+                "fact": None,
+                "has_data": pct is not None,
+                "plan_fact_period_label": f"Янв.–{MONTH_NAMES_RU[ref_m]} {ref_y}",
+                "monthly_data": conv.get("monthly_data") or [],
+                "conversion_detail": conv.get("conversion_detail") or {},
             })
             continue
 
@@ -794,7 +1097,7 @@ def build_chairman_commerce_payload(
                 "period": _period_label(meta),
                 "thresholds": _thresholds(meta),
                 "formula": meta.get("formula"),
-                "unit": meta.get("unit"),
+                "unit": "шт",
                 "source": meta.get("source"),
                 "frequency": meta.get("frequency"),
                 "plan": plan_n,
@@ -857,10 +1160,45 @@ def build_chairman_commerce_payload(
     if len(ser) == 3:
         chart["series"] = [ser[1], ser[2], ser[0]]
 
+    from .views import _fetch_claims_rows_for_department, _fetch_lawsuits_rows_for_department
+    try:
+        claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, 'коммерческий директор')
+    except Exception:
+        claims_rows = []
+    try:
+        lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, 'коммерческий директор')
+    except Exception:
+        lawsuits_rows = []
+    month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+
     return {
         "Плитки": {"count": len(plitki_items), "items": plitki_items},
         "Графики": {"MRK-C1": chart},
-        "Таблицы": {},
+        "Таблицы": {
+            'KD-T-CLAIMS': {
+                'name': f'Претензии за {month_name} {ref_y}',
+                'periodicity': 'ежемесячно',
+                'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                'rows': claims_rows,
+            },
+            'KD-T-LAWSUITS': {
+                'name': f'Суды за {month_name} {ref_y}',
+                'periodicity': 'ежемесячно',
+                'description': (
+                    'Судебные споры и исковая работа из 1С '
+                    '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц'
+                ),
+                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                'columns': [
+                    'Номер', 'Статус', 'Тип документа', 'Контрагент',
+                    'Предмет спора', 'Сумма требований',
+                    'Роль ГК в споре', 'Площадка (юрлицо ГК)',
+                    'Подразделение инициатора',
+                ],
+                'rows': lawsuits_rows,
+            },
+        },
     }
 
 

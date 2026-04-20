@@ -114,12 +114,13 @@ def _discover_doc_entity(session: requests.Session) -> str:
     return _DISCOVERED_ENTITY
 
 
-def _cache_path(year: int, month: int) -> Path:
-    return CACHE_DIR / f"lawsuits_{year}_{month:02d}.json"
+def _cache_path(year: int, month: int, include_all: bool = False) -> Path:
+    suffix = "_all" if include_all else ""
+    return CACHE_DIR / f"lawsuits{suffix}_{year}_{month:02d}.json"
 
 
-def _load_cache(year: int, month: int) -> list[dict] | None:
-    p = _cache_path(year, month)
+def _load_cache(year: int, month: int, include_all: bool = False) -> list[dict] | None:
+    p = _cache_path(year, month, include_all=include_all)
     if not p.exists():
         return None
     try:
@@ -132,10 +133,10 @@ def _load_cache(year: int, month: int) -> list[dict] | None:
     return None
 
 
-def _save_cache(year: int, month: int, rows: list[dict]) -> None:
+def _save_cache(year: int, month: int, rows: list[dict], include_all: bool = False) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        with open(_cache_path(year, month), 'w', encoding='utf-8') as f:
+        with open(_cache_path(year, month, include_all=include_all), 'w', encoding='utf-8') as f:
             json.dump(
                 {'date': date.today().isoformat(), 'rows': rows},
                 f, ensure_ascii=False,
@@ -199,45 +200,41 @@ def _fetch_documents(session: requests.Session,
     date_from = f"{year}-{month:02d}-01T00:00:00"
     date_to = f"{year}-{month:02d}-{last_day}T23:59:59"
 
-    select_doc = (
-        "Ref_Key,Number,Date,Posted,DeletionMark,"
-        "Статус,ТипДокумента,"
-        "Контрагент_Key,"
-        "ПредметСпора,СуммаТребований,"
-        "РольГКВСпоре,ПлощадкаЮрлицоГК_Key,"
-        "ИнициаторЗаказчикВнутриГК_Key"
-    )
-
     entity = _discover_doc_entity(session)
     docs: list[dict] = []
     skip = 0
+    odata_filter = (
+        f"Date ge datetime'{date_from}'"
+        f" and Date le datetime'{date_to}'"
+    )
+
     while True:
-        odata_filter = (
-            f"Date ge datetime'{date_from}'"
-            f" and Date le datetime'{date_to}'"
-        )
+        # Для этого документа 1С OData нестабильно обрабатывает $select даже для
+        # существующих реквизитов (например, "Статус"), поэтому забираем полный
+        # документ и затем вытаскиваем нужные поля уже в Python.
         url = (
             f"{BASE}/{quote(entity)}?$format=json"
-            f"&$select={quote(select_doc, safe=',_')}&$top=5000&$skip={skip}"
+            f"&$top=5000&$skip={skip}"
             f"&$filter={quote(odata_filter, safe='')}"
         )
         try:
             r = session.get(url, timeout=120)
         except Exception as e:
             logger.error("Lawsuits HTTP error: %s", e)
-            break
+            return []
         if not r.ok:
             logger.error("Lawsuits entity=%s HTTP %d: %s", entity, r.status_code, r.text[:300])
-            break
+            return []
         rows = r.json().get("value", [])
         docs.extend(rows)
         if len(rows) < 5000:
             break
         skip += 5000
+
     return docs
 
 
-def _fetch_from_odata(year: int, month: int) -> list[dict]:
+def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[dict]:
     """Загружает документы судов из 1С OData за указанный месяц, резолвит ссылки."""
     session = requests.Session()
     session.auth = AUTH
@@ -311,11 +308,11 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
         init_dept_key = user_dept.get(init_key, "") if init_key and init_key != EMPTY else ""
 
         # Фильтр: только если подразделение инициатора — ребёнок коммерческого директора.
-        if init_dept_key not in ALLOWED_DEPARTMENTS:
+        if not include_all and init_dept_key not in ALLOWED_DEPARTMENTS:
             continue
 
         contr_key = d.get("Контрагент_Key") or ""
-        org_key = d.get("ПлощадкаЮрлицоГК_Key") or ""
+        org_key = d.get("ПлощадкаЮрлицоГК_Key") or d.get("ПлощадкаЮрлицоГК") or ""
 
         subject = (d.get("ПредметСпора") or "").replace("\r\n", " ").replace("\n", " ")
 
@@ -341,7 +338,7 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
     return result_rows
 
 
-def fetch_lawsuits_for_month(year: int, month: int) -> list[dict]:
+def fetch_lawsuits_for_month(year: int, month: int, include_all: bool = False) -> list[dict]:
     """
     Возвращает список строк таблицы «Суды» за указанный месяц
     (Document_ТД_ПретензииСудебныеСпорыИсковаяРабота).
@@ -350,15 +347,15 @@ def fetch_lawsuits_for_month(year: int, month: int) -> list[dict]:
     один из дочерних отделов коммерческого директора (ALLOWED_DEPARTMENTS).
     Кэшируется на день в JSON-файл.
     """
-    cached = _load_cache(year, month)
+    cached = _load_cache(year, month, include_all=include_all)
     if cached is not None:
         return cached
 
     try:
-        rows = _fetch_from_odata(year, month)
+        rows = _fetch_from_odata(year, month, include_all=include_all)
     except Exception as e:
         logger.error("Failed to fetch lawsuits: %s", e)
         rows = []
 
-    _save_cache(year, month, rows)
+    _save_cache(year, month, rows, include_all=include_all)
     return rows

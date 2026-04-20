@@ -1,0 +1,16 @@
+{
+  "cache_date": "2026-04-20",
+  "year": 2026,
+  "ref_month": 1,
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "total_fact": 0.0,
+      "total_calc": 0.0,
+      "fact_by_dept": {},
+      "calc_by_dept": {},
+      "doc_count": 0
+    }
+  ]
+}

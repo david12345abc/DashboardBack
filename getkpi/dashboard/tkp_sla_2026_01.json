@@ -1,0 +1,16 @@
+{
+  "cache_date": "2026-04-20",
+  "year": 2026,
+  "ref_month": 1,
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "plan": 0,
+      "fact": 0,
+      "pct": 0.0,
+      "plan_by_dept": {},
+      "fact_by_dept": {}
+    }
+  ]
+}

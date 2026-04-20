@@ -40,12 +40,13 @@ MONTH_NAMES = {
 }
 
 
-def _cache_path(year: int, month: int) -> Path:
-    return CACHE_DIR / f"claims_{year}_{month:02d}.json"
+def _cache_path(year: int, month: int, include_all: bool = False) -> Path:
+    suffix = "_all" if include_all else ""
+    return CACHE_DIR / f"claims{suffix}_{year}_{month:02d}.json"
 
 
-def _load_cache(year: int, month: int) -> list[dict] | None:
-    p = _cache_path(year, month)
+def _load_cache(year: int, month: int, include_all: bool = False) -> list[dict] | None:
+    p = _cache_path(year, month, include_all=include_all)
     if not p.exists():
         return None
     try:
@@ -58,10 +59,10 @@ def _load_cache(year: int, month: int) -> list[dict] | None:
     return None
 
 
-def _save_cache(year: int, month: int, rows: list[dict]) -> None:
+def _save_cache(year: int, month: int, rows: list[dict], include_all: bool = False) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        with open(_cache_path(year, month), 'w', encoding='utf-8') as f:
+        with open(_cache_path(year, month, include_all=include_all), 'w', encoding='utf-8') as f:
             json.dump({'date': date.today().isoformat(), 'rows': rows}, f, ensure_ascii=False)
     except OSError:
         pass
@@ -115,7 +116,7 @@ def _fetch_single(session: requests.Session,
     return None
 
 
-def _fetch_from_odata(year: int, month: int) -> list[dict]:
+def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[dict]:
     """Загружает претензии из 1С OData за указанный месяц."""
     last_day = calendar.monthrange(year, month)[1]
     date_from = f"{year}-{month:02d}-01T00:00:00"
@@ -251,7 +252,7 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
             continue
 
         order_dept_key = order.get("Подразделение_Key", "")
-        if order_dept_key not in ALLOWED_DEPARTMENTS:
+        if not include_all and order_dept_key not in ALLOWED_DEPARTMENTS:
             continue
 
         partner = partners.get(c.get("Партнер_Key", ""), c.get("Партнер_Key", ""))
@@ -292,17 +293,17 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
     return result_rows
 
 
-def fetch_claims_for_month(year: int, month: int) -> list[dict]:
+def fetch_claims_for_month(year: int, month: int, include_all: bool = False) -> list[dict]:
     """Возвращает список претензий за месяц (с кэшированием на день)."""
-    cached = _load_cache(year, month)
+    cached = _load_cache(year, month, include_all=include_all)
     if cached is not None:
         return cached
 
     try:
-        rows = _fetch_from_odata(year, month)
+        rows = _fetch_from_odata(year, month, include_all=include_all)
     except Exception as e:
         logger.error("Failed to fetch claims: %s", e)
         rows = []
 
-    _save_cache(year, month, rows)
+    _save_cache(year, month, rows, include_all=include_all)
     return rows

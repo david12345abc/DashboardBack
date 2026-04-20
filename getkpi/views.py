@@ -20,6 +20,7 @@ from . import (
     valovaya_pribyl,
 )
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
+from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter
 from .models import KpiDefinition
 
@@ -426,13 +427,12 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
     }
 
     try:
-        rows = fetch_claims_for_month(ref_y, ref_m)
+        rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
     except Exception:
         rows = []
 
     try:
-        from .komdir_lawsuits import fetch_lawsuits_for_month
-        lawsuit_rows = fetch_lawsuits_for_month(ref_y, ref_m)
+        lawsuit_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, dept)
     except Exception:
         lawsuit_rows = []
 
@@ -492,6 +492,41 @@ def _dept_guid_for_universal(dept_key: str | None) -> str | None:
     if not isinstance(ck, str):
         return None
     return dept_guid_for_kpi_key(ck)
+
+
+def _normalize_commercial_context_department(department: str | None) -> tuple[str, str | None]:
+    raw = str(department or '').strip()
+    if not raw:
+        return '', None
+    ck = commercial_kpi_key(raw)
+    if isinstance(ck, str):
+        return ck, dept_guid_for_kpi_key(ck)
+    lowered = raw.lower()
+    if 'коммерческий' in lowered and 'директор' in lowered:
+        return 'коммерческий директор', None
+    return raw, None
+
+
+def _fetch_claims_rows_for_department(year: int, month: int, department: str) -> list[dict]:
+    from .komdir_claims import fetch_claims_for_month
+
+    canonical_dept, dept_guid = _normalize_commercial_context_department(department)
+    include_all = not isinstance(commercial_kpi_key(canonical_dept), str) and dept_guid is None
+    rows = fetch_claims_for_month(year, month, include_all=include_all)
+    if dept_guid:
+        rows = [r for r in rows if r.get('order_dept_key') == dept_guid]
+    return rows
+
+
+def _fetch_lawsuits_rows_for_department(year: int, month: int, department: str) -> list[dict]:
+    from .komdir_lawsuits import fetch_lawsuits_for_month
+
+    canonical_dept, dept_guid = _normalize_commercial_context_department(department)
+    include_all = not isinstance(commercial_kpi_key(canonical_dept), str) and dept_guid is None
+    rows = fetch_lawsuits_for_month(year, month, include_all=include_all)
+    if dept_guid:
+        rows = [r for r in rows if r.get('initiator_dept_key') == dept_guid]
+    return rows
 
 
 def _generate_monthly_data(plan: float) -> list[dict]:
@@ -782,6 +817,46 @@ def get_kpi(request):
         payload, for_block = chairman_data.build_chairman_payload_by_for(
             kpis, month=req_month, year=req_year, for_raw=for_raw,
         )
+        ref_y, ref_m = (req_year, req_month) if req_month and req_year else last_full_month(date.today())
+        tables = payload.get('Таблицы') or {}
+        target_dept = requested_dept
+        if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
+            target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
+        try:
+            claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept)
+        except Exception:
+            claims_rows = []
+        try:
+            lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
+        except Exception:
+            lawsuits_rows = []
+        month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+        tables.update({
+            'KD-T-CLAIMS': {
+                'name': f'Претензии за {month_name} {ref_y}',
+                'periodicity': 'ежемесячно',
+                'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                'rows': claims_rows,
+            },
+            'KD-T-LAWSUITS': {
+                'name': f'Суды за {month_name} {ref_y}',
+                'periodicity': 'ежемесячно',
+                'description': (
+                    'Судебные споры и исковая работа из 1С '
+                    '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц'
+                ),
+                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                'columns': [
+                    'Номер', 'Статус', 'Тип документа', 'Контрагент',
+                    'Предмет спора', 'Сумма требований',
+                    'Роль ГК в споре', 'Площадка (юрлицо ГК)',
+                    'Подразделение инициатора',
+                ],
+                'rows': lawsuits_rows,
+            },
+        })
+        payload['Таблицы'] = tables
         return JsonResponse(
             {
                 'department': requested_dept,
@@ -883,6 +958,46 @@ def get_all_departments(request):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
                 kpis, month=req_m, year=req_yr, for_raw=for_raw,
             )
+            ref_y, ref_m = (req_yr, req_m) if req_m and req_yr else last_full_month(date.today())
+            tables = payload.get('Таблицы') or {}
+            target_dept = requested_dept
+            if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
+                target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
+            try:
+                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept)
+            except Exception:
+                claims_rows = []
+            try:
+                lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
+            except Exception:
+                lawsuits_rows = []
+            month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+            tables.update({
+                'KD-T-CLAIMS': {
+                    'name': f'Претензии за {month_name} {ref_y}',
+                    'periodicity': 'ежемесячно',
+                    'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                    'rows': claims_rows,
+                },
+                'KD-T-LAWSUITS': {
+                    'name': f'Суды за {month_name} {ref_y}',
+                    'periodicity': 'ежемесячно',
+                    'description': (
+                        'Судебные споры и исковая работа из 1С '
+                        '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц'
+                    ),
+                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                    'columns': [
+                        'Номер', 'Статус', 'Тип документа', 'Контрагент',
+                        'Предмет спора', 'Сумма требований',
+                        'Роль ГК в споре', 'Площадка (юрлицо ГК)',
+                        'Подразделение инициатора',
+                    ],
+                    'rows': lawsuits_rows,
+                },
+            })
+            payload['Таблицы'] = tables
             return JsonResponse(
                 {
                     'department': requested_dept,
@@ -922,6 +1037,46 @@ def get_all_departments(request):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
                 kpis, month=req_month_all, year=req_year_all, for_raw=chairman_for_raw,
             )
+            ref_y, ref_m = (req_year_all, req_month_all) if req_month_all and req_year_all else last_full_month(date.today())
+            tables = payload.get('Таблицы') or {}
+            target_dept = dept
+            if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
+                target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
+            try:
+                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept)
+            except Exception:
+                claims_rows = []
+            try:
+                lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
+            except Exception:
+                lawsuits_rows = []
+            month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+            tables.update({
+                'KD-T-CLAIMS': {
+                    'name': f'Претензии за {month_name} {ref_y}',
+                    'periodicity': 'ежемесячно',
+                    'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                    'rows': claims_rows,
+                },
+                'KD-T-LAWSUITS': {
+                    'name': f'Суды за {month_name} {ref_y}',
+                    'periodicity': 'ежемесячно',
+                    'description': (
+                        'Судебные споры и исковая работа из 1С '
+                        '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц'
+                    ),
+                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                    'columns': [
+                        'Номер', 'Статус', 'Тип документа', 'Контрагент',
+                        'Предмет спора', 'Сумма требований',
+                        'Роль ГК в споре', 'Площадка (юрлицо ГК)',
+                        'Подразделение инициатора',
+                    ],
+                    'rows': lawsuits_rows,
+                },
+            })
+            payload['Таблицы'] = tables
             return {
                 'department': dept,
                 'for': for_block,
@@ -1075,3 +1230,65 @@ def get_cache_status(request):
         ref_y=ref_year, ref_m=ref_month,
     )
     return JsonResponse(status, json_dumps_params={'ensure_ascii': False})
+
+
+@require_GET
+@login_required
+def get_lawsuits_table(request):
+    requested_dept = (request.GET.get('department') or '').strip()
+    if not requested_dept:
+        return JsonResponse({'error': 'department query parameter is required'}, status=400)
+
+    user_department = request.current_user.department
+    if not user_department:
+        return JsonResponse({'error': 'User has no department assigned'}, status=400)
+
+    allowed = _get_allowed_departments(user_department)
+    ck = commercial_kpi_key(requested_dept)
+    canonical_dept = ck if isinstance(ck, str) else requested_dept
+    lowered = requested_dept.lower()
+    if "коммерческий" in lowered and "директор" in lowered:
+        canonical_dept = requested_dept
+
+    if requested_dept not in allowed and canonical_dept not in allowed and canonical_dept != 'коммерческий директор':
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    month_param = request.GET.get('month')
+    year_param = request.GET.get('year')
+    if not month_param or not year_param:
+        return JsonResponse({'error': 'month and year query parameters are required'}, status=400)
+    try:
+        req_month = int(month_param)
+        req_year = int(year_param)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'month and year must be integers'}, status=400)
+    if req_month < 1 or req_month > 12:
+        return JsonResponse({'error': 'month must be in range 1..12'}, status=400)
+
+    data = get_sudy_by_department(req_year, req_month, requested_dept)
+    month_name = MONTH_NAMES.get(req_month, str(req_month))
+    return JsonResponse(
+        {
+            'department': data['department'],
+            'name': f"Суды за {month_name} {req_year}",
+            'periodicity': 'ежемесячно',
+            'description': (
+                'Судебные споры и исковая работа из 1С '
+                '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц'
+            ),
+            'period': {
+                'year': req_year,
+                'month': req_month,
+                'month_name': month_name,
+            },
+            'columns': [
+                'Номер', 'Статус', 'Тип документа', 'Контрагент',
+                'Предмет спора', 'Сумма требований',
+                'Роль ГК в споре', 'Площадка (юрлицо ГК)',
+                'Подразделение инициатора',
+            ],
+            'count': data['count'],
+            'rows': data['rows'],
+        },
+        json_dumps_params={'ensure_ascii': False},
+    )

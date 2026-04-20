@@ -44,6 +44,14 @@ REZ_NAME = {
 }
 
 
+def _normalize_result_code(value) -> int:
+    """OData может вернуть код результата строкой; приводим к int для стабильного расчёта."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _fetch_all(session, base_url, page_size=1000, timeout=120):
     out, skip = [], 0
     while True:
@@ -119,10 +127,10 @@ def get_tenders_bmi(year: int | None = None,
     alive = [r for r in rows if not r.get("DeletionMark")]
 
     plan = len(alive)
-    fact = sum(1 for r in alive if r.get("УТО_РезультатТендера") == 1)
+    fact = sum(1 for r in alive if _normalize_result_code(r.get("УТО_РезультатТендера")) == 1)
     distribution: dict[int, int] = {}
     for r in alive:
-        k = r.get("УТО_РезультатТендера", 0)
+        k = _normalize_result_code(r.get("УТО_РезультатТендера", 0))
         distribution[k] = distribution.get(k, 0) + 1
 
     pct = round(fact / plan * 100, 1) if plan else None
@@ -132,7 +140,7 @@ def get_tenders_bmi(year: int | None = None,
         samples.append({
             "number": r.get("Number"),
             "date": (r.get("Date") or "")[:10],
-            "result": r.get("УТО_РезультатТендера", 0),
+            "result": _normalize_result_code(r.get("УТО_РезультатТендера", 0)),
             "name": (r.get("УТО_НаименованиеТендера") or "").strip(),
             "customer": (r.get("УТО_Заказчик") or "").strip(),
         })
