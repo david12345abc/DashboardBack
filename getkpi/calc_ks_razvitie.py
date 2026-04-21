@@ -305,6 +305,10 @@ def _fetch_from_odata(year: int) -> dict:
     }
     dept_names = _resolve_department_names(session, dept_keys_needed)
 
+    # Запомним GUID → имя подразделения, чтобы потом собрать отдельный срез
+    # by_dept_guid (для точной фильтрации по GUID в dashboard-слое).
+    dept_name_by_key: dict[str, str] = {}
+
     docs_by_ref: dict[str, dict] = {}
     for d in docs:
         dept_key = str(d.get("Подразделение_Key") or "").lower()
@@ -313,6 +317,8 @@ def _fetch_from_odata(year: int) -> dict:
             or ALLOWED_DEPARTMENTS.get(dept_key)
             or (dept_key[:8] if dept_key else "Без подразделения")
         )
+        if dept_key:
+            dept_name_by_key[dept_key] = dept_name
         docs_by_ref[str(d.get("Ref_Key") or "").lower()] = {
             "ref": str(d.get("Ref_Key") or "").lower(),
             "number": str(d.get("Number") or "").strip(),
@@ -369,31 +375,60 @@ def _fetch_from_odata(year: int) -> dict:
 
     indicators = sorted(indicators_set)
 
-    # Заполняем нулями отсутствующие месяцы/показатели в каждом подразделении.
-    # by_dept строится по ВСЕМ подразделениям, встреченным в документах КС развитие.
+    # Индикаторы per-dept: только те, что реально есть в документах
+    # конкретного подразделения (хотя бы один раз за год).
+    dept_indicators: dict[str, list[str]] = {}
+    for dept_name, month_map in by_dept_agg.items():
+        present: set[str] = set()
+        for ind_map in month_map.values():
+            for ind, v in ind_map.items():
+                if ind and v is not None:
+                    present.add(ind)
+        dept_indicators[dept_name] = sorted(present)
+
+    # by_dept: для каждого подразделения 12 месяцев × только его показатели.
+    # Отсутствующие у подразделения показатели НЕ выводятся вовсе (это и есть
+    # «нужный» перечень круговых диаграмм для этого подразделения).
     by_dept_full: dict[str, dict[str, dict[str, float]]] = {}
     for dept_name in sorted(by_dept_agg.keys()):
-        base = _build_empty_months(indicators)
+        dept_inds = dept_indicators.get(dept_name) or []
+        base = {str(m): {ind: 0.0 for ind in dept_inds} for m in range(1, 13)}
         dept_present = by_dept_agg.get(dept_name) or {}
         for m in range(1, 13):
             key = str(m)
             if key in dept_present:
-                for ind in indicators:
+                for ind in dept_inds:
                     base[key][ind] = float(dept_present[key].get(ind, 0.0))
         by_dept_full[dept_name] = base
 
-    # Общий агрегат (сумма по всем подразделениям).
+    # Общий агрегат (сумма по всем подразделениям) — для коммерческого директора
+    # и ПСД коммерческого блока. Здесь — все показатели из всех документов.
     total: dict[str, dict[str, float]] = _build_empty_months(indicators)
     for dept_map in by_dept_full.values():
         for m_key, ind_map in dept_map.items():
             for ind, v in ind_map.items():
                 total[m_key][ind] = round(total[m_key].get(ind, 0.0) + float(v), 4)
 
+    # GUID → отдельный срез (для точной фильтрации по dept_guid).
+    by_dept_guid: dict[str, dict] = {}
+    name_to_key = {name: key for key, name in dept_name_by_key.items()}
+    for dept_name, month_map in by_dept_full.items():
+        key = name_to_key.get(dept_name)
+        if not key:
+            continue
+        by_dept_guid[key] = {
+            "dept_name": dept_name,
+            "indicators": dept_indicators.get(dept_name) or [],
+            "months": month_map,
+        }
+
     return {
         "year": int(year),
-        "indicators": indicators,
-        "months": total,
-        "by_dept": by_dept_full,
+        "indicators": indicators,          # полный список показателей (для комдира / ПСД)
+        "months": total,                   # помесячный агрегат по всем подразделениям
+        "by_dept": by_dept_full,           # помесячные значения, только профильные показатели отдела
+        "dept_indicators": dept_indicators, # какие показатели есть у каждого отдела
+        "by_dept_guid": by_dept_guid,      # то же, но ключ — GUID подразделения
     }
 
 

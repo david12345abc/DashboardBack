@@ -71,22 +71,25 @@ def _fetch_all(session, base_url, page_size=1000, timeout=120):
 def get_tenders_bmi(year: int | None = None,
                     *,
                     month: int | None = None,
-                    dept_guid: str | None = None) -> dict:
+                    dept_guid: str | None = None,
+                    cumulative: bool = True) -> dict:
     """
-    % выигранных тендеров БМИ с начала `year` по 31.12 (или по `month`, если задан).
+    % выигранных тендеров БМИ.
 
-    Сигнатура повторяет стиль других calc-модулей (year/month/dept_guid) для совместимости
-    с cache_manager.locked_call; параметр dept_guid здесь игнорируется (плитка всегда по БМИ).
+    cumulative=True  (по умолчанию) — период с 01.01 `year` по конец `month`
+                      (накопительно с начала года). Используется для плитки «итого».
+    cumulative=False — только в пределах указанного `month` (c 1 по последний день).
+                      Используется для помесячных точек monthly_data.
+
+    Параметр dept_guid игнорируется (плитка всегда по БМИ).
 
     Возвращает:
         {
-          'year': int,
-          'month': int,          # верхняя граница окна (12 по умолчанию)
-          'plan': int,           # всего тендеров БМИ за период
-          'fact': int,           # выигранных тендеров БМИ
-          'pct': float | None,   # fact / plan * 100 (округлено до 0.1)
-          'distribution': {int: int},  # УТО_РезультатТендера → count
-          'samples': [dict],     # последние 15 записей для отладки
+          'year': int, 'month': int,
+          'period_start', 'period_end',
+          'plan': int, 'fact': int, 'pct': float | None,
+          'distribution': {int: int}, 'samples': [dict],
+          'cumulative': bool,
         }
     """
     today = date.today()
@@ -98,7 +101,8 @@ def get_tenders_bmi(year: int | None = None,
     if y == today.year and end_dt >= today:
         end_dt = today
 
-    start = f"{y}-01-01T00:00:00"
+    start_dt = date(y, 1, 1) if cumulative else date(y, m, 1)
+    start = f"{start_dt.isoformat()}T00:00:00"
     end   = f"{end_dt.isoformat()}T23:59:59"
 
     s = requests.Session()
@@ -155,6 +159,7 @@ def get_tenders_bmi(year: int | None = None,
         "pct": pct,
         "distribution": distribution,
         "samples": samples,
+        "cumulative": bool(cumulative),
     }
 
 

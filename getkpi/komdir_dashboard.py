@@ -1061,6 +1061,26 @@ def build_komdir_payload(kpi_list: list[dict],
             calc_ks_razvitie.get_ks_razvitie_plans,
             year=ref_y,
         )
+        ks_by_dept = ks_plans.get("by_dept") or {}
+        ks_dept_inds = ks_plans.get("dept_indicators") or {}
+        ks_by_dept_guid = ks_plans.get("by_dept_guid") or {}
+
+        dept_slice = ks_by_dept_guid.get((dept_guid or "").lower()) if dept_guid else None
+
+        if dept_slice:
+            # Конкретное дочернее подразделение коммерческого блока: показываем
+            # ровно те показатели, которые есть в его документах КС развитие.
+            indicators = dept_slice.get("indicators") or []
+            months_map = dept_slice.get("months") or {}
+            dept_name = dept_slice.get("dept_name") or ""
+            by_dept_out = {dept_name: months_map} if dept_name else {}
+        else:
+            # Коммерческий директор или отдел без собственных документов —
+            # показываем агрегированные данные по всем подразделениям.
+            indicators = ks_plans.get("indicators") or []
+            months_map = ks_plans.get("months") or {}
+            by_dept_out = ks_by_dept
+
         grafiki["KS-RAZVITIE"] = {
             "kpi_id": "KS-RAZVITIE",
             "name": "КС развитие — планы по месяцам",
@@ -1072,9 +1092,10 @@ def build_komdir_payload(kpi_list: list[dict],
                 "month": ref_m,
                 "month_name": MONTH_NAMES_RU.get(ref_m, ""),
             },
-            "indicators": ks_plans.get("indicators") or [],
-            "months": ks_plans.get("months") or {},
-            "by_dept": ks_plans.get("by_dept") or {},
+            "indicators": indicators,
+            "months": months_map,
+            "by_dept": by_dept_out,
+            "dept_indicators": ks_dept_inds,
         }
     except Exception:
         logger.exception("KS-RAZVITIE: failed to load plans")

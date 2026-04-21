@@ -761,52 +761,51 @@ def _mrk_plan_fact_rag(kpi_pct: float | None) -> str:
     return "red"
 
 
-def _mrk09_tenders_bmi(ref_y: int, ref_m: int) -> dict:
-    """
-    Данные плитки MRK-09 «% выигранных тендеров БМИ».
-    Окно всегда «с 01.01 ref_y по конец выбранного месяца ref_m»,
-    а для текущего месяца текущего года calc-модуль сам ограничит период сегодняшней датой.
-    """
-    return cache_manager.locked_call(
-        f"tenders_bmi_{ref_y}_{ref_m}",
-        calc_tenders_bmi.get_tenders_bmi,
-        year=ref_y,
-        month=ref_m,
-    )
-
-
 def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
     """
-    Помесячный YTD-ряд для MRK-09: для каждого месяца m ∈ [1..ref_m]
-    считается процент выигранных тендеров БМИ накопительно с 01.01 ref_y
-    по последний день этого месяца.
+    Помесячный ряд для MRK-09: для каждого месяца m ∈ [1..12] считается
+    процент выигранных тендеров БМИ **за этот конкретный месяц**
+    (от 1 по последний день месяца), не накопительно.
+
+    Для будущих месяцев текущего года — None (данных ещё нет).
 
     Возвращает список точек для графика/агрегации:
       [{"month", "year", "month_name", "plan", "fact", "kpi_pct", "has_data"}]
     """
     today = date.today()
     points: list[dict] = []
-    for m in range(1, max(1, min(12, int(ref_m))) + 1):
-        # Для прошлых месяцев текущего года и всего прошлого года — накопительный YTD.
+    for m in range(1, 13):
+        is_future = (ref_y == today.year and m > today.month)
+        if is_future:
+            points.append({
+                "month": m,
+                "year": ref_y,
+                "month_name": MONTH_NAMES_RU[m],
+                "plan": None,
+                "fact": None,
+                "kpi_pct": None,
+                "has_data": False,
+            })
+            continue
+        # Только за этот месяц, без накопления с начала года.
         data = cache_manager.locked_call(
-            f"tenders_bmi_{ref_y}_{m:02d}",
+            f"tenders_bmi_monthly_{ref_y}_{m:02d}",
             calc_tenders_bmi.get_tenders_bmi,
             year=ref_y,
             month=m,
+            cumulative=False,
         )
         plan = int(data.get("plan") or 0)
         fact = int(data.get("fact") or 0)
         pct = data.get("pct")
-        # Актуальность: для будущих месяцев текущего года данных ещё нет.
-        is_future = (ref_y == today.year and m > today.month)
         points.append({
             "month": m,
             "year": ref_y,
             "month_name": MONTH_NAMES_RU[m],
-            "plan": None if is_future else plan,
-            "fact": None if is_future else fact,
-            "kpi_pct": None if is_future else pct,
-            "has_data": not is_future and plan > 0,
+            "plan": plan,
+            "fact": fact,
+            "kpi_pct": pct,
+            "has_data": plan > 0,
         })
     return points
 
@@ -1120,7 +1119,14 @@ def build_chairman_commerce_payload(
             continue
 
         if kid == "MRK-09":
-            tenders = _mrk09_tenders_bmi(ref_y, ref_m)
+            # Плитка считается ТОЛЬКО по выбранному месяцу ref_m (не нарастающим итогом).
+            tenders = cache_manager.locked_call(
+                f"tenders_bmi_monthly_{ref_y}_{ref_m:02d}",
+                calc_tenders_bmi.get_tenders_bmi,
+                year=ref_y,
+                month=ref_m,
+                cumulative=False,
+            )
             plan_n = int(tenders.get("plan") or 0)
             fact_n = int(tenders.get("fact") or 0)
             pct = tenders.get("pct")
@@ -1140,10 +1146,7 @@ def build_chairman_commerce_payload(
                 "plan": plan_n,
                 "fact": fact_n,
                 "has_data": plan_n > 0,
-                "plan_fact_period_label": (
-                    f"{tenders.get('period_start') or f'{ref_y}-01-01'} — "
-                    f"{tenders.get('period_end') or ''}"
-                ).rstrip(" —"),
+                "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
                 "monthly_data": monthly_ytd,
                 "tenders_detail": {
                     "distribution": tenders.get("distribution") or {},
