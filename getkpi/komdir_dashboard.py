@@ -748,17 +748,16 @@ def _build_lawsuits_table(ref_y: int, ref_m: int,
     """Таблица судов за выбранный месяц.
 
     Источник — Document_ТД_ПретензииСудебныеСпорыИсковаяРабота (через komdir_lawsuits).
-    Оставляем только документы, подразделение инициатора которых входит в
-    множество дочерних отделов коммерческого директора.
 
-    dept_guid=None  → все дочерние отделы коммерческого директора;
-    dept_guid='...' → оставляем только суды конкретного отдела (инициатор).
+    dept_guid=None  → коммерческий директор: видит ВСЕ суды компании;
+    dept_guid='...' → оставляем только суды конкретного отдела (по инициатору).
     """
     from .komdir_lawsuits import fetch_lawsuits_for_month
 
     rows = cache_manager.locked_call(
-        f'lawsuits_{ref_y}_{ref_m}',
+        f'lawsuits_all_{ref_y}_{ref_m}',
         fetch_lawsuits_for_month, ref_y, ref_m,
+        include_all=True,
     )
 
     if dept_guid:
@@ -909,23 +908,36 @@ def _build_overdue_table(ref_y: int, ref_m: int,
     rows = []
     for r in detail.get("rows", []):
         rows.append({
-            "counterparty": r["partner_name"],
-            "amount": r["amount"],
-            "days_overdue": r["days_overdue"],
-            "reason": None,
+            "counterparty": r.get("partner_name") or r.get("counterparty") or "",
+            "partner_name": r.get("partner_name") or "",
+            "order_num": r.get("order_num") or "",
+            "order_date": r.get("order_date") or "",
+            "order_key": r.get("order_key") or "",
+            "amount": r.get("amount"),
+            "dz_total": r.get("dz_total"),
+            "days_overdue": r.get("days_overdue"),
+            "installments_count": r.get("installments_count"),
+            "installments": r.get("installments") or [],
+            "reason": r.get("reason") or "",
+            "action": r.get("action") or "",
+            "dept_key": r.get("dept_key") or "",
+            "dept_name": r.get("dept_name") or "",
         })
 
     return {
         "name": f"Просроченная дебиторская задолженность на {detail.get('na_datu', '')}",
         "periodicity": "ежемесячно",
-        "description": "Детализация просроченной ДЗ по контрагентам",
+        "description": "Детализация просроченной ДЗ по заказам клиентов",
         "period": {
             "year": ref_y,
             "month": ref_m,
             "month_name": MONTH_NAMES_RU[ref_m],
         },
         "total_overdue": detail.get("total_overdue", 0),
-        "columns": ["Контрагент", "Сумма", "Дн. просрочки", "Причина"],
+        "columns": [
+            "№ Заказа клиента", "Контрагент", "Дн. просрочки",
+            "Причина", "Действие", "Сумма",
+        ],
         "rows": rows,
     }
 

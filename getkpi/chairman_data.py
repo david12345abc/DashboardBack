@@ -421,7 +421,7 @@ def get_chairman_for_catalog() -> dict:
     return {"items": items, "labels": labels}
 
 
-COMMERCE_TILE_IDS = [f"MRK-{i:02d}" for i in range(1, 11)]
+COMMERCE_TILE_IDS = [f"MRK-{i:02d}" for i in range(1, 10)]
 
 # Демо-факт на опорный месяц (значения с макета дашборда).
 # ВАЖНО: MRK-01/02/03 считаются по данным КомДира, MRK-04 — из _mrk04_shipment_growth_yoy,
@@ -1169,36 +1169,48 @@ def build_chairman_commerce_payload(
         lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, 'коммерческий директор')
     except Exception:
         lawsuits_rows = []
+
+    # KD-T-OVERDUE — та же таблица просроченной ДЗ, что и у коммерческого директора
+    try:
+        from .komdir_dashboard import _build_overdue_table
+        overdue_table = _build_overdue_table(ref_y, ref_m, dept_guid=None)
+    except Exception:
+        overdue_table = None
+
     month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+
+    tables: dict = {
+        'KD-T-CLAIMS': {
+            'name': f'Претензии за {month_name} {ref_y}',
+            'periodicity': 'ежемесячно',
+            'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+            'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+            'rows': claims_rows,
+        },
+        'KD-T-LAWSUITS': {
+            'name': f'Суды за {month_name} {ref_y}',
+            'periodicity': 'ежемесячно',
+            'description': (
+                'Судебные споры и исковая работа из 1С '
+                '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц'
+            ),
+            'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+            'columns': [
+                'Номер', 'Статус', 'Тип документа', 'Контрагент',
+                'Предмет спора', 'Сумма требований',
+                'Роль ГК в споре', 'Площадка (юрлицо ГК)',
+                'Подразделение инициатора',
+            ],
+            'rows': lawsuits_rows,
+        },
+    }
+    if overdue_table is not None:
+        tables['KD-T-OVERDUE'] = overdue_table
 
     return {
         "Плитки": {"count": len(plitki_items), "items": plitki_items},
         "Графики": {"MRK-C1": chart},
-        "Таблицы": {
-            'KD-T-CLAIMS': {
-                'name': f'Претензии за {month_name} {ref_y}',
-                'periodicity': 'ежемесячно',
-                'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
-                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                'rows': claims_rows,
-            },
-            'KD-T-LAWSUITS': {
-                'name': f'Суды за {month_name} {ref_y}',
-                'periodicity': 'ежемесячно',
-                'description': (
-                    'Судебные споры и исковая работа из 1С '
-                    '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц'
-                ),
-                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                'columns': [
-                    'Номер', 'Статус', 'Тип документа', 'Контрагент',
-                    'Предмет спора', 'Сумма требований',
-                    'Роль ГК в споре', 'Площадка (юрлицо ГК)',
-                    'Подразделение инициатора',
-                ],
-                'rows': lawsuits_rows,
-            },
-        },
+        "Таблицы": tables,
     }
 
 

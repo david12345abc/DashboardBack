@@ -522,8 +522,10 @@ def _fetch_lawsuits_rows_for_department(year: int, month: int, department: str) 
     from .komdir_lawsuits import fetch_lawsuits_for_month
 
     canonical_dept, dept_guid = _normalize_commercial_context_department(department)
-    include_all = not isinstance(commercial_kpi_key(canonical_dept), str) and dept_guid is None
-    rows = fetch_lawsuits_for_month(year, month, include_all=include_all)
+    # Суды: коммерческий директор и ПСД (в коммерческом блоке) видят ВСЕ суды
+    # компании, а не только инициированные сотрудниками коммерческих отделов.
+    # Конкретное подразделение видит только свои (отфильтруем ниже по initiator_dept_key).
+    rows = fetch_lawsuits_for_month(year, month, include_all=True)
     if dept_guid:
         rows = [r for r in rows if r.get('initiator_dept_key') == dept_guid]
     return rows

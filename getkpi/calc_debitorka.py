@@ -195,6 +195,181 @@ def resolve_partner_names(session, partner_keys: set):
     return names
 
 
+def _fetch_order_details(session, order_numbers: set) -> dict:
+    """
+    Загрузить ТД_ПричинаОбразованияПросроченнойДЗ и
+    ТД_КорректирующееДействиеПоФактуВыявленияДЗ из Document_ЗаказКлиента
+    по `Number`. Возвращает dict: {order_number: {"reason", "action"}}.
+    """
+    numbers_list = [str(n).strip() for n in order_numbers if n and str(n).strip() not in ("", "?")]
+    if not numbers_list:
+        return {}
+
+    details: dict[str, dict] = {}
+
+    entity = quote("Document_ЗаказКлиента")
+    sel = quote(
+        "Number,ТД_ПричинаОбразованияПросроченнойДЗ,ТД_КорректирующееДействиеПоФактуВыявленияДЗ",
+        safe=",_",
+    )
+
+    BATCH = 40
+    for i in range(0, len(numbers_list), BATCH):
+        batch = numbers_list[i:i + BATCH]
+        expr = " or ".join(f"Number eq '{n}'" for n in batch)
+        url = (
+            f"{BASE}/{entity}?$format=json&$select={sel}"
+            f"&$filter={quote(expr, safe='')}&$top=5000"
+        )
+        try:
+            r = session.get(url, timeout=60)
+            if not r.ok:
+                logger.warning("Order details HTTP %d for batch %d", r.status_code, i)
+                continue
+            for item in r.json().get("value", []):
+                num = (item.get("Number") or "").strip()
+                if not num:
+                    continue
+                details[num] = {
+                    "reason": (item.get("ТД_ПричинаОбразованияПросроченнойДЗ") or "").strip(),
+                    "action": (item.get("ТД_КорректирующееДействиеПоФактуВыявленияДЗ") or "").strip(),
+                }
+        except Exception as exc:
+            logger.warning("Order details fetch error: %s", exc)
+            continue
+
+    return details
+
+
+def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: dict,
+                                  session) -> list[dict]:
+    """
+    Построить список строк просроченной ДЗ с детализацией ПО КАЖДОМУ ЗАКАЗУ КЛИЕНТА.
+
+    Согласно спецификации:
+      ПросроченнаяДебиторскаяЗадолженность =
+        сумма оборота «Долг*» (ДолгУпр) по ВСЕМ строкам регистра,
+        у которых ДатаПлановогоПогашения < НаДату.
+
+    Т.е. считаем НЕТТО-остаток по каждому просроченному сроку внутри заказа
+    (включая возможные частичные погашения/переплаты с тем же сроком),
+    затем суммируем эти нетто-остатки по заказу. Строка попадает в таблицу
+    только если итоговая сумма просрочки по заказу > TOLERANCE.
+
+    Поля строки:
+      - dept_key, dept_name
+      - partner_key, partner_name (== counterparty)
+      - order_key (Ref_Key из Catalog_ОбъектыРасчетов)
+      - order_num, order_date
+      - amount (сумма просроченной ДЗ по заказу, руб., ДолгУпр, нетто)
+      - dz_total (вся ДЗ по заказу, руб., ДолгУпр, нетто)
+      - days_overdue (макс. дней просрочки среди просроченных сроков заказа)
+      - installments_count (количество просроченных сроков в заказе)
+      - installments (детализация: planned_date, amount, days_overdue, bucket)
+      - reason (ТД_ПричинаОбразованияПросроченнойДЗ из Document_ЗаказКлиента)
+      - action (ТД_КорректирующееДействиеПоФактуВыявленияДЗ из Document_ЗаказКлиента)
+    """
+    na_datu_str = na_datu.isoformat()
+    overdue_cutoff = f"{na_datu_str}T00:00:00"
+    dept_keys_lower = {d.lower() for d in DEPARTMENTS}
+
+    by_order: dict[tuple[str, str, str], dict] = defaultdict(
+        lambda: {
+            "amount": 0.0,         # ПросроченнаяДЗ: сумма НЕТТО-остатков по просроченным срокам
+            "dz_total": 0.0,       # Общая ДЗ: сумма НЕТТО-остатков по всем срокам
+            "max_days": 0,
+            "dept": "", "dept_name": "",
+            "partner": "", "order_num": "", "order_date": "",
+            "installments": [],    # детализация по срокам погашения
+        }
+    )
+    partner_keys_used: set[str] = set()
+    order_numbers_used: set[str] = set()
+
+    for (obj_key, planned_dt), balance in balances.items():
+        cat = obj_catalog.get(obj_key)
+        if not cat:
+            continue
+        dept = cat["dept"]
+        if dept not in dept_keys_lower:
+            continue
+
+        partner_key = cat["partner"]
+        order_num = str(cat.get("number") or "").strip()
+        order_date = str(cat.get("date") or "")[:10]
+
+        key = (dept, partner_key, obj_key)
+        entry = by_order[key]
+        entry["dept"] = dept
+        entry["dept_name"] = DEPARTMENTS.get(dept, dept[:8])
+        entry["partner"] = partner_key
+        entry["order_num"] = order_num
+        entry["order_date"] = order_date
+
+        # Общая ДЗ по заказу (все сроки, включая будущие) — нетто
+        entry["dz_total"] += balance
+
+        # Просрочка: только сроки, у которых ДатаПлановогоПогашения < НаДату
+        if not planned_dt or planned_dt <= "0001-01-02" or planned_dt >= overdue_cutoff:
+            continue
+
+        # Нетто-оборот по этому просроченному сроку (с учётом частичных погашений
+        # по тому же сроку).
+        entry["amount"] += balance
+
+        # Детализация: только строки с ненулевым остатком
+        if abs(balance) >= TOLERANCE:
+            days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
+            entry["installments"].append({
+                "planned_date": planned_dt[:10],
+                "amount": round(balance, 2),
+                "days_overdue": days_overdue,
+                "bucket": aging_bucket(days_overdue) if balance > TOLERANCE else "",
+            })
+            if balance > TOLERANCE:
+                entry["max_days"] = max(entry["max_days"], days_overdue)
+
+        partner_keys_used.add(partner_key)
+        if order_num:
+            order_numbers_used.add(order_num)
+
+    partner_names = resolve_partner_names(session, partner_keys_used)
+    order_details = _fetch_order_details(session, order_numbers_used)
+
+    rows: list[dict] = []
+    for (dept, partner_key, obj_key), data in by_order.items():
+        # В таблицу попадают только заказы с нетто-просрочкой > TOLERANCE
+        if data["amount"] <= TOLERANCE:
+            continue
+
+        order_num = data["order_num"]
+        details = order_details.get(order_num, {}) if order_num else {}
+        partner_name = partner_names.get(partner_key, partner_key[:8])
+        installments = sorted(
+            data["installments"], key=lambda x: x["planned_date"]
+        )
+        rows.append({
+            "dept_key": dept,
+            "dept_name": data["dept_name"],
+            "partner_key": partner_key,
+            "partner_name": partner_name,
+            "counterparty": partner_name,
+            "order_key": obj_key,
+            "order_num": order_num,
+            "order_date": data["order_date"],
+            "amount": round(data["amount"], 2),
+            "dz_total": round(data["dz_total"], 2),
+            "days_overdue": data["max_days"],
+            "installments_count": len(installments),
+            "installments": installments,
+            "reason": details.get("reason", ""),
+            "action": details.get("action", ""),
+        })
+
+    rows.sort(key=lambda x: -x["amount"])
+    return rows
+
+
 def aging_bucket(days: int) -> str:
     """Классификация 30-60-180."""
     if days <= 0:
@@ -355,59 +530,19 @@ def _build_snapshot_from_data(na_datu: date, records: list, obj_catalog: dict) -
 def _build_overdue_detail_from_data(na_datu: date, records: list,
                                     obj_catalog: dict,
                                     session) -> dict:
-    """Построить детализацию просрочки из предзагруженных данных."""
+    """Построить детализацию просрочки из предзагруженных данных.
+
+    С детализацией ПО КАЖДОМУ ЗАКАЗУ КЛИЕНТА: в каждой строке указан
+    номер заказа клиента, причина и корректирующее действие из
+    Document_ЗаказКлиента.
+    """
     na_datu_str = na_datu.isoformat()
     cutoff_period = f"{na_datu_str}T23:59:59"
 
     filtered = [r for r in records if (r.get("Period") or "") <= cutoff_period]
     balances = aggregate_balances(filtered)
 
-    overdue_cutoff = f"{na_datu_str}T00:00:00"
-    dept_keys_lower = {d.lower() for d in DEPARTMENTS}
-
-    by_partner: dict[tuple[str, str], dict] = defaultdict(
-        lambda: {"amount": 0.0, "max_days": 0, "dept": "", "dept_name": ""}
-    )
-    partner_keys_used: set[str] = set()
-
-    for (obj_key, planned_dt), balance in balances.items():
-        cat = obj_catalog.get(obj_key)
-        if not cat:
-            continue
-        dept = cat["dept"]
-        if dept not in dept_keys_lower:
-            continue
-        if balance < TOLERANCE:
-            continue
-        if not planned_dt or planned_dt <= "0001-01-02" or planned_dt >= overdue_cutoff:
-            continue
-
-        days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
-        dept_name = DEPARTMENTS.get(dept, dept[:8])
-        partner_key = cat["partner"]
-        partner_keys_used.add(partner_key)
-
-        key = (dept, partner_key)
-        entry = by_partner[key]
-        entry["amount"] += balance
-        entry["max_days"] = max(entry["max_days"], days_overdue)
-        entry["dept"] = dept
-        entry["dept_name"] = dept_name
-
-    partner_names = resolve_partner_names(session, partner_keys_used)
-
-    rows = []
-    for (dept, partner_key), data in by_partner.items():
-        rows.append({
-            "dept_key": dept,
-            "dept_name": data["dept_name"],
-            "partner_key": partner_key,
-            "partner_name": partner_names.get(partner_key, partner_key[:8]),
-            "amount": round(data["amount"], 2),
-            "days_overdue": data["max_days"],
-        })
-
-    rows.sort(key=lambda x: -x["amount"])
+    rows = _build_overdue_rows_per_order(na_datu, balances, obj_catalog, session)
     total = round(sum(r["amount"] for r in rows), 2)
 
     detail = {
@@ -574,10 +709,10 @@ def _ensure_debitorka_caches_for_period(ref_y: int, ref_m: int) -> None:
 
 
 def _calc_overdue_detail(na_datu: date) -> dict:
-    """Детализация просроченной ДЗ по контрагентам на дату.
+    """Детализация просроченной ДЗ по заказам клиентов на дату.
 
-    Возвращает список строк (partner_name, amount, days_overdue)
-    с разбивкой по подразделениям.
+    Возвращает список строк (partner_name, order_num, amount, days_overdue,
+    reason, action) с разбивкой по подразделениям.
     """
     session = requests.Session()
     session.auth = AUTH
@@ -590,52 +725,7 @@ def _calc_overdue_detail(na_datu: date) -> dict:
     obj_keys = {obj for (obj, _) in balances.keys()}
     obj_catalog = resolve_objects(session, obj_keys)
 
-    overdue_cutoff = f"{na_datu_str}T00:00:00"
-    dept_keys_lower = {d.lower() for d in DEPARTMENTS}
-
-    by_partner: dict[tuple[str, str], dict] = defaultdict(
-        lambda: {"amount": 0.0, "max_days": 0, "dept": "", "dept_name": ""}
-    )
-    partner_keys_used: set[str] = set()
-
-    for (obj_key, planned_dt), balance in balances.items():
-        cat = obj_catalog.get(obj_key)
-        if not cat:
-            continue
-        dept = cat["dept"]
-        if dept not in dept_keys_lower:
-            continue
-        if balance < TOLERANCE:
-            continue
-        if not planned_dt or planned_dt <= "0001-01-02" or planned_dt >= overdue_cutoff:
-            continue
-
-        days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
-        dept_name = DEPARTMENTS.get(dept, dept[:8])
-        partner_key = cat["partner"]
-        partner_keys_used.add(partner_key)
-
-        key = (dept, partner_key)
-        entry = by_partner[key]
-        entry["amount"] += balance
-        entry["max_days"] = max(entry["max_days"], days_overdue)
-        entry["dept"] = dept
-        entry["dept_name"] = dept_name
-
-    partner_names = resolve_partner_names(session, partner_keys_used)
-
-    rows = []
-    for (dept, partner_key), data in by_partner.items():
-        rows.append({
-            "dept_key": dept,
-            "dept_name": data["dept_name"],
-            "partner_key": partner_key,
-            "partner_name": partner_names.get(partner_key, partner_key[:8]),
-            "amount": round(data["amount"], 2),
-            "days_overdue": data["max_days"],
-        })
-
-    rows.sort(key=lambda x: -x["amount"])
+    rows = _build_overdue_rows_per_order(na_datu, balances, obj_catalog, session)
     total = round(sum(r["amount"] for r in rows), 2)
 
     return {
