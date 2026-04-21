@@ -439,60 +439,45 @@ def _calc_snapshot_for_date(na_datu: date) -> dict:
     obj_keys = {obj for (obj, _) in balances.keys()}
     obj_catalog = resolve_objects(session, obj_keys)
 
-    overdue_cutoff = f"{na_datu_str}T00:00:00"
-    dept_keys_lower = {d.lower() for d in DEPARTMENTS}
-
-    dz_by_dept: dict[str, float] = defaultdict(float)
-    overdue_by_dept: dict[str, float] = defaultdict(float)
-    aging_by_dept: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-
-    for (obj_key, planned_dt), balance in balances.items():
-        cat = obj_catalog.get(obj_key)
-        if not cat:
-            continue
-        dept = cat["dept"]
-        if dept not in dept_keys_lower:
-            continue
-        if balance < TOLERANCE:
-            continue
-
-        dept_name = DEPARTMENTS.get(dept, dept[:8])
-        dz_by_dept[dept_name] += balance
-
-        if planned_dt and planned_dt > "0001-01-02" and planned_dt < overdue_cutoff:
-            overdue_by_dept[dept_name] += balance
-            days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
-            aging_by_dept[dept_name][aging_bucket(days_overdue)] += balance
-
-    return {
-        "na_datu": na_datu_str,
-        "total_dz": round(sum(dz_by_dept.values()), 2),
-        "total_overdue": round(sum(overdue_by_dept.values()), 2),
-        "by_dept": {
-            d: {
-                "dz": round(dz_by_dept.get(d, 0), 2),
-                "overdue": round(overdue_by_dept.get(d, 0), 2),
-                "aging": {b: round(aging_by_dept[d].get(b, 0), 2) for b in BUCKETS},
-            }
-            for d in sorted(set(list(dz_by_dept.keys()) + list(overdue_by_dept.keys())))
-        },
-    }
+    return _build_snapshot_from_balances(na_datu, balances, obj_catalog)
 
 
 def _build_snapshot_from_data(na_datu: date, records: list, obj_catalog: dict) -> dict:
-    """Построить снимок ДЗ из предзагруженных записей + каталога."""
+    """Построить снимок ДЗ из предзагруженных записей + каталога.
+
+    Считаем НЕТТО-остаток по каждому заказу (ОбъектРасчетов): частичные
+    погашения и переплаты по тем же срокам вычитаются корректно.
+    В итог по подразделению попадают только заказы с положительной ДЗ /
+    положительной просрочкой соответственно (как в отчёте 1С «Дебиторская
+    задолженность по срокам»).
+    """
     na_datu_str = na_datu.isoformat()
     cutoff_period = f"{na_datu_str}T23:59:59"
 
     filtered = [r for r in records if (r.get("Period") or "") <= cutoff_period]
     balances = aggregate_balances(filtered)
 
+    return _build_snapshot_from_balances(na_datu, balances, obj_catalog)
+
+
+def _build_snapshot_from_balances(na_datu: date, balances: dict,
+                                  obj_catalog: dict) -> dict:
+    """Общее ядро расчёта снимка ДЗ из агрегированных балансов.
+
+    ПосТроение: сначала сумма нетто-остатков по заказу (все сроки
+    и только просроченные сроки), затем агрегация по подразделению только
+    для заказов с положительной суммой.
+    """
+    na_datu_str = na_datu.isoformat()
     overdue_cutoff = f"{na_datu_str}T00:00:00"
     dept_keys_lower = {d.lower() for d in DEPARTMENTS}
 
-    dz_by_dept: dict[str, float] = defaultdict(float)
-    overdue_by_dept: dict[str, float] = defaultdict(float)
-    aging_by_dept: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    per_order: dict[str, dict] = defaultdict(lambda: {
+        "dept": "",
+        "dz_net": 0.0,
+        "overdue_net": 0.0,
+        "aging_buckets": defaultdict(float),
+    })
 
     for (obj_key, planned_dt), balance in balances.items():
         cat = obj_catalog.get(obj_key)
@@ -501,16 +486,33 @@ def _build_snapshot_from_data(na_datu: date, records: list, obj_catalog: dict) -
         dept = cat["dept"]
         if dept not in dept_keys_lower:
             continue
-        if balance < TOLERANCE:
-            continue
 
-        dept_name = DEPARTMENTS.get(dept, dept[:8])
-        dz_by_dept[dept_name] += balance
+        entry = per_order[obj_key]
+        entry["dept"] = dept
+        entry["dz_net"] += balance
 
         if planned_dt and planned_dt > "0001-01-02" and planned_dt < overdue_cutoff:
-            overdue_by_dept[dept_name] += balance
+            entry["overdue_net"] += balance
             days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
-            aging_by_dept[dept_name][aging_bucket(days_overdue)] += balance
+            entry["aging_buckets"][aging_bucket(days_overdue)] += balance
+
+    dz_by_dept: dict[str, float] = defaultdict(float)
+    overdue_by_dept: dict[str, float] = defaultdict(float)
+    aging_by_dept: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+
+    for data in per_order.values():
+        dept = data["dept"]
+        dept_name = DEPARTMENTS.get(dept, dept[:8])
+        dz_net = data["dz_net"]
+        overdue_net = data["overdue_net"]
+
+        if dz_net > TOLERANCE:
+            dz_by_dept[dept_name] += dz_net
+        if overdue_net > TOLERANCE:
+            overdue_by_dept[dept_name] += overdue_net
+            for b, amt in data["aging_buckets"].items():
+                if amt > TOLERANCE:
+                    aging_by_dept[dept_name][b] += amt
 
     return {
         "na_datu": na_datu_str,

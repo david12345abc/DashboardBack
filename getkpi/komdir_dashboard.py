@@ -1012,6 +1012,7 @@ def build_komdir_payload(kpi_list: list[dict],
         tile_item = {
             "kpi_id": kid,
             "name": meta["name"],
+            "goal": meta.get("goal"),
             "kpi_pct": pct,
             "color": color,
             "period": _period_label(meta),
@@ -1025,6 +1026,7 @@ def build_komdir_payload(kpi_list: list[dict],
             "has_data": lm.get("has_data", True) if lm else False,
             "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
             "cache_updated_at": _tile_cache_updated_at(kid, ref_y, series_m),
+            "monthly_data": td.get("monthly_data") or [],
         }
         plitki_items.append(tile_item)
 

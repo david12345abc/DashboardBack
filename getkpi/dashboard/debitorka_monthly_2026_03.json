@@ -6,22 +6,22 @@
       "year": 2026,
       "month": 1,
       "na_datu": "2026-01-31",
-      "dz_fact": 208167284.94,
+      "dz_fact": 208110644.94,
       "overdue_fact": 147380003.71
     },
     {
       "year": 2026,
       "month": 2,
       "na_datu": "2026-02-28",
-      "dz_fact": 286306315.45,
-      "overdue_fact": 196589697.32
+      "dz_fact": 286249675.45,
+      "overdue_fact": 156588890.32
     },
     {
       "year": 2026,
       "month": 3,
       "na_datu": "2026-03-31",
-      "dz_fact": 322161056.59,
-      "overdue_fact": 203296617.86
+      "dz_fact": 322104416.59,
+      "overdue_fact": 163295810.86
     }
   ]
 }
