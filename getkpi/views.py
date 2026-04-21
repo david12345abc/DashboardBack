@@ -819,7 +819,11 @@ def get_kpi(request):
         payload, for_block = chairman_data.build_chairman_payload_by_for(
             kpis, month=req_month, year=req_year, for_raw=for_raw,
         )
-        ref_y, ref_m = (req_year, req_month) if req_month and req_year else last_full_month(date.today())
+        if req_month and req_year:
+            ref_y, ref_m = req_year, req_month
+        else:
+            _t = date.today()
+            ref_y, ref_m = _t.year, _t.month
         tables = payload.get('Таблицы') or {}
         target_dept = requested_dept
         if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
@@ -960,7 +964,11 @@ def get_all_departments(request):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
                 kpis, month=req_m, year=req_yr, for_raw=for_raw,
             )
-            ref_y, ref_m = (req_yr, req_m) if req_m and req_yr else last_full_month(date.today())
+            if req_m and req_yr:
+                ref_y, ref_m = req_yr, req_m
+            else:
+                _t = date.today()
+                ref_y, ref_m = _t.year, _t.month
             tables = payload.get('Таблицы') or {}
             target_dept = requested_dept
             if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
@@ -1039,7 +1047,11 @@ def get_all_departments(request):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
                 kpis, month=req_month_all, year=req_year_all, for_raw=chairman_for_raw,
             )
-            ref_y, ref_m = (req_year_all, req_month_all) if req_month_all and req_year_all else last_full_month(date.today())
+            if req_month_all and req_year_all:
+                ref_y, ref_m = req_year_all, req_month_all
+            else:
+                _t = date.today()
+                ref_y, ref_m = _t.year, _t.month
             tables = payload.get('Таблицы') or {}
             target_dept = dept
             if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:

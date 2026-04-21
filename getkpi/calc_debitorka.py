@@ -436,7 +436,13 @@ def _calc_snapshot_for_date(na_datu: date) -> dict:
     records = fetch_all_register(session, na_datu_str)
     balances = aggregate_balances(records)
 
-    obj_keys = {obj for (obj, _) in balances.keys()}
+    # См. _calc_snapshots_batch: берём obj_keys из сырых записей, чтобы
+    # подразделения подтягивались и для полностью погашенных заказов.
+    obj_keys = {
+        str(r.get("ОбъектРасчетов_Key", EMPTY)).lower()
+        for r in records
+        if str(r.get("ОбъектРасчетов_Key", EMPTY)).lower() != EMPTY
+    }
     obj_catalog = resolve_objects(session, obj_keys)
 
     return _build_snapshot_from_balances(na_datu, balances, obj_catalog)
@@ -579,16 +585,20 @@ def _calc_snapshots_batch(dates_to_compute: list[date],
 
     records = fetch_all_register(session, latest.isoformat())
 
-    full_balances = aggregate_balances(records)
-    all_obj_keys = {obj for (obj, _) in full_balances.keys()}
+    # Собираем ВСЕ ОбъектыРасчетов из сырых записей — нельзя брать только из
+    # full_balances (balances по latest дате), т.к. заказы, полностью
+    # погашенные к latest, выпадут из набора и в исторических снимках (например,
+    # январь) остатки по ним не смогут быть резолвлены в подразделение/партнёра.
+    all_obj_keys = {
+        str(r.get("ОбъектРасчетов_Key", EMPTY)).lower()
+        for r in records
+        if str(r.get("ОбъектРасчетов_Key", EMPTY)).lower() != EMPTY
+    }
     obj_catalog = resolve_objects(session, all_obj_keys)
 
     results: dict[date, dict] = {}
     for na_datu in sorted_dates:
-        if na_datu == latest:
-            snapshot = _build_snapshot_from_data(na_datu, records, obj_catalog)
-        else:
-            snapshot = _build_snapshot_from_data(na_datu, records, obj_catalog)
+        snapshot = _build_snapshot_from_data(na_datu, records, obj_catalog)
         _save_json(_cache_path_snapshot(na_datu), snapshot)
         results[na_datu] = snapshot
         logger.info("calc_debitorka: batch snapshot %s done", na_datu.isoformat())

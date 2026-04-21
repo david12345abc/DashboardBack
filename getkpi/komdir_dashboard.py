@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import calendar
+import logging
 import random
 from datetime import date, datetime
 from pathlib import Path
@@ -33,6 +34,8 @@ from pathlib import Path
 from . import cache_manager, calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_fot, calc_kp_price, calc_otgruzki_fact, calc_plan, calc_rashody, calc_tekuchest, calc_tkp_sla, valovaya_pribyl
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
 from .kpi_periods import last_full_month
+
+logger = logging.getLogger(__name__)
 
 MONTH_NAMES_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -105,13 +108,15 @@ def _period_label(kpi: dict) -> str:
 
 
 def _get_monthly_pairs() -> tuple[list[tuple[int, int]], int, int]:
-    """Пары (год, месяц) с января по последний полный месяц — в одной логике с ВП, ФОТ, ДЗ."""
+    """Пары (год, месяц) с января по ТЕКУЩИЙ календарный месяц.
+
+    По умолчанию (когда в запросе не передан month/year) возвращаем плитки и графики
+    за текущий календарный месяц — даже если он ещё не завершён. Это исключает
+    ситуацию, когда на странице выбран апрель, а данные приходят за март.
+    """
     today = date.today()
-    ref_y, ref_m = last_full_month(today)
-    if ref_y == today.year:
-        pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
-    else:
-        pairs = [(ref_y, ref_m)]
+    ref_y, ref_m = today.year, today.month
+    pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
     return pairs, ref_y, ref_m
 
 
@@ -1049,6 +1054,30 @@ def build_komdir_payload(kpi_list: list[dict],
         "KD-C2": _build_pie_charts(ref_y, series_m),
         "KD-C3": _build_bar_chart(by_id, tiles_data, ref_y, ref_m),
     }
+    try:
+        from . import calc_ks_razvitie
+        ks_plans = cache_manager.locked_call(
+            f"ks_razvitie_{ref_y}",
+            calc_ks_razvitie.get_ks_razvitie_plans,
+            year=ref_y,
+        )
+        grafiki["KS-RAZVITIE"] = {
+            "kpi_id": "KS-RAZVITIE",
+            "name": "КС развитие — планы по месяцам",
+            "periodicity": "ежемесячно",
+            "chart_type": "donut_multiple_monthly",
+            "chart_type_label": "Круговые диаграммы по месяцам (КС развитие)",
+            "period": {
+                "year": ref_y,
+                "month": ref_m,
+                "month_name": MONTH_NAMES_RU.get(ref_m, ""),
+            },
+            "indicators": ks_plans.get("indicators") or [],
+            "months": ks_plans.get("months") or {},
+            "by_dept": ks_plans.get("by_dept") or {},
+        }
+    except Exception:
+        logger.exception("KS-RAZVITIE: failed to load plans")
 
     tablitsy: dict = {}
 

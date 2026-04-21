@@ -1207,9 +1207,33 @@ def build_chairman_commerce_payload(
     if overdue_table is not None:
         tables['KD-T-OVERDUE'] = overdue_table
 
+    grafiki: dict = {"MRK-C1": chart}
+
+    # Планы блока «КС развитие» — помесячные диаграммы по показателям.
+    try:
+        from . import calc_ks_razvitie
+        ks_plans = cache_manager.locked_call(
+            f"ks_razvitie_{ref_y}",
+            calc_ks_razvitie.get_ks_razvitie_plans,
+            year=ref_y,
+        )
+        grafiki["KS-RAZVITIE"] = {
+            "kpi_id": "KS-RAZVITIE",
+            "name": "КС развитие — планы по месяцам",
+            "periodicity": "ежемесячно",
+            "chart_type": "donut_multiple_monthly",
+            "chart_type_label": "Круговые диаграммы по месяцам (КС развитие)",
+            "period": {"year": ref_y, "month": ref_m, "month_name": month_name},
+            "indicators": ks_plans.get("indicators") or [],
+            "months": ks_plans.get("months") or {},
+            "by_dept": ks_plans.get("by_dept") or {},
+        }
+    except Exception:
+        pass
+
     return {
         "Плитки": {"count": len(plitki_items), "items": plitki_items},
-        "Графики": {"MRK-C1": chart},
+        "Графики": grafiki,
         "Таблицы": tables,
     }
 
@@ -1241,7 +1265,8 @@ def build_chairman_payload(
     if month and year:
         ref_y, ref_m = year, month
     else:
-        ref_y, ref_m = last_full_month(date.today())
+        today = date.today()
+        ref_y, ref_m = today.year, today.month
 
     months = _month_pairs(ref_y, ref_m)
 

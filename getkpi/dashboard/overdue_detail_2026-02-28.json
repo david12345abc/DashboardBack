@@ -1,7 +1,7 @@
 {
   "na_datu": "2026-02-28",
   "cache_date": "2026-04-21",
-  "total_overdue": 185316900.57,
+  "total_overdue": 220805265.93,
   "rows": [
     {
       "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
@@ -118,6 +118,60 @@
       "action": "НаправитьОфициальноеПисьмо"
     },
     {
+      "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "dept_name": "Отдел ВЭД",
+      "partner_key": "fc9cc029-d3dd-11ef-95ee-6cb31113810e",
+      "partner_name": "ТОО «Ardis Almaty»",
+      "counterparty": "ТОО «Ardis Almaty»",
+      "order_key": "c5382904-e76e-11ef-960a-6cb31113810e",
+      "order_num": "НП00-000161",
+      "order_date": "2025-02-10",
+      "amount": 21400000.0,
+      "dz_total": 21400000.0,
+      "days_overdue": 190,
+      "installments_count": 2,
+      "installments": [
+        {
+          "planned_date": "2025-08-22",
+          "amount": 10700000.0,
+          "days_overdue": 190,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2025-09-30",
+          "amount": 10700000.0,
+          "days_overdue": 151,
+          "bucket": "60-179 дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
+      "dept_name": "Отдел ПАО Газпром",
+      "partner_key": "19b132f6-2d4f-11e2-84ab-001e67112509",
+      "partner_name": "ЗАВОД НЕФТЕГАЗОБОРУДОВАНИЕ ООО",
+      "counterparty": "ЗАВОД НЕФТЕГАЗОБОРУДОВАНИЕ ООО",
+      "order_key": "45324d1c-62f9-11f0-96b4-6cb31113810e",
+      "order_num": "НП00-001097",
+      "order_date": "2025-07-17",
+      "amount": 9865785.0,
+      "dz_total": 9865785.0,
+      "days_overdue": 47,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-01-12",
+          "amount": 9865785.0,
+          "days_overdue": 47,
+          "bucket": "30-59 дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
       "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
       "dept_name": "Отдел ПАО Газпром",
       "partner_key": "52158902-e51a-11e1-b078-001e67112509",
@@ -164,6 +218,30 @@
       ],
       "reason": "СпорПоКачествуКомплектации",
       "action": "НаправитьОфициальноеПисьмо"
+    },
+    {
+      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
+      "dept_name": "Отдел ПАО Газпром",
+      "partner_key": "3b846250-d9be-11e3-abea-001e67112509",
+      "partner_name": "ГСП РЕМОНТ",
+      "counterparty": "ГСП РЕМОНТ",
+      "order_key": "068238cb-fff0-11ef-962b-6cb31113810e",
+      "order_num": "НП00-000352",
+      "order_date": "2025-03-13",
+      "amount": 4109041.86,
+      "dz_total": 4109041.86,
+      "days_overdue": 74,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2025-12-16",
+          "amount": 4109041.86,
+          "days_overdue": 74,
+          "bucket": "60-179 дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
     },
     {
       "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
@@ -532,6 +610,30 @@
           "amount": 49594.0,
           "days_overdue": 1170,
           "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "956b4629-b6ca-11e2-931a-001e67112509",
+      "partner_name": "КИПЭнергоГаз, ООО",
+      "counterparty": "КИПЭнергоГаз, ООО",
+      "order_key": "b448ef0f-0027-11f1-9792-6cb31113810c",
+      "order_num": "НП00-000138",
+      "order_date": "2026-02-02",
+      "amount": 113538.5,
+      "dz_total": 113538.5,
+      "days_overdue": 1,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-02-27",
+          "amount": 113538.5,
+          "days_overdue": 1,
+          "bucket": "1-29 дн."
         }
       ],
       "reason": "",
