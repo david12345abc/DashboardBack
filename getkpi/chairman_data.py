@@ -775,6 +775,42 @@ def _mrk09_tenders_bmi(ref_y: int, ref_m: int) -> dict:
     )
 
 
+def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
+    """
+    Помесячный YTD-ряд для MRK-09: для каждого месяца m ∈ [1..ref_m]
+    считается процент выигранных тендеров БМИ накопительно с 01.01 ref_y
+    по последний день этого месяца.
+
+    Возвращает список точек для графика/агрегации:
+      [{"month", "year", "month_name", "plan", "fact", "kpi_pct", "has_data"}]
+    """
+    today = date.today()
+    points: list[dict] = []
+    for m in range(1, max(1, min(12, int(ref_m))) + 1):
+        # Для прошлых месяцев текущего года и всего прошлого года — накопительный YTD.
+        data = cache_manager.locked_call(
+            f"tenders_bmi_{ref_y}_{m:02d}",
+            calc_tenders_bmi.get_tenders_bmi,
+            year=ref_y,
+            month=m,
+        )
+        plan = int(data.get("plan") or 0)
+        fact = int(data.get("fact") or 0)
+        pct = data.get("pct")
+        # Актуальность: для будущих месяцев текущего года данных ещё нет.
+        is_future = (ref_y == today.year and m > today.month)
+        points.append({
+            "month": m,
+            "year": ref_y,
+            "month_name": MONTH_NAMES_RU[m],
+            "plan": None if is_future else plan,
+            "fact": None if is_future else fact,
+            "kpi_pct": None if is_future else pct,
+            "has_data": not is_future and plan > 0,
+        })
+    return points
+
+
 def _mrk09_rag(pct: float | None) -> str:
     """RAG для MRK-09 по порогам из kpi-справочника: ≥25 — зелёный, 15–24.9 — жёлтый, <15 — красный."""
     if pct is None:
@@ -1088,6 +1124,7 @@ def build_chairman_commerce_payload(
             plan_n = int(tenders.get("plan") or 0)
             fact_n = int(tenders.get("fact") or 0)
             pct = tenders.get("pct")
+            monthly_ytd = _mrk09_monthly_ytd(ref_y, ref_m)
             plitki_items.append({
                 "kpi_id": kid,
                 "name": meta["name"],
@@ -1107,7 +1144,7 @@ def build_chairman_commerce_payload(
                     f"{tenders.get('period_start') or f'{ref_y}-01-01'} — "
                     f"{tenders.get('period_end') or ''}"
                 ).rstrip(" —"),
-                "monthly_data": [],
+                "monthly_data": monthly_ytd,
                 "tenders_detail": {
                     "distribution": tenders.get("distribution") or {},
                     "samples": tenders.get("samples") or [],

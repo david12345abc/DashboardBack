@@ -158,7 +158,12 @@ def _discover_entities(session: requests.Session) -> tuple[str, str]:
 
 
 def _fetch_documents(session: requests.Session, doc_entity: str) -> list[dict]:
-    """Загружает шапки документов Document_ТД_КСРазвитие (Ref_Key, Number, Date, Подразделение_Key)."""
+    """Загружает шапки документов Document_ТД_КСРазвитие (Ref_Key, Number, Date, Подразделение_Key).
+
+    Если у OData-пользователя нет прав на этот документ (401/403/404 "не найдена")
+    — возвращаем пустой список и НЕ кидаем исключение, чтобы дашборд собрался без
+    этого блока, а в логах остался понятный warning.
+    """
     select = "Ref_Key,Number,Date,Posted,DeletionMark,Подразделение_Key"
     docs: list[dict] = []
     skip = 0
@@ -174,6 +179,20 @@ def _fetch_documents(session: requests.Session, doc_entity: str) -> list[dict]:
         except Exception as exc:
             logger.error("ks_razvitie: docs HTTP error: %s", exc)
             return []
+        if r.status_code in (401, 403):
+            logger.warning(
+                "ks_razvitie: access denied to %s (HTTP %d). "
+                "У OData-пользователя нет прав на документ — блок «КС развитие» не будет подтянут.",
+                doc_entity, r.status_code,
+            )
+            return []
+        if r.status_code == 404:
+            logger.warning(
+                "ks_razvitie: entity %s not visible (HTTP 404). "
+                "Обычно это тоже значит «нет прав» (1С OData так маскирует access denied).",
+                doc_entity,
+            )
+            return []
         if not r.ok:
             logger.error("ks_razvitie: docs HTTP %d: %s", r.status_code, r.text[:300])
             return []
@@ -186,22 +205,30 @@ def _fetch_documents(session: requests.Session, doc_entity: str) -> list[dict]:
 
 
 def _fetch_tab_rows(session: requests.Session, tab_entity: str) -> list[dict]:
-    """Табличная часть «Показатели» у документов Document_ТД_КСРазвитие (Ref_Key, Месяц, Показатель, План)."""
-    # LineNumber — стандартное поле табличной части
-    select = "Ref_Key,LineNumber,Месяц,Показатель,План"
+    """Табличная часть «Показатели» у документов Document_ТД_КСРазвитие.
+
+    `Показатель` — ссылка на Catalog_ТД_ПоказателиРазвитияКС; используем $expand,
+    чтобы сразу получить `Description` (название показателя).
+    """
     rows: list[dict] = []
     skip = 0
     PAGE = 5000
     while True:
         url = (
             f"{BASE}/{quote(tab_entity)}?$format=json"
-            f"&$select={quote(select, safe=',_')}"
+            f"&$expand={quote('Показатель', safe='')}"
             f"&$top={PAGE}&$skip={skip}"
         )
         try:
             r = session.get(url, timeout=120)
         except Exception as exc:
             logger.error("ks_razvitie: tab HTTP error: %s", exc)
+            return []
+        if r.status_code in (401, 403, 404):
+            logger.warning(
+                "ks_razvitie: tab %s not accessible (HTTP %d) — возвращаем пустой набор.",
+                tab_entity, r.status_code,
+            )
             return []
         if not r.ok:
             logger.error("ks_razvitie: tab HTTP %d: %s", r.status_code, r.text[:300])
@@ -266,27 +293,32 @@ def _fetch_from_odata(year: int) -> dict:
             "indicators": [],
         }
 
-    # Отфильтруем только документы с нужными подразделениями.
-    allowed_lower = {k.lower(): v for k, v in ALLOWED_DEPARTMENTS.items()}
+    # Весь документ «КС развитие» предназначен для круговых диаграмм ПСД
+    # коммерческого блока, поэтому ничего не фильтруем по подразделению —
+    # берём все проведённые и не помеченные на удаление документы.
+    # Подразделение резолвим через Catalog_СтруктураПредприятия, чтобы в by_dept
+    # отображались читабельные имена, а не GUID.
+    dept_keys_needed = {
+        str(d.get("Подразделение_Key") or "").lower()
+        for d in docs
+        if str(d.get("Подразделение_Key") or "").lower() not in ("", EMPTY)
+    }
+    dept_names = _resolve_department_names(session, dept_keys_needed)
+
     docs_by_ref: dict[str, dict] = {}
     for d in docs:
         dept_key = str(d.get("Подразделение_Key") or "").lower()
-        if dept_key not in allowed_lower:
-            continue
+        dept_name = (
+            dept_names.get(dept_key)
+            or ALLOWED_DEPARTMENTS.get(dept_key)
+            or (dept_key[:8] if dept_key else "Без подразделения")
+        )
         docs_by_ref[str(d.get("Ref_Key") or "").lower()] = {
             "ref": str(d.get("Ref_Key") or "").lower(),
             "number": str(d.get("Number") or "").strip(),
             "date": str(d.get("Date") or "")[:10],
             "dept_key": dept_key,
-            "dept_name": allowed_lower[dept_key],
-        }
-
-    if not docs_by_ref:
-        return {
-            "year": int(year),
-            "months": {},
-            "by_dept": {},
-            "indicators": [],
+            "dept_name": dept_name,
         }
 
     tab_rows = _fetch_tab_rows(session, tab_entity)
@@ -317,7 +349,14 @@ def _fetch_from_odata(year: int) -> dict:
         if row_year is not None and row_year != int(year):
             continue
 
-        indicator = (row.get("Показатель") or "").strip()
+        # `Показатель` приходит развёрнутым: {Ref_Key, Description, ...}.
+        # Если вдруг пришёл как строка (старые публикации) — тоже поддержим.
+        indicator = ""
+        ind_field = row.get("Показатель")
+        if isinstance(ind_field, dict):
+            indicator = str(ind_field.get("Description") or "").strip()
+        elif isinstance(ind_field, str):
+            indicator = ind_field.strip()
         if not indicator:
             continue
         plan = _parse_plan(row.get("План"))
@@ -331,8 +370,9 @@ def _fetch_from_odata(year: int) -> dict:
     indicators = sorted(indicators_set)
 
     # Заполняем нулями отсутствующие месяцы/показатели в каждом подразделении.
+    # by_dept строится по ВСЕМ подразделениям, встреченным в документах КС развитие.
     by_dept_full: dict[str, dict[str, dict[str, float]]] = {}
-    for dept_name in ALLOWED_DEPARTMENTS.values():
+    for dept_name in sorted(by_dept_agg.keys()):
         base = _build_empty_months(indicators)
         dept_present = by_dept_agg.get(dept_name) or {}
         for m in range(1, 13):
@@ -342,7 +382,7 @@ def _fetch_from_odata(year: int) -> dict:
                     base[key][ind] = float(dept_present[key].get(ind, 0.0))
         by_dept_full[dept_name] = base
 
-    # Общий (по коммерческому блоку) агрегат.
+    # Общий агрегат (сумма по всем подразделениям).
     total: dict[str, dict[str, float]] = _build_empty_months(indicators)
     for dept_map in by_dept_full.values():
         for m_key, ind_map in dept_map.items():
@@ -355,6 +395,35 @@ def _fetch_from_odata(year: int) -> dict:
         "months": total,
         "by_dept": by_dept_full,
     }
+
+
+def _resolve_department_names(session: requests.Session, keys: set[str]) -> dict[str, str]:
+    """Резолвит GUID подразделения → Description через Catalog_СтруктураПредприятия."""
+    if not keys:
+        return {}
+    names: dict[str, str] = {}
+    BATCH = 40
+    keys_list = [k for k in keys if k]
+    for i in range(0, len(keys_list), BATCH):
+        chunk = keys_list[i:i + BATCH]
+        flt = " or ".join(f"Ref_Key eq guid'{k}'" for k in chunk)
+        url = (
+            f"{BASE}/{quote('Catalog_СтруктураПредприятия')}?$format=json"
+            f"&$select=Ref_Key,Description"
+            f"&$filter={quote(flt, safe='')}&$top=5000"
+        )
+        try:
+            r = session.get(url, timeout=60)
+            if not r.ok:
+                continue
+            for item in r.json().get("value", []):
+                k = str(item.get("Ref_Key") or "").lower()
+                desc = (item.get("Description") or "").strip()
+                if k and desc:
+                    names[k] = desc
+        except Exception:
+            continue
+    return names
 
 
 def get_ks_razvitie_plans(year: int | None = None) -> dict:
