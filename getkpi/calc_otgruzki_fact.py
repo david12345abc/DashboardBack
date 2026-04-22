@@ -36,6 +36,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
@@ -155,10 +157,9 @@ def _load_rashod_records(session: requests.Session,
             f"&$filter={flt}&$select={sel}"
             f"&$top=5000&$skip={skip}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as e:
-            logger.error("Otgruzki HTTP error: %s", e)
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Otgruzki")
+        if r is None:
+            logger.error("Otgruzki: request dropped after retries")
             break
         if not r.ok:
             logger.error("Otgruzki HTTP %d", r.status_code)
@@ -194,10 +195,9 @@ def _load_vozvrat_komisioner(session: requests.Session,
             f"&$filter={flt}&$select={sel}"
             f"&$top=5000&$skip={skip}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as e:
-            logger.error("Vozvrat HTTP error: %s", e)
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Vozvrat")
+        if r is None:
+            logger.error("Vozvrat: request dropped after retries")
             break
         if not r.ok:
             logger.error("Vozvrat HTTP %d: %s", r.status_code, r.text[:200])
@@ -227,18 +227,19 @@ def _batch_load_orders(session: requests.Session,
             f"Соглашение_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи"
             f"&$top={BATCH}"
         )
+        r = request_with_retry(session, url, timeout=30, retries=3, label="Otgruzki/Orders")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=30)
-            if r.ok:
-                for it in r.json().get("value", []):
-                    result[it["Ref_Key"]] = {
-                        "dept": it.get("Подразделение_Key", ""),
-                        "partner": it.get("Партнер_Key", ""),
-                        "currency": it.get("Валюта_Key", ""),
-                        "agreement": it.get("Соглашение_Key", ""),
-                        "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
-                        "soprovozhd": it.get("ТД_СопровождениеПродажи", False),
-                    }
+            for it in r.json().get("value", []):
+                result[it["Ref_Key"]] = {
+                    "dept": it.get("Подразделение_Key", ""),
+                    "partner": it.get("Партнер_Key", ""),
+                    "currency": it.get("Валюта_Key", ""),
+                    "agreement": it.get("Соглашение_Key", ""),
+                    "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
+                    "soprovozhd": it.get("ТД_СопровождениеПродажи", False),
+                }
         except Exception:
             pass
     return result
@@ -259,11 +260,12 @@ def _batch_load_partners(session: requests.Session,
             f"&$filter={flt}&$select=Ref_Key,Description"
             f"&$top={BATCH}"
         )
+        r = request_with_retry(session, url, timeout=30, retries=3, label="Otgruzki/Partners")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=30)
-            if r.ok:
-                for it in r.json().get("value", []):
-                    result[it["Ref_Key"]] = it.get("Description", "").strip()
+            for it in r.json().get("value", []):
+                result[it["Ref_Key"]] = it.get("Description", "").strip()
         except Exception:
             pass
     return result
@@ -286,16 +288,17 @@ def _batch_load_vozvrat_docs(session: requests.Session,
             f"Соглашение_Key,Договор_Key"
             f"&$top={BATCH}"
         )
+        r = request_with_retry(session, url, timeout=30, retries=3, label="Otgruzki/Vozvrat")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=30)
-            if r.ok:
-                for it in r.json().get("value", []):
-                    result[it["Ref_Key"]] = {
-                        "dept": it.get("Подразделение_Key", ""),
-                        "partner": it.get("Партнер_Key", ""),
-                        "agreement": it.get("Соглашение_Key", ""),
-                        "contract": it.get("Договор_Key", ""),
-                    }
+            for it in r.json().get("value", []):
+                result[it["Ref_Key"]] = {
+                    "dept": it.get("Подразделение_Key", ""),
+                    "partner": it.get("Партнер_Key", ""),
+                    "agreement": it.get("Соглашение_Key", ""),
+                    "contract": it.get("Договор_Key", ""),
+                }
         except Exception:
             pass
     return result

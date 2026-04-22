@@ -4,27 +4,56 @@ calc_ks_razvitie.py — Плановые показатели блока «КС 
 Источник: Document_ТД_КСРазвитие с табличной частью «Показатели».
 Каждый документ = один показатель × одно подразделение × 12 месяцев.
 
-Структура возвращаемого JSON (`get_ks_razvitie_plans`):
+По ТЗ: для каждой пары (подразделение × показатель) выдаём помесячный ряд
+{ plan, fact }. Факт пока всегда 0 — в 1С учёта фактических значений нет,
+на дашборде отображаются только планы.
+
+Фильтрация по подразделению выполняется уже на уровне дашборда
+(см. `by_dept_guid` + поле `charts` на срезе отдела). Модуль отдаёт:
+
 {
   "year": 2026,
-  "months": {  # агрегат по всем подразделениям из ALLOWED_DEPARTMENTS
-    "1":  {"Развитие имеющихся дилеров": 0, "Новые дилеры": 0, ...},
+  "indicators": ["Развитие имеющихся дилеров", "Новые дилеры", ...],
+  "dept_indicators": {
+    "Отдел дилерских продаж": ["Развитие имеющихся дилеров", "Новые дилеры"],
+    ...
+  },
+  # Агрегат (сумма) по всем подразделениям — для КД / ПСД коммерческого блока.
+  "months": {
+    "1":  {"Развитие имеющихся дилеров": {"plan": 0, "fact": 0}, ...},
     ...
     "12": {...}
   },
-  "by_dept": {  # детализация по подразделению
+  # Плоский список круговых диаграмм (по паре отдел × показатель) — удобен
+  # фронту: один элемент = одна диаграмма с 12 месячными точками.
+  "charts": [
+    {
+      "dept_name": "Отдел дилерских продаж",
+      "dept_guid": "7587...",
+      "indicator": "Развитие имеющихся дилеров",
+      "months": [
+        {"month": 1, "month_name": "январь", "plan": 0, "fact": 0},
+        ...
+      ]
+    },
+    ...
+  ],
+  # Детализация по подразделению (имя → {indicators, months, charts}).
+  "by_dept": {
     "Отдел дилерских продаж": {
-      "1":  {"Развитие имеющихся дилеров": 0, "Новые дилеры": 0},
-      ...
-      "12": {...}
+      "dept_name": "Отдел дилерских продаж",
+      "dept_guid": "7587...",
+      "indicators": [...],
+      "months": {"1": {...}, ..., "12": {...}},
+      "charts": [ {...}, ... ]
     },
     ...
   },
-  "indicators": ["Развитие имеющихся дилеров", "Новые дилеры", ...]
+  # Тот же срез, но ключ — GUID подразделения (для точной фильтрации).
+  "by_dept_guid": {
+    "7587...": {...}
+  }
 }
-
-Фильтр: в выдаче — только документы с Подразделением из ALLOWED_DEPARTMENTS
-(дочерние подразделения коммерческого директора).
 
 Кэшируется на день: dashboard/ks_razvitie_<year>.json.
 """
@@ -38,6 +67,8 @@ from urllib.parse import quote
 
 import requests
 from requests.auth import HTTPBasicAuth
+
+from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -158,11 +189,12 @@ def _discover_entities(session: requests.Session) -> tuple[str, str]:
 
 
 def _fetch_documents(session: requests.Session, doc_entity: str) -> list[dict]:
-    """Загружает шапки документов Document_ТД_КСРазвитие (Ref_Key, Number, Date, Подразделение_Key).
+    """Загружает шапки документов Document_ТД_КСРазвитие.
 
-    Если у OData-пользователя нет прав на этот документ (401/403/404 "не найдена")
-    — возвращаем пустой список и НЕ кидаем исключение, чтобы дашборд собрался без
-    этого блока, а в логах остался понятный warning.
+    401/403/404/5xx/timeout обрабатываются через request_with_retry
+    (экспоненциальный backoff, несколько попыток). Если после всех попыток
+    не получилось — возвращаем пустой список и пишем warning, чтобы
+    дашборд собрался без этого блока.
     """
     select = "Ref_Key,Number,Date,Posted,DeletionMark,Подразделение_Key"
     docs: list[dict] = []
@@ -174,23 +206,25 @@ def _fetch_documents(session: requests.Session, doc_entity: str) -> list[dict]:
             f"&$select={quote(select, safe=',_')}"
             f"&$top={PAGE}&$skip={skip}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as exc:
-            logger.error("ks_razvitie: docs HTTP error: %s", exc)
+        r = request_with_retry(session, url, timeout=120, retries=5, label="ks_razvitie/docs")
+        if r is None:
+            logger.warning(
+                "ks_razvitie: docs request dropped after retries for %s — "
+                "блок «КС развитие» не будет подтянут.", doc_entity,
+            )
             return []
         if r.status_code in (401, 403):
             logger.warning(
-                "ks_razvitie: access denied to %s (HTTP %d). "
-                "У OData-пользователя нет прав на документ — блок «КС развитие» не будет подтянут.",
+                "ks_razvitie: access denied to %s (HTTP %d) даже после повторов. "
+                "Если права в 1С есть — скорее всего 1С под пиковой нагрузкой. "
+                "Повторный запрос чуть позже должен помочь.",
                 doc_entity, r.status_code,
             )
             return []
         if r.status_code == 404:
             logger.warning(
-                "ks_razvitie: entity %s not visible (HTTP 404). "
-                "Обычно это тоже значит «нет прав» (1С OData так маскирует access denied).",
-                doc_entity,
+                "ks_razvitie: entity %s not visible (HTTP 404) — в 1С OData так "
+                "иногда маскируется access denied.", doc_entity,
             )
             return []
         if not r.ok:
@@ -219,14 +253,13 @@ def _fetch_tab_rows(session: requests.Session, tab_entity: str) -> list[dict]:
             f"&$expand={quote('Показатель', safe='')}"
             f"&$top={PAGE}&$skip={skip}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as exc:
-            logger.error("ks_razvitie: tab HTTP error: %s", exc)
+        r = request_with_retry(session, url, timeout=120, retries=5, label="ks_razvitie/tab")
+        if r is None:
+            logger.warning("ks_razvitie: tab request dropped after retries for %s", tab_entity)
             return []
         if r.status_code in (401, 403, 404):
             logger.warning(
-                "ks_razvitie: tab %s not accessible (HTTP %d) — возвращаем пустой набор.",
+                "ks_razvitie: tab %s not accessible (HTTP %d) даже после повторов.",
                 tab_entity, r.status_code,
             )
             return []
@@ -268,12 +301,40 @@ def _parse_plan(value) -> float:
         return 0.0
 
 
-def _build_empty_months(indicators: list[str]) -> dict[str, dict[str, float]]:
-    """12 месяцев × все показатели = нули."""
+MONTH_NAMES_RU = {
+    1: "январь", 2: "февраль", 3: "март", 4: "апрель",
+    5: "май", 6: "июнь", 7: "июль", 8: "август",
+    9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
+}
+
+
+def _pf(plan: float, fact: float = 0.0) -> dict[str, float]:
+    """Ячейка круговой диаграммы: две цифры — план и факт (%факт пока всегда 0)."""
+    return {"plan": round(float(plan), 4), "fact": round(float(fact), 4)}
+
+
+def _build_empty_months(indicators: list[str]) -> dict[str, dict[str, dict[str, float]]]:
+    """12 месяцев × все показатели = пары {plan: 0, fact: 0}."""
     return {
-        str(m): {ind: 0.0 for ind in indicators}
+        str(m): {ind: _pf(0.0) for ind in indicators}
         for m in range(1, 13)
     }
+
+
+def _months_to_chart(indicator: str, months_map: dict) -> dict:
+    """Массив {month, month_name, plan, fact} для одной круговой диаграммы."""
+    series = []
+    for m in range(1, 13):
+        cell = (months_map or {}).get(str(m), {}).get(indicator) or {}
+        plan = float(cell.get("plan") or 0.0)
+        fact = float(cell.get("fact") or 0.0)
+        series.append({
+            "month": m,
+            "month_name": MONTH_NAMES_RU[m],
+            "plan": round(plan, 4),
+            "fact": round(fact, 4),
+        })
+    return {"indicator": indicator, "months": series}
 
 
 def _fetch_from_odata(year: int) -> dict:
@@ -371,7 +432,13 @@ def _fetch_from_odata(year: int) -> dict:
         dept_name = info["dept_name"]
         dept_bucket = by_dept_agg.setdefault(dept_name, {})
         month_bucket = dept_bucket.setdefault(str(month), {})
-        month_bucket[indicator] = round(month_bucket.get(indicator, 0.0) + plan, 4)
+        # Суммируем план, если в рамках отдела на один месяц/показатель
+        # несколько документов; факт пока всегда 0.
+        prev = month_bucket.get(indicator) or {"plan": 0.0, "fact": 0.0}
+        month_bucket[indicator] = {
+            "plan": round(prev.get("plan", 0.0) + plan, 4),
+            "fact": round(prev.get("fact", 0.0), 4),
+        }
 
     indicators = sorted(indicators_set)
 
@@ -381,54 +448,76 @@ def _fetch_from_odata(year: int) -> dict:
     for dept_name, month_map in by_dept_agg.items():
         present: set[str] = set()
         for ind_map in month_map.values():
-            for ind, v in ind_map.items():
-                if ind and v is not None:
+            for ind in ind_map.keys():
+                if ind:
                     present.add(ind)
         dept_indicators[dept_name] = sorted(present)
 
     # by_dept: для каждого подразделения 12 месяцев × только его показатели.
     # Отсутствующие у подразделения показатели НЕ выводятся вовсе (это и есть
     # «нужный» перечень круговых диаграмм для этого подразделения).
-    by_dept_full: dict[str, dict[str, dict[str, float]]] = {}
+    by_dept_full: dict[str, dict] = {}
+    name_to_key = {name: key for key, name in dept_name_by_key.items()}
     for dept_name in sorted(by_dept_agg.keys()):
         dept_inds = dept_indicators.get(dept_name) or []
-        base = {str(m): {ind: 0.0 for ind in dept_inds} for m in range(1, 13)}
+        base = {str(m): {ind: _pf(0.0) for ind in dept_inds} for m in range(1, 13)}
         dept_present = by_dept_agg.get(dept_name) or {}
         for m in range(1, 13):
             key = str(m)
             if key in dept_present:
                 for ind in dept_inds:
-                    base[key][ind] = float(dept_present[key].get(ind, 0.0))
-        by_dept_full[dept_name] = base
+                    cell = dept_present[key].get(ind)
+                    if isinstance(cell, dict):
+                        base[key][ind] = _pf(cell.get("plan", 0.0), cell.get("fact", 0.0))
+        dept_charts = [_months_to_chart(ind, base) for ind in dept_inds]
+        # Обогащаем чарт контекстом отдела, чтобы было удобно рендерить.
+        for ch in dept_charts:
+            ch["dept_name"] = dept_name
+            ch["dept_guid"] = name_to_key.get(dept_name, "")
+        by_dept_full[dept_name] = {
+            "dept_name": dept_name,
+            "dept_guid": name_to_key.get(dept_name, ""),
+            "indicators": dept_inds,
+            "months": base,
+            "charts": dept_charts,
+        }
 
     # Общий агрегат (сумма по всем подразделениям) — для коммерческого директора
     # и ПСД коммерческого блока. Здесь — все показатели из всех документов.
-    total: dict[str, dict[str, float]] = _build_empty_months(indicators)
-    for dept_map in by_dept_full.values():
-        for m_key, ind_map in dept_map.items():
-            for ind, v in ind_map.items():
-                total[m_key][ind] = round(total[m_key].get(ind, 0.0) + float(v), 4)
+    total: dict[str, dict[str, dict[str, float]]] = _build_empty_months(indicators)
+    for dept_entry in by_dept_full.values():
+        for m_key, ind_map in (dept_entry.get("months") or {}).items():
+            for ind, pf in ind_map.items():
+                prev = total[m_key].get(ind) or {"plan": 0.0, "fact": 0.0}
+                total[m_key][ind] = {
+                    "plan": round(prev.get("plan", 0.0) + float(pf.get("plan", 0.0)), 4),
+                    "fact": round(prev.get("fact", 0.0) + float(pf.get("fact", 0.0)), 4),
+                }
 
     # GUID → отдельный срез (для точной фильтрации по dept_guid).
     by_dept_guid: dict[str, dict] = {}
-    name_to_key = {name: key for key, name in dept_name_by_key.items()}
-    for dept_name, month_map in by_dept_full.items():
-        key = name_to_key.get(dept_name)
+    for dept_name, dept_entry in by_dept_full.items():
+        key = dept_entry.get("dept_guid")
         if not key:
             continue
-        by_dept_guid[key] = {
-            "dept_name": dept_name,
-            "indicators": dept_indicators.get(dept_name) or [],
-            "months": month_map,
-        }
+        by_dept_guid[key] = dept_entry
+
+    # Плоский список всех диаграмм «отдел × показатель» — удобен фронту
+    # для коммерческого директора / ПСД коммерческого блока, где нужно
+    # показать сразу документы всех подразделений.
+    flat_charts: list[dict] = []
+    for dept_name in sorted(by_dept_full.keys()):
+        for ch in (by_dept_full[dept_name].get("charts") or []):
+            flat_charts.append(ch)
 
     return {
         "year": int(year),
-        "indicators": indicators,          # полный список показателей (для комдира / ПСД)
-        "months": total,                   # помесячный агрегат по всем подразделениям
-        "by_dept": by_dept_full,           # помесячные значения, только профильные показатели отдела
+        "indicators": indicators,           # полный список показателей
+        "months": total,                    # помесячный агрегат {plan, fact} по всем отделам
+        "by_dept": by_dept_full,            # детализация по подразделению (имя → срез)
+        "by_dept_guid": by_dept_guid,       # то же, ключ — GUID подразделения
         "dept_indicators": dept_indicators, # какие показатели есть у каждого отдела
-        "by_dept_guid": by_dept_guid,      # то же, но ключ — GUID подразделения
+        "charts": flat_charts,              # плоский список диаграмм (КД / ПСД ком.блока)
     }
 
 
@@ -447,10 +536,10 @@ def _resolve_department_names(session: requests.Session, keys: set[str]) -> dict
             f"&$select=Ref_Key,Description"
             f"&$filter={quote(flt, safe='')}&$top=5000"
         )
+        r = request_with_retry(session, url, timeout=60, retries=4, label="ks_razvitie/depts")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=60)
-            if not r.ok:
-                continue
             for item in r.json().get("value", []):
                 k = str(item.get("Ref_Key") or "").lower()
                 desc = (item.get("Description") or "").strip()

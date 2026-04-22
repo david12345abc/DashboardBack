@@ -36,6 +36,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
@@ -112,10 +114,9 @@ def _load_paginated(session, base_url, page_size=5000, timeout=120):
     while True:
         sep = "&" if "?" in base_url else "?"
         url = f"{base_url}{sep}$top={page_size}&$skip={skip}&$format=json"
-        try:
-            r = session.get(url, timeout=timeout)
-        except Exception as e:
-            logger.error("TKP_SLA HTTP error: %s", e)
+        r = request_with_retry(session, url, timeout=timeout, retries=4, label="TKP_SLA")
+        if r is None:
+            logger.error("TKP_SLA: request dropped after retries")
             break
         if not r.ok:
             logger.error("TKP_SLA HTTP %d: %s", r.status_code, r.text[:200])

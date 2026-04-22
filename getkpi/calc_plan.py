@@ -31,6 +31,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
@@ -121,10 +123,9 @@ def _load_register(session: requests.Session,
             f"{BASE}/{REG}?$format=json&$top=5000&$skip={skip}"
             f"&$filter={flt}&$select={sel}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as e:
-            logger.error("Plans register HTTP error: %s", e)
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Plans")
+        if r is None:
+            logger.error("Plans: request dropped after retries")
             break
         if not r.ok:
             logger.error("Plans register HTTP %d", r.status_code)

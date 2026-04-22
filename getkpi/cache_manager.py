@@ -60,6 +60,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_debitorka, calc_dengi_fact, calc_dogovory_fact,
         calc_dz_limits, calc_fot, calc_kp_price,
         calc_otgruzki_fact, calc_plan, calc_rashody,
+        calc_svoevremennaya_otgruzka,
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
     )
     from .komdir_claims import fetch_claims_for_month
@@ -111,6 +112,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'tekuchest_{y}_{m}',
          cd / f'tekuchest_{y}_{m:02d}.json',
          lambda: calc_tekuchest.get_tekuchest_monthly(year=y, month=m)),
+
+        (f'svoevremennaya_monthly_{y}_{m}',
+         cd / f'svoevremennaya_monthly_{y}_{m:02d}.json',
+         lambda: calc_svoevremennaya_otgruzka.get_svoevremennaya_monthly(year=y, month=m)),
 
         (f'overdue_detail_{y}_{m}',
          calc_debitorka.overdue_detail_cache_path(y, m),

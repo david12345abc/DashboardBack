@@ -16,6 +16,8 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
@@ -81,10 +83,9 @@ def _load_catalog_full(session: requests.Session,
             f"&$select={quote(select_fields, safe=',_')}"
             f"&$orderby=Ref_Key"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as e:
-            logger.error("%s HTTP error: %s", entity, e)
+        r = request_with_retry(session, url, timeout=120, retries=4, label=f"Claims/{entity}")
+        if r is None:
+            logger.error("Claims/%s: request dropped after retries", entity)
             break
         if not r.ok:
             logger.error("%s HTTP %d", entity, r.status_code)
@@ -144,10 +145,9 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
             f"&$select={select_claims}&$top=5000&$skip={skip}"
             f"&$filter={odata_filter}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as e:
-            logger.error("Claims HTTP error: %s", e)
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Claims")
+        if r is None:
+            logger.error("Claims: request dropped after retries")
             break
         if not r.ok:
             logger.error("Claims HTTP %d: %s", r.status_code, r.text[:300])
@@ -190,11 +190,8 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
             f"{BASE}/{quote('Document_ЗаказКлиента')}?$format=json"
             f"&$top=500&$skip={o_skip}&$select={o_select}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception:
-            break
-        if not r.ok:
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Claims/Orders")
+        if r is None or not r.ok:
             break
         chunk = r.json().get("value", [])
         if not chunk:

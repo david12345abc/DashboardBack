@@ -34,6 +34,8 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
@@ -217,10 +219,9 @@ def _fetch_documents(session: requests.Session,
             f"&$top=5000&$skip={skip}"
             f"&$filter={quote(odata_filter, safe='')}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as e:
-            logger.error("Lawsuits HTTP error: %s", e)
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Lawsuits")
+        if r is None:
+            logger.error("Lawsuits: request dropped after retries")
             return []
         if not r.ok:
             logger.error("Lawsuits entity=%s HTTP %d: %s", entity, r.status_code, r.text[:300])

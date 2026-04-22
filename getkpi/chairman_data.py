@@ -10,9 +10,11 @@ from datetime import date
 
 from . import (
     cache_manager,
+    calc_dengi_fact,
     calc_otgruzki_fact,
     calc_plan,
     calc_shipment_share_bmi_gazprom,
+    calc_svoevremennaya_otgruzka,
     calc_tenders_bmi,
 )
 from .kpi_periods import last_full_month
@@ -167,24 +169,99 @@ def _months_fact_only(fact_dict, months):
     return rows
 
 
+def _build_fnd_t1_revenue_rows(months: list[int], ref_y: int) -> list[dict]:
+    """FND-T1 «Выручка» = деньги ПЛАН (из планов коммерческого блока) + деньги
+    ФАКТ (из calc_dengi_fact). Используем те же источники, что в KD-M3 у
+    коммерческого директора.
+    """
+    if not months:
+        return []
+    max_m = max(months)
+
+    plans_payload = cache_manager.locked_call(
+        f"plans_{ref_y}_{max_m}",
+        calc_plan.get_plans_monthly,
+        year=ref_y, month=max_m, dept_guid=None,
+    )
+    dengi_payload = cache_manager.locked_call(
+        f"dengi_{ref_y}_{max_m}",
+        calc_dengi_fact.get_dengi_monthly,
+        year=ref_y, month=max_m,
+    )
+
+    plan_by_m: dict[int, float | None] = {}
+    for row in plans_payload.get("months", []) or []:
+        m = int(row.get("month") or 0)
+        if 1 <= m <= 12:
+            # calc_plan.get_plans_monthly возвращает поле 'dengi' (план по ДС).
+            plan_by_m[m] = row.get("dengi")
+
+    fact_by_m: dict[int, float | None] = {}
+    for row in dengi_payload.get("months", []) or []:
+        m = int(row.get("month") or 0)
+        if 1 <= m <= 12:
+            # calc_dengi_fact.get_dengi_monthly возвращает поле 'fact'.
+            fact_by_m[m] = row.get("fact")
+
+    rows: list[dict] = []
+    for m in months:
+        plan = plan_by_m.get(m)
+        fact = fact_by_m.get(m)
+        has = plan is not None or fact is not None
+        pct = _kpi_pct(fact, plan) if (plan is not None and fact is not None) else None
+        rows.append({
+            "month": m, "year": ref_y, "month_name": MONTH_NAMES[m],
+            "plan": plan, "fact": fact,
+            "kpi_pct": pct, "has_data": has,
+        })
+    return rows
+
+
+def _build_fnd_t4_svoevremennaya_rows(months: list[int], ref_y: int, ref_m: int) -> list[dict]:
+    """FND-T4 «Своевременная отгрузка» = уникальные заказы из
+    ТД_КонтрольныеДатыИсполненияДоговора по ДатаОкончанияЮридическихОбязательствПоДоговору
+    (план) / реализации по этим заказам (факт).
+    """
+    if not months:
+        return []
+
+    payload = cache_manager.locked_call(
+        f"svoevremennaya_monthly_{ref_y}_{max(months)}",
+        calc_svoevremennaya_otgruzka.get_svoevremennaya_monthly,
+        year=ref_y, month=max(months),
+    )
+    by_m: dict[int, dict] = {}
+    for row in payload.get("months", []) or []:
+        m = int(row.get("month") or 0)
+        if 1 <= m <= 12:
+            by_m[m] = row
+
+    rows: list[dict] = []
+    for m in months:
+        d = by_m.get(m)
+        plan = d.get("plan") if d else None
+        fact = d.get("fact") if d else None
+        pct = d.get("kpi_pct") if d else None
+        has = (plan or 0) > 0
+        rows.append({
+            "month": m, "year": ref_y, "month_name": MONTH_NAMES[m],
+            "plan": plan, "fact": fact,
+            "kpi_pct": pct, "has_data": has,
+        })
+    return rows
+
+
 def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> dict:
     """Вернуть monthly_data + ytd + kpi_period для одного KPI."""
 
     if kpi_id == "FND-T1":
-        rows = _months_plan_fact(_T1_PLAN, _T1_FACT, months)
+        rows = _build_fnd_t1_revenue_rows(months, ref_y)
     elif kpi_id == "FND-T2":
         rows = _months_plan_fact(_T2_PLAN, _T2_FACT, months)
     elif kpi_id == "FND-T3":
         rows = _months_fact_only(_T3_FACT, months)
     elif kpi_id == "FND-T4":
-        vals = [_T4_FACT[m] for m in months if m in _T4_FACT]
-        avg = round(sum(vals) / len(vals), 2) if vals else None
-        rows = [{
-            "month": ref_m, "year": ref_y, "month_name": MONTH_NAMES[ref_m],
-            "plan": None, "fact": avg,
-            "kpi_pct": avg, "has_data": avg is not None,
-            "aggregation": "avg", "source_months": len(vals),
-        }]
+        rows = _build_fnd_t4_svoevremennaya_rows(months, ref_y, ref_m)
     elif kpi_id == "FND-T5":
         rows = []
         for m in months:
@@ -1249,7 +1326,9 @@ def build_chairman_commerce_payload(
 
     grafiki: dict = {"MRK-C1": chart}
 
-    # Планы блока «КС развитие» — помесячные диаграммы по показателям.
+    # Планы блока «КС развитие» — помесячные круговые диаграммы по паре
+    # (отдел × показатель). Для коммерческого блока ПСД показываем все
+    # документы по всем подразделениям.
     try:
         from . import calc_ks_razvitie
         ks_plans = cache_manager.locked_call(
@@ -1267,6 +1346,9 @@ def build_chairman_commerce_payload(
             "indicators": ks_plans.get("indicators") or [],
             "months": ks_plans.get("months") or {},
             "by_dept": ks_plans.get("by_dept") or {},
+            "by_dept_guid": ks_plans.get("by_dept_guid") or {},
+            "dept_indicators": ks_plans.get("dept_indicators") or {},
+            "charts": ks_plans.get("charts") or [],
         }
     except Exception:
         pass
@@ -1323,18 +1405,28 @@ def build_chairman_payload(
         if not meta:
             continue
         td = tiles_data[kid]
-        pct = td["ytd"].get("kpi_pct")
-        if pct is not None:
-            pct = float(pct)
-        color = _rag(kid, pct)
-        if pct is not None:
-            numeric_for_avg.append(pct)
-
         lm = td.get("last_full_month_row")
+
+        # Процент за ТЕКУЩИЙ месяц (для пилюли на лицевой стороне).
+        month_pct = lm.get("kpi_pct") if lm else None
+        if month_pct is not None:
+            month_pct = float(month_pct)
+
+        ytd_pct = td["ytd"].get("kpi_pct")
+        if ytd_pct is not None:
+            ytd_pct = float(ytd_pct)
+
+        # Цвет RAG считаем по месячному проценту, а если его нет — по YTD.
+        pct_for_rag = month_pct if month_pct is not None else ytd_pct
+        color = _rag(kid, pct_for_rag)
+        if pct_for_rag is not None:
+            numeric_for_avg.append(pct_for_rag)
+
         plitki_items.append({
             "kpi_id": kid,
             "name": meta["name"],
-            "kpi_pct": pct,
+            "kpi_pct": month_pct,
+            "ytd_pct": ytd_pct,
             "color": color,
             "period": _period_label(meta),
             "thresholds": _thresholds(meta),

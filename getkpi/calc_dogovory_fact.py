@@ -28,6 +28,8 @@ from pathlib import Path
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -137,11 +139,8 @@ def _load_register(session: requests.Session) -> list[dict]:
             f"{BASE}/{REG}?$format=json&$top=5000&$skip={skip}"
             f"&$select={SELECT_FIELDS}"
         )
-        try:
-            r = session.get(url, timeout=120)
-        except Exception:
-            break
-        if not r.ok:
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Dogovory")
+        if r is None or not r.ok:
             break
         rows = r.json().get("value", [])
         all_rows.extend(rows)
@@ -179,11 +178,12 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
             f"?$format=json&$filter={flt}"
             f"&$select=Ref_Key,Статус&$top={BATCH}"
         )
+        r = request_with_retry(session, url, timeout=30, retries=3, label="Dogovory/Spec")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=30)
-            if r.ok:
-                for it in r.json().get("value", []):
-                    spec_status[it["Ref_Key"]] = it.get("Статус", "")
+            for it in r.json().get("value", []):
+                spec_status[it["Ref_Key"]] = it.get("Статус", "")
         except Exception:
             pass
 
@@ -205,11 +205,12 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
             f"{BASE}/Catalog_Партнеры"
             f"?$format=json&$filter={flt}&$select=Ref_Key,Description&$top={BATCH}"
         )
+        r = request_with_retry(session, url, timeout=30, retries=3, label="Dogovory/Partners")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=30)
-            if r.ok:
-                for it in r.json().get("value", []):
-                    partners_map[it["Ref_Key"]] = it.get("Description", "").strip()
+            for it in r.json().get("value", []):
+                partners_map[it["Ref_Key"]] = it.get("Description", "").strip()
         except Exception:
             pass
 
@@ -244,14 +245,15 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
             f"&$select=Ref_Key,Валюта_Key,ТД_НеУчитыватьВПланФакте"
             f"&$top={BATCH}"
         )
+        r = request_with_retry(session, url, timeout=30, retries=3, label="Dogovory/Orders")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=30)
-            if r.ok:
-                for it in r.json().get("value", []):
-                    order_data[it["Ref_Key"]] = {
-                        "cur_key": it.get("Валюта_Key", ""),
-                        "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
-                    }
+            for it in r.json().get("value", []):
+                order_data[it["Ref_Key"]] = {
+                    "cur_key": it.get("Валюта_Key", ""),
+                    "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
+                }
         except Exception:
             pass
 

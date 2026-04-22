@@ -25,6 +25,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
@@ -99,10 +101,9 @@ def _fetch_documents(session: requests.Session) -> list[dict]:
             f"&$orderby=Ref_Key"
             f"&$top={PAGE}&$skip={skip}"
         )
-        try:
-            r = session.get(url, timeout=60)
-        except Exception as e:
-            logger.error("Tekuchest HTTP error: %s", e)
+        r = request_with_retry(session, url, timeout=60, retries=4, label="Tekuchest")
+        if r is None:
+            logger.error("Tekuchest: request dropped after retries")
             break
         if not r.ok:
             logger.error("Tekuchest HTTP %d: %s", r.status_code, r.text[:300])

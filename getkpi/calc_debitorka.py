@@ -30,6 +30,8 @@ from urllib.parse import quote
 from collections import defaultdict
 from pathlib import Path
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════
@@ -81,9 +83,9 @@ def fetch_all_register(session, na_datu: str):
             f"&$filter={flt}"
             f"&$top={PAGE}&$skip={skip}"
         )
-        r = session.get(url, timeout=120)
-        if not r.ok:
-            print(f"  ⚠ HTTP {r.status_code} при skip={skip}")
+        r = request_with_retry(session, url, timeout=180, retries=4, label="DZ/Register")
+        if r is None or not r.ok:
+            print(f"  ⚠ HTTP {(r.status_code if r else 'no-response')} при skip={skip}")
             break
         batch = r.json().get("value", [])
         records.extend(batch)
@@ -144,9 +146,9 @@ def resolve_objects(session, obj_keys: set):
             f"?$format=json&$select={sel}"
             f"&$top={PAGE}&$skip={skip}"
         )
-        r = session.get(url, timeout=120)
-        if not r.ok:
-            print(f"  ⚠ HTTP {r.status_code} при skip={skip}")
+        r = request_with_retry(session, url, timeout=120, retries=4, label="DZ/ObjCatalog")
+        if r is None or not r.ok:
+            print(f"  ⚠ HTTP {(r.status_code if r else 'no-response')} при skip={skip}")
             break
         chunk = r.json().get("value", [])
         if not chunk:
@@ -181,17 +183,42 @@ def resolve_objects(session, obj_keys: set):
 
 
 def resolve_partner_names(session, partner_keys: set):
-    """Получить имена партнёров по GUID."""
-    names = {}
-    for pk in partner_keys:
-        if pk == EMPTY:
+    """Получить имена партнёров по GUID.
+
+    БАТЧЕВО: один $filter с OR'ами на 40 ключей вместо 40 отдельных GET-ов.
+    Это ×30-50 быстрее и в разы меньше нагрузка на 1С (раньше поштучные
+    запросы ловили ReadTimeout 15с на медленном 1С).
+    """
+    names: dict[str, str] = {}
+    keys = [pk for pk in partner_keys if pk and pk != EMPTY]
+    if not keys:
+        return names
+
+    BATCH = 40
+    for i in range(0, len(keys), BATCH):
+        chunk = keys[i:i + BATCH]
+        flt = " or ".join(f"Ref_Key eq guid'{pk}'" for pk in chunk)
+        url = (
+            f"{BASE}/Catalog_Партнеры?$format=json"
+            f"&$select=Ref_Key,Description"
+            f"&$filter={quote(flt, safe='')}&$top=5000"
+        )
+        r = request_with_retry(session, url, timeout=60, retries=4, label="Partners")
+        if r is None or not r.ok:
+            for pk in chunk:
+                names.setdefault(pk, pk[:8])
             continue
-        url = f"{BASE}/Catalog_Партнеры(guid'{pk}')?$format=json&$select=Description"
-        r = session.get(url, timeout=15)
-        if r.ok:
-            names[pk] = r.json().get("Description", pk[:8])
-        else:
-            names[pk] = pk[:8]
+        seen: set[str] = set()
+        for item in r.json().get("value", []):
+            pk = str(item.get("Ref_Key") or "")
+            desc = (item.get("Description") or "").strip()
+            if pk:
+                names[pk] = desc or pk[:8]
+                seen.add(pk)
+        # Для ключей, которых не оказалось в каталоге — fallback.
+        for pk in chunk:
+            if pk not in seen and pk not in names:
+                names[pk] = pk[:8]
     return names
 
 
@@ -222,9 +249,10 @@ def _fetch_order_details(session, order_numbers: set) -> dict:
             f"&$filter={quote(expr, safe='')}&$top=5000"
         )
         try:
-            r = session.get(url, timeout=60)
-            if not r.ok:
-                logger.warning("Order details HTTP %d for batch %d", r.status_code, i)
+            r = request_with_retry(session, url, timeout=60, retries=4, label="OrderDetails")
+            if r is None or not r.ok:
+                logger.warning("Order details HTTP %s for batch %d",
+                               r.status_code if r else "no-response", i)
                 continue
             for item in r.json().get("value", []):
                 num = (item.get("Number") or "").strip()

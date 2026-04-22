@@ -996,7 +996,7 @@ def build_komdir_payload(kpi_list: list[dict],
             dz_payload=dz_payload,
             dept_guid=dept_guid,
             plans_payload=plans_payload,
-        )
+    )
 
     plitki_items = []
     numeric_for_avg: list[float] = []
@@ -1064,6 +1064,7 @@ def build_komdir_payload(kpi_list: list[dict],
         ks_by_dept = ks_plans.get("by_dept") or {}
         ks_dept_inds = ks_plans.get("dept_indicators") or {}
         ks_by_dept_guid = ks_plans.get("by_dept_guid") or {}
+        all_charts = ks_plans.get("charts") or []
 
         dept_slice = ks_by_dept_guid.get((dept_guid or "").lower()) if dept_guid else None
 
@@ -1073,13 +1074,14 @@ def build_komdir_payload(kpi_list: list[dict],
             indicators = dept_slice.get("indicators") or []
             months_map = dept_slice.get("months") or {}
             dept_name = dept_slice.get("dept_name") or ""
-            by_dept_out = {dept_name: months_map} if dept_name else {}
+            by_dept_out = {dept_name: dept_slice} if dept_name else {}
+            dept_charts = dept_slice.get("charts") or []
         else:
-            # Коммерческий директор или отдел без собственных документов —
-            # показываем агрегированные данные по всем подразделениям.
+            # Коммерческий директор — все документы всех подразделений.
             indicators = ks_plans.get("indicators") or []
             months_map = ks_plans.get("months") or {}
             by_dept_out = ks_by_dept
+            dept_charts = all_charts
 
         grafiki["KS-RAZVITIE"] = {
             "kpi_id": "KS-RAZVITIE",
@@ -1095,7 +1097,11 @@ def build_komdir_payload(kpi_list: list[dict],
             "indicators": indicators,
             "months": months_map,
             "by_dept": by_dept_out,
+            "by_dept_guid": ks_by_dept_guid,
             "dept_indicators": ks_dept_inds,
+            # Плоский список «отдел × показатель» — по одному элементу на диаграмму.
+            # Каждая диаграмма содержит массив 12 месячных точек {plan, fact}.
+            "charts": dept_charts,
         }
     except Exception:
         logger.exception("KS-RAZVITIE: failed to load plans")
@@ -1132,8 +1138,8 @@ def build_komdir_payload(kpi_list: list[dict],
                     "formula": by_id.get(kid, {}).get("formula"),
                 }
                 for kid in tile_ids if kid in by_id
-            ],
-        }
+        ],
+    }
 
     return {
         "month": series_m,

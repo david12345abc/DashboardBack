@@ -28,6 +28,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from .odata_http import request_with_retry
+
 logger = logging.getLogger(__name__)
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
@@ -162,10 +164,9 @@ def _load_ds_register(session: requests.Session,
     while True:
         url = (f"{BASE}/{REG_DS}?$format=json&$top=5000&$skip={skip}"
                f"&$filter={flt}&$select={sel}")
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as e:
-            logger.error("DS register HTTP error: %s", e)
+        r = request_with_retry(session, url, timeout=120, retries=4, label="DS/register")
+        if r is None:
+            logger.error("DS register: request dropped after retries")
             break
         if not r.ok:
             logger.error("DS register HTTP %d", r.status_code)
@@ -181,8 +182,11 @@ def _load_ds_register(session: requests.Session,
 
 def _load_kk_register(session: requests.Session,
                       year: int, max_month: int) -> list[dict]:
-    probe = session.get(f"{BASE}/{REG_KK}?$format=json&$top=1", timeout=20)
-    if probe.status_code != 200:
+    probe = request_with_retry(
+        session, f"{BASE}/{REG_KK}?$format=json&$top=1",
+        timeout=20, retries=3, label="KK/probe",
+    )
+    if probe is None or probe.status_code != 200:
         return []
 
     last_day = calendar.monthrange(year, max_month)[1]
@@ -204,12 +208,8 @@ def _load_kk_register(session: requests.Session,
     while True:
         url = (f"{BASE}/{REG_KK}?$format=json&$top=5000&$skip={skip}"
                f"&$filter={flt}&$select={sel}")
-        try:
-            r = session.get(url, timeout=120)
-        except Exception as e:
-            logger.error("KK register HTTP error: %s", e)
-            break
-        if not r.ok:
+        r = request_with_retry(session, url, timeout=120, retries=4, label="KK/register")
+        if r is None or not r.ok:
             break
         batch = r.json().get("value", [])
         rows.extend(batch)
@@ -230,17 +230,18 @@ def _batch_load_catalog(session: requests.Session,
         flt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
         url = (f"{BASE}/Catalog_ОбъектыРасчетов?$format=json"
                f"&$filter={flt}&$select={cat_select}&$top={BATCH}")
+        r = request_with_retry(session, url, timeout=30, retries=3, label="DS/ObjCatalog")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=30)
-            if r.ok:
-                for it in r.json().get("value", []):
-                    catalog[it["Ref_Key"]] = {
-                        "dept": it.get("Подразделение_Key", ""),
-                        "partner": it.get("Партнер_Key", ""),
-                        "agreement": it.get("Соглашение", ""),
-                        "obj": it.get("Объект", ""),
-                        "obj_type": it.get("Объект_Type", ""),
-                    }
+            for it in r.json().get("value", []):
+                catalog[it["Ref_Key"]] = {
+                    "dept": it.get("Подразделение_Key", ""),
+                    "partner": it.get("Партнер_Key", ""),
+                    "agreement": it.get("Соглашение", ""),
+                    "obj": it.get("Объект", ""),
+                    "obj_type": it.get("Объект_Type", ""),
+                }
         except Exception:
             pass
     return catalog
@@ -258,16 +259,17 @@ def _batch_load_orders(session: requests.Session,
                f"&$select=Ref_Key,Подразделение_Key,Партнер_Key,"
                f"ТД_СопровождениеПродажи,ТД_НеУчитыватьВПланФакте"
                f"&$top={BATCH}")
+        r = request_with_retry(session, url, timeout=30, retries=3, label="DS/Orders")
+        if r is None or not r.ok:
+            continue
         try:
-            r = session.get(url, timeout=30)
-            if r.ok:
-                for it in r.json().get("value", []):
-                    result[it["Ref_Key"]] = {
-                        "dept": it.get("Подразделение_Key", ""),
-                        "partner": it.get("Партнер_Key", ""),
-                        "soprovozhd": it.get("ТД_СопровождениеПродажи", False),
-                        "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
-                    }
+            for it in r.json().get("value", []):
+                result[it["Ref_Key"]] = {
+                    "dept": it.get("Подразделение_Key", ""),
+                    "partner": it.get("Партнер_Key", ""),
+                    "soprovozhd": it.get("ТД_СопровождениеПродажи", False),
+                    "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
+                }
         except Exception:
             pass
     return result
