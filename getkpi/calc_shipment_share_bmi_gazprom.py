@@ -110,6 +110,7 @@ def _fetch_shipment_entries(session: requests.Session, p_start: str, p_end: str,
                     "Сумма": row.get("Сумма", 0) or 0,
                     "ВидДвижения": row.get("ВидДвиженияРегистра", ""),
                     "Сторно": row.get("Сторно", False),
+                    "Period": row.get("Period", ""),
                 })
         if len(rows) < 5000:
             break
@@ -226,7 +227,8 @@ def get_shipment_share_bmi_gazprom(year: int | None = None,
     p_end = f"{date.fromordinal(end_dt.toordinal() + 1).isoformat()}T00:00:00"
 
     use_cache = not force
-    cache_path = os.path.join(CACHE_DIR, f"ytd_shipment_{y}_{end_dt.isoformat()}.json")
+    # v2 — кэш содержит поле Period (нужно для помесячной разбивки).
+    cache_path = os.path.join(CACHE_DIR, f"ytd_shipment_v2_{y}_{end_dt.isoformat()}.json")
 
     session = requests.Session()
     session.auth = AUTH
@@ -307,6 +309,119 @@ def get_shipment_share_bmi_gazprom(year: int | None = None,
         "pct_pair": _pct(pair),
         "counted_rows": counted,
         "reject_stats": stats,
+    }
+
+
+def get_shipment_share_bmi_gazprom_monthly(year: int | None = None,
+                                           *,
+                                           month: int | None = None,
+                                           dept_guid: str | None = None,  # noqa: ARG001
+                                           force: bool = False) -> dict:
+    """
+    Помесячная разбивка MRK-06 «Доля Газпром + БМИ в отгрузке».
+
+    Возвращает:
+        {
+          'year': int,
+          'months': [
+            {
+              'month': int,
+              'total': float,  # общая отгрузка 6 отделов за месяц, ₽
+              'bmi':   float,
+              'gp':    float,
+              'pair':  float,  # БМИ + Газпром за месяц
+              'pct_pair': float,  # доля БМИ+Газпром в отгрузке за месяц, %
+              'by_dept': {name: amount},
+            },
+            ...
+          ],
+        }
+    """
+    today = date.today()
+    y = int(year) if year else today.year
+    end_dt = _compute_end_dt(y, month, today)
+    start_dt = date(y, 1, 1)
+
+    p_start = f"{start_dt.isoformat()}T00:00:00"
+    p_end = f"{date.fromordinal(end_dt.toordinal() + 1).isoformat()}T00:00:00"
+
+    use_cache = not force
+    cache_path = os.path.join(CACHE_DIR, f"ytd_shipment_v2_{y}_{end_dt.isoformat()}.json")
+
+    session = requests.Session()
+    session.auth = AUTH
+
+    entries = _fetch_shipment_entries(session, p_start, p_end, cache_path, use_cache)
+    order_guids = sorted({e["guid"] for e in entries if e.get("guid")})
+
+    orders = _fetch_order_attributes(session, order_guids)
+
+    unique_partner_keys = list({o["partner"] for o in orders.values() if o["partner"] != EMPTY})
+    partners = _load_partner_names(session, unique_partner_keys, use_cache)
+
+    exclude_keys_full = {k for k, v in partners.items() if v in EXCLUDE_PARTNER_NAMES}
+    exclude_keys_no_mgs = {k for k, v in partners.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS}
+
+    passed_guids: set[str] = set()
+    for guid in order_guids:
+        o = orders.get(guid)
+        if not o:
+            continue
+        if o["dept"] not in DEPARTMENTS or o["dept"] == EMPTY:
+            continue
+        if o["agreement"] == EMPTY or not o["agreement"]:
+            continue
+        if o["dept"] == OPBO_DEPT:
+            if o["partner"] in exclude_keys_no_mgs:
+                continue
+        else:
+            if o["partner"] in exclude_keys_full and not o["soprovozhd"]:
+                continue
+        if o["ne_uchit"]:
+            continue
+        passed_guids.add(guid)
+
+    months_out: list[dict] = []
+    for m in range(1, end_dt.month + 1):
+        by_dept_guid: dict[str, float] = {k: 0.0 for k in DEPARTMENTS}
+        total_m = 0.0
+        for e in entries:
+            if e["guid"] not in passed_guids:
+                continue
+            if e["ВидДвижения"] != "Расход":
+                continue
+            period_raw = e.get("Period") or ""
+            if len(period_raw) < 7:
+                continue
+            try:
+                row_year = int(period_raw[0:4])
+                row_month = int(period_raw[5:7])
+            except (TypeError, ValueError):
+                continue
+            if row_year != y or row_month != m:
+                continue
+            o = orders[e["guid"]]
+            summa = float(e["Сумма"] or 0)
+            by_dept_guid[o["dept"]] += summa
+            total_m += summa
+
+        bmi_m = by_dept_guid[BMI_DEPT]
+        gp_m = by_dept_guid[GP_DEPT]
+        pair_m = bmi_m + gp_m
+        pct_m = round(pair_m / total_m * 100, 1) if total_m else 0.0
+        months_out.append({
+            "month": m,
+            "total": round(total_m, 2),
+            "bmi": round(bmi_m, 2),
+            "gp": round(gp_m, 2),
+            "pair": round(pair_m, 2),
+            "pct_pair": pct_m,
+            "by_dept": {DEPARTMENTS[k]: round(v, 2) for k, v in by_dept_guid.items()},
+        })
+
+    return {
+        "year": y,
+        "months": months_out,
     }
 
 

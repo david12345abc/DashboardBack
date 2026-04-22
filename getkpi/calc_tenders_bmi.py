@@ -43,6 +43,29 @@ REZ_NAME = {
     6: "иное",
 }
 
+# Канонические статусы, которые видит пользователь в 1С.
+# Порядок совпадает с тем, который назвал пользователь.
+STATUS_LABELS = [
+    "на подведении итогов",
+    "выиграли",
+    "проиграли",
+    "отменен",
+    "отклонили",
+    "без итогов",
+    "не участвуем",
+]
+
+# Синонимы/подстроки для fuzzy-мэтча лейблов с тем, что реально отдаёт 1С.
+STATUS_MATCHERS = {
+    "на подведении итогов": ("подвед", "итог"),
+    "выиграли": ("выигр",),
+    "проиграли": ("проигр",),
+    "отменен": ("отмен",),
+    "отклонили": ("отклон",),
+    "без итогов": ("без итог",),
+    "не участвуем": ("не участв", "отказ"),
+}
+
 
 def _normalize_result_code(value) -> int:
     """OData может вернуть код результата строкой; приводим к int для стабильного расчёта."""
@@ -50,6 +73,91 @@ def _normalize_result_code(value) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+# Кэш маппинга code -> canonical_label (канонический ярлык из STATUS_LABELS).
+# Вычисляется один раз на процесс, при первом вызове get_tenders_bmi.
+_CODE_TO_CANON: dict[int, str] | None = None
+
+
+def _fetch_enum_labels(session) -> dict[int, str]:
+    """Получить labels enum'а УТО_РезультатТендера из 1C OData.
+
+    Возвращает {order_index: human_label}. Если не удалось — пустой словарь.
+    Пробуем несколько имён entity-set'а, потому что в разных конфигурациях
+    префикс/имя может отличаться.
+    """
+    candidates = [
+        "Enum_УТО_РезультатТендера",
+        "Enumeration_УТО_РезультатТендера",
+    ]
+    for name in candidates:
+        url = f"{BASE}/{quote(name)}?$format=json"
+        try:
+            r = session.get(url, timeout=30)
+        except Exception:
+            continue
+        if not r.ok:
+            continue
+        try:
+            items = r.json().get("value", []) or []
+        except Exception:
+            continue
+        out: dict[int, str] = {}
+        for it in items:
+            order = it.get("Order")
+            if order is None:
+                order = it.get("Index")
+            try:
+                idx = int(order) if order is not None else None
+            except (TypeError, ValueError):
+                idx = None
+            label = (
+                it.get("Synonym")
+                or it.get("Description")
+                or it.get("Presentation")
+                or it.get("Name")
+                or ""
+            )
+            label = str(label or "").strip()
+            if idx is not None and label:
+                out[idx] = label
+        if out:
+            return out
+    return {}
+
+
+def _build_code_to_canonical(session) -> dict[int, str]:
+    """Построить маппинг {code -> canonical_label} по данным enum 1С.
+
+    Если enum не удалось получить — используем REZ_NAME как fallback.
+    """
+    raw_labels = _fetch_enum_labels(session)
+    if not raw_labels:
+        raw_labels = dict(REZ_NAME)
+
+    result: dict[int, str] = {}
+    for code, raw_label in raw_labels.items():
+        lc = str(raw_label).lower()
+        canon = ""
+        for canonical, needles in STATUS_MATCHERS.items():
+            if any(n in lc for n in needles):
+                canon = canonical
+                break
+        if canon:
+            result[int(code)] = canon
+    return result
+
+
+def _get_code_to_canonical(session) -> dict[int, str]:
+    global _CODE_TO_CANON
+    if _CODE_TO_CANON is None:
+        _CODE_TO_CANON = _build_code_to_canonical(session)
+    return _CODE_TO_CANON
+
+
+def _empty_status_counts() -> dict[str, int]:
+    return {lbl: 0 for lbl in STATUS_LABELS}
 
 
 def _fetch_all(session, base_url, page_size=1000, timeout=120):
@@ -130,21 +238,30 @@ def get_tenders_bmi(year: int | None = None,
             or r.get("ТемаСлужебнойЗаписки") == TEMA_NAME]
     alive = [r for r in rows if not r.get("DeletionMark")]
 
+    code_to_canon = _get_code_to_canonical(s)
+
     plan = len(alive)
-    fact = sum(1 for r in alive if _normalize_result_code(r.get("УТО_РезультатТендера")) == 1)
     distribution: dict[int, int] = {}
+    status_counts = _empty_status_counts()
     for r in alive:
         k = _normalize_result_code(r.get("УТО_РезультатТендера", 0))
         distribution[k] = distribution.get(k, 0) + 1
+        canon = code_to_canon.get(k)
+        if canon and canon in status_counts:
+            status_counts[canon] += 1
 
+    fact = status_counts.get("выиграли", 0)
+    not_participating = status_counts.get("не участвуем", 0)
     pct = round(fact / plan * 100, 1) if plan else None
 
     samples = []
     for r in sorted(alive, key=lambda x: x.get("Date", ""), reverse=True)[:15]:
+        code = _normalize_result_code(r.get("УТО_РезультатТендера", 0))
         samples.append({
             "number": r.get("Number"),
             "date": (r.get("Date") or "")[:10],
-            "result": _normalize_result_code(r.get("УТО_РезультатТендера", 0)),
+            "result": code,
+            "status": code_to_canon.get(code) or REZ_NAME.get(code, ""),
             "name": (r.get("УТО_НаименованиеТендера") or "").strip(),
             "customer": (r.get("УТО_Заказчик") or "").strip(),
         })
@@ -157,6 +274,10 @@ def get_tenders_bmi(year: int | None = None,
         "plan": plan,
         "fact": fact,
         "pct": pct,
+        "found": plan,
+        "won": fact,
+        "not_participating": not_participating,
+        "status_counts": status_counts,
         "distribution": distribution,
         "samples": samples,
         "cumulative": bool(cumulative),
@@ -181,12 +302,17 @@ def _main_cli() -> None:
     out("\n" + "═" * 60)
     out(f"  РЕЗУЛЬТАТ")
     out("═" * 60)
-    out(f"  План (всего тендеров): {data['plan']}")
-    out(f"  Факт (выигранных):     {data['fact']}")
+    out(f"  Найдено всего:         {data['found']}")
+    out(f"  Не участвуем:          {data['not_participating']}")
+    out(f"  Выиграно:              {data['won']}")
     if data["pct"] is not None:
         out(f"  Процент выигранных:    {data['pct']:.1f}%")
 
-    out("\n  Распределение по УТО_РезультатТендера:")
+    out("\n  Распределение по статусам (канонический лейбл):")
+    for lbl, cnt in data.get("status_counts", {}).items():
+        out(f"    {lbl:25s}: {cnt}")
+
+    out("\n  Сырое распределение по УТО_РезультатТендера:")
     for k in sorted(data["distribution"]):
         out(f"    {k} — {REZ_NAME.get(k, '?'):25s}: {data['distribution'][k]}")
 

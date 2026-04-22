@@ -15,7 +15,7 @@ from getkpi.models import KpiDefinition
 DEPARTMENT = "Председатель совета директоров"
 
 FULL_DASHBOARD: list[dict] = [
-    # ── Плитки KPI (10 шт.) ─────────────────────────────────────────────────
+    # ── Плитки KPI (8 шт.) ──────────────────────────────────────────────────
     {
         "kpi_id": "FND-T1",
         "name": "Выручка (без НДС) — план/факт",
@@ -143,24 +143,6 @@ FULL_DASHBOARD: list[dict] = [
         "weight_pct": 10.0,
     },
     {
-        "kpi_id": "FND-T8",
-        "name": "Критичные дефициты",
-        "block": "плитка",
-        "frequency": "Ежемесячно",
-        "perspective": "Процессы",
-        "goal": "Показать, есть ли риск срыва выпуска и отгрузки из-за нехватки ТМЦ / комплектующих",
-        "formula": "Количество дефицитов, влияющих на выпуск или отгрузку в горизонте 30 календарных дней",
-        "unit": "шт.",
-        "source": "1С ERP / MRP / ОМТО / производство",
-        "monthly_target": "0–1",
-        "quarterly_target": None,
-        "yearly_target": "0–1",
-        "green_threshold": "0–1",
-        "yellow_threshold": "2–3",
-        "red_threshold": ">3",
-        "weight_pct": 5.0,
-    },
-    {
         "kpi_id": "FND-T9",
         "name": "Выпуск — план/факт",
         "block": "плитка",
@@ -177,24 +159,6 @@ FULL_DASHBOARD: list[dict] = [
         "yellow_threshold": "95–99,9%",
         "red_threshold": "<95%",
         "weight_pct": 10.0,
-    },
-    {
-        "kpi_id": "FND-T10",
-        "name": "Красные поручения CEO / ОКМ",
-        "block": "плитка",
-        "frequency": "Ежемесячно",
-        "perspective": "Управление",
-        "goal": "Видеть дисциплину исполнения управленческих решений",
-        "formula": "Количество просроченных поручений со статусом «красный» на дату выпуска пакета",
-        "unit": "шт.",
-        "source": "Реестр поручений / PMO / секретариат",
-        "monthly_target": "0",
-        "quarterly_target": None,
-        "yearly_target": "0",
-        "green_threshold": "0",
-        "yellow_threshold": "1–2",
-        "red_threshold": ">2",
-        "weight_pct": 5.0,
     },
     # ── Графики (3 шт.) ─────────────────────────────────────────────────────
     {
