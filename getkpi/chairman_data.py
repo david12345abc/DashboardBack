@@ -10,9 +10,11 @@ from datetime import date
 
 from . import (
     cache_manager,
+    calc_debitorka,
     calc_dengi_fact,
     calc_otgruzki_fact,
     calc_plan,
+    calc_reclamations,
     calc_shipment_share_bmi_gazprom,
     calc_svoevremennaya_otgruzka,
     calc_tenders_bmi,
@@ -251,6 +253,73 @@ def _build_fnd_t4_svoevremennaya_rows(months: list[int], ref_y: int, ref_m: int)
     return rows
 
 
+def _build_fnd_t5_reclamations_rows(months: list[int], ref_y: int) -> list[dict]:
+    """FND-T5 «Качество рекламаций» = количество претензий из
+    Справочник.Претензии по ТД_ДатаОкончанияПлан (план) и ДатаОкончания (факт).
+    """
+    if not months:
+        return []
+
+    payload = cache_manager.locked_call(
+        f"reclamations_monthly_{ref_y}_{max(months)}",
+        calc_reclamations.get_reclamations_monthly,
+        year=ref_y, month=max(months),
+    )
+    by_m: dict[int, dict] = {}
+    for row in payload.get("months", []) or []:
+        m = int(row.get("month") or 0)
+        if 1 <= m <= 12:
+            by_m[m] = row
+
+    rows: list[dict] = []
+    for m in months:
+        d = by_m.get(m)
+        plan = d.get("plan") if d else None
+        fact = d.get("fact") if d else None
+        pct = d.get("kpi_pct") if d else None
+        has = bool(d and d.get("has_data"))
+        rows.append({
+            "month": m, "year": ref_y, "month_name": MONTH_NAMES[m],
+            "plan": plan, "fact": fact,
+            "kpi_pct": pct, "has_data": has,
+        })
+    return rows
+
+
+def _build_fnd_t7_debitorka_rows(months: list[int], ref_y: int) -> list[dict]:
+    """FND-T7 «Дебиторская задолженность» — те же данные, что и у коммерческого
+    директора (KD-M4): агрегат по всей компании из calc_debitorka.
+    План — фиксированный (100 млн руб.), как у коммерческого директора.
+    """
+    if not months:
+        return []
+
+    max_m = max(months)
+    dz_payload = cache_manager.locked_call(
+        f"debitorka_{ref_y}_{max_m}",
+        calc_debitorka.get_komdir_dz_monthly,
+        year=ref_y, month=max_m, dept_name=None,
+    )
+    by_m: dict[int, dict] = {}
+    for row in dz_payload.get("months", []) or []:
+        mm = int(row.get("month") or 0)
+        if 1 <= mm <= 12:
+            by_m[mm] = row
+
+    plan = 100_000_000.0
+    rows: list[dict] = []
+    for m in months:
+        d = by_m.get(m)
+        fact = float(d.get("dz_fact")) if d and d.get("dz_fact") is not None else None
+        pct = round(fact / plan * 100, 1) if (plan and fact is not None) else None
+        rows.append({
+            "month": m, "year": ref_y, "month_name": MONTH_NAMES[m],
+            "plan": plan, "fact": fact,
+            "kpi_pct": pct, "has_data": fact is not None,
+        })
+    return rows
+
+
 def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> dict:
     """Вернуть monthly_data + ytd + kpi_period для одного KPI."""
 
@@ -263,23 +332,11 @@ def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> di
     elif kpi_id == "FND-T4":
         rows = _build_fnd_t4_svoevremennaya_rows(months, ref_y, ref_m)
     elif kpi_id == "FND-T5":
-        rows = []
-        for m in months:
-            pair = _T5_DATA.get(m)
-            has = pair is not None
-            rec = pair[0] if has else None
-            capa = pair[1] if has else None
-            total = (rec or 0) + (capa or 0) if has else None
-            rows.append({
-                "month": m, "year": ref_y, "month_name": MONTH_NAMES[m],
-                "plan": None, "fact": total,
-                "reclamations": rec, "capa_overdue": capa,
-                "kpi_pct": None, "has_data": has,
-            })
+        rows = _build_fnd_t5_reclamations_rows(months, ref_y)
     elif kpi_id == "FND-T6":
         rows = _months_fact_only(_T6_FACT, months)
     elif kpi_id == "FND-T7":
-        rows = _months_plan_fact(_T7_PLAN, _T7_FACT, months)
+        rows = _build_fnd_t7_debitorka_rows(months, ref_y)
     elif kpi_id == "FND-T8":
         rows = _months_fact_only(_T8_FACT, months)
     elif kpi_id == "FND-T9":

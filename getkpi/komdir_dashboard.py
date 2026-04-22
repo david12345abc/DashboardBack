@@ -1066,16 +1066,21 @@ def build_komdir_payload(kpi_list: list[dict],
         ks_by_dept_guid = ks_plans.get("by_dept_guid") or {}
         all_charts = ks_plans.get("charts") or []
 
-        dept_slice = ks_by_dept_guid.get((dept_guid or "").lower()) if dept_guid else None
-
-        if dept_slice:
-            # Конкретное дочернее подразделение коммерческого блока: показываем
-            # ровно те показатели, которые есть в его документах КС развитие.
-            indicators = dept_slice.get("indicators") or []
-            months_map = dept_slice.get("months") or {}
-            dept_name = dept_slice.get("dept_name") or ""
-            by_dept_out = {dept_name: dept_slice} if dept_name else {}
-            dept_charts = dept_slice.get("charts") or []
+        if dept_guid:
+            dept_slice = ks_by_dept_guid.get(dept_guid.lower())
+            if dept_slice:
+                # Конкретное дочернее подразделение коммерческого блока
+                indicators = dept_slice.get("indicators") or []
+                months_map = dept_slice.get("months") or {}
+                dept_name = dept_slice.get("dept_name") or ""
+                by_dept_out = {dept_name: dept_slice} if dept_name else {}
+                dept_charts = dept_slice.get("charts") or []
+            else:
+                # Подразделение передано, но документов нет
+                indicators = []
+                months_map = {}
+                by_dept_out = {}
+                dept_charts = []
         else:
             # Коммерческий директор — все документы всех подразделений.
             indicators = ks_plans.get("indicators") or []
