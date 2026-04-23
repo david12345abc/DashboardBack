@@ -7,7 +7,7 @@
     "name": "dashbord",
     "user": "postgres",
     "password": "davit",
-    "host": "localhost",
+    "host": "192.168.5.219",
     "port": 5432
   }
 }
