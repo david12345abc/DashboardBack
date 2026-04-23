@@ -14,6 +14,7 @@ from . import (
     calc_dengi_fact,
     calc_otgruzki_fact,
     calc_plan,
+    calc_postavshchiki,
     calc_reclamations,
     calc_shipment_share_bmi_gazprom,
     calc_svoevremennaya_otgruzka,
@@ -49,8 +50,8 @@ _T1_FACT = {1: 185_420_000, 2: 210_750_000, 3: 198_600_000}
 _T2_PLAN = {1: 27_800_000, 2: 27_800_000, 3: 27_800_000}
 _T2_FACT = {1: 22_150_000, 2: 31_420_000, 3: 26_980_000}
 
-# FND-T3  Текущая ликвидность  (только факт)
-_T3_FACT = {1: 1.85, 2: 1.72, 3: 1.91}
+# FND-T3 «Соотношение ДЗ и КЗ» рассчитывается из 1С
+# (calc_debitorka + calc_postavshchiki) в `_build_fnd_t3_dz_kz_rows`.
 
 # FND-T4  Своевременная отгрузка  (среднее по всем месяцам)
 _T4_FACT = {1: 94.2, 2: 96.8, 3: 93.5}
@@ -280,6 +281,95 @@ def _build_fnd_t5_reclamations_rows(months: list[int], ref_y: int) -> list[dict]
     return rows
 
 
+def _build_fnd_t3_dz_kz_rows(months: list[int], ref_y: int) -> list[dict]:
+    """FND-T3 «Соотношение ДЗ и КЗ» (ПСД, «Мой дашборд»).
+
+    Помесячно на конец каждого месяца вычисляются 4 значения (в рублях):
+      - `dz_client`    — долг клиентов (ДЗ) = Σ положительных нетто-остатков
+                          по регистру РасчетыСКлиентамиПоСрокам.
+      - `kz_client`    — наш долг клиентам (КЗ) = Σ |отрицательных| нетто-остатков
+                          по тому же регистру (авансы / переплаты клиентов).
+      - `dz_supplier`  — долг поставщиков перед нами = ПредоплатаРегл
+                          из регистра РасчетыСПоставщикамиПоДокументам.
+      - `kz_supplier`  — наш долг поставщикам = ДолгРегл того же регистра.
+
+    Проценты:
+      - `pct_client`   = dz_client   / kz_client   × 100  (higher_better)
+      - `pct_supplier` = dz_supplier / kz_supplier × 100  (higher_better)
+
+    Сводный `kpi_pct` плитки — минимум (худший) из двух процентов
+    (higher_better → чем меньше, тем хуже). В `plan`/`fact` кладём
+    клиентские КЗ/ДЗ ради совместимости со стандартной агрегацией;
+    при кастомной агрегации на фронте используются отдельные поля
+    `dz_client`/`kz_client`/`dz_supplier`/`kz_supplier`.
+    """
+    if not months:
+        return []
+
+    max_m = max(months)
+    dz_payload = cache_manager.locked_call(
+        f"debitorka_{ref_y}_{max_m}",
+        calc_debitorka.get_komdir_dz_monthly,
+        year=ref_y, month=max_m, dept_name=None,
+    )
+    supplier_payload = cache_manager.locked_call(
+        f"postavshchiki_{ref_y}_{max_m}",
+        calc_postavshchiki.get_supplier_monthly,
+        year=ref_y, ref_month=max_m,
+    )
+
+    dz_by_m: dict[int, dict] = {}
+    for row in dz_payload.get("months", []) or []:
+        mm = int(row.get("month") or 0)
+        if 1 <= mm <= 12:
+            dz_by_m[mm] = row
+
+    sup_by_m: dict[int, dict] = {}
+    for row in supplier_payload.get("months", []) or []:
+        mm = int(row.get("month") or 0)
+        if 1 <= mm <= 12:
+            sup_by_m[mm] = row
+
+    rows: list[dict] = []
+    for m in months:
+        dz_row = dz_by_m.get(m) or {}
+        sup_row = sup_by_m.get(m) or {}
+        dz_client = float(dz_row.get("dz_fact") or 0)
+        kz_client = float(dz_row.get("kz_fact") or 0)
+        dz_supplier = float(sup_row.get("predoplata_regl") or 0)
+        kz_supplier = float(sup_row.get("dolg_regl") or 0)
+
+        pct_client = round(dz_client / kz_client * 100, 1) if kz_client > 0 else None
+        pct_supplier = round(dz_supplier / kz_supplier * 100, 1) if kz_supplier > 0 else None
+
+        pcts = [p for p in (pct_client, pct_supplier) if p is not None]
+        kpi_pct = min(pcts) if pcts else None
+
+        has_data = (
+            dz_client > 0 or kz_client > 0
+            or dz_supplier > 0 or kz_supplier > 0
+        )
+
+        rows.append({
+            "month": m,
+            "year": ref_y,
+            "month_name": MONTH_NAMES[m],
+            # plan/fact оставлены ради обратной совместимости с нормализацией тайлов;
+            # реальный расчёт ведётся по отдельным полям (dz_*/kz_*).
+            "plan": round(kz_client, 2),
+            "fact": round(dz_client, 2),
+            "kpi_pct": kpi_pct,
+            "has_data": has_data,
+            "dz_client": round(dz_client, 2),
+            "kz_client": round(kz_client, 2),
+            "dz_supplier": round(dz_supplier, 2),
+            "kz_supplier": round(kz_supplier, 2),
+            "pct_client": pct_client,
+            "pct_supplier": pct_supplier,
+        })
+    return rows
+
+
 def _build_fnd_t7_debitorka_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T7 «Дебиторская задолженность» — те же данные, что и у коммерческого
     директора (KD-M4): агрегат по всей компании из calc_debitorka.
@@ -322,7 +412,7 @@ def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> di
     elif kpi_id == "FND-T2":
         rows = _months_plan_fact(_T2_PLAN, _T2_FACT, months)
     elif kpi_id == "FND-T3":
-        rows = _months_fact_only(_T3_FACT, months)
+        rows = _build_fnd_t3_dz_kz_rows(months, ref_y)
     elif kpi_id == "FND-T4":
         rows = _build_fnd_t4_svoevremennaya_rows(months, ref_y, ref_m)
     elif kpi_id == "FND-T5":
@@ -1540,7 +1630,7 @@ def build_chairman_payload(
         if pct_for_rag is not None:
             numeric_for_avg.append(pct_for_rag)
 
-        plitki_items.append({
+        tile = {
             "kpi_id": kid,
             "name": meta["name"],
             "kpi_pct": month_pct,
@@ -1557,7 +1647,19 @@ def build_chairman_payload(
             "has_data": lm.get("has_data", True) if lm else False,
             "plan_fact_period_label": f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}",
             "monthly_data": td.get("monthly_data"),
-        })
+        }
+
+        # FND-T3 «Соотношение ДЗ и КЗ» — прокидываем custom-поля
+        # ref-месяца на лицевую сторону плитки и на обратную (4 числа).
+        if kid == "FND-T3" and lm:
+            for extra_key in (
+                "dz_client", "kz_client", "dz_supplier", "kz_supplier",
+                "pct_client", "pct_supplier",
+            ):
+                if extra_key in lm:
+                    tile[extra_key] = lm[extra_key]
+
+        plitki_items.append(tile)
 
     avg_pct = round(sum(numeric_for_avg) / len(numeric_for_avg), 1) if numeric_for_avg else None
     plitki_items.append({

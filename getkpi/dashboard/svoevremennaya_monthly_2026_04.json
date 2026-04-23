@@ -25,8 +25,8 @@
       "month": 3,
       "month_name": "март",
       "plan": 66,
-      "fact": 26,
-      "kpi_pct": 39.4,
+      "fact": 28,
+      "kpi_pct": 42.4,
       "has_data": true
     },
     {
@@ -34,10 +34,10 @@
       "month": 4,
       "month_name": "апрель",
       "plan": 58,
-      "fact": 4,
-      "kpi_pct": 6.9,
+      "fact": 5,
+      "kpi_pct": 8.6,
       "has_data": true
     }
   ],
-  "cache_date": "2026-04-22"
+  "cache_date": "2026-04-23"
 }

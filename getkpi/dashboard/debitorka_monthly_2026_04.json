@@ -1,12 +1,14 @@
 {
   "year": 2026,
   "ref_month": 4,
+  "kz_source": "predoplata_upr",
   "months": [
     {
       "year": 2026,
       "month": 1,
       "na_datu": "2026-01-31",
       "dz_fact": 549732479.14,
+      "kz_fact": 124796303.11,
       "overdue_fact": 209194330.51
     },
     {
@@ -14,6 +16,7 @@
       "month": 2,
       "na_datu": "2026-02-28",
       "dz_fact": 398450029.39,
+      "kz_fact": 130401259.73,
       "overdue_fact": 220805265.93
     },
     {
@@ -21,14 +24,16 @@
       "month": 3,
       "na_datu": "2026-03-31",
       "dz_fact": 342666133.43,
+      "kz_fact": 159105975.13,
       "overdue_fact": 163295810.86
     },
     {
       "year": 2026,
       "month": 4,
-      "na_datu": "2026-04-22",
-      "dz_fact": 330112221.51,
-      "overdue_fact": 164416091.3
+      "na_datu": "2026-04-23",
+      "dz_fact": 378150233.65,
+      "kz_fact": 244934823.21,
+      "overdue_fact": 161840984.1
     }
   ]
 }

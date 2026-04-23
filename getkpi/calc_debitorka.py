@@ -63,7 +63,7 @@ def fetch_all_register(session, na_datu: str):
         "RecordType,Period,Active,"
         "ОбъектРасчетов_Key,АналитикаУчетаПоПартнерам_Key,"
         "Валюта_Key,ДатаПлановогоПогашения,ДатаВозникновения,"
-        "ДолгУпр",
+        "ДолгУпр,ПредоплатаУпр",
         safe=",_",
     )
     flt = quote(
@@ -98,29 +98,53 @@ def fetch_all_register(session, na_datu: str):
     return records
 
 
-def aggregate_balances(records):
+def aggregate_balances_full(records):
     """
-    Агрегация по (ОбъектРасчетов_Key, ДатаПлановогоПогашения).
-    Возвращает dict: (obj_key, planned_date_str) → balance (float).
-    Receipt — плюс, Expense — минус.
+    Агрегация нетто-остатков по (ОбъектРасчетов_Key, ДатаПлановогоПогашения).
+
+    Возвращает dict: (obj_key, planned_date_str) → {"dolg": float, "predoplata": float}.
+      dolg       — нетто-остаток ресурса ДолгУпр (ДЗ клиента).
+      predoplata — нетто-остаток ресурса ПредоплатаУпр (наш долг клиенту, КЗ).
+
+    Receipt прибавляет, Expense вычитает (в 1С это «Приход/Расход» регистра).
     """
-    agg = defaultdict(float)
+    agg: dict = defaultdict(lambda: {"dolg": 0.0, "predoplata": 0.0})
 
     for r in records:
         obj = str(r.get("ОбъектРасчетов_Key", EMPTY)).lower()
         if obj == EMPTY:
             continue
         planned = r.get("ДатаПлановогоПогашения", "")
-        debt = float(r.get("ДолгУпр") or 0)
+        dolg = float(r.get("ДолгУпр") or 0)
+        predoplata = float(r.get("ПредоплатаУпр") or 0)
         rtype = r.get("RecordType", "")
 
         if rtype == "Receipt":
-            agg[(obj, planned)] += debt
+            sign = 1
         elif rtype == "Expense":
-            agg[(obj, planned)] -= debt
+            sign = -1
+        else:
+            continue
 
-    # Отсечь нулевые балансы
-    return {k: v for k, v in agg.items() if abs(v) >= TOLERANCE}
+        entry = agg[(obj, planned)]
+        entry["dolg"] += sign * dolg
+        entry["predoplata"] += sign * predoplata
+
+    return {
+        k: v for k, v in agg.items()
+        if abs(v["dolg"]) >= TOLERANCE or abs(v["predoplata"]) >= TOLERANCE
+    }
+
+
+def aggregate_balances(records):
+    """
+    Совместимость со старым кодом: возвращает только ДолгУпр-балансы.
+
+    dict: (obj_key, planned_date_str) → balance (float) по ресурсу ДолгУпр.
+    Используется в логике просрочки (просрочка считается только по Долгу).
+    """
+    full = aggregate_balances_full(records)
+    return {k: v["dolg"] for k, v in full.items() if abs(v["dolg"]) >= TOLERANCE}
 
 
 def resolve_objects(session, obj_keys: set):
@@ -462,7 +486,7 @@ def _calc_snapshot_for_date(na_datu: date) -> dict:
     logger.info("calc_debitorka: computing snapshot for %s", na_datu_str)
 
     records = fetch_all_register(session, na_datu_str)
-    balances = aggregate_balances(records)
+    full_balances = aggregate_balances_full(records)
 
     # См. _calc_snapshots_batch: берём obj_keys из сырых записей, чтобы
     # подразделения подтягивались и для полностью погашенных заказов.
@@ -473,34 +497,43 @@ def _calc_snapshot_for_date(na_datu: date) -> dict:
     }
     obj_catalog = resolve_objects(session, obj_keys)
 
-    return _build_snapshot_from_balances(na_datu, balances, obj_catalog)
+    return _build_snapshot_from_balances(na_datu, full_balances, obj_catalog)
 
 
 def _build_snapshot_from_data(na_datu: date, records: list, obj_catalog: dict) -> dict:
-    """Построить снимок ДЗ из предзагруженных записей + каталога.
+    """Построить снимок ДЗ/КЗ из предзагруженных записей + каталога.
 
-    Считаем НЕТТО-остаток по каждому заказу (ОбъектРасчетов): частичные
-    погашения и переплаты по тем же срокам вычитаются корректно.
-    В итог по подразделению попадают только заказы с положительной ДЗ /
-    положительной просрочкой соответственно (как в отчёте 1С «Дебиторская
-    задолженность по срокам»).
+    Считаем НЕТТО-остатки по каждому заказу (ОбъектРасчетов) ОТДЕЛЬНО по
+    ресурсам ДолгУпр (ДЗ) и ПредоплатаУпр (КЗ): частичные погашения и
+    переплаты по тем же срокам вычитаются корректно. В итог по подразделению
+    попадают только заказы с положительной ДЗ / положительной просрочкой
+    соответственно (как в отчёте 1С «Задолженность клиентов по срокам» —
+    колонки «Долг клиента» и «Наш долг»).
     """
     na_datu_str = na_datu.isoformat()
     cutoff_period = f"{na_datu_str}T23:59:59"
 
     filtered = [r for r in records if (r.get("Period") or "") <= cutoff_period]
-    balances = aggregate_balances(filtered)
+    full_balances = aggregate_balances_full(filtered)
 
-    return _build_snapshot_from_balances(na_datu, balances, obj_catalog)
+    return _build_snapshot_from_balances(na_datu, full_balances, obj_catalog)
 
 
 def _build_snapshot_from_balances(na_datu: date, balances: dict,
                                   obj_catalog: dict) -> dict:
-    """Общее ядро расчёта снимка ДЗ из агрегированных балансов.
+    """Общее ядро расчёта снимка ДЗ/КЗ из агрегированных балансов.
 
-    ПосТроение: сначала сумма нетто-остатков по заказу (все сроки
-    и только просроченные сроки), затем агрегация по подразделению только
-    для заказов с положительной суммой.
+    Принимает «full»-балансы из aggregate_balances_full:
+      dict[(obj_key, planned_date)] → {"dolg": float, "predoplata": float}.
+
+    Для обратной совместимости принимает и «старый» формат (dict[(obj,planned)] → float),
+    где значение трактуется как ДолгУпр-баланс (predoplata=0).
+
+    Построение: сначала сумма нетто-остатков по заказу отдельно по ДолгУпр и
+    ПредоплатаУпр (все сроки и только просроченные сроки), затем агрегация по
+    подразделению. В ДЗ попадают только заказы с положительным нетто-Долгом,
+    в КЗ — только заказы с положительной нетто-Предоплатой (как в отчёте
+    1С «Задолженность клиентов по срокам»).
     """
     na_datu_str = na_datu.isoformat()
     overdue_cutoff = f"{na_datu_str}T00:00:00"
@@ -509,11 +542,19 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
     per_order: dict[str, dict] = defaultdict(lambda: {
         "dept": "",
         "dz_net": 0.0,
+        "kz_net": 0.0,
         "overdue_net": 0.0,
         "aging_buckets": defaultdict(float),
     })
 
-    for (obj_key, planned_dt), balance in balances.items():
+    for (obj_key, planned_dt), value in balances.items():
+        if isinstance(value, dict):
+            dolg_val = float(value.get("dolg", 0.0))
+            predoplata_val = float(value.get("predoplata", 0.0))
+        else:
+            dolg_val = float(value)
+            predoplata_val = 0.0
+
         cat = obj_catalog.get(obj_key)
         if not cat:
             continue
@@ -523,14 +564,16 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
 
         entry = per_order[obj_key]
         entry["dept"] = dept
-        entry["dz_net"] += balance
+        entry["dz_net"] += dolg_val
+        entry["kz_net"] += predoplata_val
 
         if planned_dt and planned_dt > "0001-01-02" and planned_dt < overdue_cutoff:
-            entry["overdue_net"] += balance
+            entry["overdue_net"] += dolg_val
             days_overdue = (na_datu - date.fromisoformat(planned_dt[:10])).days
-            entry["aging_buckets"][aging_bucket(days_overdue)] += balance
+            entry["aging_buckets"][aging_bucket(days_overdue)] += dolg_val
 
     dz_by_dept: dict[str, float] = defaultdict(float)
+    kz_by_dept: dict[str, float] = defaultdict(float)
     overdue_by_dept: dict[str, float] = defaultdict(float)
     aging_by_dept: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
@@ -538,27 +581,37 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
         dept = data["dept"]
         dept_name = DEPARTMENTS.get(dept, dept[:8])
         dz_net = data["dz_net"]
+        kz_net = data["kz_net"]
         overdue_net = data["overdue_net"]
 
         if dz_net > TOLERANCE:
             dz_by_dept[dept_name] += dz_net
+        if kz_net > TOLERANCE:
+            kz_by_dept[dept_name] += kz_net
         if overdue_net > TOLERANCE:
             overdue_by_dept[dept_name] += overdue_net
             for b, amt in data["aging_buckets"].items():
                 if amt > TOLERANCE:
                     aging_by_dept[dept_name][b] += amt
 
+    depts_all = sorted(
+        set(list(dz_by_dept.keys()) + list(kz_by_dept.keys()) + list(overdue_by_dept.keys()))
+    )
+
     return {
         "na_datu": na_datu_str,
         "total_dz": round(sum(dz_by_dept.values()), 2),
+        "total_kz": round(sum(kz_by_dept.values()), 2),
         "total_overdue": round(sum(overdue_by_dept.values()), 2),
+        "kz_source": "predoplata_upr",
         "by_dept": {
             d: {
                 "dz": round(dz_by_dept.get(d, 0), 2),
+                "kz": round(kz_by_dept.get(d, 0), 2),
                 "overdue": round(overdue_by_dept.get(d, 0), 2),
                 "aging": {b: round(aging_by_dept[d].get(b, 0), 2) for b in BUCKETS},
             }
-            for d in sorted(set(list(dz_by_dept.keys()) + list(overdue_by_dept.keys())))
+            for d in depts_all
         },
     }
 
@@ -641,7 +694,10 @@ def _calc_snapshots_batch(dates_to_compute: list[date],
 def get_snapshot_for_date(na_datu: date) -> dict:
     """Кэшируемый снимок ДЗ/просрочки на дату."""
     cached = _load_json(_cache_path_snapshot(na_datu))
-    if cached is not None:
+    # Старые файлы кэша (без поля kz_source == "predoplata_upr") пересчитываем:
+    # до v2 КЗ рассчитывался как отрицательные ДолгУпр-остатки и всегда был 0,
+    # теперь КЗ — это ПредоплатаУпр-остатки (колонка «Наш долг» в 1С).
+    if cached is not None and cached.get("kz_source") == "predoplata_upr":
         return cached
     payload = _calc_snapshot_for_date(na_datu)
     _save_json(_cache_path_snapshot(na_datu), payload)
@@ -668,8 +724,12 @@ def get_komdir_dz_monthly(year: int | None = None,
 
     if dept_name is None:
         cached = _load_json(_cache_path_monthly(ref_y, ref_m))
-        if cached is not None:
-            return cached
+        # Старые кэши без маркера kz_source="predoplata_upr" пересобираем —
+        # в них КЗ был нулевым (до миграции на ПредоплатаУпр).
+        if cached is not None and cached.get("kz_source") == "predoplata_upr":
+            rows = cached.get("months") or []
+            if not rows or all("kz_fact" in r for r in rows):
+                return cached
 
     snap_dates = _snap_dates_for_year_through_month(ref_y, ref_m)
 
@@ -679,19 +739,27 @@ def get_komdir_dz_monthly(year: int | None = None,
         if dept_name is not None:
             dept_data = snapshot.get("by_dept", {}).get(dept_name, {})
             dz = float(dept_data.get("dz", 0))
+            kz = float(dept_data.get("kz", 0))
             overdue = float(dept_data.get("overdue", 0))
         else:
             dz = float(snapshot.get("total_dz") or 0)
+            kz = float(snapshot.get("total_kz") or 0)
             overdue = float(snapshot.get("total_overdue") or 0)
         out_rows.append({
             "year": ref_y,
             "month": mm,
             "na_datu": snapshot.get("na_datu"),
             "dz_fact": dz,
+            "kz_fact": kz,
             "overdue_fact": overdue,
         })
 
-    payload = {"year": ref_y, "ref_month": ref_m, "months": out_rows}
+    payload = {
+        "year": ref_y,
+        "ref_month": ref_m,
+        "kz_source": "predoplata_upr",
+        "months": out_rows,
+    }
     if dept_name is None:
         _save_json(_cache_path_monthly(ref_y, ref_m), payload)
     return payload
@@ -732,7 +800,12 @@ def _ensure_debitorka_caches_for_period(ref_y: int, ref_m: int) -> None:
     today = date.today()
     snap_dates = _snap_dates_for_year_through_month(ref_y, ref_m)
 
-    uncached = [d for _, d in snap_dates if _load_json(_cache_path_snapshot(d)) is None]
+    def _snapshot_needs_refresh(d: date) -> bool:
+        snap = _load_json(_cache_path_snapshot(d))
+        # «Старые» файлы (до v2 КЗ по ПредоплатаУпр) пересобираем.
+        return snap is None or snap.get("kz_source") != "predoplata_upr"
+
+    uncached = [d for _, d in snap_dates if _snapshot_needs_refresh(d)]
 
     def _overdue_needs_refresh(d: date) -> bool:
         od = _load_json(_cache_path_overdue_detail(d))
