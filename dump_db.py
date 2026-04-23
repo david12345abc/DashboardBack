@@ -83,6 +83,8 @@ def main() -> None:
     except (AttributeError, OSError):
         pass
 
+    print("[INFO] dump_db.py started")
+
     parser = argparse.ArgumentParser(description="Сделать SQL-дамп БД проекта")
     parser.add_argument("--schema-only", action="store_true",
                         help="Только структура, без данных")
