@@ -1,0 +1,78 @@
+{
+  "cache_date": "2026-04-24",
+  "source": "fot_management_monthly_v3",
+  "year": 2026,
+  "ref_month": 1,
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "month_name": "январь",
+      "plan": 7041209.0,
+      "fact": 5701709.05,
+      "kpi_pct": 81.0,
+      "has_data": true,
+      "values_unit": "руб.",
+      "plan_by_org": {},
+      "fact_by_org": {
+        "fbca2148-6cfd-11e7-812d-001e67112509": 5701709.05,
+        "fbca2143-6cfd-11e7-812d-001e67112509": 0.0
+      },
+      "plan_by_article": {},
+      "fact_by_article": {
+        "992a514f-782a-11eb-854d-ac1f6b05524d": 5000.0,
+        "cc7c4aa6-3767-11ea-82f3-ac1f6b05524d": 4373034.81,
+        "a04a98f8-782a-11eb-854d-ac1f6b05524d": 1525.0,
+        "0360bf95-3768-11ea-82f3-ac1f6b05524d": 1322149.24
+      },
+      "cost_articles": {
+        "992a514f-782a-11eb-854d-ac1f6b05524d": "Оплата труда (44 сч) возмещение НПО!",
+        "cc7c4aa6-3767-11ea-82f3-ac1f6b05524d": "Оплата труда (44 сч) ТД НПО!",
+        "a04a98f8-782a-11eb-854d-ac1f6b05524d": "Страховые взносы (44.01) возмещение НПО!",
+        "0360bf95-3768-11ea-82f3-ac1f6b05524d": "Страховые взносы (44.01) ТД НПО!"
+      }
+    }
+  ],
+  "last_full_month_row": {
+    "year": 2026,
+    "month": 1,
+    "month_name": "январь",
+    "plan": 7041209.0,
+    "fact": 5701709.05,
+    "kpi_pct": 81.0,
+    "has_data": true,
+    "values_unit": "руб.",
+    "plan_by_org": {},
+    "fact_by_org": {
+      "fbca2148-6cfd-11e7-812d-001e67112509": 5701709.05,
+      "fbca2143-6cfd-11e7-812d-001e67112509": 0.0
+    },
+    "plan_by_article": {},
+    "fact_by_article": {
+      "992a514f-782a-11eb-854d-ac1f6b05524d": 5000.0,
+      "cc7c4aa6-3767-11ea-82f3-ac1f6b05524d": 4373034.81,
+      "a04a98f8-782a-11eb-854d-ac1f6b05524d": 1525.0,
+      "0360bf95-3768-11ea-82f3-ac1f6b05524d": 1322149.24
+    },
+    "cost_articles": {
+      "992a514f-782a-11eb-854d-ac1f6b05524d": "Оплата труда (44 сч) возмещение НПО!",
+      "cc7c4aa6-3767-11ea-82f3-ac1f6b05524d": "Оплата труда (44 сч) ТД НПО!",
+      "a04a98f8-782a-11eb-854d-ac1f6b05524d": "Страховые взносы (44.01) возмещение НПО!",
+      "0360bf95-3768-11ea-82f3-ac1f6b05524d": "Страховые взносы (44.01) ТД НПО!"
+    }
+  },
+  "ytd": {
+    "total_plan": 7041209.0,
+    "total_fact": 5701709.05,
+    "kpi_pct": 81.0,
+    "months_with_data": 1,
+    "months_total": 1,
+    "values_unit": "руб."
+  },
+  "kpi_period": {
+    "type": "last_full_month",
+    "year": 2026,
+    "month": 1,
+    "month_name": "январь"
+  }
+}

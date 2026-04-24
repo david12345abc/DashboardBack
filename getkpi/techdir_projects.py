@@ -13,18 +13,20 @@ import requests
 
 from . import cache_manager
 from .kpi_periods import last_full_quarter, quarter_month_tuples
+from .turboproject_config import API_BASE as TURBO_CFG_API_BASE, EMAIL as TURBO_CFG_EMAIL, PASSWORD as TURBO_CFG_PASSWORD
 
 logger = logging.getLogger(__name__)
 
 TARGET_ORGANIZATION = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
 TARGET_PROJECT_TYPE_TD_M1 = "ВнешнийЗаказ"
 TARGET_PROJECT_TYPE_TD_Q1 = "РазвитияИУлучшений"
+TARGET_PROJECT_TYPE_OD_Q1 = None
 TIMEOUT = 60
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CACHE_DIR = cache_manager.CACHE_DIR
 CACHE_PATH = CACHE_DIR / "techdir_projects_snapshot.json"
-CACHE_VERSION = 3
+CACHE_VERSION = 5
 _CREDENTIAL_FILES = (
     "API для dashboard.py",
     "api все проекты 3.py",
@@ -74,6 +76,8 @@ def _get_credentials() -> tuple[str, str, str]:
     )
     if api_base and email and password:
         return api_base.rstrip("/"), email, password
+    if TURBO_CFG_API_BASE and TURBO_CFG_EMAIL and TURBO_CFG_PASSWORD:
+        return TURBO_CFG_API_BASE.rstrip("/"), TURBO_CFG_EMAIL, TURBO_CFG_PASSWORD
     file_api_base, file_email, file_password = _load_credentials_from_example_files()
     return file_api_base.rstrip("/"), file_email, file_password
 
@@ -143,6 +147,14 @@ def _is_real_date(dt: datetime | None) -> bool:
     return dt is not None and dt.year > 1900
 
 
+def _safe_float(value: Any) -> float | None:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    return num if num == num else None
+
+
 def _month_start_end(year: int, month: int) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, monthrange(year, month)[1])
 
@@ -207,6 +219,7 @@ def _count_overdue_milestones(tasks: list[dict[str, Any]]) -> int:
 
 
 def _overdue_milestone_month_keys(tasks: list[dict[str, Any]]) -> list[str]:
+    today = datetime.now().date()
     months: set[str] = set()
     for task in tasks:
         if task.get("is_summary"):
@@ -219,11 +232,14 @@ def _overdue_milestone_month_keys(tasks: list[dict[str, Any]]) -> list[str]:
         finish_dt = _parse_iso_date(task.get("finish_date"))
         if not _is_real_date(finish_dt):
             continue
+        if finish_dt.date() >= today:
+            continue
         months.add(f"{finish_dt.year:04d}-{finish_dt.month:02d}")
     return sorted(months)
 
 
 def _overdue_milestone_rows(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    today = datetime.now().date()
     rows: list[dict[str, Any]] = []
     for task in tasks:
         if task.get("is_summary"):
@@ -235,6 +251,8 @@ def _overdue_milestone_rows(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]
             continue
         finish_dt = _parse_iso_date(task.get("finish_date"))
         if not _is_real_date(finish_dt):
+            continue
+        if finish_dt.date() >= today:
             continue
         rows.append({
             "name": task.get("name") or "",
@@ -261,6 +279,7 @@ def _project_summary(
     data_1c = details.get("data_1c") or {}
     project_meta = details.get("project") or {}
     tasks = details.get("tasks") or []
+    project_progress_pct = _project_progress_pct(project_meta, tasks)
     return {
         "file_id": summary_item.get("id"),
         "project_name": project_meta.get("name") or summary_item.get("original_name"),
@@ -279,10 +298,29 @@ def _project_summary(
         "planovaya_data_okonchaniya": data_1c.get("planovaya_data_okonchaniya"),
         "data_okonchaniya": data_1c.get("data_okonchaniya"),
         "overdue_milestones_count": overdue_milestones_count,
+        "project_progress_pct": project_progress_pct,
         "milestone_months": _milestone_month_keys(tasks),
         "overdue_milestone_months": _overdue_milestone_month_keys(tasks),
         "overdue_milestones": _overdue_milestone_rows(tasks),
     }
+
+
+def _project_progress_pct(project_meta: dict[str, Any], tasks: list[dict[str, Any]]) -> float | None:
+    direct_pct = _safe_float((project_meta or {}).get("percent_complete"))
+    if direct_pct is not None:
+        return round(direct_pct * 100, 1) if abs(direct_pct) <= 1 else round(direct_pct, 1)
+
+    values: list[float] = []
+    for task in tasks or []:
+        if task.get("is_summary"):
+            continue
+        pct = _safe_float(task.get("percent_complete"))
+        if pct is None:
+            continue
+        values.append(pct * 100 if abs(pct) <= 1 else pct)
+    if not values:
+        return None
+    return round(sum(values) / len(values), 1)
 
 
 def _compute_projects_snapshot() -> dict:
@@ -327,8 +365,10 @@ def get_projects_snapshot() -> dict:
     return _compute_projects_snapshot()
 
 
-def _projects_for_type(project_type: str) -> list[dict[str, Any]]:
+def _projects_for_type(project_type: str | None) -> list[dict[str, Any]]:
     snapshot = _compute_projects_snapshot()
+    if project_type is None:
+        return list(snapshot.get("projects") or [])
     return [
         project
         for project in (snapshot.get("projects") or [])
@@ -380,9 +420,23 @@ def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]
     return [(today.year, mm) for mm in range(1, today.month + 1)], (today.year, today.month)
 
 
-def _build_monthly_payload(project_type: str) -> dict:
+def _normalize_ref_period(year: int | None = None, month: int | None = None) -> tuple[int, int]:
+    today = date.today()
+    ref_y = int(year) if year is not None else today.year
+    ref_m = int(month) if month is not None else today.month
+    ref_m = max(1, min(12, ref_m))
+    return ref_y, ref_m
+
+
+def _month_pairs_until(ref_y: int, ref_m: int) -> list[tuple[int, int]]:
+    return [(ref_y, mm) for mm in range(1, ref_m + 1)]
+
+
+def _build_monthly_payload(project_type: str | None, year: int | None = None, month: int | None = None) -> dict:
     target_projects = _projects_for_type(project_type)
-    pairs, (ref_y, ref_m) = _month_pairs_from_january()
+    ref_y, ref_m = _normalize_ref_period(year, month)
+    pairs = _month_pairs_until(ref_y, ref_m)
+    values_unit = "шт." if project_type is None else "%"
 
     monthly_rows: list[dict[str, Any]] = []
     ref_row: dict[str, Any] | None = None
@@ -412,7 +466,7 @@ def _build_monthly_payload(project_type: str) -> dict:
             "has_data": has_data,
             "projects_on_time": on_time_count,
             "projects_with_overdue_milestones": fact_count,
-            "values_unit": "шт.",
+            "values_unit": values_unit,
         }
         monthly_rows.append(row)
         if (y, m) == (ref_y, ref_m):
@@ -434,7 +488,7 @@ def _build_monthly_payload(project_type: str) -> dict:
             "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
-            "values_unit": "шт.",
+            "values_unit": values_unit,
         },
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
@@ -451,6 +505,111 @@ def _build_monthly_payload(project_type: str) -> dict:
             ],
             "target_projects": target_projects,
         },
+    }
+
+
+def _project_overdue_milestones_in_month(
+    project: dict[str, Any],
+    ref_y: int,
+    ref_m: int,
+) -> list[dict[str, Any]]:
+    month_start, month_end = _month_start_end(ref_y, ref_m)
+    rows: list[dict[str, Any]] = []
+    for milestone in project.get("overdue_milestones") or []:
+        finish_dt = _parse_real_project_date(milestone.get("finish_date"))
+        if finish_dt is None:
+            continue
+        if finish_dt < month_start or finish_dt > month_end:
+            continue
+        rows.append(milestone)
+    return rows
+
+
+def _project_timeline_label(project: dict[str, Any]) -> str:
+    start_dt, end_dt = _project_date_bounds(project)
+    if start_dt and end_dt:
+        return f"{start_dt.strftime('%d.%m.%Y')} - {end_dt.strftime('%d.%m.%Y')}"
+    if start_dt:
+        return f"с {start_dt.strftime('%d.%m.%Y')}"
+    if end_dt:
+        return f"до {end_dt.strftime('%d.%m.%Y')}"
+    return ""
+
+
+def _project_status_label(project: dict[str, Any]) -> str:
+    raw = str(project.get("status_proekta") or "").strip()
+    status_map = {
+        "ВРаботе": "В работе",
+        "Завершен": "Завершен",
+        "Закрыт": "Закрыт",
+        "НаПаузе": "На паузе",
+        "Отменен": "Отменен",
+    }
+    return status_map.get(raw, raw)
+
+
+def _build_project_deviation_table(
+    project_type: str | None,
+    ref_y: int,
+    ref_m: int,
+    *,
+    table_name: str,
+) -> dict[str, Any]:
+    target_projects = _projects_for_type(project_type)
+    month_end = _month_start_end(ref_y, ref_m)[1]
+    rows: list[dict[str, Any]] = []
+
+    for project in target_projects:
+        if not _project_is_alive_in_month(project, ref_y, ref_m):
+            continue
+        overdue_rows = _project_overdue_milestones_in_month(project, ref_y, ref_m)
+        if not overdue_rows:
+            continue
+
+        max_delay_days = 0
+        for milestone in overdue_rows:
+            finish_dt = _parse_real_project_date(milestone.get("finish_date"))
+            if finish_dt is None:
+                continue
+            max_delay_days = max(max_delay_days, max((month_end - finish_dt).days, 0))
+
+        rows.append({
+            "number": len(rows) + 1,
+            "project_code": project.get("project_code") or "",
+            "project_name": project.get("project_name") or "",
+            "project_manager": project.get("project_manager") or "",
+            "timeline": _project_timeline_label(project),
+            "deviation": f"{len(overdue_rows)} вех., {max_delay_days} дн.",
+            "delay_days": max_delay_days,
+            "status": _project_status_label(project),
+            "progress_pct": project.get("project_progress_pct"),
+            "overdue_milestones_count": len(overdue_rows),
+        })
+
+    rows.sort(
+        key=lambda row: (
+            -(int(row.get("delay_days") or 0)),
+            -(int(row.get("overdue_milestones_count") or 0)),
+            str(row.get("project_name") or ""),
+        )
+    )
+    for index, row in enumerate(rows, start=1):
+        row["number"] = index
+
+    return {
+        "name": table_name,
+        "periodicity": "ежемесячно",
+        "description": (
+            "Проекты выбранного периода, у которых есть отклонения по вехам. "
+            "Одна строка = один проект."
+        ),
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "columns": ["№", "Название", "РП", "Сроки", "Отклонение", "Статус", "Прогресс"],
+        "rows": rows,
     }
 
 
@@ -614,3 +773,25 @@ def get_td_q1_ytd() -> dict | None:
             return None
 
     return cache_manager.locked_call("techdir_td_q1", _runner)
+
+
+def get_od_q1_monthly(year: int | None = None, month: int | None = None) -> dict | None:
+    try:
+        return _build_monthly_payload(TARGET_PROJECT_TYPE_OD_Q1, year=year, month=month)
+    except Exception:
+        logger.exception("Ошибка при расчёте OD-Q1 из TurboProject")
+        return None
+
+
+def get_od_q1_deviation_table(month: int | None = None, year: int | None = None) -> dict[str, Any] | None:
+    try:
+        ref_y, ref_m = _normalize_ref_period(year, month)
+        return _build_project_deviation_table(
+            TARGET_PROJECT_TYPE_OD_Q1,
+            ref_y,
+            ref_m,
+            table_name="Ключевые инициативы и проекты с отклонениями по вехам",
+        )
+    except Exception:
+        logger.exception("Ошибка при построении таблицы OD-Q1 из TurboProject")
+        return None

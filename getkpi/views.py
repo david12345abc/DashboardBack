@@ -14,6 +14,7 @@ from . import (
     calc_dengi_fact,
     calc_fot_management,
     calc_plan,
+    calc_tekuchest_opdir,
     calc_vyruchka_opdir,
     chairman_data,
     denzhi_dz,
@@ -304,6 +305,37 @@ def _rag_dz_lower_better(pct: float | None) -> str:
     return 'red'
 
 
+def _budget_fact_div_plan_pct(entry: dict) -> float | None:
+    row = entry.get('last_full_month_row') or {}
+    if not isinstance(row, dict):
+        row = {}
+    plan = row.get('plan')
+    fact = row.get('fact')
+    if plan is None or fact is None:
+        ytd = entry.get('ytd') or {}
+        plan = ytd.get('total_plan')
+        fact = ytd.get('total_fact')
+    try:
+        plan_value = float(plan)
+        fact_value = float(fact)
+    except (TypeError, ValueError):
+        return None
+    if plan_value <= 0:
+        return None
+    return round(fact_value / plan_value * 100, 1)
+
+
+def _rag_budget_fact_div_plan(pct: float | None) -> str:
+    """Бюджет OD-M3.1: до 90% — зелёный, 90–100% — жёлтый, иначе — красный."""
+    if pct is None:
+        return 'unknown'
+    if pct <= 90:
+        return 'green'
+    if pct <= 100:
+        return 'yellow'
+    return 'red'
+
+
 def _synthetic_quarter_row_for_tile(kpi: dict) -> tuple[dict, dict]:
     ly, lq = last_full_quarter(date.today())
     random.seed(hash((kpi.get('kpi_id'), ly, lq)))
@@ -361,6 +393,9 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         turnover = qd[-1].get('fact_turnover_pct') if qd else None
         color_src = pct if pct is not None else turnover
         color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
+    elif kid == 'OD-M3.1':
+        pct = _budget_fact_div_plan_pct(entry)
+        color = _rag_budget_fact_div_plan(pct)
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
     elif _is_budget_limit_m3_kpi(kid):
@@ -462,6 +497,9 @@ def _build_tile_item(
     tile.update(_extract_tile_plan_fact(entry))
     if entry.get('data_granularity'):
         tile['data_granularity'] = entry.get('data_granularity')
+    if kpi.get('kpi_id') in {'OD-Q1', 'OD-Q2'} and entry.get('data_granularity') == 'monthly':
+        tile['period'] = 'ежемесячно'
+        tile['frequency'] = 'ежемесячно'
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
@@ -698,6 +736,8 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['unit'] = 'руб.'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
+        elif kpi.get('kpi_id') == 'OD-Q2':
+            tile['unit'] = 'чел.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
         if period_label:
@@ -779,6 +819,14 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             techdir_tables = None
         if techdir_tables:
             tablitsy.update(techdir_tables)
+
+    if str(dept).strip().lower() == 'операционный директор':
+        try:
+            od_q1_table = techdir_projects.get_od_q1_deviation_table(month=ref_m, year=ref_y)
+        except Exception:
+            od_q1_table = None
+        if od_q1_table:
+            tablitsy['OD-T-Q1-DEVIATIONS'] = od_q1_table
 
     return {
         'month': ref_m,
@@ -988,6 +1036,46 @@ def _build_kpi_entry(
         entry['kpi_period'] = data.get('kpi_period')
 
         return entry
+
+    if kpi_id == 'OD-Q1':
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'od_q1_projects_{ref_y}_{ref_m}',
+            techdir_projects.get_od_q1_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            return entry
+
+    if kpi_id == 'OD-Q2':
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'od_q2_turnover_{ref_y}_{ref_m}',
+            calc_tekuchest_opdir.get_tekuchest_opdir_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = 'monthly'
+            entry['monthly_data'] = data.get('months') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            return entry
 
     if kpi_id == 'TD-M1':
         td = techdir_projects.get_td_m1_ytd()
