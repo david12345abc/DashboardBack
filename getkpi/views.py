@@ -696,6 +696,8 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
         if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2'}:
             tile['unit'] = 'руб.'
+        elif kpi.get('kpi_id') == 'KD-M11':
+            tile['unit'] = 'чел.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
         if period_label:

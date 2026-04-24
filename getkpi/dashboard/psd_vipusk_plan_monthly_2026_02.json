@@ -1,0 +1,21 @@
+{
+  "year": 2026,
+  "ref_month": 2,
+  "source": "psd_vipusk_plan_v1",
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "period_from": "2026-01-01",
+      "period_to": "2026-01-31",
+      "plan_qty_total": 6572.0
+    },
+    {
+      "year": 2026,
+      "month": 2,
+      "period_from": "2026-02-01",
+      "period_to": "2026-02-28",
+      "plan_qty_total": 32736.0
+    }
+  ]
+}

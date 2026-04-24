@@ -204,7 +204,7 @@ TILE_KPIS = [
         'perspective': 'Персонал',
         'goal': 'Контроль текучести персонала коммерческой службы',
         'formula': r'\mathrm{KPI} = \dfrac{\text{Факт}}{\text{Норма}} \times 100\%',
-        'unit': '%',
+        'unit': 'чел.',
         'source': '1С ЗУП / HR',
         'green_threshold': '≤100%',
         'yellow_threshold': '100,1–110%',
