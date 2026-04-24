@@ -285,8 +285,8 @@ def get_shipment_share_bmi_gazprom(year: int | None = None,
         total += summa
         counted += 1
 
-    def _pct(x: float) -> float:
-        return round(x / total * 100, 1) if total else 0.0
+    def _pct(x: float) -> float | None:
+        return round(x / total * 100, 1) if total else None
 
     bmi = by_dept_guid[BMI_DEPT]
     gp = by_dept_guid[GP_DEPT]
@@ -330,7 +330,7 @@ def get_shipment_share_bmi_gazprom_monthly(year: int | None = None,
               'bmi':   float,
               'gp':    float,
               'pair':  float,  # БМИ + Газпром за месяц
-              'pct_pair': float,  # доля БМИ+Газпром в отгрузке за месяц, %
+              'pct_pair': float | None,  # доля БМИ+Газпром в отгрузке за месяц, %
               'by_dept': {name: amount},
             },
             ...
@@ -408,7 +408,7 @@ def get_shipment_share_bmi_gazprom_monthly(year: int | None = None,
         bmi_m = by_dept_guid[BMI_DEPT]
         gp_m = by_dept_guid[GP_DEPT]
         pair_m = bmi_m + gp_m
-        pct_m = round(pair_m / total_m * 100, 1) if total_m else 0.0
+        pct_m = round(pair_m / total_m * 100, 1) if total_m else None
         months_out.append({
             "month": m,
             "total": round(total_m, 2),

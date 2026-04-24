@@ -8,8 +8,10 @@ from django.views.decorators.http import require_GET
 
 from User.views import login_required
 from . import (
+    cache_manager,
     calc_dengi_fact,
     calc_plan,
+    calc_vyruchka_opdir,
     chairman_data,
     denzhi_dz,
     dept_budget_m3,
@@ -259,8 +261,9 @@ def _rag_lower_turnover(fact_pct: float | None) -> str:
 
 
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
-    """Плитки «бюджет в пределах лимита» (*-M3-1): пороги <=100% как у ДЗ."""
-    return kpi_id.endswith('-M3-1')
+    """Плитки «в пределах лимита»: поддерживаем суффиксы *-M3-1/*-M3-2 и *.1/*.2."""
+    normalized = (kpi_id or '').upper()
+    return normalized.endswith(('-M3-1', '-M3-2', 'M3.1', 'M3.2'))
 
 
 def _is_turnover_style_tile(kpi: dict) -> bool:
@@ -365,11 +368,48 @@ def _build_tile_item(kpi: dict, pct: float | None, color: str) -> dict:
     }
 
 
+def _plan_fact_period_label_from_kpi_period(period: dict | None) -> str | None:
+    if not period or not isinstance(period, dict):
+        return None
+    ptype = period.get('type')
+    year = period.get('year')
+    if ptype == 'last_full_month':
+        month_name = period.get('month_name')
+        if month_name and year is not None:
+            name = str(month_name)
+            return f"{name[:1].upper()}{name[1:]} {year}"
+    if ptype == 'last_full_quarter':
+        quarter = period.get('quarter')
+        if quarter is not None and year is not None:
+            return f"Q{quarter} {year}"
+    if ptype == 'last_full_year' and year is not None:
+        return str(year)
+    return None
+
+
+def _pick_monthly_row_for_period(
+    monthly_rows: list[dict] | None,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict:
+    rows = monthly_rows or []
+    if not rows:
+        return {}
+    if year is not None and month is not None:
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get('year') == year and row.get('month') == month:
+                return row
+    last_row = rows[-1]
+    return last_row if isinstance(last_row, dict) else {}
+
+
 def _build_universal_payload(dept: str, all_kpis: list[dict],
                              *, month: int | None = None,
                              year: int | None = None) -> dict:
     """
-    Универсальный билдер: Плитки (+ AVG), Графики, Таблицы.
+    Универсальный билдер: Плитки, Графики, Таблицы.
     Таблицы — претензии из 1С (Catalog_Претензии) за выбранный месяц.
     """
     from .komdir_claims import fetch_claims_for_month
@@ -379,29 +419,36 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
     charts_meta = [k for k in all_kpis if k.get('block') == 'график']
 
     plitki_items: list[dict] = []
-    numeric_for_avg: list[float] = []
 
     for kpi in tiles_meta:
         entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept)
         pct, color = _tile_color(kpi, entry)
-        if pct is not None:
-            numeric_for_avg.append(pct)
-        plitki_items.append(_build_tile_item(kpi, pct, color))
+        tile = _build_tile_item(kpi, pct, color)
 
-    prefix = tiles_meta[0]['kpi_id'].split('-')[0] if tiles_meta else 'KPI'
-    avg_pct = round(sum(numeric_for_avg) / len(numeric_for_avg), 1) if numeric_for_avg else None
-    plitki_items.append({
-        'kpi_id': f'{prefix}-AVG',
-        'name': 'Среднее по плиткам KPI',
-        'kpi_pct': avg_pct,
-        'color': _rag_higher_better(avg_pct),
-        'period': 'агрегат',
-        'thresholds': {'green': '≥100%', 'yellow': '90–99,9%', 'red': '<90%'},
-        'formula': 'Среднее арифметическое kpi_pct всех плиток',
-        'unit': '%',
-        'source': 'Расчётный показатель',
-        'frequency': 'агрегат',
-    })
+        monthly_data = entry.get('monthly_data')
+        lm = _pick_monthly_row_for_period(monthly_data, year, month) if monthly_data else {}
+        if not lm:
+            lm = entry.get('last_full_month_row') or {}
+        if lm:
+            tile['plan'] = lm.get('plan')
+            tile['fact'] = lm.get('fact')
+            if 'has_data' in lm:
+                tile['has_data'] = lm.get('has_data')
+            if 'plan_by_dept' in lm:
+                tile['plan_by_dept'] = lm.get('plan_by_dept')
+            if 'fact_by_dept' in lm:
+                tile['fact_by_dept'] = lm.get('fact_by_dept')
+        if monthly_data is not None:
+            tile['monthly_data'] = monthly_data
+
+        if kpi.get('kpi_id') == 'OD-M1':
+            tile['unit'] = 'руб.'
+
+        period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
+        if period_label:
+            tile['plan_fact_period_label'] = period_label
+
+        plitki_items.append(tile)
 
     grafiki = {}
     for chart_kpi in charts_meta:
@@ -607,6 +654,21 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
             entry['ytd'] = tq['ytd']
             entry['kpi_period'] = tq['kpi_period']
             return entry
+
+    if kpi_id == 'OD-M1':
+        ref_y, ref_m = last_full_month(date.today())
+        data = cache_manager.locked_call(
+            f'vyruchka_opdir_{ref_y}_{ref_m}',
+            calc_vyruchka_opdir.get_vyruchka_opdir_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = data.get('months') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        return entry
 
     if kpi_id == 'KD-M1':
         today = date.today()

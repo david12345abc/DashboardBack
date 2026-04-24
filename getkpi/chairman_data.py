@@ -1,7 +1,7 @@
 """
 Дашборд «Председатель совета директоров».
 
-Полный payload: Плитки (11 + AVG), Графики (3), Таблицы.
+Полный payload: Плитки, Графики (3), Таблицы.
 Формат ответа идентичен komdir_dashboard.build_komdir_payload.
 """
 from __future__ import annotations
@@ -14,6 +14,8 @@ from . import (
     calc_dengi_fact,
     calc_otgruzki_fact,
     calc_plan,
+    calc_psd_portfolio,
+    calc_psd_vipusk_plan,
     calc_postavshchiki,
     calc_reclamations,
     calc_shipment_share_bmi_gazprom,
@@ -36,7 +38,7 @@ MONTH_NAMES = {
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
 
-LOWER_IS_BETTER = frozenset({"FND-T7"})
+LOWER_IS_BETTER = frozenset({"FND-T6", "FND-T7"})
 
 # ═══════════════════════════════════════════════════════════════
 #  Захардкоженные данные по месяцам
@@ -58,9 +60,6 @@ _T4_FACT = {1: 94.2, 2: 96.8, 3: 93.5}
 
 # FND-T5  Качество: рекламации и САРА  (reclamations + capa_overdue)
 _T5_DATA: dict[int, tuple[int, int]] = {1: (3, 1), 2: (2, 0), 3: (4, 2)}
-
-# FND-T6  Портфель проектов  (синтетика)
-_T6_FACT = {1: 100.5, 2: 99.8, 3: 100.1}
 
 # FND-T7  Дебиторская задолженность  (план + факт)
 _T7_PLAN = {1: 120_000_000, 2: 120_000_000, 3: 120_000_000}
@@ -284,24 +283,26 @@ def _build_fnd_t5_reclamations_rows(months: list[int], ref_y: int) -> list[dict]
 def _build_fnd_t3_dz_kz_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T3 «Соотношение ДЗ и КЗ» (ПСД, «Мой дашборд»).
 
-    Помесячно на конец каждого месяца вычисляются 4 значения (в рублях):
+    Помесячно для каждого месяца вычисляются 4 значения (в рублях):
       - `dz_client`    — долг клиентов (ДЗ) = Σ положительных нетто-остатков
                           по регистру РасчетыСКлиентамиПоСрокам.
       - `kz_client`    — наш долг клиентам (КЗ) = Σ |отрицательных| нетто-остатков
                           по тому же регистру (авансы / переплаты клиентов).
-      - `dz_supplier`  — долг поставщиков перед нами = ПредоплатаРегл
-                          из регистра РасчетыСПоставщикамиПоДокументам.
-      - `kz_supplier`  — наш долг поставщикам = ДолгРегл того же регистра.
+      - `dz_supplier`  — дельта ДЗ поставщиков за месяц.
+      - `kz_supplier`  — дельта КЗ поставщикам за месяц.
+
+    Для поставщиков месячные числа нужны фронту именно как помесячные
+    значения, чтобы он мог суммировать выбранный диапазон. При этом
+    `pct_supplier` по-прежнему считаем по закрывающему остатку месяца,
+    а не по дельте, чтобы не ломать текущий KPI плитки.
 
     Проценты:
       - `pct_client`   = dz_client   / kz_client   × 100  (higher_better)
       - `pct_supplier` = dz_supplier / kz_supplier × 100  (higher_better)
+      - `pct_total`    = (dz_client + dz_supplier) / (kz_client + kz_supplier) × 100
 
-    Сводный `kpi_pct` плитки — минимум (худший) из двух процентов
-    (higher_better → чем меньше, тем хуже). В `plan`/`fact` кладём
-    клиентские КЗ/ДЗ ради совместимости со стандартной агрегацией;
-    при кастомной агрегации на фронте используются отдельные поля
-    `dz_client`/`kz_client`/`dz_supplier`/`kz_supplier`.
+    Основной `kpi_pct` плитки — именно `pct_total`.
+    Отдельные поля клиентов/поставщиков сохраняем для детализации.
     """
     if not months:
         return []
@@ -338,34 +339,44 @@ def _build_fnd_t3_dz_kz_rows(months: list[int], ref_y: int) -> list[dict]:
         kz_client = float(dz_row.get("kz_fact") or 0)
         dz_supplier = float(sup_row.get("predoplata_regl") or 0)
         kz_supplier = float(sup_row.get("dolg_regl") or 0)
+        dz_supplier_closing = float(
+            sup_row.get("closing_predoplata_regl") or dz_supplier
+        )
+        kz_supplier_closing = float(
+            sup_row.get("closing_dolg_regl") or kz_supplier
+        )
 
         pct_client = round(dz_client / kz_client * 100, 1) if kz_client > 0 else None
-        pct_supplier = round(dz_supplier / kz_supplier * 100, 1) if kz_supplier > 0 else None
-
-        pcts = [p for p in (pct_client, pct_supplier) if p is not None]
-        kpi_pct = min(pcts) if pcts else None
+        pct_supplier = (
+            round(dz_supplier_closing / kz_supplier_closing * 100, 1)
+            if kz_supplier_closing > 0 else None
+        )
+        dz_total = dz_client + dz_supplier
+        kz_total = kz_client + kz_supplier
+        pct_total = round(dz_total / kz_total * 100, 1) if kz_total > 0 else None
 
         has_data = (
-            dz_client > 0 or kz_client > 0
-            or dz_supplier > 0 or kz_supplier > 0
+            abs(dz_client) > 0 or abs(kz_client) > 0
+            or abs(dz_supplier) > 0 or abs(kz_supplier) > 0
         )
 
         rows.append({
             "month": m,
             "year": ref_y,
             "month_name": MONTH_NAMES[m],
-            # plan/fact оставлены ради обратной совместимости с нормализацией тайлов;
-            # реальный расчёт ведётся по отдельным полям (dz_*/kz_*).
-            "plan": round(kz_client, 2),
-            "fact": round(dz_client, 2),
-            "kpi_pct": kpi_pct,
+            "plan": round(kz_total, 2),
+            "fact": round(dz_total, 2),
+            "kpi_pct": pct_total,
             "has_data": has_data,
             "dz_client": round(dz_client, 2),
             "kz_client": round(kz_client, 2),
             "dz_supplier": round(dz_supplier, 2),
             "kz_supplier": round(kz_supplier, 2),
+            "dz_total": round(dz_total, 2),
+            "kz_total": round(kz_total, 2),
             "pct_client": pct_client,
             "pct_supplier": pct_supplier,
+            "pct_total": pct_total,
         })
     return rows
 
@@ -404,6 +415,97 @@ def _build_fnd_t7_debitorka_rows(months: list[int], ref_y: int) -> list[dict]:
     return rows
 
 
+def _build_fnd_t6_portfolio_rows(months: list[int], ref_y: int) -> list[dict]:
+    """FND-T6 «Портфель проектов».
+
+    plan = количество проектов из TurboProject, пришедших из 1С (`has_1c=true`)
+           и имеющих хотя бы одну веху в выбранном месяце.
+    fact = количество проектов из этого портфеля со сдвигом по baseline.
+    kpi_pct = fact / plan × 100.
+
+    Для фронта важно, что plan/fact помесячные и дальше могут суммироваться
+    за квартал / YTD с повторным пересчётом процента.
+    """
+    if not months:
+        return []
+
+    max_m = max(months)
+    payload = cache_manager.locked_call(
+        f"psd_portfolio_{ref_y}_{max_m}",
+        calc_psd_portfolio.get_psd_portfolio_monthly,
+        year=ref_y,
+        ref_month=max_m,
+    )
+
+    by_m: dict[int, dict] = {}
+    for row in payload.get("months", []) or []:
+        mm = int(row.get("month") or 0)
+        if 1 <= mm <= 12:
+            by_m[mm] = row
+
+    rows: list[dict] = []
+    for m in months:
+        row = by_m.get(m) or {}
+        plan = float(row.get("portfolio_count") or 0)
+        fact = float(row.get("deviation_count") or 0)
+        pct = round(fact / plan * 100, 1) if plan > 0 else None
+        rows.append({
+            "month": m,
+            "year": ref_y,
+            "month_name": MONTH_NAMES[m],
+            "plan": round(plan, 2),
+            "fact": round(fact, 2),
+            "kpi_pct": pct,
+            "has_data": plan > 0 or fact > 0,
+            "portfolio_count": round(plan, 2),
+            "deviation_count": round(fact, 2),
+        })
+    return rows
+
+
+def _build_fnd_t9_vipusk_rows(months: list[int], ref_y: int) -> list[dict]:
+    """FND-T9 «Выпуск — план/факт».
+
+    План берём из `calc_psd_vipusk_plan.py` как помесячное количество к отгрузке.
+    Факт пока по ТЗ равен 0. KPI = факт / план × 100.
+    """
+    if not months:
+        return []
+
+    max_m = max(months)
+    payload = cache_manager.locked_call(
+        f"psd_vipusk_plan_{ref_y}_{max_m}",
+        calc_psd_vipusk_plan.get_psd_vipusk_plan_monthly,
+        year=ref_y,
+        ref_month=max_m,
+    )
+
+    by_m: dict[int, dict] = {}
+    for row in payload.get("months", []) or []:
+        mm = int(row.get("month") or 0)
+        if 1 <= mm <= 12:
+            by_m[mm] = row
+
+    rows: list[dict] = []
+    for m in months:
+        row = by_m.get(m) or {}
+        plan = float(row.get("plan_qty_total") or 0)
+        fact = 0.0
+        pct = round(fact / plan * 100, 1) if plan > 0 else None
+        rows.append({
+            "month": m,
+            "year": ref_y,
+            "month_name": MONTH_NAMES[m],
+            "plan": round(plan, 2),
+            "fact": round(fact, 2),
+            "kpi_pct": pct,
+            "has_data": plan > 0,
+            "plan_qty_total": round(plan, 2),
+            "fact_qty_total": round(fact, 2),
+        })
+    return rows
+
+
 def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> dict:
     """Вернуть monthly_data + ytd + kpi_period для одного KPI."""
 
@@ -418,11 +520,11 @@ def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> di
     elif kpi_id == "FND-T5":
         rows = _build_fnd_t5_reclamations_rows(months, ref_y)
     elif kpi_id == "FND-T6":
-        rows = _months_fact_only(_T6_FACT, months)
+        rows = _build_fnd_t6_portfolio_rows(months, ref_y)
     elif kpi_id == "FND-T7":
         rows = _build_fnd_t7_debitorka_rows(months, ref_y)
     elif kpi_id == "FND-T9":
-        rows = _months_plan_fact(_T9_PLAN, _T9_FACT, months)
+        rows = _build_fnd_t9_vipusk_rows(months, ref_y)
     else:
         rows = []
 
@@ -892,31 +994,34 @@ def _build_conversion_monthly_detail(
 
 def _mrk04_shipment_growth_yoy(ref_y: int, ref_m: int, series_m: int) -> tuple[float | None, dict]:
     """
-    Рост отгрузок 2026 к 2025: отношение факт/план, где
-      план = сумма отгрузок за янв..m 2025,
-      факт = сумма отгрузок за янв..m 2026,
+    Рост отгрузок текущего года к предыдущему: отношение факт/план, где
+      план = сумма отгрузок за янв..m предыдущего года,
+      факт = сумма отгрузок за янв..m текущего года,
       m — «текущий период» (в контексте коммерции берём series_m из komdir_dashboard:
            не раньше последнего полного месяца и не позже текущего календарного).
     Возвращает одну цифру kpi_pct = факт / план * 100 (%).
     Источники и dept_guid=None — те же, что у плитки KD-M2 коммерческого директора.
 
-    Дополнительно в detail кладётся помесячная разбивка отгрузок по 2025 и 2026 за янв..m.
+    Дополнительно в detail кладётся помесячная разбивка отгрузок по предыдущему
+    и текущему году за янв..m.
     """
     today = date.today()
+    current_y = int(ref_y or today.year)
+    previous_y = current_y - 1
     # Сравниваем одинаковое количество месяцев в обоих годах (янв..m).
     m = max(1, min(12, int(series_m) if series_m else int(ref_m) if ref_m else today.month))
 
-    o25 = cache_manager.locked_call(
-        f"otgruzki_2025_{m}",
+    prev_payload = cache_manager.locked_call(
+        f"otgruzki_{previous_y}_{m}",
         calc_otgruzki_fact.get_otgruzki_monthly,
-        year=2025,
+        year=previous_y,
         month=m,
         dept_guid=None,
     )
-    o26 = cache_manager.locked_call(
-        f"otgruzki_2026_{m}",
+    current_payload = cache_manager.locked_call(
+        f"otgruzki_{current_y}_{m}",
         calc_otgruzki_fact.get_otgruzki_monthly,
-        year=2026,
+        year=current_y,
         month=m,
         dept_guid=None,
     )
@@ -929,37 +1034,46 @@ def _mrk04_shipment_growth_yoy(ref_y: int, ref_m: int, series_m: int) -> tuple[f
                 out[mm] = float(r.get("fact") or 0)
         return out
 
-    m25 = _by_month(o25.get("months") or [])
-    m26 = _by_month(o26.get("months") or [])
+    prev_by_month = _by_month(prev_payload.get("months") or [])
+    current_by_month = _by_month(current_payload.get("months") or [])
 
     monthly_rows: list[dict] = []
     for mm in range(1, m + 1):
-        v25 = m25.get(mm, 0.0)
-        v26 = m26.get(mm, 0.0)
+        prev_value = prev_by_month.get(mm, 0.0)
+        current_value = current_by_month.get(mm, 0.0)
         monthly_rows.append({
             "month": mm,
-            "year": 2026,
+            "year": current_y,
             "month_name": MONTH_NAMES_RU[mm],
-            "fact_2025": _to_int_or_none(v25),
-            "fact_2026": _to_int_or_none(v26),
-            "kpi_pct": round(v26 / v25 * 100, 1) if v25 > 0 else None,
-            "has_data": True,
+            # Для агрегации председательских плиток:
+            # plan = прошлый год, fact = текущий год.
+            "plan": _to_int_or_none(prev_value),
+            "fact": _to_int_or_none(current_value),
+            "previous_year_value": _to_int_or_none(prev_value),
+            "current_year_value": _to_int_or_none(current_value),
+            "kpi_pct": round(current_value / prev_value * 100, 1) if prev_value > 0 else None,
+            "has_data": abs(prev_value) > 0 or abs(current_value) > 0,
         })
 
-    s25 = sum((r.get("fact_2025") or 0) for r in monthly_rows)
-    s26 = sum((r.get("fact_2026") or 0) for r in monthly_rows)
+    prev_sum = sum((r.get("plan") or 0) for r in monthly_rows)
+    current_sum = sum((r.get("fact") or 0) for r in monthly_rows)
     detail = {
         "compare_months": m,
-        "months_2025": m,
-        "months_2026": m,
-        "sum_shipments_rub_2025": s25,
-        "sum_shipments_rub_2026": s26,
-        "label": f"Янв.–{MONTH_NAMES_RU[m]} 2026 к янв.–{MONTH_NAMES_RU[m]} 2025",
+        "previous_year": previous_y,
+        "current_year": current_y,
+        "months_previous_year": m,
+        "months_current_year": m,
+        "sum_shipments_rub_previous_year": prev_sum,
+        "sum_shipments_rub_current_year": current_sum,
+        # Оставляем старые ключи для обратной совместимости.
+        "sum_shipments_rub_2025": prev_sum,
+        "sum_shipments_rub_2026": current_sum,
+        "label": f"Янв.–{MONTH_NAMES_RU[m]} {current_y} к янв.–{MONTH_NAMES_RU[m]} {previous_y}",
         "monthly_comparison": monthly_rows,
     }
-    if s25 <= 0:
+    if prev_sum <= 0:
         return None, detail
-    pct = round(s26 / s25 * 100, 1)
+    pct = round(current_sum / prev_sum * 100, 1)
     return pct, detail
 
 
@@ -1144,7 +1258,7 @@ def build_chairman_commerce_payload(
     """
     Блок «Председатель / коммерция»: MRK-01…03 из тех же данных, что KD-M2/M3/M1 у коммерческого директора;
     на плитках — план/факт за опорный месяц; в monthly_data — помесячно для графиков.
-    MRK-04 — рост отгрузок (сумма Jan..m 2026 к Jan..m 2025) + помесячные отгрузки 2025/2026.
+    MRK-04 — рост отгрузок текущего года к предыдущему + помесячные отгрузки по обоим годам.
     MRK-05…10 — заглушки.
     """
     by_id = {k["kpi_id"]: k for k in kpi_list}
@@ -1227,9 +1341,13 @@ def build_chairman_commerce_payload(
                 "unit": meta.get("unit"),
                 "source": meta.get("source"),
                 "frequency": meta.get("frequency"),
-                "plan": _to_int_or_none(growth_detail.get("sum_shipments_rub_2025")),
-                "fact": _to_int_or_none(growth_detail.get("sum_shipments_rub_2026")),
-                "has_data": growth_pct is not None,
+                "plan": _to_int_or_none(growth_detail.get("sum_shipments_rub_previous_year")),
+                "fact": _to_int_or_none(growth_detail.get("sum_shipments_rub_current_year")),
+                "has_data": bool(
+                    growth_pct is not None
+                    or growth_detail.get("sum_shipments_rub_previous_year")
+                    or growth_detail.get("sum_shipments_rub_current_year")
+                ),
                 "plan_fact_period_label": growth_detail.get("label", ""),
                 "monthly_data": growth_detail.get("monthly_comparison") or [],
                 "yoy_detail": growth_detail,
@@ -1278,8 +1396,8 @@ def build_chairman_commerce_payload(
                 total_m = _to_float_or_none(row.get("total"))
                 pair_m = _to_float_or_none(row.get("pair"))
                 pct_m = _to_float_or_none(row.get("pct_pair"))
-                has_data_row = (total_m is not None and total_m > 0) or (
-                    pair_m is not None and pair_m > 0
+                has_data_row = (total_m is not None and abs(total_m) > 0) or (
+                    pair_m is not None and abs(pair_m) > 0
                 )
                 md_row = {
                     "month": mm,
@@ -1606,7 +1724,6 @@ def build_chairman_payload(
         tiles_data[kid] = _get_tile_data(kid, months, ref_y, ref_m)
 
     plitki_items: list[dict] = []
-    numeric_for_avg: list[float] = []
 
     for kid in tile_ids:
         meta = by_id.get(kid)
@@ -1627,9 +1744,6 @@ def build_chairman_payload(
         # Цвет RAG считаем по месячному проценту, а если его нет — по YTD.
         pct_for_rag = month_pct if month_pct is not None else ytd_pct
         color = _rag(kid, pct_for_rag)
-        if pct_for_rag is not None:
-            numeric_for_avg.append(pct_for_rag)
-
         tile = {
             "kpi_id": kid,
             "name": meta["name"],
@@ -1650,30 +1764,27 @@ def build_chairman_payload(
         }
 
         # FND-T3 «Соотношение ДЗ и КЗ» — прокидываем custom-поля
-        # ref-месяца на лицевую сторону плитки и на обратную (4 числа).
+        # ref-месяца: детализацию по клиентам/поставщикам и общий итог.
         if kid == "FND-T3" and lm:
             for extra_key in (
                 "dz_client", "kz_client", "dz_supplier", "kz_supplier",
-                "pct_client", "pct_supplier",
+                "dz_total", "kz_total",
+                "pct_client", "pct_supplier", "pct_total",
             ):
                 if extra_key in lm:
                     tile[extra_key] = lm[extra_key]
+        if kid == "FND-T6" and lm:
+            for extra_key in ("portfolio_count", "deviation_count"):
+                if extra_key in lm:
+                    tile[extra_key] = lm[extra_key]
+        if kid == "FND-T9":
+            tile["unit"] = "шт"
+            if lm:
+                for extra_key in ("plan_qty_total", "fact_qty_total"):
+                    if extra_key in lm:
+                        tile[extra_key] = lm[extra_key]
 
         plitki_items.append(tile)
-
-    avg_pct = round(sum(numeric_for_avg) / len(numeric_for_avg), 1) if numeric_for_avg else None
-    plitki_items.append({
-        "kpi_id": "FND-AVG",
-        "name": "Среднее по плиткам KPI",
-        "kpi_pct": avg_pct,
-        "color": _rag_higher_better(avg_pct),
-        "period": "агрегат",
-        "thresholds": {"green": "≥100%", "yellow": "90–99,9%", "red": "<90%"},
-        "formula": "Среднее арифметическое kpi_pct всех плиток",
-        "unit": "%",
-        "source": "Расчётный показатель",
-        "frequency": "агрегат",
-    })
 
     grafiki = {
         "FND-C1": _build_chart_c1(by_id, tiles_data),

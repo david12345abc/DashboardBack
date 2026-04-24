@@ -1,0 +1,34 @@
+{
+  "year": 2026,
+  "ref_month": 3,
+  "source": "supplier_balance_month_delta_v2",
+  "months": [
+    {
+      "year": 2026,
+      "month": 1,
+      "na_datu": "2026-01-31",
+      "dolg_regl": 108400762.11,
+      "predoplata_regl": 82883732.78,
+      "closing_dolg_regl": 108400762.11,
+      "closing_predoplata_regl": 82883732.78
+    },
+    {
+      "year": 2026,
+      "month": 2,
+      "na_datu": "2026-02-28",
+      "dolg_regl": 5006812.8,
+      "predoplata_regl": -12891330.42,
+      "closing_dolg_regl": 113407574.91,
+      "closing_predoplata_regl": 69992402.36
+    },
+    {
+      "year": 2026,
+      "month": 3,
+      "na_datu": "2026-03-31",
+      "dolg_regl": 2933625.91,
+      "predoplata_regl": 28651643.2,
+      "closing_dolg_regl": 116341200.82,
+      "closing_predoplata_regl": 98644045.56
+    }
+  ]
+}

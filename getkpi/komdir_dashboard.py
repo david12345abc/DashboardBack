@@ -999,7 +999,6 @@ def build_komdir_payload(kpi_list: list[dict],
     )
 
     plitki_items = []
-    numeric_for_avg: list[float] = []
 
     for kid in tile_ids:
         meta = by_id.get(kid)
@@ -1010,9 +1009,6 @@ def build_komdir_payload(kpi_list: list[dict],
         if pct is not None:
             pct = float(pct)
         color = _tile_rag(kid, pct)
-        if pct is not None:
-            numeric_for_avg.append(pct)
-
         lm = td.get('last_full_month_row')
         tile_item = {
             "kpi_id": kid,
@@ -1034,20 +1030,6 @@ def build_komdir_payload(kpi_list: list[dict],
             "monthly_data": td.get("monthly_data") or [],
         }
         plitki_items.append(tile_item)
-
-    avg_pct = round(sum(numeric_for_avg) / len(numeric_for_avg), 1) if numeric_for_avg else None
-    plitki_items.append({
-        "kpi_id": "KD-AVG",
-        "name": "Среднее по плиткам KPI",
-        "kpi_pct": avg_pct,
-        "color": _rag_higher_better(avg_pct),
-        "period": "агрегат",
-        "thresholds": {"green": "≥100%", "yellow": "90–99,9%", "red": "<90%"},
-        "formula": "Среднее арифметическое kpi_pct всех плиток",
-        "unit": "%",
-        "source": "Расчётный показатель",
-        "frequency": "агрегат",
-    })
 
     grafiki = {
         "KD-C1": _build_line_chart(by_id, tiles_data),
