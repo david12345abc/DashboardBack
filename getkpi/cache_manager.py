@@ -63,6 +63,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_reclamations,
         calc_svoevremennaya_otgruzka,
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
+        techdir_projects,
     )
     from .komdir_claims import fetch_claims_for_month
 
@@ -133,6 +134,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'claims_{y}_{m}',
          cd / f'claims_{y}_{m:02d}.json',
          lambda: fetch_claims_for_month(y, m)),
+
+        ('techdir_projects',
+         techdir_projects.CACHE_PATH,
+         techdir_projects.get_projects_snapshot),
     ]
     return tasks
 

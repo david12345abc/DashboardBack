@@ -228,6 +228,10 @@ def _is_komdir_department(dept: str) -> bool:
     return 'коммерческий' in d and 'директор' in d
 
 
+def _is_techdir_department(dept: str | None) -> bool:
+    return (dept or '').strip().lower() == 'технический директор'
+
+
 
 def _thresholds_block(kpi: dict) -> dict:
     return {
@@ -364,12 +368,14 @@ def _extract_tile_plan_fact(entry: dict) -> dict:
     """Краткие plan/fact для плитки из уже собранного payload KPI."""
     ref_row = entry.get('last_full_month_row')
     if isinstance(ref_row, dict):
-        return {
+        out = {
             'plan': ref_row.get('plan'),
             'fact': ref_row.get('fact'),
             'has_data': ref_row.get('has_data'),
-            **({'values_unit': ref_row.get('values_unit')} if ref_row.get('values_unit') else {}),
         }
+        if ref_row.get('values_unit'):
+            out['unit'] = ref_row.get('values_unit')
+        return out
 
     quarterly = entry.get('quarterly_data') or []
     if quarterly:
@@ -389,9 +395,9 @@ def _extract_tile_plan_fact(entry: dict) -> dict:
         elif 'data_complete' in row:
             out['has_data'] = row.get('data_complete')
         if row.get('values_unit'):
-            out['values_unit'] = row.get('values_unit')
+            out['unit'] = row.get('values_unit')
         elif 'plan_max_turnover_pct' in row or 'fact_turnover_pct' in row:
-            out['values_unit'] = '%'
+            out['unit'] = '%'
         return out
 
     yearly = entry.get('yearly_data') or []
@@ -404,7 +410,7 @@ def _extract_tile_plan_fact(entry: dict) -> dict:
         if 'has_data' in row:
             out['has_data'] = row.get('has_data')
         if row.get('values_unit'):
-            out['values_unit'] = row.get('values_unit')
+            out['unit'] = row.get('values_unit')
         return out
 
     ytd = entry.get('ytd') or {}
@@ -415,14 +421,29 @@ def _extract_tile_plan_fact(entry: dict) -> dict:
     if out['plan'] is not None or out['fact'] is not None:
         out['has_data'] = True
     if ytd.get('values_unit'):
-        out['values_unit'] = ytd.get('values_unit')
+        out['unit'] = ytd.get('values_unit')
     return out
 
 
-def _build_tile_item(kpi: dict, pct: float | None, color: str, entry: dict) -> dict:
+def _public_unit_row(row: dict) -> dict:
+    out = dict(row)
+    out.pop('values_unit', None)
+    return out
+
+
+def _build_tile_item(
+    kpi: dict,
+    pct: float | None,
+    color: str,
+    entry: dict,
+    *,
+    ref_y: int | None = None,
+    ref_m: int | None = None,
+) -> dict:
     tile = {
         'kpi_id': kpi['kpi_id'],
         'name': kpi['name'],
+        'goal': kpi.get('goal'),
         'kpi_pct': pct,
         'color': color,
         'period': _period_label_from_kpi(kpi),
@@ -437,6 +458,17 @@ def _build_tile_item(kpi: dict, pct: float | None, color: str, entry: dict) -> d
         tile['data_granularity'] = entry.get('data_granularity')
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
+    if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
+        tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
+    tile['cache_updated_at'] = None
+    if entry.get('last_full_month_row'):
+        tile['last_full_month_row'] = _public_unit_row(entry['last_full_month_row'])
+    if entry.get('monthly_data') is not None:
+        tile['monthly_data'] = [_public_unit_row(row) for row in entry.get('monthly_data') or []]
+    if entry.get('quarterly_data') is not None:
+        tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
+    if entry.get('yearly_data') is not None:
+        tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
     return tile
 
 
@@ -456,12 +488,20 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
     plitki_items: list[dict] = []
     numeric_for_avg: list[float] = []
 
+    if month and year:
+        ref_y, ref_m = year, month
+    elif _is_techdir_department(dept):
+        today = date.today()
+        ref_y, ref_m = today.year, today.month
+    else:
+        ref_y, ref_m = _lfm(date.today())
+
     for kpi in tiles_meta:
-        entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept)
+        entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, month=ref_m, year=ref_y)
         pct, color = _tile_color(kpi, entry)
         if pct is not None:
             numeric_for_avg.append(pct)
-        plitki_items.append(_build_tile_item(kpi, pct, color, entry))
+        plitki_items.append(_build_tile_item(kpi, pct, color, entry, ref_y=ref_y, ref_m=ref_m))
 
     prefix = tiles_meta[0]['kpi_id'].split('-')[0] if tiles_meta else 'KPI'
     avg_pct = round(sum(numeric_for_avg) / len(numeric_for_avg), 1) if numeric_for_avg else None
@@ -490,62 +530,71 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             'formula': chart_kpi.get('formula'),
         }
 
-    if month and year:
-        ref_y, ref_m = year, month
-    else:
-        ref_y, ref_m = _lfm(date.today())
-
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
         9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
     }
 
-    try:
-        rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
-    except Exception:
-        rows = []
+    tablitsy = {}
 
-    try:
-        lawsuit_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, dept)
-    except Exception:
-        lawsuit_rows = []
+    if not _is_techdir_department(dept):
+        try:
+            rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
+        except Exception:
+            rows = []
 
-    tablitsy = {
-        "KD-T-CLAIMS": {
-            "name": f"Претензии за {month_names[ref_m]} {ref_y}",
-            "periodicity": "ежемесячно",
-            "description": "Претензии из 1С (Catalog_Претензии) за выбранный месяц",
-            "period": {
-                "year": ref_y,
-                "month": ref_m,
-                "month_name": month_names[ref_m],
+        try:
+            lawsuit_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, dept)
+        except Exception:
+            lawsuit_rows = []
+
+        tablitsy.update({
+            "KD-T-CLAIMS": {
+                "name": f"Претензии за {month_names[ref_m]} {ref_y}",
+                "periodicity": "ежемесячно",
+                "description": "Претензии из 1С (Catalog_Претензии) за выбранный месяц",
+                "period": {
+                    "year": ref_y,
+                    "month": ref_m,
+                    "month_name": month_names[ref_m],
+                },
+                "rows": rows,
             },
-            "rows": rows,
-        },
-        "KD-T-LAWSUITS": {
-            "name": f"Суды за {month_names[ref_m]} {ref_y}",
-            "periodicity": "ежемесячно",
-            "description": (
-                "Судебные споры и исковая работа из 1С "
-                "(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц"
-            ),
-            "period": {
-                "year": ref_y,
-                "month": ref_m,
-                "month_name": month_names[ref_m],
+            "KD-T-LAWSUITS": {
+                "name": f"Суды за {month_names[ref_m]} {ref_y}",
+                "periodicity": "ежемесячно",
+                "description": (
+                    "Судебные споры и исковая работа из 1С "
+                    "(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц"
+                ),
+                "period": {
+                    "year": ref_y,
+                    "month": ref_m,
+                    "month_name": month_names[ref_m],
+                },
+                "columns": [
+                    "Номер", "Статус", "Тип документа", "Контрагент",
+                    "Предмет спора", "Сумма требований",
+                    "Роль ГК в споре", "Площадка (юрлицо ГК)",
+                    "Подразделение инициатора",
+                ],
+                "rows": lawsuit_rows,
             },
-            "columns": [
-                "Номер", "Статус", "Тип документа", "Контрагент",
-                "Предмет спора", "Сумма требований",
-                "Роль ГК в споре", "Площадка (юрлицо ГК)",
-                "Подразделение инициатора",
-            ],
-            "rows": lawsuit_rows,
-        },
-    }
+        })
+
+    if _is_techdir_department(dept):
+        try:
+            techdir_tables = techdir_projects.get_td_deviation_tables(month=ref_m, year=ref_y)
+        except Exception:
+            techdir_tables = None
+        if techdir_tables:
+            tablitsy.update(techdir_tables)
 
     return {
+        'month': ref_m,
+        'year': ref_y,
+        'kpi_ref_month': ref_m,
         'Плитки': {'count': len(plitki_items), 'items': plitki_items},
         'Графики': grafiki,
         'Таблицы': tablitsy,
@@ -630,7 +679,14 @@ def _generate_monthly_data(plan: float) -> list[dict]:
     return result
 
 
-def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> dict:
+def _build_kpi_entry(
+    kpi: dict,
+    block: str,
+    *,
+    dept_key: str | None = None,
+    month: int | None = None,
+    year: int | None = None,
+) -> dict:
     freq = kpi['frequency']
     entry = {
         'kpi_id': kpi['kpi_id'],

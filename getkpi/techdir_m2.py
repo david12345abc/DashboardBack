@@ -19,25 +19,38 @@ def get_td_m2_ytd() -> dict:
     Это позволяет не подмешивать синтетические значения в плитку.
     """
     today = date.today()
-    month_name = MONTH_NAMES[today.month]
+    ref_y, ref_m = today.year, today.month
+    pairs = [(today.year, mm) for mm in range(1, ref_m + 1)]
+
+    monthly_rows = [
+        {
+            "month": m,
+            "year": y,
+            "month_name": MONTH_NAMES[m],
+            "plan": None,
+            "fact": None,
+            "kpi_pct": None,
+            "has_data": False,
+        }
+        for y, m in pairs
+    ]
 
     return {
         "data_granularity": "monthly",
-        "monthly_data": [],
+        "monthly_data": monthly_rows,
         "last_full_month_row": None,
         "kpi_period": {
             "type": "placeholder",
-            "year": today.year,
-            "month": today.month,
-            "month_name": month_name,
-            "snapshot_date": today.isoformat(),
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
         },
         "ytd": {
             "total_plan": None,
             "total_fact": None,
             "kpi_pct": None,
             "months_with_data": 0,
-            "months_total": 0,
+            "months_total": len(monthly_rows),
         },
         "debug": {
             "status": "placeholder",
