@@ -13,6 +13,7 @@ from . import (
     calc_budget_limit,
     calc_dengi_fact,
     calc_fot_management,
+    calc_otif_vypusk_zam_proizvodstva,
     calc_plan,
     calc_tekuchest_opdir,
     calc_vyruchka_opdir,
@@ -63,7 +64,22 @@ def _get_departments() -> list[str]:
 
 def _get_kpi_dicts(department: str) -> list[dict]:
     """Все KPI подразделения из БД в формате dict (как был kpi_data.json)."""
-    return [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
+    rows = [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
+    if _is_prod_deputy_department(department):
+        has_new_pd = any(str(row.get('kpi_id') or '').startswith('PD-') for row in rows)
+        if not has_new_pd:
+            try:
+                from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
+            except Exception:
+                return rows
+            fallback = []
+            for item in PD_KPI_DEFINITIONS:
+                row = dict(item)
+                row['department'] = department
+                fallback.append(row)
+            if fallback:
+                return fallback
+    return rows
 
 
 def _lookup_kpi_data(department: str) -> list[dict] | None:
@@ -72,8 +88,23 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
     if not qs.exists():
         qs = KpiDefinition.objects.filter(department__iexact=department)
     if not qs.exists():
+        if _is_prod_deputy_department(department):
+            try:
+                from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
+            except Exception:
+                return None
+            return [{**dict(item), 'department': department} for item in PD_KPI_DEFINITIONS]
         return None
-    return [obj.to_dict() for obj in qs]
+    rows = [obj.to_dict() for obj in qs]
+    if _is_prod_deputy_department(department):
+        has_new_pd = any(str(row.get('kpi_id') or '').startswith('PD-') for row in rows)
+        if not has_new_pd:
+            try:
+                from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
+            except Exception:
+                return rows
+            return [{**dict(item), 'department': department} for item in PD_KPI_DEFINITIONS]
+    return rows
 
 
 def _all_department_names() -> set[str]:
@@ -236,6 +267,10 @@ def _is_komdir_department(dept: str) -> bool:
 
 def _is_techdir_department(dept: str | None) -> bool:
     return (dept or '').strip().lower() == 'технический директор'
+
+
+def _is_prod_deputy_department(dept: str | None) -> bool:
+    return (dept or '').strip().lower() == 'заместитель операционного директора-директор по производству'
 
 
 
@@ -704,7 +739,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
     if month and year:
         ref_y, ref_m = year, month
-    elif _is_techdir_department(dept) or str(dept).strip().lower() == 'операционный директор':
+    elif _is_techdir_department(dept) or str(dept).strip().lower() == 'операционный директор' or _is_prod_deputy_department(dept):
         today = date.today()
         ref_y, ref_m = today.year, today.month
     else:
@@ -732,12 +767,14 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         if monthly_data is not None:
             tile['monthly_data'] = monthly_data
 
-        if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2'}:
+        if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2', 'PD-M3.1', 'PD-M3.2'}:
             tile['unit'] = 'руб.'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'OD-Q2':
             tile['unit'] = 'чел.'
+        elif kpi.get('kpi_id') == 'PD-M2':
+            tile['unit'] = 'шт.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
         if period_label:
@@ -1077,6 +1114,26 @@ def _build_kpi_entry(
             entry['kpi_period'] = data.get('kpi_period')
             return entry
 
+    if kpi_id == 'PD-M2':
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'pd_m2_otif_{ref_y}_{ref_m}',
+            calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = 'monthly'
+            entry['monthly_data'] = data.get('months') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            return entry
+
     if kpi_id == 'TD-M1':
         td = techdir_projects.get_td_m1_ytd()
         if td is not None:
@@ -1242,9 +1299,12 @@ def _build_kpi_entry(
             plan = 100.0
             entry['data_granularity'] = 'monthly'
             is_opdir_monthly = (
-                str(dept_key or '').strip().lower() == 'операционный директор'
+                str(dept_key or '').strip().lower() in {
+                    'операционный директор',
+                    'заместитель операционного директора-директор по производству',
+                }
                 and 'месяч' in freq_l
-                and str(kpi_id).startswith('OD-M')
+                and (str(kpi_id).startswith('OD-M') or str(kpi_id).startswith('PD-M'))
             )
             entry['monthly_data'] = _generate_monthly_data(
                 plan,
