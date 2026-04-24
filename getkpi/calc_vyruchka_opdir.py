@@ -82,7 +82,17 @@ PAGE = 5000
 BATCH = 15
 TIMEOUT = 120
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "vyruchka_opdir_monthly_v1"
+SOURCE_TAG = "vyruchka_opdir_monthly_v6"
+
+# Канонические названия подразделений для OD-M1 должны совпадать
+# с узлами дерева в getkpi/structure.json, чтобы с фронта можно было
+# переходить в подразделение по клику.
+STRUCTURE_NAME_ALIASES = {
+    "Отдел внешнеэкономической деятельности": "Отдел ВЭД",
+    "Отдел продаж эталонного оборудования и услуг": "Отдел ОПЭОиУ",
+    "Отдел дилерских продаж": "ОДП",
+    "Отдел по работе с ПАО Газпром": "Отдел по работе с ПАО «Газпром»",
+}
 
 MONTH_RU = {
     1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
@@ -91,14 +101,60 @@ MONTH_RU = {
 }
 
 
-def _dept_breakdown_named(raw: dict | None) -> dict[str, float]:
+def _resolve_department_names(session: requests.Session, keys: set[str]) -> dict[str, str]:
+    if not keys:
+        return {}
+    cache_path = _cache_path_department_names()
+    cached = _load_json(cache_path) or {}
+    names: dict[str, str] = {
+        str(k).strip().lower(): str(v).strip()
+        for k, v in cached.items()
+        if k and v
+    }
+    keys_list = [str(k).strip().lower() for k in keys if k and str(k).strip() and str(k).strip() != EMPTY]
+    missing = [k for k in keys_list if k not in names]
+    batch_size = 40
+    for i in range(0, len(missing), batch_size):
+        chunk = missing[i:i + batch_size]
+        flt = " or ".join(f"Ref_Key eq guid'{k}'" for k in chunk)
+        url = (
+            f"{BASE}/{quote('Catalog_СтруктураПредприятия')}?$format=json"
+            f"&$select=Ref_Key,Description&$top=5000"
+            f"&$filter={quote(flt, safe='')}"
+        )
+        r = session.get(url, timeout=TIMEOUT)
+        if not r.ok:
+            continue
+        try:
+            for row in r.json().get("value", []):
+                key = str(row.get("Ref_Key") or "").strip().lower()
+                desc = str(row.get("Description") or "").strip()
+                if key and desc:
+                    names[key] = desc
+        except (ValueError, KeyError, TypeError):
+            continue
+    if missing:
+        _save_json(cache_path, names)
+    return names
+
+
+def _dept_breakdown_named(raw: dict | None, dept_names: dict[str, str] | None = None) -> dict[str, float]:
     raw = raw or {}
+    dept_names = dept_names or {}
     out: dict[str, float] = {}
     for key, value in raw.items():
         if key == "_other":
             out["Прочие подразделения"] = round(float(value or 0), 2)
             continue
-        out[SALES_DEPARTMENTS.get(key, str(key))] = round(float(value or 0), 2)
+        norm_key = str(key).strip().lower()
+        title = (
+            dept_names.get(norm_key)
+            or SALES_DEPARTMENTS.get(key)
+            or SALES_DEPARTMENTS.get(norm_key)
+            or str(key)
+        )
+        title = STRUCTURE_NAME_ALIASES.get(title, title)
+        out[title] = round(float(out.get(title, 0.0)) + float(value or 0), 2)
     return out
 
 
@@ -405,6 +461,11 @@ def _cache_path_monthly(year: int, ref_month: int) -> Path:
     return CACHE_DIR / f"vyruchka_opdir_monthly_{year}_{ref_month:02d}.json"
 
 
+def _cache_path_department_names() -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / "vyruchka_opdir_department_names.json"
+
+
 def _load_json(path: Path) -> dict | None:
     if not path.exists():
         return None
@@ -445,15 +506,40 @@ def get_vyruchka_opdir_monthly(
     if not force:
         cached = _load_json(cache_path)
         if cached is not None and cached.get("source") == SOURCE_TAG:
-            return cached
+            is_current_month = ref_year == today.year and ref_month == today.month
+            if not is_current_month or cached.get("cache_date") == today.isoformat():
+                return cached
 
     session = make_session()
     ctx = PartnersCache(session)
 
-    months_out: list[dict] = []
+    months_raw: list[dict] = []
+    dept_keys_needed: set[str] = set()
     for mm in range(1, ref_month + 1):
         plan = calc_plan(session, ref_year, mm, ctx)
         fact = calc_fact(session, ref_year, mm, ctx)
+        dept_keys_needed.update(
+            str(key).strip().lower()
+            for key in (plan.get("by_dept") or {}).keys()
+            if key and key != "_other"
+        )
+        dept_keys_needed.update(
+            str(key).strip().lower()
+            for key in (fact.get("by_dept") or {}).keys()
+            if key and key != "_other"
+        )
+        months_raw.append({
+            "month": mm,
+            "plan": plan,
+            "fact": fact,
+        })
+
+    dept_names = _resolve_department_names(session, dept_keys_needed)
+    months_out: list[dict] = []
+    for item in months_raw:
+        mm = item["month"]
+        plan = item["plan"]
+        fact = item["fact"]
         plan_total = float(plan.get("total") or 0)
         fact_total = float(fact.get("total") or 0)
         months_out.append({
@@ -464,8 +550,8 @@ def get_vyruchka_opdir_monthly(
             "fact": round(fact_total, 2),
             "kpi_pct": round(fact_total / plan_total * 100, 1) if plan_total > 0 else None,
             "has_data": abs(plan_total) > 0 or abs(fact_total) > 0,
-            "plan_by_dept": _dept_breakdown_named(plan.get("by_dept") or {}),
-            "fact_by_dept": _dept_breakdown_named(fact.get("by_dept") or {}),
+            "plan_by_dept": _dept_breakdown_named(plan.get("by_dept") or {}, dept_names),
+            "fact_by_dept": _dept_breakdown_named(fact.get("by_dept") or {}, dept_names),
             "plan_by_org": plan.get("by_org") or {},
             "fact_by_org": fact.get("by_org") or {},
         })
@@ -474,6 +560,7 @@ def get_vyruchka_opdir_monthly(
     total_plan = sum(float(row.get("plan") or 0) for row in months_out)
     total_fact = sum(float(row.get("fact") or 0) for row in months_out)
     payload = {
+        "cache_date": today.isoformat(),
         "source": SOURCE_TAG,
         "year": ref_year,
         "ref_month": ref_month,

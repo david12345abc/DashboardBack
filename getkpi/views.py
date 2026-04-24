@@ -1,5 +1,6 @@
 import json
 import random
+import re
 from datetime import date
 from pathlib import Path
 
@@ -9,7 +10,9 @@ from django.views.decorators.http import require_GET
 from User.views import login_required
 from . import (
     cache_manager,
+    calc_budget_limit,
     calc_dengi_fact,
+    calc_fot_management,
     calc_plan,
     calc_vyruchka_opdir,
     chairman_data,
@@ -405,6 +408,139 @@ def _pick_monthly_row_for_period(
     return last_row if isinstance(last_row, dict) else {}
 
 
+def _build_monthly_points_from_entry(entry: dict) -> list[dict]:
+    monthly = entry.get('monthly_data') or []
+    points: list[dict] = []
+    for row in monthly:
+        if not isinstance(row, dict):
+            continue
+        points.append({
+            'month': row.get('month'),
+            'month_name': row.get('month_name'),
+            'year': row.get('year'),
+            'plan': row.get('plan'),
+            'fact': row.get('fact'),
+            'kpi_pct': row.get('kpi_pct'),
+            'has_data': row.get('has_data'),
+        })
+    return points
+
+
+def _extract_numeric_target(value) -> float | None:
+    if value is None:
+        return None
+    text = str(value)
+    digits = re.findall(r'\d+', text)
+    if not digits:
+        return None
+    try:
+        return float(''.join(digits))
+    except ValueError:
+        return None
+
+
+def _build_generated_profit_points(ref_y: int, ref_m: int, meta: dict | None = None) -> list[dict]:
+    annual_target = _extract_numeric_target((meta or {}).get('yearly_target')) or 333_683_848.0
+    monthly_plan = round(annual_target / 12.0, 2)
+    points: list[dict] = []
+    random.seed(hash(('OD-M2-chart-generated', ref_y, ref_m)))
+    for mm in range(1, max(1, ref_m) + 1):
+        fact = round(random.uniform(monthly_plan * 0.75, monthly_plan * 1.15), 2)
+        points.append({
+            'month': mm,
+            'month_name': MONTH_NAMES.get(mm, str(mm)),
+            'year': ref_y,
+            'plan': monthly_plan,
+            'fact': fact,
+            'kpi_pct': round(fact / monthly_plan * 100, 1) if monthly_plan > 0 else None,
+            'has_data': False,
+        })
+    return points
+
+
+def _build_opdir_charts(
+    tiles_meta: list[dict],
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    by_id = {k['kpi_id']: k for k in tiles_meta}
+    revenue_entry = entries_by_id.get('OD-M1') or {}
+    revenue_points = _build_monthly_points_from_entry(revenue_entry)
+    profit_points = _build_generated_profit_points(ref_y, ref_m, by_id.get('OD-M2'))
+    line_series = []
+    if revenue_points:
+        line_series.append({
+            'kpi_id': 'OD-M1',
+            'name': (by_id.get('OD-M1') or {}).get('name', 'Выручка (без НДС) - выполнение плана'),
+            'chart_type': 'line_plan_fact_monthly',
+            'chart_type_label': 'План/факт по месяцам',
+            'points': revenue_points,
+        })
+    if profit_points:
+        line_series.append({
+            'kpi_id': 'OD-M2-CHART',
+            'name': (by_id.get('OD-M2') or {}).get('name', 'Чистая прибыль - выполнение плана'),
+            'chart_type': 'line_plan_fact_monthly',
+            'chart_type_label': 'Сгенерированный план/факт по месяцам',
+            'has_data': False,
+            'points': profit_points,
+        })
+
+    monthly_meta = [
+        ('OD-M1', (by_id.get('OD-M1') or {}).get('name', 'Выручка (без НДС) - выполнение плана'), revenue_points),
+        ('OD-M2-CHART', (by_id.get('OD-M2') or {}).get('name', 'Чистая прибыль - выполнение плана'), profit_points),
+    ]
+    categories: list[str] = []
+    plan_values: list[float | None] = []
+    fact_values: list[float | None] = []
+    bar_points: list[dict] = []
+    for kid, name, points in monthly_meta:
+        point = _pick_monthly_row_for_period(points, ref_y, ref_m)
+        categories.append(name)
+        plan_values.append(point.get('plan') if point else None)
+        fact_values.append(point.get('fact') if point else None)
+        bar_points.append({
+            'kpi_id': kid,
+            'name': name,
+            'month': ref_m,
+            'year': ref_y,
+            'plan': point.get('plan') if point else None,
+            'fact': point.get('fact') if point else None,
+            'kpi_pct': point.get('kpi_pct') if point else None,
+            'has_data': point.get('has_data') if point else False,
+        })
+
+    charts = {}
+    if line_series:
+        charts['OD-C1'] = {
+            'kpi_id': 'OD-C1',
+            'name': 'Динамика выручки и чистой прибыли',
+            'periodicity': 'ежемесячно',
+            'chart_type': 'multi_line_plan_fact_monthly',
+            'chart_type_label': 'Линейный тренд по месяцам',
+            'series': line_series,
+        }
+    charts['OD-C2'] = {
+        'kpi_id': 'OD-C2',
+        'name': 'План/факт за выбранный месяц',
+        'periodicity': 'ежемесячно',
+        'chart_type': 'column_plan_fact_monthly',
+        'chart_type_label': 'Столбцы: план/факт за месяц',
+        'series': [{
+            'kpi_id': 'OD-C2',
+            'name': 'План/факт за месяц',
+            'chart_type': 'column_plan_fact_monthly',
+            'chart_type_label': 'Столбцы',
+            'categories': categories,
+            'plan': plan_values,
+            'fact': fact_values,
+            'points': bar_points,
+        }],
+    }
+    return charts
+
+
 def _build_universal_payload(dept: str, all_kpis: list[dict],
                              *, month: int | None = None,
                              year: int | None = None) -> dict:
@@ -419,9 +555,11 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
     charts_meta = [k for k in all_kpis if k.get('block') == 'график']
 
     plitki_items: list[dict] = []
+    entries_by_id: dict[str, dict] = {}
 
     for kpi in tiles_meta:
-        entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept)
+        entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=year, month=month)
+        entries_by_id[kpi['kpi_id']] = entry
         pct, color = _tile_color(kpi, entry)
         tile = _build_tile_item(kpi, pct, color)
 
@@ -441,7 +579,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         if monthly_data is not None:
             tile['monthly_data'] = monthly_data
 
-        if kpi.get('kpi_id') == 'OD-M1':
+        if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2'}:
             tile['unit'] = 'руб.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
@@ -465,7 +603,14 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
     if month and year:
         ref_y, ref_m = year, month
     else:
-        ref_y, ref_m = _lfm(date.today())
+        if str(dept).strip().lower() == 'операционный директор':
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        else:
+            ref_y, ref_m = _lfm(date.today())
+
+    if str(dept).strip().lower() == 'операционный директор':
+        grafiki.update(_build_opdir_charts(tiles_meta, entries_by_id, ref_y, ref_m))
 
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -578,10 +723,13 @@ def _fetch_lawsuits_rows_for_department(year: int, month: int, department: str) 
     return rows
 
 
-def _generate_monthly_data(plan: float) -> list[dict]:
-    """Помесячные точки только за завершённые месяцы (январь — последний полный месяц)."""
+def _generate_monthly_data(plan: float, *, include_current_month: bool = False) -> list[dict]:
+    """Помесячные точки: до текущего месяца или до последнего полного."""
     today = date.today()
-    ref_y, ref_m = last_full_month(today)
+    if include_current_month:
+        ref_y, ref_m = today.year, today.month
+    else:
+        ref_y, ref_m = last_full_month(today)
     if ref_y == today.year:
         pairs = [(today.year, mm) for mm in range(1, ref_m + 1)]
     else:
@@ -602,7 +750,14 @@ def _generate_monthly_data(plan: float) -> list[dict]:
     return result
 
 
-def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> dict:
+def _build_kpi_entry(
+    kpi: dict,
+    block: str,
+    *,
+    dept_key: str | None = None,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict:
     freq = kpi['frequency']
     entry = {
         'kpi_id': kpi['kpi_id'],
@@ -656,10 +811,52 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
             return entry
 
     if kpi_id == 'OD-M1':
-        ref_y, ref_m = last_full_month(date.today())
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
         data = cache_manager.locked_call(
             f'vyruchka_opdir_{ref_y}_{ref_m}',
             calc_vyruchka_opdir.get_vyruchka_opdir_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = data.get('months') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        return entry
+
+    if kpi_id == 'OD-M3.1':
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'budget_limit_opdir_{ref_y}_{ref_m}',
+            calc_budget_limit.get_budget_limit_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = data.get('months') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        return entry
+
+    if kpi_id == 'OD-M3.2':
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'fot_management_opdir_{ref_y}_{ref_m}',
+            calc_fot_management.get_fot_management_monthly,
             year=ref_y,
             month=ref_m,
         )
@@ -779,7 +976,15 @@ def _build_kpi_entry(kpi: dict, block: str, *, dept_key: str | None = None) -> d
         else:
             plan = 100.0
             entry['data_granularity'] = 'monthly'
-            entry['monthly_data'] = _generate_monthly_data(plan)
+            is_opdir_monthly = (
+                str(dept_key or '').strip().lower() == 'операционный директор'
+                and 'месяч' in freq_l
+                and str(kpi_id).startswith('OD-M')
+            )
+            entry['monthly_data'] = _generate_monthly_data(
+                plan,
+                include_current_month=is_opdir_monthly,
+            )
             months = entry['monthly_data']
             with_data = [r for r in months if r.get('kpi_pct') is not None]
             last = months[-1] if months else None

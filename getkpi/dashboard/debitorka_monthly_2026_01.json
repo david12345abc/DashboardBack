@@ -1,12 +1,14 @@
 {
   "year": 2026,
   "ref_month": 1,
+  "kz_source": "predoplata_upr",
   "months": [
     {
       "year": 2026,
       "month": 1,
       "na_datu": "2026-01-31",
       "dz_fact": 549732479.14,
+      "kz_fact": 124796303.11,
       "overdue_fact": 209194330.51
     }
   ]
