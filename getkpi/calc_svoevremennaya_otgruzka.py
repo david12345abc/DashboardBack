@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
+SOURCE_TAG = "svoevremennaya_monthly_v2"
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 
@@ -89,7 +90,10 @@ def _load_cache(path: Path) -> dict | None:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return None
-    if data.get("cache_date") == date.today().isoformat():
+    if (
+        data.get("cache_date") == date.today().isoformat()
+        and data.get("source_tag") == SOURCE_TAG
+    ):
         return data
     return None
 
@@ -98,7 +102,7 @@ def _save_cache(path: Path, payload: dict) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({**payload, "cache_date": date.today().isoformat()},
+            json.dump({**payload, "cache_date": date.today().isoformat(), "source_tag": SOURCE_TAG},
                       f, ensure_ascii=False, indent=2)
     except OSError:
         pass
@@ -196,25 +200,20 @@ def _count_realizations_for_orders(reals_in_window: list[dict],
 
 def _fact_window_bounds(year: int, month: int) -> tuple[str, str]:
     """
-    Окно для поиска реализаций. Реализация обычно происходит в тот же месяц,
-    что и юр. обязательства по договору, или чуть позже. Берём окно с начала
-    месяца плана до конца следующего месяца (но не позже сегодняшнего дня).
+    Факт считаем строго внутри выбранного месяца.
+    Это нужно, чтобы по каждому месяцу возвращались независимые данные,
+    а не одно и то же окно, захватывающее следующий месяц.
     """
-    d_from_iso, _ = _month_bounds(year, month)
-    # Конец окна — последний день следующего месяца (чтобы зацепить «дохвосты»),
-    # но не позже сегодняшнего дня.
-    next_m = month + 1 if month < 12 else 1
-    next_y = year if month < 12 else year + 1
-    last_day = calendar.monthrange(next_y, next_m)[1]
-    end_dt = date(next_y, next_m, last_day)
+    start_iso, end_iso = _month_bounds(year, month)
     today = date.today()
-    if end_dt > today:
-        end_dt = today
-    # Но start не может быть позже end.
     start_dt = date(year, month, 1)
     if start_dt > today:
-        return (d_from_iso, d_from_iso)  # окно «в будущем» → факт 0
-    return (f"{start_dt.isoformat()}T00:00:00", f"{end_dt.isoformat()}T23:59:59")
+        return (start_iso, start_iso)
+
+    end_dt = date.fromisoformat(end_iso[:10])
+    if end_dt > today:
+        end_iso = f"{today.isoformat()}T23:59:59"
+    return (start_iso, end_iso)
 
 
 def get_svoevremennaya_for_month(year: int, month: int) -> dict:

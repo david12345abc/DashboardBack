@@ -4,7 +4,8 @@
   "period_start": "2026-01-01",
   "period_end": "2026-01-31",
   "plan": 66,
-  "fact": 14,
-  "pct": 21.2,
-  "cache_date": "2026-04-24"
+  "fact": 6,
+  "pct": 9.1,
+  "cache_date": "2026-04-24",
+  "source_tag": "svoevremennaya_monthly_v2"
 }

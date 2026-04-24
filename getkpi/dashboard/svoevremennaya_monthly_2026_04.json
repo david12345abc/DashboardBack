@@ -7,8 +7,8 @@
       "month": 1,
       "month_name": "январь",
       "plan": 66,
-      "fact": 14,
-      "kpi_pct": 21.2,
+      "fact": 6,
+      "kpi_pct": 9.1,
       "has_data": true
     },
     {
@@ -16,8 +16,8 @@
       "month": 2,
       "month_name": "февраль",
       "plan": 82,
-      "fact": 27,
-      "kpi_pct": 32.9,
+      "fact": 11,
+      "kpi_pct": 13.4,
       "has_data": true
     },
     {
@@ -25,8 +25,8 @@
       "month": 3,
       "month_name": "март",
       "plan": 66,
-      "fact": 29,
-      "kpi_pct": 43.9,
+      "fact": 17,
+      "kpi_pct": 25.8,
       "has_data": true
     },
     {
@@ -39,5 +39,6 @@
       "has_data": true
     }
   ],
-  "cache_date": "2026-04-24"
+  "cache_date": "2026-04-24",
+  "source_tag": "svoevremennaya_monthly_v2"
 }
