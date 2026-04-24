@@ -22,6 +22,11 @@ from . import (
     dept_turnover_q5,
     komdir_dashboard,
     komdir_quarterly,
+    techdir_m3,
+    techdir_m2,
+    techdir_projects,
+    techdir_tekuchet,
+    techdir_y1,
     valovaya_pribyl,
 )
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
@@ -77,6 +82,11 @@ def _all_department_names() -> set[str]:
     )
 
 
+def _normalize_department_name(value: str | None) -> str:
+    """Нормализация имени подразделения для сравнений в дереве."""
+    return " ".join(str(value or "").replace("ё", "е").lower().split())
+
+
 def _collect_all_keys(tree) -> set[str]:
     """Рекурсивно собирает все названия подразделений из дерева."""
     result = set()
@@ -124,10 +134,10 @@ def _find_subordinates(tree, target: str) -> set[str] | None:
     Находит target в дереве (case-insensitive) и возвращает множество всех подразделений
     ниже по иерархии (включая сам target). Возвращает None если не найден.
     """
-    target_lower = target.lower()
+    target_lower = _normalize_department_name(target)
     if isinstance(tree, dict):
         for key, children in tree.items():
-            if key.lower() == target_lower:
+            if _normalize_department_name(key) == target_lower:
                 subs = {key}
                 subs.update(_collect_all_keys(children))
                 return subs
@@ -136,7 +146,7 @@ def _find_subordinates(tree, target: str) -> set[str] | None:
                 return found
     elif isinstance(tree, list):
         for item in tree:
-            if isinstance(item, str) and item.lower() == target_lower:
+            if isinstance(item, str) and _normalize_department_name(item) == target_lower:
                 return {item}
             elif isinstance(item, dict):
                 found = _find_subordinates(item, target)
@@ -199,17 +209,17 @@ def _find_immediate_children(tree, target: str) -> tuple[str, list[str]] | None:
     Находит подразделение в дереве (без учёта регистра) и возвращает
     (каноническое имя из JSON, список непосредственных потомков).
     """
-    target_lower = target.strip().lower()
+    target_lower = _normalize_department_name(target)
     if isinstance(tree, dict):
         for key, child_tree in tree.items():
-            if key.lower() == target_lower:
+            if _normalize_department_name(key) == target_lower:
                 return key, _immediate_children_of_node(child_tree)
             found = _find_immediate_children(child_tree, target)
             if found is not None:
                 return found
     elif isinstance(tree, list):
         for item in tree:
-            if isinstance(item, str) and item.lower() == target_lower:
+            if isinstance(item, str) and _normalize_department_name(item) == target_lower:
                 return item, []
             if isinstance(item, dict):
                 found = _find_immediate_children(item, target)
@@ -221,6 +231,10 @@ def _find_immediate_children(tree, target: str) -> tuple[str, list[str]] | None:
 def _is_komdir_department(dept: str) -> bool:
     d = dept.strip().lower()
     return 'коммерческий' in d and 'директор' in d
+
+
+def _is_techdir_department(dept: str | None) -> bool:
+    return (dept or '').strip().lower() == 'технический директор'
 
 
 
@@ -356,10 +370,86 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     return pct, color
 
 
-def _build_tile_item(kpi: dict, pct: float | None, color: str) -> dict:
-    return {
+def _extract_tile_plan_fact(entry: dict) -> dict:
+    """Краткие plan/fact для плитки из уже собранного payload KPI."""
+    ref_row = entry.get('last_full_month_row')
+    if isinstance(ref_row, dict):
+        out = {
+            'plan': ref_row.get('plan'),
+            'fact': ref_row.get('fact'),
+            'has_data': ref_row.get('has_data'),
+        }
+        if ref_row.get('values_unit'):
+            out['unit'] = ref_row.get('values_unit')
+        return out
+
+    quarterly = entry.get('quarterly_data') or []
+    if quarterly:
+        row = quarterly[-1]
+        plan = row.get('plan')
+        if plan is None:
+            plan = row.get('plan_max_turnover_pct')
+        fact = row.get('fact')
+        if fact is None:
+            fact = row.get('fact_turnover_pct')
+        out = {
+            'plan': plan,
+            'fact': fact,
+        }
+        if 'has_data' in row:
+            out['has_data'] = row.get('has_data')
+        elif 'data_complete' in row:
+            out['has_data'] = row.get('data_complete')
+        if row.get('values_unit'):
+            out['unit'] = row.get('values_unit')
+        elif 'plan_max_turnover_pct' in row or 'fact_turnover_pct' in row:
+            out['unit'] = '%'
+        return out
+
+    yearly = entry.get('yearly_data') or []
+    if yearly:
+        row = yearly[-1]
+        out = {
+            'plan': row.get('plan'),
+            'fact': row.get('fact'),
+        }
+        if 'has_data' in row:
+            out['has_data'] = row.get('has_data')
+        if row.get('values_unit'):
+            out['unit'] = row.get('values_unit')
+        return out
+
+    ytd = entry.get('ytd') or {}
+    out = {
+        'plan': ytd.get('total_plan'),
+        'fact': ytd.get('total_fact'),
+    }
+    if out['plan'] is not None or out['fact'] is not None:
+        out['has_data'] = True
+    if ytd.get('values_unit'):
+        out['unit'] = ytd.get('values_unit')
+    return out
+
+
+def _public_unit_row(row: dict) -> dict:
+    out = dict(row)
+    out.pop('values_unit', None)
+    return out
+
+
+def _build_tile_item(
+    kpi: dict,
+    pct: float | None,
+    color: str,
+    entry: dict,
+    *,
+    ref_y: int | None = None,
+    ref_m: int | None = None,
+) -> dict:
+    tile = {
         'kpi_id': kpi['kpi_id'],
         'name': kpi['name'],
+        'goal': kpi.get('goal'),
         'kpi_pct': pct,
         'color': color,
         'period': _period_label_from_kpi(kpi),
@@ -369,6 +459,23 @@ def _build_tile_item(kpi: dict, pct: float | None, color: str) -> dict:
         'source': kpi.get('source'),
         'frequency': kpi.get('frequency'),
     }
+    tile.update(_extract_tile_plan_fact(entry))
+    if entry.get('data_granularity'):
+        tile['data_granularity'] = entry.get('data_granularity')
+    if entry.get('kpi_period'):
+        tile['kpi_period'] = entry.get('kpi_period')
+    if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
+        tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
+    tile['cache_updated_at'] = None
+    if entry.get('last_full_month_row'):
+        tile['last_full_month_row'] = _public_unit_row(entry['last_full_month_row'])
+    if entry.get('monthly_data') is not None:
+        tile['monthly_data'] = [_public_unit_row(row) for row in entry.get('monthly_data') or []]
+    if entry.get('quarterly_data') is not None:
+        tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
+    if entry.get('yearly_data') is not None:
+        tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
+    return tile
 
 
 def _plan_fact_period_label_from_kpi_period(period: dict | None) -> str | None:
@@ -557,11 +664,19 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
     plitki_items: list[dict] = []
     entries_by_id: dict[str, dict] = {}
 
+    if month and year:
+        ref_y, ref_m = year, month
+    elif _is_techdir_department(dept) or str(dept).strip().lower() == 'операционный директор':
+        today = date.today()
+        ref_y, ref_m = today.year, today.month
+    else:
+        ref_y, ref_m = _lfm(date.today())
+
     for kpi in tiles_meta:
-        entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=year, month=month)
+        entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
         entries_by_id[kpi['kpi_id']] = entry
         pct, color = _tile_color(kpi, entry)
-        tile = _build_tile_item(kpi, pct, color)
+        tile = _build_tile_item(kpi, pct, color, entry, ref_y=ref_y, ref_m=ref_m)
 
         monthly_data = entry.get('monthly_data')
         lm = _pick_monthly_row_for_period(monthly_data, year, month) if monthly_data else {}
@@ -600,69 +715,73 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             'formula': chart_kpi.get('formula'),
         }
 
-    if month and year:
-        ref_y, ref_m = year, month
-    else:
-        if str(dept).strip().lower() == 'операционный директор':
-            today = date.today()
-            ref_y, ref_m = today.year, today.month
-        else:
-            ref_y, ref_m = _lfm(date.today())
-
     if str(dept).strip().lower() == 'операционный директор':
         grafiki.update(_build_opdir_charts(tiles_meta, entries_by_id, ref_y, ref_m))
-
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
         9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
     }
 
-    try:
-        rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
-    except Exception:
-        rows = []
+    tablitsy = {}
 
-    try:
-        lawsuit_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, dept)
-    except Exception:
-        lawsuit_rows = []
+    if not _is_techdir_department(dept):
+        try:
+            rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
+        except Exception:
+            rows = []
 
-    tablitsy = {
-        "KD-T-CLAIMS": {
-            "name": f"Претензии за {month_names[ref_m]} {ref_y}",
-            "periodicity": "ежемесячно",
-            "description": "Претензии из 1С (Catalog_Претензии) за выбранный месяц",
-            "period": {
-                "year": ref_y,
-                "month": ref_m,
-                "month_name": month_names[ref_m],
+        try:
+            lawsuit_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, dept)
+        except Exception:
+            lawsuit_rows = []
+
+        tablitsy.update({
+            "KD-T-CLAIMS": {
+                "name": f"Претензии за {month_names[ref_m]} {ref_y}",
+                "periodicity": "ежемесячно",
+                "description": "Претензии из 1С (Catalog_Претензии) за выбранный месяц",
+                "period": {
+                    "year": ref_y,
+                    "month": ref_m,
+                    "month_name": month_names[ref_m],
+                },
+                "rows": rows,
             },
-            "rows": rows,
-        },
-        "KD-T-LAWSUITS": {
-            "name": f"Суды за {month_names[ref_m]} {ref_y}",
-            "periodicity": "ежемесячно",
-            "description": (
-                "Судебные споры и исковая работа из 1С "
-                "(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц"
-            ),
-            "period": {
-                "year": ref_y,
-                "month": ref_m,
-                "month_name": month_names[ref_m],
+            "KD-T-LAWSUITS": {
+                "name": f"Суды за {month_names[ref_m]} {ref_y}",
+                "periodicity": "ежемесячно",
+                "description": (
+                    "Судебные споры и исковая работа из 1С "
+                    "(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц"
+                ),
+                "period": {
+                    "year": ref_y,
+                    "month": ref_m,
+                    "month_name": month_names[ref_m],
+                },
+                "columns": [
+                    "Номер", "Статус", "Тип документа", "Контрагент",
+                    "Предмет спора", "Сумма требований",
+                    "Роль ГК в споре", "Площадка (юрлицо ГК)",
+                    "Подразделение инициатора",
+                ],
+                "rows": lawsuit_rows,
             },
-            "columns": [
-                "Номер", "Статус", "Тип документа", "Контрагент",
-                "Предмет спора", "Сумма требований",
-                "Роль ГК в споре", "Площадка (юрлицо ГК)",
-                "Подразделение инициатора",
-            ],
-            "rows": lawsuit_rows,
-        },
-    }
+        })
+
+    if _is_techdir_department(dept):
+        try:
+            techdir_tables = techdir_projects.get_td_deviation_tables(month=ref_m, year=ref_y)
+        except Exception:
+            techdir_tables = None
+        if techdir_tables:
+            tablitsy.update(techdir_tables)
 
     return {
+        'month': ref_m,
+        'year': ref_y,
+        'kpi_ref_month': ref_m,
         'Плитки': {'count': len(plitki_items), 'items': plitki_items},
         'Графики': grafiki,
         'Таблицы': tablitsy,
@@ -865,6 +984,62 @@ def _build_kpi_entry(
         entry['last_full_month_row'] = data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
+
+        return entry
+
+    if kpi_id == 'TD-M1':
+        td = techdir_projects.get_td_m1_ytd()
+        if td is not None:
+            entry['data_granularity'] = td['data_granularity']
+            entry['monthly_data'] = td['monthly_data']
+            entry['last_full_month_row'] = td.get('last_full_month_row')
+            entry['ytd'] = td['ytd']
+            entry['kpi_period'] = td['kpi_period']
+            return entry
+
+    if kpi_id == 'TD-M2':
+        td = techdir_m2.get_td_m2_ytd()
+        entry['data_granularity'] = td['data_granularity']
+        entry['monthly_data'] = td['monthly_data']
+        entry['last_full_month_row'] = td.get('last_full_month_row')
+        entry['ytd'] = td['ytd']
+        entry['kpi_period'] = td['kpi_period']
+        return entry
+
+    if kpi_id == 'TD-Q1':
+        td = techdir_projects.get_td_q1_ytd()
+        if td is not None:
+            entry['data_granularity'] = td['data_granularity']
+            entry['quarterly_data'] = td['quarterly_data']
+            entry['ytd'] = td['ytd']
+            entry['kpi_period'] = td['kpi_period']
+            return entry
+
+    if kpi_id == 'TD-M3':
+        td = techdir_m3.get_td_m3_ytd()
+        if td is not None:
+            entry['data_granularity'] = td['data_granularity']
+            entry['monthly_data'] = td['monthly_data']
+            entry['last_full_month_row'] = td.get('last_full_month_row')
+            entry['ytd'] = td['ytd']
+            entry['kpi_period'] = td['kpi_period']
+            return entry
+
+    if kpi_id == 'TD-Q2':
+        td = techdir_tekuchet.get_td_q2_ytd()
+        if td is not None:
+            entry['data_granularity'] = td['data_granularity']
+            entry['quarterly_data'] = td['quarterly_data']
+            entry['ytd'] = td['ytd']
+            entry['kpi_period'] = td['kpi_period']
+            return entry
+
+    if kpi_id == 'TD-Y1':
+        td = techdir_y1.get_td_y1_ytd()
+        entry['data_granularity'] = td['data_granularity']
+        entry['yearly_data'] = td['yearly_data']
+        entry['ytd'] = td['ytd']
+        entry['kpi_period'] = td['kpi_period']
         return entry
 
     if kpi_id == 'KD-M1':
@@ -1458,7 +1633,7 @@ def get_immediate_subordinates(request):
 
     for_raw = request.GET.get('for')
     effective = raw
-    user_dept = getattr(request.user, 'department', '') or ''
+    user_dept = getattr(request.current_user, 'department', '') or ''
     if chairman_data.is_chairman_department(user_dept) and for_raw:
         target = chairman_data.chairman_for_target_department(for_raw)
         if target:
