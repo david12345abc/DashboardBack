@@ -27,6 +27,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 CACHE_DIR = cache_manager.CACHE_DIR
 CACHE_PATH = CACHE_DIR / "techdir_projects_snapshot.json"
 CACHE_VERSION = 5
+OD_OVERDUE_MILESTONES_SCHEMA = "zero_duration_milestones_v1"
 _CREDENTIAL_FILES = (
     "API для dashboard.py",
     "api все проекты 3.py",
@@ -89,7 +90,11 @@ def _load_cache() -> dict | None:
         data = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if data.get("cache_date") == date.today().isoformat() and data.get("cache_version") == CACHE_VERSION:
+    if (
+        data.get("cache_date") == date.today().isoformat()
+        and data.get("cache_version") == CACHE_VERSION
+        and data.get("od_overdue_milestones_schema") == OD_OVERDUE_MILESTONES_SCHEMA
+    ):
         return data
     return None
 
@@ -100,6 +105,7 @@ def _save_cache(payload: dict) -> None:
         **payload,
         "cache_date": date.today().isoformat(),
         "cache_version": CACHE_VERSION,
+        "od_overdue_milestones_schema": OD_OVERDUE_MILESTONES_SCHEMA,
     }
     try:
         CACHE_PATH.write_text(
@@ -155,6 +161,88 @@ def _safe_float(value: Any) -> float | None:
     return num if num == num else None
 
 
+def _milestone_progress_as_fraction(raw: Any) -> float | None:
+    """Доля выполнения вехи: API отдаёт 0..1 или проценты 0..100."""
+    num = _safe_float(raw)
+    if num is None:
+        return None
+    if abs(num) <= 1.0:
+        return num
+    return num / 100.0
+
+
+def _milestone_is_zero_percent_complete(raw: Any) -> bool:
+    """Только полностью невыполненные вехи (0%%), частичный прогресс отсекаем."""
+    frac = _milestone_progress_as_fraction(raw)
+    if frac is None:
+        return False
+    return abs(frac) < 1e-9
+
+
+def _bool_is_true(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value == value and value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "да"}
+    return False
+
+
+def _row_ref_ids(row: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    for key in ("id", "uid", "task_id", "taskId", "ref", "ref_key", "Ref_Key"):
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            ids.add(str(value).strip())
+    return ids
+
+
+def _row_milestone_match_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    start_dt = _parse_iso_date(row.get("start_date"))
+    finish_dt = _parse_iso_date(row.get("finish_date"))
+    return (
+        " ".join(str(row.get("name") or "").split()).lower(),
+        start_dt.date().isoformat() if _is_real_date(start_dt) else str(row.get("start_date") or "")[:10],
+        finish_dt.date().isoformat() if _is_real_date(finish_dt) else str(row.get("finish_date") or "")[:10],
+    )
+
+
+def _is_zero_duration_milestone(row: dict[str, Any]) -> bool:
+    if row.get("is_summary"):
+        return False
+    if "is_milestone" in row and not _bool_is_true(row.get("is_milestone")):
+        return False
+    start_dt = _parse_iso_date(row.get("start_date"))
+    finish_dt = _parse_iso_date(row.get("finish_date"))
+    if not _is_real_date(start_dt) or not _is_real_date(finish_dt):
+        return False
+    return start_dt == finish_dt
+
+
+def _actual_milestone_indexes(tasks: list[dict[str, Any]]) -> tuple[set[str], set[tuple[str, str, str]]]:
+    ids: set[str] = set()
+    keys: set[tuple[str, str, str]] = set()
+    for task in tasks:
+        if not _is_zero_duration_milestone(task):
+            continue
+        ids.update(_row_ref_ids(task))
+        keys.add(_row_milestone_match_key(task))
+    return ids, keys
+
+
+def _is_actual_milestone(
+    row: dict[str, Any],
+    milestone_ids: set[str],
+    milestone_keys: set[tuple[str, str, str]],
+) -> bool:
+    row_ids = _row_ref_ids(row)
+    if row_ids and row_ids.intersection(milestone_ids):
+        return True
+    key = _row_milestone_match_key(row)
+    return bool(key[0] and key in milestone_keys)
+
+
 def _month_start_end(year: int, month: int) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, monthrange(year, month)[1])
 
@@ -201,35 +289,21 @@ def _api_get(
     return resp.json()
 
 
-def _count_overdue_milestones(tasks: list[dict[str, Any]]) -> int:
-    today = datetime.now().date()
-    overdue_count = 0
-    for task in tasks:
-        if not task.get("is_milestone"):
-            continue
-        percent_complete = float(task.get("percent_complete") or 0.0)
-        if percent_complete >= 1.0:
-            continue
-        finish_dt = _parse_iso_date(task.get("finish_date"))
-        if finish_dt is None:
-            continue
-        if finish_dt.date() < today:
-            overdue_count += 1
-    return overdue_count
+def _api_overdue_milestones(details: dict[str, Any]) -> list[dict[str, Any]]:
+    """Готовый список просроченных вех из API проекта, без смешивания с tasks."""
+    candidates = details.get("overdue_milestones")
+    if candidates is None:
+        candidates = (details.get("project") or {}).get("overdue_milestones")
+    return candidates if isinstance(candidates, list) else []
 
 
-def _overdue_milestone_month_keys(tasks: list[dict[str, Any]]) -> list[str]:
+def _overdue_milestone_month_keys(milestones: list[dict[str, Any]]) -> list[str]:
     today = datetime.now().date()
     months: set[str] = set()
-    for task in tasks:
-        if task.get("is_summary"):
+    for milestone in milestones:
+        if not _milestone_is_zero_percent_complete(milestone.get("percent_complete")):
             continue
-        if not task.get("is_milestone"):
-            continue
-        percent_complete = float(task.get("percent_complete") or 0.0)
-        if percent_complete >= 1.0:
-            continue
-        finish_dt = _parse_iso_date(task.get("finish_date"))
+        finish_dt = _parse_iso_date(milestone.get("finish_date"))
         if not _is_real_date(finish_dt):
             continue
         if finish_dt.date() >= today:
@@ -238,29 +312,31 @@ def _overdue_milestone_month_keys(tasks: list[dict[str, Any]]) -> list[str]:
     return sorted(months)
 
 
-def _overdue_milestone_rows(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _overdue_milestone_rows(
+    milestones: list[dict[str, Any]],
+    tasks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     today = datetime.now().date()
+    source_rows = milestones or tasks
+    milestone_ids, milestone_keys = _actual_milestone_indexes(tasks)
     rows: list[dict[str, Any]] = []
-    for task in tasks:
-        if task.get("is_summary"):
+    for milestone in source_rows:
+        if not _is_actual_milestone(milestone, milestone_ids, milestone_keys):
             continue
-        if not task.get("is_milestone"):
+        if not _milestone_is_zero_percent_complete(milestone.get("percent_complete")):
             continue
-        percent_complete = float(task.get("percent_complete") or 0.0)
-        if percent_complete >= 1.0:
-            continue
-        finish_dt = _parse_iso_date(task.get("finish_date"))
+        finish_dt = _parse_iso_date(milestone.get("finish_date"))
         if not _is_real_date(finish_dt):
             continue
         if finish_dt.date() >= today:
             continue
+        frac = _milestone_progress_as_fraction(milestone.get("percent_complete"))
+        stored_pct = frac if frac is not None else 0.0
         rows.append({
-            "id": task.get("id"),
-            "uid": task.get("uid"),
-            "name": task.get("name") or "",
-            "start_date": task.get("start_date"),
-            "finish_date": task.get("finish_date"),
-            "percent_complete": percent_complete,
+            "name": milestone.get("name") or "",
+            "start_date": milestone.get("start_date"),
+            "finish_date": milestone.get("finish_date"),
+            "percent_complete": stored_pct,
         })
     rows.sort(key=lambda row: (row.get("finish_date") or "", row.get("name") or ""))
     return rows
@@ -277,7 +353,7 @@ def _is_target_project(data_1c: dict[str, Any], project_type: str | None = None)
 def _project_summary(
     summary_item: dict[str, Any],
     details: dict[str, Any],
-    overdue_milestones_count: int,
+    overdue_milestones: list[dict[str, Any]],
 ) -> dict[str, Any]:
     data_1c = details.get("data_1c") or {}
     project_meta = details.get("project") or {}
@@ -300,11 +376,11 @@ def _project_summary(
         "planovaya_data_nachala": data_1c.get("planovaya_data_nachala"),
         "planovaya_data_okonchaniya": data_1c.get("planovaya_data_okonchaniya"),
         "data_okonchaniya": data_1c.get("data_okonchaniya"),
-        "overdue_milestones_count": overdue_milestones_count,
+        "overdue_milestones_count": len(overdue_milestones),
         "project_progress_pct": project_progress_pct,
         "milestone_months": _milestone_month_keys(tasks),
-        "overdue_milestone_months": _overdue_milestone_month_keys(tasks),
-        "overdue_milestones": _overdue_milestone_rows(tasks),
+        "overdue_milestone_months": _overdue_milestone_month_keys(overdue_milestones),
+        "overdue_milestones": overdue_milestones,
     }
 
 
@@ -349,8 +425,11 @@ def _compute_projects_snapshot() -> dict:
         if not _is_target_project(data_1c):
             continue
 
-        overdue_milestones_count = _count_overdue_milestones(details.get("tasks") or [])
-        project_row = _project_summary(item, details, overdue_milestones_count)
+        overdue_milestones = _overdue_milestone_rows(
+            _api_overdue_milestones(details),
+            details.get("tasks") or [],
+        )
+        project_row = _project_summary(item, details, overdue_milestones)
         target_projects.append(project_row)
 
     payload = {
@@ -530,12 +609,12 @@ def _project_overdue_milestones_in_month(
 
 def _build_milestone_deviation_details(
     overdue_rows: list[dict[str, Any]],
-    month_end: date,
+    as_of_date: date,
 ) -> list[dict[str, Any]]:
     details: list[dict[str, Any]] = []
     for index, milestone in enumerate(overdue_rows, start=1):
         finish_dt = _parse_real_project_date(milestone.get("finish_date"))
-        delay_days = max((month_end - finish_dt).days, 0) if finish_dt else 0
+        delay_days = max((as_of_date - finish_dt).days, 0) if finish_dt else 0
         details.append({
             "number": index,
             "id": milestone.get("id"),
@@ -581,6 +660,7 @@ def _build_project_deviation_table(
 ) -> dict[str, Any]:
     target_projects = _projects_for_type(project_type)
     month_end = _month_start_end(ref_y, ref_m)[1]
+    as_of_date = min(month_end, date.today())
     rows: list[dict[str, Any]] = []
 
     for project in target_projects:
@@ -590,7 +670,7 @@ def _build_project_deviation_table(
         if not overdue_rows:
             continue
 
-        milestone_details = _build_milestone_deviation_details(overdue_rows, month_end)
+        milestone_details = _build_milestone_deviation_details(overdue_rows, as_of_date)
         max_delay_days = max(
             (int(milestone.get("delay_days") or 0) for milestone in milestone_details),
             default=0,
