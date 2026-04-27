@@ -21,6 +21,13 @@ def last_full_quarter(d: date | None = None) -> tuple[int, int]:
     return d.year, cq - 1
 
 
+def current_calendar_quarter(d: date | None = None) -> tuple[int, int]:
+    """(год, квартал 1–4) календарного квартала, в который попадает дата (текущий квартал для «сегодня»)."""
+    d = d or date.today()
+    cq = (d.month - 1) // 3 + 1
+    return d.year, cq
+
+
 def quarter_month_tuples(year: int, quarter: int) -> list[tuple[int, int]]:
     """Три месяца календарного квартала: (год, месяц)."""
     start_m = 3 * (quarter - 1) + 1

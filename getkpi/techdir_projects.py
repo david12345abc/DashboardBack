@@ -12,7 +12,7 @@ from typing import Any
 import requests
 
 from . import cache_manager
-from .kpi_periods import last_full_quarter, quarter_month_tuples
+from .kpi_periods import current_calendar_quarter, quarter_month_tuples
 from .turboproject_config import API_BASE as TURBO_CFG_API_BASE, EMAIL as TURBO_CFG_EMAIL, PASSWORD as TURBO_CFG_PASSWORD
 
 logger = logging.getLogger(__name__)
@@ -350,6 +350,83 @@ def _is_target_project(data_1c: dict[str, Any], project_type: str | None = None)
     return data_1c.get("tip_proekta") == project_type
 
 
+def _safe_int(val: Any) -> int | None:
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        return int(val)
+    if isinstance(val, int):
+        return val
+    if isinstance(val, float):
+        return int(round(val))
+    s = str(val).strip()
+    if not s:
+        return None
+    try:
+        return int(float(s.replace(",", ".")))
+    except (ValueError, TypeError):
+        return None
+
+
+def _task_stat_get(stats: dict[str, Any], *candidates: str) -> Any:
+    for key in candidates:
+        if key in stats and stats[key] is not None:
+            return stats[key]
+    lower = {str(k).lower(): v for k, v in stats.items()}
+    for key in candidates:
+        v = lower.get(key.lower())
+        if v is not None:
+            return v
+    return None
+
+
+def _task_percent_weighted(percent_complete: Any) -> float:
+    """Доля выполнения задачи в процентах (0–100): TurboProject даёт 0–1 или 0–100."""
+    try:
+        pc = float(percent_complete or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if pc <= 1.0 + 1e-6:
+        return pc * 100.0
+    return min(pc, 100.0)
+
+
+def _compute_project_progress_pct(details: dict[str, Any]) -> float | None:
+    """
+    Доля выполнения проекта, %.
+    Сначала task_stats (разные регистры ключей), иначе — по дереву tasks.
+    """
+    ts = details.get("task_stats")
+    if not isinstance(ts, dict):
+        ts = {}
+    ct = _safe_int(_task_stat_get(ts, "completed_tasks", "CompletedTasks"))
+    tt = _safe_int(_task_stat_get(ts, "total_tasks", "TotalTasks"))
+    ns = _safe_int(_task_stat_get(ts, "non_summary_tasks", "NonSummaryTasks"))
+    cti = 0 if ct is None else max(ct, 0)
+    if tt is not None and tt > 0:
+        return round(cti / tt * 100, 1)
+    if ns is not None and ns > 0:
+        return round(cti / ns * 100, 1)
+
+    tasks = details.get("tasks") or []
+    if not isinstance(tasks, list) or not tasks:
+        return None
+    eligible: list[dict[str, Any]] = []
+    for t in tasks:
+        if not isinstance(t, dict):
+            continue
+        if t.get("is_summary"):
+            continue
+        eligible.append(t)
+    if not eligible:
+        return None
+    # Среднее по % завершения рабочих задач (учитывает частичный прогресс 0–1 от MS Project).
+    return round(
+        sum(_task_percent_weighted(t.get("percent_complete")) for t in eligible) / len(eligible),
+        1,
+    )
+
+
 def _project_summary(
     summary_item: dict[str, Any],
     details: dict[str, Any],
@@ -458,25 +535,89 @@ def _projects_for_type(project_type: str | None) -> list[dict[str, Any]]:
     ]
 
 
-def _project_date_bounds(project: dict[str, Any]) -> tuple[date | None, date | None]:
-    start = (
-        _parse_real_project_date(project.get("data_nachala"))
-        or _parse_real_project_date(project.get("planovaya_data_nachala"))
-        or _parse_real_project_date(project.get("start_date"))
-        or _parse_real_project_date(project.get("baseline_start"))
+def _format_ru_date(value: Any) -> str:
+    dt = _parse_project_date(value)
+    if dt is None:
+        return "—"
+    return dt.strftime("%d.%m.%Y")
+
+
+def _format_date_range(start_value: Any, end_value: Any) -> str:
+    start = _format_ru_date(start_value)
+    end = _format_ru_date(end_value)
+    if start == "—" and end == "—":
+        return "—"
+    if start == "—":
+        return end
+    if end == "—":
+        return start
+    return f"{start} - {end}"
+
+
+def _format_progress(project: dict[str, Any]) -> str:
+    pct = project.get("project_progress_pct")
+    if pct is None:
+        return "—"
+    return f"{pct}%"
+
+
+def _project_sroki(project: dict[str, Any]) -> str:
+    """Сроки: приоритет baseline_start — baseline_finish (реальные даты); иначе даты из графика / 1С."""
+    bs, bf = project.get("baseline_start"), project.get("baseline_finish")
+    bs_ok = bs if _parse_real_project_date(bs) is not None else None
+    bf_ok = bf if _parse_real_project_date(bf) is not None else None
+    if bs_ok is not None or bf_ok is not None:
+        return _format_date_range(bs_ok, bf_ok)
+    return _format_date_range(
+        project.get("start_date")
+        or project.get("planovaya_data_nachala")
+        or project.get("data_nachala"),
+        project.get("finish_date")
+        or project.get("planovaya_data_okonchaniya")
+        or project.get("data_okonchaniya"),
     )
-    end = (
-        _parse_real_project_date(project.get("data_okonchaniya"))
-        or _parse_real_project_date(project.get("planovaya_data_okonchaniya"))
-        or _parse_real_project_date(project.get("finish_date"))
-        or _parse_real_project_date(project.get("baseline_finish"))
+
+
+def _project_schedule_bounds_for_overlap(project: dict[str, Any]) -> tuple[date | None, date | None]:
+    """Границы сроков для пересечения с периодом — те же поля и порядок, что в колонке «Сроки»."""
+    bs, bf = project.get("baseline_start"), project.get("baseline_finish")
+    bs_ok = bs if _parse_real_project_date(bs) is not None else None
+    bf_ok = bf if _parse_real_project_date(bf) is not None else None
+    if bs_ok is not None or bf_ok is not None:
+        return (
+            _parse_real_project_date(bs_ok) if bs_ok else None,
+            _parse_real_project_date(bf_ok) if bf_ok else None,
+        )
+    start_val = (
+        project.get("start_date")
+        or project.get("planovaya_data_nachala")
+        or project.get("data_nachala")
     )
-    return start, end
+    end_val = (
+        project.get("finish_date")
+        or project.get("planovaya_data_okonchaniya")
+        or project.get("data_okonchaniya")
+    )
+    return _parse_real_project_date(start_val), _parse_real_project_date(end_val)
+
+
+def _project_overlaps_period_by_schedule(
+    project: dict[str, Any],
+    period_start: date,
+    period_end: date,
+) -> bool:
+    """Есть ли пересечение календарного интервала проекта с [period_start, period_end]."""
+    start, end = _project_schedule_bounds_for_overlap(project)
+    if start is not None and start > period_end:
+        return False
+    if end is not None and end < period_start:
+        return False
+    return True
 
 
 def _project_is_alive_in_month(project: dict[str, Any], year: int, month: int) -> bool:
     month_start, month_end = _month_start_end(year, month)
-    return _project_is_alive_in_range(project, month_start, month_end)
+    return _project_overlaps_period_by_schedule(project, month_start, month_end)
 
 
 def _project_is_alive_in_range(
@@ -484,12 +625,7 @@ def _project_is_alive_in_range(
     period_start: date,
     period_end: date,
 ) -> bool:
-    start, end = _project_date_bounds(project)
-    if start is not None and start > period_end:
-        return False
-    if end is not None and end < period_start:
-        return False
-    return True
+    return _project_overlaps_period_by_schedule(project, period_start, period_end)
 
 
 def _project_has_overdue_milestone_in_month(project: dict[str, Any], year: int, month: int) -> bool:
@@ -719,7 +855,7 @@ def _build_project_deviation_table(
 
 def _build_quarterly_payload(project_type: str) -> dict:
     target_projects = _projects_for_type(project_type)
-    year, quarter = last_full_quarter(date.today())
+    year, quarter = current_calendar_quarter(date.today())
     q_months = {f"{yy:04d}-{mm:02d}" for yy, mm in quarter_month_tuples(year, quarter)}
     quarter_month_dates = quarter_month_tuples(year, quarter)
     quarter_start = date(quarter_month_dates[0][0], quarter_month_dates[0][1], 1)
@@ -756,7 +892,7 @@ def _build_quarterly_payload(project_type: str) -> dict:
         "data_granularity": "quarterly",
         "quarterly_data": [quarter_row],
         "kpi_period": {
-            "type": "last_full_quarter",
+            "type": "current_quarter",
             "year": year,
             "quarter": quarter,
             "label": f"Q{quarter} {year}",
@@ -785,41 +921,51 @@ def _build_deviation_table(
     ref_y: int,
     ref_m: int,
 ) -> dict[str, Any]:
+    """Таблица отклонений по типу «Внешний заказ» (TD-M1): период — выбранный месяц."""
     project_type_label = {
         TARGET_PROJECT_TYPE_TD_M1: "Внешний Заказ",
         TARGET_PROJECT_TYPE_TD_Q1: "Улучшение и развитие",
     }.get(project_type, project_type)
     target_projects = _projects_for_type(project_type)
     month_start, month_end = _month_start_end(ref_y, ref_m)
-    rows: list[dict[str, Any]] = []
+    rows_with_sort: list[tuple[int, int, str, dict[str, Any]]] = []
 
     for project in target_projects:
         if not _project_is_alive_in_month(project, ref_y, ref_m):
             continue
+        total_delay_days = 0
         for milestone in project.get("overdue_milestones") or []:
             finish_dt = _parse_real_project_date(milestone.get("finish_date"))
             if finish_dt is None:
                 continue
             if finish_dt < month_start or finish_dt > month_end:
                 continue
-            rows.append({
-                "project_name": project.get("project_name"),
-                "project_manager": project.get("project_manager"),
-                "milestone_name": milestone.get("name"),
-                "milestone_planned_finish_date": milestone.get("finish_date"),
-                "milestone_start_date": milestone.get("start_date"),
-                "deviation_date": month_end.isoformat(),
-                "delay_days": max((month_end - finish_dt).days, 0),
-                "percent_complete": milestone.get("percent_complete"),
-            })
+            delay_days = max((month_end - finish_dt).days, 0)
+            total_delay_days += delay_days
 
-    rows.sort(key=lambda row: (row.get("project_name") or "", row.get("milestone_planned_finish_date") or ""))
+        if total_delay_days <= 0:
+            continue
+
+        nomer = project.get("project_code")
+        pname = project.get("project_name")
+        row = {
+            "nomer_proekta": nomer if nomer not in (None, "") else "—",
+            "project_name": pname if pname not in (None, "") else "—",
+            "rp": project.get("project_manager") or "—",
+            "sroki": _project_sroki(project),
+            "otklonenie_summarnoe": total_delay_days,
+            "status": project.get("status_proekta") or "—",
+            "progress": _format_progress(project),
+        }
+        rows_with_sort.append((0, -total_delay_days, row["project_name"], row))
+
+    rows = [row for _, _, _, row in sorted(rows_with_sort)]
     return {
-        "name": f"Отклонения по вехам: {project_type_label}",
+        "name": f"Проекты с отклонениями: {project_type_label}",
         "periodicity": "ежемесячно",
         "description": (
-            "Проекты с просроченными вехами в выбранном месяце. "
-            "Одна строка = одна веха с отклонением."
+            "Проекты техдирекции, активные в выбранном месяце, с просроченными незавершёнными вехами. "
+            "Одна строка = один проект; «Отклонение (суммарное)» — сумма дней просрочки по всем таким вехам в месяце."
         ),
         "period": {
             "year": ref_y,
@@ -827,13 +973,92 @@ def _build_deviation_table(
             "month_name": MONTH_NAMES[ref_m],
         },
         "columns": [
-            "Название проекта",
-            "Руководитель проекта",
-            "Название вехи",
-            "Плановая дата вехи",
-            "Дата отклонения",
-            "Дней отклонения",
-            "Процент выполнения",
+            "№",
+            "Название",
+            "РП",
+            "Сроки",
+            "Отклонение (суммарное)",
+            "Статус",
+            "Прогресс",
+        ],
+        "rows": rows,
+    }
+
+
+def _build_deviation_table_q1_quarter() -> dict[str, Any]:
+    """Таблица отклонений TD-Q1: тот же период и состав проектов, что на плитке (текущий календарный квартал)."""
+    project_type = TARGET_PROJECT_TYPE_TD_Q1
+    project_type_label = "Улучшение и развитие"
+    target_projects = _projects_for_type(project_type)
+    year, quarter = current_calendar_quarter(date.today())
+    q_months = {f"{yy:04d}-{mm:02d}" for yy, mm in quarter_month_tuples(year, quarter)}
+    quarter_month_dates = quarter_month_tuples(year, quarter)
+    quarter_start = date(quarter_month_dates[0][0], quarter_month_dates[0][1], 1)
+    quarter_end_year, quarter_end_month = quarter_month_dates[-1]
+    quarter_end = date(
+        quarter_end_year, quarter_end_month,
+        monthrange(quarter_end_year, quarter_end_month)[1],
+    )
+
+    quarter_projects = [
+        project for project in target_projects
+        if _project_is_alive_in_range(project, quarter_start, quarter_end)
+    ]
+    delayed_projects = [
+        project for project in quarter_projects
+        if q_months.intersection(project.get("overdue_milestone_months") or [])
+    ]
+
+    rows_with_sort: list[tuple[int, int, str, dict[str, Any]]] = []
+    for project in delayed_projects:
+        total_delay_days = 0
+        for milestone in project.get("overdue_milestones") or []:
+            finish_dt = _parse_real_project_date(milestone.get("finish_date"))
+            if finish_dt is None:
+                continue
+            if finish_dt < quarter_start or finish_dt > quarter_end:
+                continue
+            delay_days = max((quarter_end - finish_dt).days, 0)
+            total_delay_days += delay_days
+
+        nomer = project.get("project_code")
+        pname = project.get("project_name")
+        row = {
+            "nomer_proekta": nomer if nomer not in (None, "") else "—",
+            "project_name": pname if pname not in (None, "") else "—",
+            "rp": project.get("project_manager") or "—",
+            "sroki": _project_sroki(project),
+            "otklonenie_summarnoe": total_delay_days,
+            "status": project.get("status_proekta") or "—",
+            "progress": _format_progress(project),
+        }
+        rows_with_sort.append((0, -total_delay_days, row["project_name"], row))
+
+    rows = [row for _, _, _, row in sorted(rows_with_sort)]
+    return {
+        "name": f"Проекты с отклонениями: {project_type_label}",
+        "periodicity": "ежеквартально",
+        "description": (
+            "Те же проекты и период, что на плитке TD-Q1: текущий календарный квартал. "
+            "Состав строк = проекты с отклонениями по вехам в квартале (как fact на плитке). "
+            "«Отклонение (суммарное)» — сумма дней от плановой даты вехи до конца квартала по всем таким вехам в квартале."
+        ),
+        "period": {
+            "type": "current_quarter",
+            "year": year,
+            "quarter": quarter,
+            "label": f"Q{quarter} {year}",
+            "quarter_start": quarter_start.isoformat(),
+            "quarter_end": quarter_end.isoformat(),
+        },
+        "columns": [
+            "№",
+            "Название",
+            "РП",
+            "Сроки",
+            "Отклонение (суммарное)",
+            "Статус",
+            "Прогресс",
         ],
         "rows": rows,
     }
@@ -848,7 +1073,7 @@ def get_td_deviation_tables(month: int | None = None, year: int | None = None) -
                 ref_y, ref_m = year, month
             return {
                 "TD-T-M1-DEVIATIONS": _build_deviation_table(TARGET_PROJECT_TYPE_TD_M1, ref_y, ref_m),
-                "TD-T-Q1-DEVIATIONS": _build_deviation_table(TARGET_PROJECT_TYPE_TD_Q1, ref_y, ref_m),
+                "TD-T-Q1-DEVIATIONS": _build_deviation_table_q1_quarter(),
             }
         except Exception:
             logger.exception("Ошибка при расчёте таблиц техдирекции из TurboProject")

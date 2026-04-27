@@ -31,3 +31,6 @@ staticfiles/
 # OS
 .DS_Store
 Thumbs.db
+
+# Кэши и выгрузки дашборда (JSON)
+getkpi/dashboard/**/*.json
