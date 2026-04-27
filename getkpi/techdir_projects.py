@@ -255,11 +255,14 @@ def _overdue_milestone_rows(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]
         if finish_dt.date() >= today:
             continue
         rows.append({
+            "id": task.get("id"),
+            "uid": task.get("uid"),
             "name": task.get("name") or "",
             "start_date": task.get("start_date"),
             "finish_date": task.get("finish_date"),
             "percent_complete": percent_complete,
         })
+    rows.sort(key=lambda row: (row.get("finish_date") or "", row.get("name") or ""))
     return rows
 
 
@@ -525,6 +528,27 @@ def _project_overdue_milestones_in_month(
     return rows
 
 
+def _build_milestone_deviation_details(
+    overdue_rows: list[dict[str, Any]],
+    month_end: date,
+) -> list[dict[str, Any]]:
+    details: list[dict[str, Any]] = []
+    for index, milestone in enumerate(overdue_rows, start=1):
+        finish_dt = _parse_real_project_date(milestone.get("finish_date"))
+        delay_days = max((month_end - finish_dt).days, 0) if finish_dt else 0
+        details.append({
+            "number": index,
+            "id": milestone.get("id"),
+            "uid": milestone.get("uid"),
+            "name": milestone.get("name") or "",
+            "start_date": milestone.get("start_date"),
+            "finish_date": milestone.get("finish_date"),
+            "delay_days": delay_days,
+            "percent_complete": milestone.get("percent_complete"),
+        })
+    return details
+
+
 def _project_timeline_label(project: dict[str, Any]) -> str:
     start_dt, end_dt = _project_date_bounds(project)
     if start_dt and end_dt:
@@ -566,12 +590,11 @@ def _build_project_deviation_table(
         if not overdue_rows:
             continue
 
-        max_delay_days = 0
-        for milestone in overdue_rows:
-            finish_dt = _parse_real_project_date(milestone.get("finish_date"))
-            if finish_dt is None:
-                continue
-            max_delay_days = max(max_delay_days, max((month_end - finish_dt).days, 0))
+        milestone_details = _build_milestone_deviation_details(overdue_rows, month_end)
+        max_delay_days = max(
+            (int(milestone.get("delay_days") or 0) for milestone in milestone_details),
+            default=0,
+        )
 
         rows.append({
             "number": len(rows) + 1,
@@ -584,6 +607,7 @@ def _build_project_deviation_table(
             "status": _project_status_label(project),
             "progress_pct": project.get("project_progress_pct"),
             "overdue_milestones_count": len(overdue_rows),
+            "milestone_deviations": milestone_details,
         })
 
     rows.sort(
@@ -608,7 +632,7 @@ def _build_project_deviation_table(
             "month": ref_m,
             "month_name": MONTH_NAMES[ref_m],
         },
-        "columns": ["№", "Название", "РП", "Сроки", "Отклонение", "Статус", "Прогресс"],
+        "columns": ["№ 1С", "Название", "РП", "Сроки", "Отклонение", "Статус", "Прогресс"],
         "rows": rows,
     }
 
