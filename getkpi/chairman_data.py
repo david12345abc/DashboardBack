@@ -216,7 +216,7 @@ def _build_fnd_t1_revenue_rows(months: list[int], ref_y: int) -> list[dict]:
 def _build_fnd_t4_svoevremennaya_rows(months: list[int], ref_y: int, ref_m: int) -> list[dict]:
     """FND-T4 «Своевременная отгрузка» = уникальные заказы из
     ТД_КонтрольныеДатыИсполненияДоговора по ДатаОкончанияЮридическихОбязательствПоДоговору
-    (план) / реализации по этим заказам (факт).
+    (план); факт = план - срывы.
     """
     if not months:
         return []
@@ -1670,6 +1670,7 @@ def build_chairman_commerce_payload(
             "chart_type_label": "Круговые диаграммы по месяцам (КС развитие)",
             "period": {"year": ref_y, "month": ref_m, "month_name": month_name},
             "indicators": ks_plans.get("indicators") or [],
+            "indicator_units": ks_plans.get("indicator_units") or {},
             "months": ks_plans.get("months") or {},
             "by_dept": ks_plans.get("by_dept") or {},
             "by_dept_guid": ks_plans.get("by_dept_guid") or {},

@@ -6,10 +6,12 @@ calc_svoevremennaya_otgruzka.py — FND-T4 «Своевременная отгр
     InformationRegister_ТД_КонтрольныеДатыИсполненияДоговора,
     где ДатаОкончанияЮридическихОбязательствПоДоговору в [1-е M .. последний день M].
 
-  Факт за месяц M = количество срывов среди этих заказов:
+  Отклонения за месяц M = количество срывов среди этих заказов:
     ДатаОтгрузки > ДатаОкончанияЮридическихОбязательствПоДоговору.
 
-  % = (План - Факт) / План * 100 (округление до 0.1)
+  Факт за месяц M = План - Отклонения.
+
+  % = Факт / План * 100 (округление до 0.1)
 
 Кэш: dashboard/svoevremennaya_<year>_<month:02d>.json  — данные именно за месяц
      dashboard/svoevremennaya_monthly_<year>_<month:02d>.json — помесячный ряд
@@ -40,7 +42,7 @@ logger = logging.getLogger(__name__)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
-SOURCE_TAG = "svoevremennaya_monthly_v3_npo_delays"
+SOURCE_TAG = "svoevremennaya_monthly_v4_npo_timely_fact"
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 
@@ -307,8 +309,9 @@ def get_svoevremennaya_for_month(year: int, month: int) -> dict:
         "year", "month",
         "period_start", "period_end",
         "plan": int,          # уникальные заказы с датой ЮО в этом месяце
-        "fact": int,          # срывы среди этих заказов
-        "pct": float | None,  # (plan - fact) / plan * 100
+        "fact": int,          # своевременные заказы: plan - delays
+        "delays": int,        # срывы среди этих заказов
+        "pct": float | None,  # fact / plan * 100
       }
     """
     cached = _load_cache(_cache_path(year, month))
@@ -325,10 +328,11 @@ def get_svoevremennaya_for_month(year: int, month: int) -> dict:
         if not _is_empty_ref(row.get(ORDER_FIELD))
     }
     order_docs = _fetch_customer_orders(session, raw_orders)
-    orders, fact = _plan_orders_and_delays(plan_rows, order_docs)
+    orders, delays = _plan_orders_and_delays(plan_rows, order_docs)
     plan = len(orders)
+    fact = max(plan - delays, 0)
 
-    pct = round((plan - fact) / plan * 100, 1) if plan else None
+    pct = round(fact / plan * 100, 1) if plan else None
 
     d_from, d_to = _month_bounds(year, month)
     payload = {
@@ -338,8 +342,10 @@ def get_svoevremennaya_for_month(year: int, month: int) -> dict:
         "period_end": d_to[:10],
         "plan": plan,
         "fact": fact,
+        "delays": delays,
+        "deviation_count": delays,
         "pct": pct,
-        "fact_label": "\u0441\u0440\u044b\u0432\u044b",
+        "fact_label": "\u0441\u0432\u043e\u0435\u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e",
     }
     _save_cache(_cache_path(year, month), payload)
     return payload
@@ -386,6 +392,8 @@ def get_svoevremennaya_monthly(year: int | None = None,
             "month_name": MONTH_RU[mm],
             "plan": data.get("plan"),
             "fact": data.get("fact"),
+            "delays": data.get("delays"),
+            "deviation_count": data.get("deviation_count"),
             "kpi_pct": data.get("pct"),
             "has_data": (data.get("plan") or 0) > 0,
         })

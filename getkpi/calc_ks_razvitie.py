@@ -3,6 +3,7 @@ calc_ks_razvitie.py — Плановые показатели блока «КС 
 
 Источник: Document_ТД_КСРазвитие с табличной частью «Показатели».
 Каждый документ = один показатель × одно подразделение × 12 месяцев.
+Единица измерения берётся из реквизита документа «ЕдИзмерения».
 
 По ТЗ: для каждой пары (подразделение × показатель) выдаём помесячный ряд
 { plan, fact }. Факт пока всегда 0 — в 1С учёта фактических значений нет,
@@ -31,8 +32,9 @@ calc_ks_razvitie.py — Плановые показатели блока «КС 
       "dept_name": "Отдел дилерских продаж",
       "dept_guid": "7587...",
       "indicator": "Развитие имеющихся дилеров",
+      "unit": "шт.",
       "months": [
-        {"month": 1, "month_name": "январь", "plan": 0, "fact": 0},
+        {"month": 1, "month_name": "январь", "plan": 0, "fact": 0, "unit": "шт."},
         ...
       ]
     },
@@ -87,6 +89,7 @@ ALLOWED_DEPARTMENTS: dict[str, str] = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
+CACHE_VERSION = "ks_razvitie_units_v1"
 
 # Возможные варианты имени EntitySet в OData и имени таб.части.
 DOC_ENTITY_CANDIDATES = [
@@ -116,6 +119,8 @@ def _load_cache(year: int) -> dict | None:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return None
+    if data.get("source_tag") != CACHE_VERSION:
+        return None
     # Текущий год — перепроверяем на дневной кэш, прошлые годы — кэшируем без TTL.
     today = date.today()
     if int(data.get("year") or 0) == today.year and data.get("cached_at") != today.isoformat():
@@ -125,7 +130,7 @@ def _load_cache(year: int) -> dict | None:
 
 def _save_cache(year: int, payload: dict) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    payload = {**payload, "cached_at": date.today().isoformat()}
+    payload = {**payload, "cached_at": date.today().isoformat(), "source_tag": CACHE_VERSION}
     try:
         with open(_cache_path(year), "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -196,7 +201,7 @@ def _fetch_documents(session: requests.Session, doc_entity: str) -> list[dict]:
     не получилось — возвращаем пустой список и пишем warning, чтобы
     дашборд собрался без этого блока.
     """
-    select = "Ref_Key,Number,Date,Posted,DeletionMark,Подразделение_Key"
+    select = "Ref_Key,Number,Date,Posted,DeletionMark,Подразделение_Key,ЕдИзмерения"
     docs: list[dict] = []
     skip = 0
     PAGE = 5000
@@ -301,6 +306,25 @@ def _parse_plan(value) -> float:
         return 0.0
 
 
+def _unit_from_1c(value) -> str:
+    """Enum документа ТД_КСРазвитие: 0=руб., 1=шт., 2=%."""
+    try:
+        code = int(value)
+    except (TypeError, ValueError):
+        return ""
+    return {0: "руб.", 1: "шт.", 2: "%"}.get(code, "")
+
+
+def _merge_units(left: str | None, right: str | None) -> str:
+    units = []
+    for value in (left, right):
+        for part in str(value or "").split("/"):
+            part = part.strip()
+            if part and part not in units:
+                units.append(part)
+    return "/".join(units)
+
+
 MONTH_NAMES_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
     5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -308,9 +332,9 @@ MONTH_NAMES_RU = {
 }
 
 
-def _pf(plan: float, fact: float = 0.0) -> dict[str, float]:
+def _pf(plan: float, fact: float = 0.0, unit: str = "") -> dict:
     """Ячейка круговой диаграммы: две цифры — план и факт (%факт пока всегда 0)."""
-    return {"plan": round(float(plan), 4), "fact": round(float(fact), 4)}
+    return {"plan": round(float(plan), 4), "fact": round(float(fact), 4), "unit": unit or ""}
 
 
 def _build_empty_months(indicators: list[str]) -> dict[str, dict[str, dict[str, float]]]:
@@ -321,20 +345,25 @@ def _build_empty_months(indicators: list[str]) -> dict[str, dict[str, dict[str, 
     }
 
 
-def _months_to_chart(indicator: str, months_map: dict) -> dict:
+def _months_to_chart(indicator: str,
+                     months_map: dict,
+                     unit: str = "",
+                     indicator_label: str | None = None) -> dict:
     """Массив {month, month_name, plan, fact} для одной круговой диаграммы."""
     series = []
     for m in range(1, 13):
         cell = (months_map or {}).get(str(m), {}).get(indicator) or {}
         plan = float(cell.get("plan") or 0.0)
         fact = float(cell.get("fact") or 0.0)
+        point_unit = cell.get("unit") or unit or ""
         series.append({
             "month": m,
             "month_name": MONTH_NAMES_RU[m],
             "plan": round(plan, 4),
             "fact": round(fact, 4),
+            "unit": point_unit,
         })
-    return {"indicator": indicator, "months": series}
+    return {"indicator": indicator_label or indicator, "unit": unit or "", "months": series}
 
 
 def _fetch_from_odata(year: int) -> dict:
@@ -386,15 +415,21 @@ def _fetch_from_odata(year: int) -> dict:
             "date": str(d.get("Date") or "")[:10],
             "dept_key": dept_key,
             "dept_name": dept_name,
+            "unit": _unit_from_1c(d.get("ЕдИзмерения")),
+            "unit_code": d.get("ЕдИзмерения"),
         }
 
     tab_rows = _fetch_tab_rows(session, tab_entity)
 
-    # indicators — множество всех показателей, собранных по документам коммерческого блока.
+    # indicators — множество всех диаграмм, собранных по документам коммерческого блока.
+    # Если один и тот же показатель заведен с разными единицами измерения,
+    # это разные диаграммы: складывать рубли, штуки и проценты нельзя.
     indicators_set: set[str] = set()
+    indicator_labels: dict[str, str] = {}
 
     # Структура агрегатов: by_dept[dept_name][month][indicator] = sum(plan)
     by_dept_agg: dict[str, dict[str, dict[str, float]]] = {}
+    unit_by_dept_indicator: dict[tuple[str, str], str] = {}
 
     for row in tab_rows:
         ref = str(row.get("Ref_Key") or "").lower()
@@ -426,18 +461,28 @@ def _fetch_from_odata(year: int) -> dict:
             indicator = ind_field.strip()
         if not indicator:
             continue
-        plan = _parse_plan(row.get("План"))
-        indicators_set.add(indicator)
-
         dept_name = info["dept_name"]
+        unit = str(info.get("unit") or "")
+        chart_key = f"{indicator}@@unit:{unit}"
+        indicator_labels[chart_key] = indicator
+        plan = _parse_plan(row.get("План"))
+        indicators_set.add(chart_key)
+
+        unit_key = (dept_name, chart_key)
+        prev_unit = unit_by_dept_indicator.get(unit_key)
+        if prev_unit is None:
+            unit_by_dept_indicator[unit_key] = unit
+        elif prev_unit != unit:
+            unit_by_dept_indicator[unit_key] = _merge_units(prev_unit, unit)
         dept_bucket = by_dept_agg.setdefault(dept_name, {})
         month_bucket = dept_bucket.setdefault(str(month), {})
         # Суммируем план, если в рамках отдела на один месяц/показатель
         # несколько документов; факт пока всегда 0.
-        prev = month_bucket.get(indicator) or {"plan": 0.0, "fact": 0.0}
-        month_bucket[indicator] = {
+        prev = month_bucket.get(chart_key) or {"plan": 0.0, "fact": 0.0}
+        month_bucket[chart_key] = {
             "plan": round(prev.get("plan", 0.0) + plan, 4),
             "fact": round(prev.get("fact", 0.0), 4),
+            "unit": unit_by_dept_indicator.get(unit_key, unit),
         }
 
     indicators = sorted(indicators_set)
@@ -445,12 +490,19 @@ def _fetch_from_odata(year: int) -> dict:
     # Индикаторы per-dept: только те, что реально есть в документах
     # конкретного подразделения (хотя бы один раз за год).
     dept_indicators: dict[str, list[str]] = {}
+    indicator_units: dict[str, str] = {}
     for dept_name, month_map in by_dept_agg.items():
         present: set[str] = set()
         for ind_map in month_map.values():
-            for ind in ind_map.keys():
-                if ind:
-                    present.add(ind)
+            for ind_key in ind_map.keys():
+                if ind_key:
+                    present.add(ind_key)
+                    unit = unit_by_dept_indicator.get((dept_name, ind_key), "")
+                    prev_unit = indicator_units.get(ind_key)
+                    if prev_unit is None:
+                        indicator_units[ind_key] = unit
+                    elif prev_unit != unit:
+                        indicator_units[ind_key] = _merge_units(prev_unit, unit)
         dept_indicators[dept_name] = sorted(present)
 
     # by_dept: для каждого подразделения 12 месяцев × только его показатели.
@@ -460,16 +512,34 @@ def _fetch_from_odata(year: int) -> dict:
     name_to_key = {name: key for key, name in dept_name_by_key.items()}
     for dept_name in sorted(by_dept_agg.keys()):
         dept_inds = dept_indicators.get(dept_name) or []
-        base = {str(m): {ind: _pf(0.0) for ind in dept_inds} for m in range(1, 13)}
+        base = {
+            str(m): {
+                ind_key: _pf(0.0, unit=unit_by_dept_indicator.get((dept_name, ind_key), ""))
+                for ind_key in dept_inds
+            }
+            for m in range(1, 13)
+        }
         dept_present = by_dept_agg.get(dept_name) or {}
         for m in range(1, 13):
             key = str(m)
             if key in dept_present:
-                for ind in dept_inds:
-                    cell = dept_present[key].get(ind)
+                for ind_key in dept_inds:
+                    cell = dept_present[key].get(ind_key)
                     if isinstance(cell, dict):
-                        base[key][ind] = _pf(cell.get("plan", 0.0), cell.get("fact", 0.0))
-        dept_charts = [_months_to_chart(ind, base) for ind in dept_inds]
+                        base[key][ind_key] = _pf(
+                            cell.get("plan", 0.0),
+                            cell.get("fact", 0.0),
+                            cell.get("unit") or unit_by_dept_indicator.get((dept_name, ind_key), ""),
+                        )
+        dept_charts = [
+            _months_to_chart(
+                ind_key,
+                base,
+                unit_by_dept_indicator.get((dept_name, ind_key), ""),
+                indicator_labels.get(ind_key, ind_key),
+            )
+            for ind_key in dept_inds
+        ]
         # Обогащаем чарт контекстом отдела, чтобы было удобно рендерить.
         for ch in dept_charts:
             ch["dept_name"] = dept_name
@@ -492,6 +562,7 @@ def _fetch_from_odata(year: int) -> dict:
                 total[m_key][ind] = {
                     "plan": round(prev.get("plan", 0.0) + float(pf.get("plan", 0.0)), 4),
                     "fact": round(prev.get("fact", 0.0) + float(pf.get("fact", 0.0)), 4),
+                    "unit": indicator_units.get(ind, ""),
                 }
 
     # GUID → отдельный срез (для точной фильтрации по dept_guid).
@@ -510,9 +581,15 @@ def _fetch_from_odata(year: int) -> dict:
         for ch in (by_dept_full[dept_name].get("charts") or []):
             flat_charts.append(ch)
 
+    display_indicator_units = {
+        indicator_labels.get(key, key): unit
+        for key, unit in indicator_units.items()
+    }
+
     return {
         "year": int(year),
-        "indicators": indicators,           # полный список показателей
+        "indicators": sorted({indicator_labels.get(key, key) for key in indicators}),
+        "indicator_units": display_indicator_units,
         "months": total,                    # помесячный агрегат {plan, fact} по всем отделам
         "by_dept": by_dept_full,            # детализация по подразделению (имя → срез)
         "by_dept_guid": by_dept_guid,       # то же, ключ — GUID подразделения

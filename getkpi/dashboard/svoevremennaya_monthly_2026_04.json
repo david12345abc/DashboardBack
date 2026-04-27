@@ -7,7 +7,9 @@
       "month": 1,
       "month_name": "январь",
       "plan": 60,
-      "fact": 0,
+      "fact": 60,
+      "delays": 0,
+      "deviation_count": 0,
       "kpi_pct": 100.0,
       "has_data": true
     },
@@ -16,7 +18,9 @@
       "month": 2,
       "month_name": "февраль",
       "plan": 56,
-      "fact": 0,
+      "fact": 56,
+      "delays": 0,
+      "deviation_count": 0,
       "kpi_pct": 100.0,
       "has_data": true
     },
@@ -25,7 +29,9 @@
       "month": 3,
       "month_name": "март",
       "plan": 47,
-      "fact": 1,
+      "fact": 46,
+      "delays": 1,
+      "deviation_count": 1,
       "kpi_pct": 97.9,
       "has_data": true
     },
@@ -34,11 +40,13 @@
       "month": 4,
       "month_name": "апрель",
       "plan": 42,
-      "fact": 0,
+      "fact": 42,
+      "delays": 0,
+      "deviation_count": 0,
       "kpi_pct": 100.0,
       "has_data": true
     }
   ],
   "cache_date": "2026-04-27",
-  "source_tag": "svoevremennaya_monthly_v3_npo_delays"
+  "source_tag": "svoevremennaya_monthly_v4_npo_timely_fact"
 }

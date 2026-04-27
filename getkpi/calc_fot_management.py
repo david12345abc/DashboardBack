@@ -1,75 +1,63 @@
 """
-calc_fot_management.py — ПЛИТКА «ФОТ компании управленческого контура
-в пределах лимита».
+calc_fot_management.py - OD-M3.2 "FOT operational director".
 
-Методика:
-  Источник факта   : AccountingRegister_Хозрасчетный / RecordsWithExtDimensions
-  Счета            : 44, 44.01, 44.02
-  Статьи затрат    : 4 статьи ФОТ (оплата труда возм./ТД, страх.взносы возм./ТД)
-  Организации      : ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО + Турбулентность-Дон ООО.
-                     Другие дочерние юр.лица (СКТБ, АЛМАЗ, МГС) не входят.
-  Подразделения    : ВСЕ — это периметр «управленческого контура».
+Fact method:
+  Source       : AccountingRegister_Хозрасчетный / RecordsWithExtDimensions
+  Account      : debit turnover of account 26 and its subaccounts
+  Departments  : subtree "ОПЕРАЦИОННЫЙ ДИРЕКТОР" in enterprise structure
+  Cost articles: "Оплата труда (26 сч) НПО АУП!",
+                 "Страховые взносы (26 сч) НПО АУП!"
 
-Показатели:
-  • ФАКТ  — Дт-оборот 44.xx за месяц по 4 статьям ФОТ.
-  • ПЛАН  — берётся тем же способом, что и для коммерческого директора
-            (`calc_fot.get_fot_plan`), с последующей пропорцией на текущий месяц.
-
-Запуск:
-  python calc_fot_management.py 2026-03           # один месяц
-  python calc_fot_management.py 2026              # весь год
-  python calc_fot_management.py 2026-03 --json    # + fot_mgmt_2026-03.json
-  python calc_fot_management.py 2026     --json   # + fot_mgmt_2026.json
+Accumulation registers are not used for FOT fact.
 """
-import requests, sys, time, os, json
+from __future__ import annotations
+
+import json
+import re
+import sys
+import time
 from collections import defaultdict
 from calendar import monthrange
 from datetime import date, datetime
 from pathlib import Path
-from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
-sys.stdout.reconfigure(encoding="utf-8")
+import requests
+from requests.auth import HTTPBasicAuth
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
-TURB_ORGS = {
-    "fbca2148-6cfd-11e7-812d-001e67112509": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-    "fbca2143-6cfd-11e7-812d-001e67112509": "Турбулентность-Дон ООО",
-}
+ACCOUNT_26_ROOT = "fb2bde43-6250-11e7-812d-001e67112509"
+SUBCONTO_TYPE_COST = "fb2bdde9-6250-11e7-812d-001e67112509"
 
-ACCOUNTS_44 = {
-    "fb2bde54-6250-11e7-812d-001e67112509",  # 44
-    "fb2bde55-6250-11e7-812d-001e67112509",  # 44.01
-    "fb2bde56-6250-11e7-812d-001e67112509",  # 44.02
-}
+OPDIR_ROOT_NAME = "ОПЕРАЦИОННЫЙ ДИРЕКТОР"
 
 COST_ARTICLES = {
-    "992a514f-782a-11eb-854d-ac1f6b05524d": "Оплата труда (44 сч) возмещение НПО!",
-    "cc7c4aa6-3767-11ea-82f3-ac1f6b05524d": "Оплата труда (44 сч) ТД НПО!",
-    "a04a98f8-782a-11eb-854d-ac1f6b05524d": "Страховые взносы (44.01) возмещение НПО!",
-    "0360bf95-3768-11ea-82f3-ac1f6b05524d": "Страховые взносы (44.01) ТД НПО!",
+    "524cd9aa-215a-11e0-b91c-00248c26ee57": "Оплата труда (26 сч) НПО АУП!",
+    "b2913ba1-768e-11e7-812e-001e67112509": "Страховые взносы (26 сч) НПО АУП!",
 }
 ARTICLE_SET = frozenset(COST_ARTICLES)
 ARTICLE_ORDER = list(COST_ARTICLES.keys())
-ARTICLE_SHORT = {
-    "992a514f-782a-11eb-854d-ac1f6b05524d": "Опл.тр. возм.",
-    "cc7c4aa6-3767-11ea-82f3-ac1f6b05524d": "Опл.тр. ТД",
-    "a04a98f8-782a-11eb-854d-ac1f6b05524d": "Страх.вз. возм.",
-    "0360bf95-3768-11ea-82f3-ac1f6b05524d": "Страх.вз. ТД",
-}
 
-SUBCONTO_TYPE_COST = "fb2bdde9-6250-11e7-812d-001e67112509"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "fot_management_monthly_v3"
+SOURCE_TAG = "fot_management_opdir_account26_v1"
 
 MONTH_RU = {
     1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
     5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
     9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
 }
+
+
+def normalize_name(value: str | None) -> str:
+    value = (value or "").lower().replace("ё", "е")
+    value = re.sub(r"[^0-9a-zа-я]+", " ", value)
+    return " ".join(value.split())
 
 
 def _load_json(path: Path):
@@ -109,10 +97,25 @@ def _normalize_period(year: int | None = None, month: int | None = None) -> tupl
     return ref_year, ref_month
 
 
-def period_bounds(year: int, month: int):
+def period_bounds(year: int, month: int) -> tuple[str, str]:
     if month == 12:
         return f"{year}-12-01T00:00:00", f"{year + 1}-01-01T00:00:00"
     return f"{year}-{month:02d}-01T00:00:00", f"{year}-{month + 1:02d}-01T00:00:00"
+
+
+def _fetch_all(session: requests.Session, url: str, page: int = 5000) -> list[dict]:
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        sep = "&" if "?" in url else "?"
+        r = session.get(f"{url}{sep}$top={page}&$skip={skip}", timeout=120)
+        r.raise_for_status()
+        batch = r.json().get("value", [])
+        rows.extend(batch)
+        if len(batch) < page:
+            break
+        skip += len(batch)
+    return rows
 
 
 def _get_plan_total(month: int) -> float:
@@ -133,73 +136,194 @@ def _prorate_if_current(plan: float | None, year: int, month: int) -> float | No
     return round(float(plan), 2)
 
 
+def _load_structure(session: requests.Session) -> tuple[dict[str, dict], dict[str, list[dict]]]:
+    url = (
+        f"{BASE}/{quote('Catalog_СтруктураПредприятия')}"
+        f"?$format=json"
+        f"&$select=Ref_Key,Description,Parent_Key,DeletionMark"
+        f"&$orderby=Ref_Key"
+    )
+    rows = _fetch_all(session, url)
+    by_key: dict[str, dict] = {}
+    by_parent: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        key = row.get("Ref_Key")
+        if not key:
+            continue
+        by_key[key] = row
+        by_parent[row.get("Parent_Key")].append(row)
+    return by_key, by_parent
+
+
+def _resolve_department_root(by_key: dict[str, dict], name: str) -> dict:
+    target = normalize_name(name)
+    candidates = [
+        row for row in by_key.values()
+        if normalize_name(row.get("Description")) == target
+    ]
+    if not candidates:
+        candidates = [
+            row for row in by_key.values()
+            if target in normalize_name(row.get("Description"))
+        ]
+    if not candidates:
+        raise RuntimeError(f"Не найдено подразделение: {name}")
+    candidates.sort(key=lambda row: (1 if row.get("DeletionMark") else 0, row.get("Description") or ""))
+    return candidates[0]
+
+
+def _collect_subtree_ordered(root_key: str,
+                             by_key: dict[str, dict],
+                             by_parent: dict[str, list[dict]]) -> list[dict]:
+    result: list[dict] = []
+    stack = [root_key]
+    seen: set[str] = set()
+    while stack:
+        key = stack.pop(0)
+        if key in seen:
+            continue
+        seen.add(key)
+        row = by_key.get(key)
+        if row and not row.get("DeletionMark"):
+            result.append(row)
+        children = sorted(
+            by_parent.get(key, []),
+            key=lambda item: normalize_name(item.get("Description")),
+        )
+        stack[0:0] = [child["Ref_Key"] for child in children if child.get("Ref_Key")]
+    return result
+
+
+def _get_subaccounts(session: requests.Session, parent_guid: str) -> set[str]:
+    collected = {parent_guid}
+    frontier = [parent_guid]
+    while frontier:
+        parent = frontier.pop()
+        flt = f"Parent_Key eq guid'{parent}'"
+        url = (
+            f"{BASE}/{quote('ChartOfAccounts_Хозрасчетный')}"
+            f"?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select=Ref_Key,Code,Description,Parent_Key"
+        )
+        for row in _fetch_all(session, url, page=200):
+            key = row.get("Ref_Key")
+            if key and key not in collected:
+                collected.add(key)
+                frontier.append(key)
+    return collected
+
+
+def _blank_dept_row() -> dict:
+    return {
+        "salary": 0.0,
+        "insurance": 0.0,
+        "total": 0.0,
+        "rows": 0,
+        "by_article": {article: 0.0 for article in ARTICLE_ORDER},
+    }
+
+
 def calc_fact(session: requests.Session, year: int, month: int) -> dict:
     p_start, p_end = period_bounds(year, month)
-    acc_or = " or ".join(f"AccountDr_Key eq guid'{a}'" for a in ACCOUNTS_44)
-    org_or = " or ".join(f"Организация_Key eq guid'{o}'" for o in TURB_ORGS)
+    by_key, by_parent = _load_structure(session)
+    root = _resolve_department_root(by_key, OPDIR_ROOT_NAME)
+    departments = _collect_subtree_ordered(root["Ref_Key"], by_key, by_parent)
+    dept_keys = {row["Ref_Key"] for row in departments}
+
+    target_accounts = _get_subaccounts(session, ACCOUNT_26_ROOT)
+    acc_or = " or ".join(f"AccountDr_Key eq guid'{a}'" for a in sorted(target_accounts))
     flt = (
         f"Period ge datetime'{p_start}' and Period lt datetime'{p_end}'"
-        f" and Active eq true and ({acc_or}) and ({org_or})"
+        f" and Active eq true and ({acc_or})"
     )
     sel = ",".join([
-        "Period", "AccountDr_Key", "Организация_Key", "ПодразделениеDr_Key",
+        "Period", "AccountDr_Key", "ПодразделениеDr_Key",
         "Сумма", "Сторно", "ExtDimensionDr1", "ExtDimensionTypeDr1_Key",
     ])
-    url_base = (
+    url = (
         f"{BASE}/{quote('AccountingRegister_Хозрасчетный')}/RecordsWithExtDimensions"
         f"?$format=json"
         f"&$filter={quote(flt, safe='')}"
         f"&$select={quote(sel, safe=',_')}"
     )
-    rows = []
-    skip = 0
-    PAGE = 5000
-    while True:
-        r = session.get(f"{url_base}&$top={PAGE}&$skip={skip}", timeout=120)
-        r.raise_for_status()
-        batch = r.json().get("value", [])
-        if not batch:
-            break
-        rows.extend(batch)
-        skip += len(batch)
-        if len(batch) < PAGE:
-            break
+    records = _fetch_all(session, url)
 
-    by_art: dict[str, float] = {a: 0.0 for a in ARTICLE_ORDER}
-    by_org: dict[str, float] = {o: 0.0 for o in TURB_ORGS}
-    by_org_art: dict[str, dict[str, float]] = {
-        o: {a: 0.0 for a in ARTICLE_ORDER} for o in TURB_ORGS
-    }
-    total = 0.0
+    by_dept = {row["Ref_Key"]: _blank_dept_row() for row in departments}
+    by_article = {article: 0.0 for article in ARTICLE_ORDER}
+    skipped_no_dept = 0
+    skipped_not_target_dept = 0
+    skipped_not_target_article = 0
     taken = 0
-    for r in rows:
-        amount = r.get("Сумма", 0) or 0
-        if r.get("Сторно"):
+
+    for rec in records:
+        dept_key = rec.get("ПодразделениеDr_Key") or EMPTY
+        if dept_key == EMPTY:
+            skipped_no_dept += 1
+            continue
+        if dept_key not in dept_keys:
+            skipped_not_target_dept += 1
+            continue
+
+        article_key = None
+        if rec.get("ExtDimensionTypeDr1_Key") == SUBCONTO_TYPE_COST:
+            article_key = rec.get("ExtDimensionDr1")
+        if article_key not in ARTICLE_SET:
+            skipped_not_target_article += 1
+            continue
+
+        amount = float(rec.get("Сумма", 0) or 0)
+        if rec.get("Сторно"):
             amount = -amount
-        ext1 = r.get("ExtDimensionDr1")
-        typ1 = r.get("ExtDimensionTypeDr1_Key")
-        art = ext1 if typ1 == SUBCONTO_TYPE_COST and ext1 else None
-        if art not in ARTICLE_SET:
-            continue
-        org = r.get("Организация_Key")
-        if org not in by_org:
-            continue
-        total += amount
-        by_art[art] += amount
-        by_org[org] += amount
-        by_org_art[org][art] += amount
+
+        row = by_dept[dept_key]
+        row["by_article"][article_key] += amount
+        row["total"] += amount
+        row["rows"] += 1
+        if article_key == ARTICLE_ORDER[0]:
+            row["salary"] += amount
+        elif article_key == ARTICLE_ORDER[1]:
+            row["insurance"] += amount
+        by_article[article_key] += amount
         taken += 1
 
+    matrix = []
+    missing_combinations = []
+    for dept in departments:
+        key = dept["Ref_Key"]
+        row = by_dept[key]
+        cells = {article: round(value, 2) for article, value in row["by_article"].items()}
+        for article, value in cells.items():
+            if abs(value) == 0:
+                missing_combinations.append({
+                    "department_key": key,
+                    "department": dept.get("Description") or "",
+                    "article_key": article,
+                    "article": COST_ARTICLES[article],
+                })
+        matrix.append({
+            "department_key": key,
+            "department": dept.get("Description") or "",
+            "salary": round(row["salary"], 2),
+            "insurance": round(row["insurance"], 2),
+            "total": round(row["total"], 2),
+            "rows": row["rows"],
+            "by_article": cells,
+        })
+
+    total = round(sum(float(row["total"] or 0) for row in by_dept.values()), 2)
     return {
-        "total": round(total, 2),
-        "by_article": {k: round(v, 2) for k, v in by_art.items()},
-        "by_org": {k: round(v, 2) for k, v in by_org.items()},
-        "by_org_article": {
-            o: {a: round(v, 2) for a, v in cells.items()}
-            for o, cells in by_org_art.items()
-        },
-        "records_total": len(rows),
+        "total": total,
+        "by_article": {key: round(value, 2) for key, value in by_article.items()},
+        "by_dept": {row["department_key"]: row["total"] for row in matrix},
+        "matrix": matrix,
+        "missing_combinations": missing_combinations,
+        "departments_count": len(departments),
+        "records_total": len(records),
         "records_taken": taken,
+        "skipped_no_dept": skipped_no_dept,
+        "skipped_not_target_dept": skipped_not_target_dept,
+        "skipped_not_target_article": skipped_not_target_article,
     }
 
 
@@ -208,13 +332,12 @@ def calc_month(session: requests.Session, year: int, month: int) -> dict:
     fact = calc_fact(session, year, month)
     plan_total = _get_plan_total(month)
     return {
-        "year": year, "month": month,
+        "year": year,
+        "month": month,
         "period": {"start": period_bounds(year, month)[0][:10],
-                   "end":   period_bounds(year, month)[1][:10]},
+                   "end": period_bounds(year, month)[1][:10]},
         "fact": fact,
         "plan_total": plan_total,
-        "plan_by_article": {},
-        "plan_by_org": {},
         "elapsed_sec": round(time.time() - t, 2),
     }
 
@@ -249,10 +372,12 @@ def get_fot_management_monthly(year: int | None = None, month: int | None = None
             "kpi_pct": round(fact_total / plan_numeric * 100, 1) if plan_numeric and plan_numeric > 0 else None,
             "has_data": (plan_numeric is not None) or abs(fact_total) > 0,
             "values_unit": "руб.",
-            "plan_by_org": row.get("plan_by_org") or {},
-            "fact_by_org": fact_payload.get("by_org") or {},
-            "plan_by_article": row.get("plan_by_article") or {},
             "fact_by_article": fact_payload.get("by_article") or {},
+            "fact_by_dept": fact_payload.get("by_dept") or {},
+            "fact_matrix": fact_payload.get("matrix") or [],
+            "missing_combinations": fact_payload.get("missing_combinations") or [],
+            "departments_count": fact_payload.get("departments_count"),
+            "records_taken": fact_payload.get("records_taken"),
             "cost_articles": COST_ARTICLES,
         })
 
@@ -288,7 +413,7 @@ def get_fot_management_monthly(year: int | None = None, month: int | None = None
 
 def fmt(v) -> str:
     if v is None:
-        return "—"
+        return "-"
     return f"{v:,.2f}"
 
 
@@ -298,36 +423,18 @@ def print_month(res: dict) -> None:
     plan = res["plan_total"]
     delta = None if plan is None else (fact["total"] - plan)
 
-    print("=" * 92)
-    print(f"  ФОТ управленческого контура в пределах лимита · {y}-{m:02d} ({MONTH_RU[m]})")
-    print(f"  Периметр: {', '.join(TURB_ORGS.values())}")
-    print("=" * 92)
-
-    print(f"\n  ФАКТ (начислено, Дт 44.xx × 4 статьи ФОТ):")
-    print(f"  {'Организация':<32s}", end="")
-    for a in ARTICLE_ORDER:
-        print(f" {ARTICLE_SHORT[a]:>14s}", end="")
-    print(f" {'ИТОГО':>16s}")
-    print(f"  {'─'*32}" + f" {'─'*14}" * len(ARTICLE_ORDER) + f" {'─'*16}")
-    for og, name in TURB_ORGS.items():
-        row = f"  {name[:32]:<32s}"
-        for a in ARTICLE_ORDER:
-            row += f" {fact['by_org_article'][og][a]:>14,.2f}"
-        row += f" {fact['by_org'][og]:>16,.2f}"
-        print(row)
-    print(f"  {'─'*32}" + f" {'─'*14}" * len(ARTICLE_ORDER) + f" {'─'*16}")
-    row = f"  {'ИТОГО':<32s}"
-    for a in ARTICLE_ORDER:
-        row += f" {fact['by_article'][a]:>14,.2f}"
-    row += f" {fact['total']:>16,.2f}"
-    print(row)
-
-    print(f"\n  {'Показатель':<48s} {'Значение':>20s}")
-    print(f"  {'─'*48} {'─'*20}")
-    print(f"  {'ФАКТ начисленный ФОТ (сч.44)':<48s} {fact['total']:>20,.2f}")
-    print(f"  {'ПЛАН (как у коммерческого директора)':<48s} {fmt(plan):>20s}")
+    print("=" * 100)
+    print(f"  ФОТ операционного директора · {y}-{m:02d} ({MONTH_RU[m]})")
+    print("  Источник факта: Дт 26, AccountingRegister_Хозрасчетный / RecordsWithExtDimensions")
+    print("=" * 100)
+    print(f"\n  {'Показатель':<52s} {'Значение':>20s}")
+    print(f"  {'-'*52} {'-'*20}")
+    print(f"  {'ФАКТ ФОТ (сч.26)':<52s} {fact['total']:>20,.2f}")
+    print(f"  {'ПЛАН':<52s} {fmt(plan):>20s}")
     if delta is not None:
-        print(f"  {'Δ (факт − план)':<48s} {delta:>20,.2f}")
+        print(f"  {'Delta (факт - план)':<52s} {delta:>20,.2f}")
+    print(f"  {'Подразделений в периметре':<52s} {fact['departments_count']:>20}")
+    print(f"  {'Проводок взято':<52s} {fact['records_taken']:>20}")
     print(f"  Время: {res['elapsed_sec']:.1f}с")
 
 
@@ -340,22 +447,20 @@ def main():
     arg = args[0]
     today = datetime.now()
     t0 = time.time()
-
-    s = requests.Session(); s.auth = AUTH
+    session = requests.Session()
+    session.auth = AUTH
 
     if len(arg) == 7 and arg[4] == "-":
         year, month = int(arg[:4]), int(arg[5:7])
-        res = calc_month(s, year, month)
+        res = calc_month(session, year, month)
         print_month(res)
         if save_json:
-            res["organizations"] = TURB_ORGS
             res["cost_articles"] = COST_ARTICLES
             res["generated"] = datetime.now().isoformat(timespec="seconds")
-            out = os.path.join(os.path.dirname(__file__),
-                               f"fot_mgmt_{year}-{month:02d}.json")
-            with open(out, "w", encoding="utf-8") as f:
+            out = Path(__file__).resolve().parent / f"fot_mgmt_{year}-{month:02d}.json"
+            with out.open("w", encoding="utf-8") as f:
                 json.dump(res, f, ensure_ascii=False, indent=2)
-            print(f"  → {out}")
+            print(f"  -> {out}")
         return
 
     if len(arg) != 4 or not arg.isdigit():
@@ -363,35 +468,33 @@ def main():
 
     year = int(arg)
     last_month = today.month if year == today.year else 12
+    print("=" * 100)
+    print(f"  ФОТ операционного директора · {year} (январь - {MONTH_RU[last_month]})")
+    print("=" * 100)
+    print(f"\n  {'Мес':<10s} {'ФАКТ':>18s} {'ПЛАН':>16s} {'Delta':>18s}")
+    print(f"  {'-'*10} {'-'*18} {'-'*16} {'-'*18}")
     months_out = []
-    print("=" * 92)
-    print(f"  ФОТ управленческого контура · {year} (январь — {MONTH_RU[last_month]})")
-    print(f"  Периметр: {', '.join(TURB_ORGS.values())}")
-    print("=" * 92)
-    print(f"\n  {'Мес':<10s} {'ФАКТ начисл.':>18s} {'ПЛАН':>16s} {'Δ (факт−план)':>18s}")
-    print(f"  {'─'*10} {'─'*18} {'─'*16} {'─'*18}")
     for m in range(1, last_month + 1):
-        res = calc_month(s, year, m)
+        res = calc_month(session, year, m)
         months_out.append(res)
         plan = res["plan_total"]
         delta = None if plan is None else (res["fact"]["total"] - plan)
         print(f"  {MONTH_RU[m]:<10s} {res['fact']['total']:>18,.2f} "
-              f"{fmt(plan):>16s} {(fmt(delta)):>18s}")
+              f"{fmt(plan):>16s} {fmt(delta):>18s}")
     print(f"\n  Время: {time.time()-t0:.1f}с")
 
     if save_json:
         result = {
             "year": year,
             "generated": datetime.now().isoformat(timespec="seconds"),
-            "organizations": TURB_ORGS,
             "cost_articles": COST_ARTICLES,
-            "metric": "ФОТ управленческого контура в пределах лимита",
+            "metric": "ФОТ операционного директора",
             "months": months_out,
         }
-        out = os.path.join(os.path.dirname(__file__), f"fot_mgmt_{year}.json")
-        with open(out, "w", encoding="utf-8") as f:
+        out = Path(__file__).resolve().parent / f"fot_mgmt_{year}.json"
+        with out.open("w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
-        print(f"  → {out}")
+        print(f"  -> {out}")
 
 
 if __name__ == "__main__":

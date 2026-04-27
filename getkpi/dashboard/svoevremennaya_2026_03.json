@@ -4,9 +4,11 @@
   "period_start": "2026-03-01",
   "period_end": "2026-03-31",
   "plan": 47,
-  "fact": 1,
+  "fact": 46,
+  "delays": 1,
+  "deviation_count": 1,
   "pct": 97.9,
-  "fact_label": "срывы",
+  "fact_label": "своевременно",
   "cache_date": "2026-04-27",
-  "source_tag": "svoevremennaya_monthly_v3_npo_delays"
+  "source_tag": "svoevremennaya_monthly_v4_npo_timely_fact"
 }
