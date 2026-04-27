@@ -21,6 +21,10 @@ TARGET_ORGANIZATION = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
 TARGET_PROJECT_TYPE_TD_M1 = "ВнешнийЗаказ"
 TARGET_PROJECT_TYPE_TD_Q1 = "РазвитияИУлучшений"
 TARGET_PROJECT_TYPE_OD_Q1 = None
+PRODUCTION_DEPUTY_PROJECT_DEPARTMENTS = {
+    "Производственный цех №1",
+    "Производственный цех №2",
+}
 TIMEOUT = 60
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -447,15 +451,30 @@ def get_projects_snapshot() -> dict:
     return _compute_projects_snapshot()
 
 
-def _projects_for_type(project_type: str | None) -> list[dict[str, Any]]:
+def _projects_for_filter(
+    project_type: str | None,
+    *,
+    departments: set[str] | None = None,
+) -> list[dict[str, Any]]:
     snapshot = _compute_projects_snapshot()
-    if project_type is None:
-        return list(snapshot.get("projects") or [])
-    return [
-        project
-        for project in (snapshot.get("projects") or [])
-        if project.get("tip_proekta") == project_type
-    ]
+    projects = list(snapshot.get("projects") or [])
+    if project_type is not None:
+        projects = [
+            project
+            for project in projects
+            if project.get("tip_proekta") == project_type
+        ]
+    if departments is not None:
+        projects = [
+            project
+            for project in projects
+            if project.get("podrazdelenie") in departments
+        ]
+    return projects
+
+
+def _projects_for_type(project_type: str | None) -> list[dict[str, Any]]:
+    return _projects_for_filter(project_type)
 
 
 def _project_date_bounds(project: dict[str, Any]) -> tuple[date | None, date | None]:
@@ -514,8 +533,14 @@ def _month_pairs_until(ref_y: int, ref_m: int) -> list[tuple[int, int]]:
     return [(ref_y, mm) for mm in range(1, ref_m + 1)]
 
 
-def _build_monthly_payload(project_type: str | None, year: int | None = None, month: int | None = None) -> dict:
-    target_projects = _projects_for_type(project_type)
+def _build_monthly_payload(
+    project_type: str | None,
+    year: int | None = None,
+    month: int | None = None,
+    *,
+    departments: set[str] | None = None,
+) -> dict:
+    target_projects = _projects_for_filter(project_type, departments=departments)
     ref_y, ref_m = _normalize_ref_period(year, month)
     pairs = _month_pairs_until(ref_y, ref_m)
     values_unit = "шт." if project_type is None else "%"
@@ -575,6 +600,7 @@ def _build_monthly_payload(project_type: str | None, year: int | None = None, mo
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
             "target_project_type": project_type,
+            "target_departments": sorted(departments) if departments else None,
             "target_projects_count": len(target_projects),
             "rows_by_month": [
                 {
@@ -657,8 +683,9 @@ def _build_project_deviation_table(
     ref_m: int,
     *,
     table_name: str,
+    departments: set[str] | None = None,
 ) -> dict[str, Any]:
-    target_projects = _projects_for_type(project_type)
+    target_projects = _projects_for_filter(project_type, departments=departments)
     month_end = _month_start_end(ref_y, ref_m)[1]
     as_of_date = min(month_end, date.today())
     rows: list[dict[str, Any]] = []
@@ -898,4 +925,32 @@ def get_od_q1_deviation_table(month: int | None = None, year: int | None = None)
         )
     except Exception:
         logger.exception("Ошибка при построении таблицы OD-Q1 из TurboProject")
+        return None
+
+
+def get_pd_q1_monthly(year: int | None = None, month: int | None = None) -> dict | None:
+    try:
+        return _build_monthly_payload(
+            TARGET_PROJECT_TYPE_OD_Q1,
+            year=year,
+            month=month,
+            departments=PRODUCTION_DEPUTY_PROJECT_DEPARTMENTS,
+        )
+    except Exception:
+        logger.exception("Ошибка при расчёте PD-Q1 из TurboProject")
+        return None
+
+
+def get_pd_q1_deviation_table(month: int | None = None, year: int | None = None) -> dict[str, Any] | None:
+    try:
+        ref_y, ref_m = _normalize_ref_period(year, month)
+        return _build_project_deviation_table(
+            TARGET_PROJECT_TYPE_OD_Q1,
+            ref_y,
+            ref_m,
+            table_name="Проекты улучшений / сокращения потерь с отклонениями по вехам",
+            departments=PRODUCTION_DEPUTY_PROJECT_DEPARTMENTS,
+        )
+    except Exception:
+        logger.exception("Ошибка при построении таблицы PD-Q1 из TurboProject")
         return None

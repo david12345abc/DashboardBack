@@ -270,7 +270,9 @@ def _is_techdir_department(dept: str | None) -> bool:
 
 
 def _is_prod_deputy_department(dept: str | None) -> bool:
-    return (dept or '').strip().lower() == 'заместитель операционного директора-директор по производству'
+    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
+    normalized = re.sub(r'\s*-\s*', '-', normalized)
+    return normalized == 'заместитель операционного директора-директор по производству'
 
 
 
@@ -865,6 +867,14 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         if od_q1_table:
             tablitsy['OD-T-Q1-DEVIATIONS'] = od_q1_table
 
+    if _is_prod_deputy_department(dept) or 'PD-Q1' in entries_by_id:
+        try:
+            pd_q1_table = techdir_projects.get_pd_q1_deviation_table(month=ref_m, year=ref_y)
+        except Exception:
+            pd_q1_table = None
+        if pd_q1_table:
+            tablitsy['PD-T-Q1-DEVIATIONS'] = pd_q1_table
+
     return {
         'month': ref_m,
         'year': ref_y,
@@ -1083,6 +1093,26 @@ def _build_kpi_entry(
         data = cache_manager.locked_call(
             f'od_q1_projects_{ref_y}_{ref_m}',
             techdir_projects.get_od_q1_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            return entry
+
+    if kpi_id == 'PD-Q1':
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'pd_q1_projects_{ref_y}_{ref_m}',
+            techdir_projects.get_pd_q1_monthly,
             year=ref_y,
             month=ref_m,
         )
