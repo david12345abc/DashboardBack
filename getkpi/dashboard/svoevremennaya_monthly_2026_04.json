@@ -33,12 +33,12 @@
       "year": 2026,
       "month": 4,
       "month_name": "апрель",
-      "plan": 59,
+      "plan": 60,
       "fact": 6,
-      "kpi_pct": 10.2,
+      "kpi_pct": 10.0,
       "has_data": true
     }
   ],
-  "cache_date": "2026-04-24",
+  "cache_date": "2026-04-27",
   "source_tag": "svoevremennaya_monthly_v2"
 }
