@@ -6,11 +6,10 @@ calc_svoevremennaya_otgruzka.py — FND-T4 «Своевременная отгр
     InformationRegister_ТД_КонтрольныеДатыИсполненияДоговора,
     где ДатаОкончанияЮридическихОбязательствПоДоговору в [1-е M .. последний день M].
 
-  Факт за месяц M = count(Document_РеализацияТоваровУслуг)
-    среди проведённых, без пометки на удаление, у которых ЗаказКлиента входит в
-    множество заказов плана этого же месяца.
+  Факт за месяц M = количество срывов среди этих заказов:
+    ДатаОтгрузки > ДатаОкончанияЮридическихОбязательствПоДоговору.
 
-  % = Факт / План * 100 (округление до 0.1)
+  % = (План - Факт) / План * 100 (округление до 0.1)
 
 Кэш: dashboard/svoevremennaya_<year>_<month:02d>.json  — данные именно за месяц
      dashboard/svoevremennaya_monthly_<year>_<month:02d>.json — помесячный ряд
@@ -41,7 +40,7 @@ logger = logging.getLogger(__name__)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
-SOURCE_TAG = "svoevremennaya_monthly_v2"
+SOURCE_TAG = "svoevremennaya_monthly_v3_npo_delays"
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 
@@ -64,6 +63,14 @@ DATE_FILTER_FIELD = (
     "\u041f\u043e\u0414\u043e\u0433\u043e\u0432\u043e\u0440\u0443"
 )
 ORDER_FIELD = "\u0417\u0430\u043a\u0430\u0437\u041a\u043b\u0438\u0435\u043d\u0442\u0430"
+ORDER_SHIP_DATE_FIELD = "\u0414\u0430\u0442\u0430\u041e\u0442\u0433\u0440\u0443\u0437\u043a\u0438"
+ORDER_STATUS_FIELD = "\u0421\u0442\u0430\u0442\u0443\u0441"
+ORDER_AGREED_FIELD = "\u0421\u043e\u0433\u043b\u0430\u0441\u043e\u0432\u0430\u043d"
+ORDER_ORG_FIELD = "\u041e\u0440\u0433\u0430\u043d\u0438\u0437\u0430\u0446\u0438\u044f_Key"
+STATUS_TO_SUPPLY = "\u041a\u041e\u0431\u0435\u0441\u043f\u0435\u0447\u0435\u043d\u0438\u044e"
+
+# Фильтр отчёта ПСД: только заказы НПО «Турбулентность-Дон».
+NPO_ORG_KEY = "fbca2148-6cfd-11e7-812d-001e67112509"
 
 
 def _month_bounds(year: int, month: int) -> tuple[str, str]:
@@ -108,9 +115,20 @@ def _save_cache(path: Path, payload: dict) -> None:
         pass
 
 
-def _fetch_plan_orders(session: requests.Session, year: int, month: int) -> set[str]:
+def _is_empty_ref(value) -> bool:
+    return not value or str(value).lower() == EMPTY
+
+
+def _valid_ship_date(value) -> str:
+    value = str(value or "")
+    if len(value) < 10 or value.startswith("0001-01-01"):
+        return ""
+    return value[:10]
+
+
+def _fetch_plan_rows(session: requests.Session, year: int, month: int) -> list[dict]:
     """
-    Уникальные GUID заказов клиента из регистра КонтрольныеДатыИсполненияДоговора,
+    Строки регистра КонтрольныеДатыИсполненияДоговора,
     у которых ДатаОкончанияЮридическихОбязательствПоДоговору попадает в указанный месяц.
     """
     d_from, d_to = _month_bounds(year, month)
@@ -118,9 +136,9 @@ def _fetch_plan_orders(session: requests.Session, year: int, month: int) -> set[
         f"{DATE_FILTER_FIELD} ge datetime'{d_from}' "
         f"and {DATE_FILTER_FIELD} le datetime'{d_to}'"
     )
-    sel = f"{ORDER_FIELD},{DATE_FILTER_FIELD}"
+    sel = f"{ORDER_FIELD},{DATE_FILTER_FIELD},{ORDER_SHIP_DATE_FIELD}"
 
-    orders: set[str] = set()
+    rows_out: list[dict] = []
     skip = 0
     PAGE = 5000
     while True:
@@ -136,14 +154,78 @@ def _fetch_plan_orders(session: requests.Session, year: int, month: int) -> set[
                 logger.error("SvOtgr/Plan HTTP %d: %s", r.status_code, r.text[:200])
             break
         rows = r.json().get("value", [])
-        for row in rows:
-            order_key = str(row.get(ORDER_FIELD) or "").lower()
-            if order_key and order_key != EMPTY:
-                orders.add(order_key)
+        rows_out.extend(rows)
         if len(rows) < PAGE:
             break
         skip += PAGE
-    return orders
+    return rows_out
+
+
+def _fetch_customer_orders(session: requests.Session, order_keys: set[str]) -> dict[str, dict]:
+    """Загрузить реквизиты заказов клиента для отбора плана."""
+    if not order_keys:
+        return {}
+
+    result: dict[str, dict] = {}
+    keys = sorted(order_keys)
+    batch_size = 15
+    select = f"Ref_Key,{ORDER_ORG_FIELD},{ORDER_AGREED_FIELD},{ORDER_STATUS_FIELD}"
+    for i in range(0, len(keys), batch_size):
+        batch = keys[i:i + batch_size]
+        flt = " or ".join(f"Ref_Key eq guid'{k}'" for k in batch)
+        url = (
+            f"{BASE}/Document_ЗаказКлиента?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select={quote(select, safe=',_')}"
+            f"&$top={batch_size}"
+        )
+        r = request_with_retry(session, url, timeout=60, retries=4, label="SvOtgr/Orders")
+        if r is None or not r.ok:
+            if r is not None:
+                logger.error("SvOtgr/Orders HTTP %d: %s", r.status_code, r.text[:200])
+            continue
+        for row in r.json().get("value", []):
+            key = str(row.get("Ref_Key") or "").lower()
+            if key:
+                result[key] = row
+    return result
+
+
+def _order_is_in_psd_scope(order: dict) -> bool:
+    """Повторяет отбор отчёта ПСД: НПО + согласованные или ещё к обеспечению."""
+    if str(order.get(ORDER_ORG_FIELD) or "").lower() != NPO_ORG_KEY:
+        return False
+    return bool(order.get(ORDER_AGREED_FIELD)) or order.get(ORDER_STATUS_FIELD) == STATUS_TO_SUPPLY
+
+
+def _plan_orders_and_delays(plan_rows: list[dict],
+                            order_docs: dict[str, dict]) -> tuple[set[str], int]:
+    legal_by_order: dict[str, str] = {}
+    ship_by_order: dict[str, str] = {}
+
+    for row in plan_rows:
+        order_key = str(row.get(ORDER_FIELD) or "").lower()
+        if _is_empty_ref(order_key):
+            continue
+        order_doc = order_docs.get(order_key)
+        if not order_doc or not _order_is_in_psd_scope(order_doc):
+            continue
+
+        legal_date = _valid_ship_date(row.get(DATE_FILTER_FIELD))
+        if legal_date:
+            legal_by_order[order_key] = max(legal_by_order.get(order_key, legal_date), legal_date)
+
+        ship_date = _valid_ship_date(row.get(ORDER_SHIP_DATE_FIELD))
+        if ship_date:
+            ship_by_order[order_key] = max(ship_by_order.get(order_key, ship_date), ship_date)
+
+    delayed = 0
+    for order_key, legal_date in legal_by_order.items():
+        ship_date = ship_by_order.get(order_key)
+        if ship_date and ship_date > legal_date:
+            delayed += 1
+
+    return set(legal_by_order), delayed
 
 
 def _fetch_realizations_in_window(session: requests.Session,
@@ -225,8 +307,8 @@ def get_svoevremennaya_for_month(year: int, month: int) -> dict:
         "year", "month",
         "period_start", "period_end",
         "plan": int,          # уникальные заказы с датой ЮО в этом месяце
-        "fact": int,          # реализации по этим заказам
-        "pct": float | None,  # fact / plan * 100
+        "fact": int,          # срывы среди этих заказов
+        "pct": float | None,  # (plan - fact) / plan * 100
       }
     """
     cached = _load_cache(_cache_path(year, month))
@@ -236,16 +318,17 @@ def get_svoevremennaya_for_month(year: int, month: int) -> dict:
     session = requests.Session()
     session.auth = AUTH
 
-    orders = _fetch_plan_orders(session, year, month)
+    plan_rows = _fetch_plan_rows(session, year, month)
+    raw_orders = {
+        str(row.get(ORDER_FIELD) or "").lower()
+        for row in plan_rows
+        if not _is_empty_ref(row.get(ORDER_FIELD))
+    }
+    order_docs = _fetch_customer_orders(session, raw_orders)
+    orders, fact = _plan_orders_and_delays(plan_rows, order_docs)
     plan = len(orders)
 
-    fact = 0
-    if plan > 0:
-        fact_from, fact_to = _fact_window_bounds(year, month)
-        reals = _fetch_realizations_in_window(session, fact_from, fact_to)
-        fact = _count_realizations_for_orders(reals, orders)
-
-    pct = round(fact / plan * 100, 1) if plan else None
+    pct = round((plan - fact) / plan * 100, 1) if plan else None
 
     d_from, d_to = _month_bounds(year, month)
     payload = {
@@ -256,6 +339,7 @@ def get_svoevremennaya_for_month(year: int, month: int) -> dict:
         "plan": plan,
         "fact": fact,
         "pct": pct,
+        "fact_label": "\u0441\u0440\u044b\u0432\u044b",
     }
     _save_cache(_cache_path(year, month), payload)
     return payload

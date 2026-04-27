@@ -38,6 +38,7 @@ print = functools.partial(print, flush=True)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
+CACHE_VERSION = 2
 
 DEPARTMENTS = {
     "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел ВЭД",
@@ -50,14 +51,10 @@ DEPARTMENTS = {
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
 
-EXCLUDE_PARTNER_NAMES = {
-    "АЛМАЗ ООО (рабочий)",
-    "Турбулентность-Дон ООО",
-    "Турбулентность-ДОН ООО НПО",
-    "СКТБ Турбо-Дон ООО",
-    "Метрогазсервис ООО",
-}
-EXCLUDE_PARTNER_NAMES_NO_MGS = EXCLUDE_PARTNER_NAMES - {"Метрогазсервис ООО"}
+PREDEFINED_VALUES = "Catalog_ТД_ПредопределенныеЗначения"
+PREDEFINED_VALUES_EXTRA = "Catalog_ТД_ПредопределенныеЗначения_ДополнительныеЗначения"
+PREDEFINED_RESALE_PARTNERS_REF = "8180316b-7c73-11e9-828e-ac1f6b05524d"
+PREDEFINED_MGS_PARTNER_REF = "5bd32178-cf94-11e9-829b-ac1f6b05524d"
 
 CURRENCY_KEYS = {
     "0a7c6f22-e1b6-11df-963e-001cc4d04388": "USD",
@@ -111,7 +108,11 @@ def _load_cache(year: int, month: int) -> dict | None:
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if data.get("cache_date") == date.today().isoformat() and "by_dept" in data:
+        if (
+            data.get("cache_date") == date.today().isoformat()
+            and data.get("cache_version") == CACHE_VERSION
+            and "by_dept" in data
+        ):
             return data
     except (OSError, json.JSONDecodeError):
         pass
@@ -123,9 +124,12 @@ def _save_cache(year: int, month: int, total: float,
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
         with open(_cache_path(year, month), "w", encoding="utf-8") as f:
-            json.dump({"cache_date": date.today().isoformat(),
-                       "total": total, "by_dept": by_dept},
-                      f, ensure_ascii=False)
+            json.dump({
+                "cache_date": date.today().isoformat(),
+                "cache_version": CACHE_VERSION,
+                "total": total,
+                "by_dept": by_dept,
+            }, f, ensure_ascii=False)
     except OSError:
         pass
 
@@ -148,6 +152,56 @@ def _load_register(session: requests.Session) -> list[dict]:
             break
         skip += 5000
     return all_rows
+
+
+def _load_resale_partner_keys(session: requests.Session) -> set[str]:
+    """Партнёры перепродажи из ТД_ПредопределенныеЗначения.ДополнительныеЗначения."""
+    flt = quote(f"Ref_Key eq guid'{PREDEFINED_RESALE_PARTNERS_REF}'", safe="")
+    url = (
+        f"{BASE}/{PREDEFINED_VALUES_EXTRA}?$format=json"
+        f"&$filter={flt}&$select=Ref_Key,Значение,Значение_Type&$top=5000"
+    )
+    r = request_with_retry(session, url, timeout=30, retries=3, label="Dogovory/ResalePartners")
+    if r is None or not r.ok:
+        return set()
+    keys: set[str] = set()
+    try:
+        for row in r.json().get("value", []):
+            val = row.get("Значение")
+            typ = row.get("Значение_Type") or ""
+            if val and "Catalog_Партнеры" in typ:
+                keys.add(val)
+    except Exception:
+        return set()
+    return keys
+
+
+def _load_mgs_partner_key(session: requests.Session) -> str | None:
+    """Партнёр Метрогазсервис из предопределённых значений 1С."""
+    flt = quote(f"Ref_Key eq guid'{PREDEFINED_MGS_PARTNER_REF}'", safe="")
+    url = (
+        f"{BASE}/{PREDEFINED_VALUES}?$format=json"
+        f"&$filter={flt}&$select=Ref_Key,Значение,Значение_Type&$top=1"
+    )
+    r = request_with_retry(session, url, timeout=30, retries=3, label="Dogovory/MGSPartner")
+    if r is None or not r.ok:
+        return None
+    try:
+        row = (r.json().get("value") or [{}])[0]
+    except Exception:
+        return None
+    val = row.get("Значение")
+    typ = row.get("Значение_Type") or ""
+    return val if val and "Catalog_Партнеры" in typ else None
+
+
+def _partner_resale_sets(session: requests.Session) -> tuple[set[str], set[str]]:
+    resale = _load_resale_partner_keys(session)
+    mgs = _load_mgs_partner_key(session)
+    resale_without_mgs = set(resale)
+    if mgs:
+        resale_without_mgs.discard(mgs)
+    return resale, resale_without_mgs
 
 
 def _calc_month_total(session: requests.Session, all_rows: list[dict],
@@ -192,30 +246,7 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
         if spec_status.get(x.get("Спецификация_Key", ""), "") == "Действует"
     ]
 
-    unique_pk = sorted({
-        x.get("Партнер_Key", "")
-        for x in spec_ok
-        if x.get("Партнер_Key", "") not in ("", EMPTY)
-    })
-    partners_map: dict[str, str] = {}
-    for i in range(0, len(unique_pk), BATCH):
-        batch = unique_pk[i:i + BATCH]
-        flt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
-        url = (
-            f"{BASE}/Catalog_Партнеры"
-            f"?$format=json&$filter={flt}&$select=Ref_Key,Description&$top={BATCH}"
-        )
-        r = request_with_retry(session, url, timeout=30, retries=3, label="Dogovory/Partners")
-        if r is None or not r.ok:
-            continue
-        try:
-            for it in r.json().get("value", []):
-                partners_map[it["Ref_Key"]] = it.get("Description", "").strip()
-        except Exception:
-            pass
-
-    excl_full = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES}
-    excl_no_mgs = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS}
+    resale_partners, resale_partners_without_mgs = _partner_resale_sets(session)
 
     partner_ok = []
     for x in spec_ok:
@@ -223,10 +254,10 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
         dept = x.get("Подразделение_Key", "")
         soprovozhd = x.get("ТД_СопровождениеПродажи", False)
         if dept == OPBO_DEPT:
-            if pk in excl_no_mgs:
+            if pk in resale_partners_without_mgs:
                 continue
         else:
-            if pk in excl_full and not soprovozhd:
+            if pk in resale_partners and not soprovozhd:
                 continue
         partner_ok.append(x)
 

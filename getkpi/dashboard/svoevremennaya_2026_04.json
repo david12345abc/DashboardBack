@@ -3,9 +3,10 @@
   "month": 4,
   "period_start": "2026-04-01",
   "period_end": "2026-04-30",
-  "plan": 60,
-  "fact": 6,
-  "pct": 10.0,
+  "plan": 42,
+  "fact": 0,
+  "pct": 100.0,
+  "fact_label": "срывы",
   "cache_date": "2026-04-27",
-  "source_tag": "svoevremennaya_monthly_v2"
+  "source_tag": "svoevremennaya_monthly_v3_npo_delays"
 }
