@@ -4,7 +4,7 @@ import logging
 from datetime import date
 
 from .cache_manager import locked_call
-from . import techdir_fot_fact, techdir_fot_plan
+from . import calc_budget_techdir_m3
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +15,13 @@ MONTH_NAMES = {
 }
 
 
-def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
+def _kpi_td_m3(plan: float | None, fact: float | None) -> float | None:
+    """MIN(100; План/Факт·100) по методике TD-M3."""
     if plan is None or fact is None:
         return None
     if fact == 0:
-        return 100.0 if plan >= 0 else None
-    return round(plan / fact * 100, 2)
+        return 100.0 if plan <= 0 else None
+    return round(min(100.0, plan / fact * 100), 2)
 
 
 def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]:
@@ -29,6 +30,8 @@ def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]
 
 
 def get_td_m3_ytd() -> dict | None:
+    """TD-M3: бюджет затрат блока техдирекции в пределах лимита (план/факт из оборотов бюджетов)."""
+
     def _runner() -> dict | None:
         try:
             pairs, (ref_y, ref_m) = _month_pairs_from_january()
@@ -36,13 +39,11 @@ def get_td_m3_ytd() -> dict | None:
             ref_row: dict | None = None
 
             for y, m in pairs:
-                plan_payload = techdir_fot_plan.get_td_fot_plan_monthly(y, m)
-                fact_payload = techdir_fot_fact.get_td_fot_fact_monthly(y, m)
-
-                plan = plan_payload.get("total_plan")
-                fact = fact_payload.get("total_fact")
-                has_data = plan is not None and fact is not None
-                kpi_pct = _kpi_pct(plan, fact) if has_data else None
+                payload = calc_budget_techdir_m3.get_td_m3_costs_monthly(y, m)
+                plan = payload.get("total_plan")
+                fact = payload.get("total_fact")
+                has_data = bool(payload.get("has_data")) and plan is not None and fact is not None
+                kpi_pct = _kpi_td_m3(plan, fact) if has_data else None
 
                 row = {
                     "month": m,
@@ -79,12 +80,13 @@ def get_td_m3_ytd() -> dict | None:
                 "debug": {
                     "status": "ok" if any(row.get("has_data") for row in monthly_rows) else "no_data",
                     "kpi_id": "TD-M3",
-                    "plan_source": "techdir_fot_plan.py",
-                    "fact_source": "techdir_fot_fact.py",
+                    "plan_source": "calc_budget_techdir_m3.py",
+                    "fact_source": "calc_budget_techdir_m3.py",
+                    "register": "AccumulationRegister_ОборотыБюджетов_RecordType",
                 },
             }
         except Exception:
-            logger.exception("Ошибка при расчёте TD-M3 по ФОТ техдирекции")
+            logger.exception("Ошибка при расчёте TD-M3 (бюджет затрат техдирекции)")
             return None
 
     return locked_call("techdir_td_m3", _runner)
