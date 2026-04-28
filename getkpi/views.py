@@ -801,6 +801,8 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
+        elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1'}:
+            tile['unit'] = 'шт.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
         if period_label:
@@ -1211,7 +1213,8 @@ def _build_kpi_entry(
         td = techdir_projects.get_td_q1_ytd()
         if td is not None:
             entry['data_granularity'] = td['data_granularity']
-            entry['quarterly_data'] = td['quarterly_data']
+            entry['monthly_data'] = td.get('monthly_data') or td.get('quarterly_data') or []
+            entry['last_full_month_row'] = td.get('last_full_month_row')
             entry['ytd'] = td['ytd']
             entry['kpi_period'] = td['kpi_period']
             return entry
