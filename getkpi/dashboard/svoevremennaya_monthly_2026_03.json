@@ -17,8 +17,8 @@
       "year": 2026,
       "month": 2,
       "month_name": "февраль",
-      "plan": 56,
-      "fact": 56,
+      "plan": 57,
+      "fact": 57,
       "delays": 0,
       "deviation_count": 0,
       "kpi_pct": 100.0,
@@ -36,6 +36,6 @@
       "has_data": true
     }
   ],
-  "cache_date": "2026-04-27",
+  "cache_date": "2026-04-28",
   "source_tag": "svoevremennaya_monthly_v4_npo_timely_fact"
 }

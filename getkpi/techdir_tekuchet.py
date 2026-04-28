@@ -25,6 +25,7 @@ calc_tekuchest_techdir.py — Текучесть персонала техдир
 """
 
 import functools
+import logging
 import re
 import sys
 import time
@@ -36,6 +37,8 @@ from urllib.parse import quote
 import requests
 
 from .cache_manager import locked_call
+
+logger = logging.getLogger(__name__)
 
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
@@ -107,11 +110,16 @@ def fetch_all(session: requests.Session, url: str, page_size: int = 5000, timeou
     while True:
         sep = "&" if "?" in url else "?"
         page_url = f"{url}{sep}$top={page_size}&$skip={skip}&$format=json"
-        r = session.get(page_url, timeout=timeout)
+        try:
+            r = session.get(page_url, timeout=timeout)
+        except requests.RequestException as exc:
+            raise RuntimeError(f"OData request failed for TD-Q2: {exc}") from exc
         if not r.ok:
-            print(f"    HTTP {r.status_code}: {r.text[:300]}")
-            sys.exit(1)
-        batch = r.json().get("value", [])
+            raise RuntimeError(f"OData HTTP {r.status_code} for TD-Q2: {r.text[:300]}")
+        try:
+            batch = r.json().get("value", [])
+        except ValueError as exc:
+            raise RuntimeError(f"OData returned invalid JSON for TD-Q2: {r.text[:300]}") from exc
         if not batch:
             break
         rows.extend(batch)
@@ -295,6 +303,52 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
 
 
 def get_td_q2_ytd(year: int | None = None, quarter: int | None = None) -> dict:
+    requested_year = year
+    requested_quarter = quarter
+
+    def _empty_payload(error: Exception) -> dict:
+        fallback_year = requested_year
+        fallback_quarter = requested_quarter
+        if fallback_year is None or fallback_quarter is None:
+            fallback_year, fallback_quarter = _last_full_quarter()
+        label = f"Q{fallback_quarter} {fallback_year}"
+        message = str(error)
+        return {
+            "data_granularity": "quarterly",
+            "quarterly_data": [{
+                "quarter": fallback_quarter,
+                "year": fallback_year,
+                "label": label,
+                "plan_max_turnover_pct": None,
+                "fact_turnover_pct": None,
+                "kpi_pct": None,
+                "data_complete": False,
+                "months_with_turnover_data": 0,
+                "has_data": False,
+            }],
+            "ytd": {
+                "total_plan": None,
+                "total_fact": None,
+                "kpi_pct": None,
+                "quarters_with_data": 0,
+                "quarters_total": 1,
+            },
+            "kpi_period": {
+                "type": "last_full_quarter",
+                "year": fallback_year,
+                "quarter": fallback_quarter,
+                "label": label,
+                "data_complete": False,
+            },
+            "debug": {
+                "status": "error",
+                "kpi_id": "TD-Q2",
+                "source": "Document_ТД_ТекучестьПерсонала",
+                "error": message,
+                "months": [],
+            },
+        }
+
     def _runner() -> dict:
         nonlocal year, quarter
         if year is None or quarter is None:
@@ -361,7 +415,11 @@ def get_td_q2_ytd(year: int | None = None, quarter: int | None = None) -> dict:
             },
         }
 
-    return locked_call("techdir_td_q2", _runner)
+    try:
+        return locked_call("techdir_td_q2", _runner)
+    except Exception as exc:
+        logger.exception("Не удалось рассчитать TD-Q2")
+        return _empty_payload(exc)
 
 
 def main():

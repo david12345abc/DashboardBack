@@ -1,4 +1,5 @@
 import json
+import logging
 import random
 import re
 from datetime import date
@@ -40,6 +41,7 @@ from .models import KpiDefinition
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
 _structure_cache: dict | None = None
 _structure_mtime: float | None = None
+logger = logging.getLogger(__name__)
 
 
 def get_structure_data() -> dict:
@@ -1214,7 +1216,45 @@ def _build_kpi_entry(
             return entry
 
     if kpi_id == 'TD-Q2':
-        td = techdir_tekuchet.get_td_q2_ytd()
+        try:
+            td = techdir_tekuchet.get_td_q2_ytd()
+        except Exception as exc:
+            logger.exception("Не удалось собрать TD-Q2")
+            q_year, q_num = last_full_quarter()
+            q_label = f"Q{q_num} {q_year}"
+            td = {
+                'data_granularity': 'quarterly',
+                'quarterly_data': [{
+                    'quarter': q_num,
+                    'year': q_year,
+                    'label': q_label,
+                    'plan_max_turnover_pct': None,
+                    'fact_turnover_pct': None,
+                    'kpi_pct': None,
+                    'data_complete': False,
+                    'months_with_turnover_data': 0,
+                    'has_data': False,
+                }],
+                'ytd': {
+                    'total_plan': None,
+                    'total_fact': None,
+                    'kpi_pct': None,
+                    'quarters_with_data': 0,
+                    'quarters_total': 1,
+                },
+                'kpi_period': {
+                    'type': 'last_full_quarter',
+                    'year': q_year,
+                    'quarter': q_num,
+                    'label': q_label,
+                    'data_complete': False,
+                },
+                'debug': {
+                    'status': 'error',
+                    'kpi_id': 'TD-Q2',
+                    'error': str(exc),
+                },
+            }
         if td is not None:
             entry['data_granularity'] = td['data_granularity']
             entry['quarterly_data'] = td['quarterly_data']
