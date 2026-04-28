@@ -12,6 +12,8 @@ from . import fot_techdir_fact, fot_techdir_plan
 logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_m4_monthly_v1_single_month_cache"
+CACHE_VERSION = 3
+AVAILABLE_MONTHS_2026 = tuple(sorted(fot_techdir_plan.PLANNED_FOT_TARGET_2026))
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -23,14 +25,23 @@ MONTH_NAMES = {
 def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
     if plan is None or fact is None:
         return None
-    if fact == 0:
-        return 100.0 if plan >= 0 else None
-    return round(plan / fact * 100, 2)
+    if plan == 0:
+        return None
+    return round(fact / plan * 100, 2)
 
 
 def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]:
     today = date.today()
     return [(today.year, mm) for mm in range(1, today.month + 1)], (today.year, today.month)
+
+
+def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
+    """Месяцы, которые нужно вернуть в monthly_data для плитки."""
+    if year == 2026 and AVAILABLE_MONTHS_2026:
+        upper_month = max(max(AVAILABLE_MONTHS_2026), ref_month)
+    else:
+        upper_month = ref_month
+    return [(year, mm) for mm in range(1, upper_month + 1)]
 
 
 def _normalize_period(year: int | None = None, month: int | None = None) -> tuple[int, int]:
@@ -58,6 +69,8 @@ def _load_json(path: Path) -> dict | None:
         return None
     if data.get("source") != SOURCE_TAG:
         return None
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
     if data.get("year") == date.today().year and data.get("month") == date.today().month:
         return data if data.get("cache_date") == date.today().isoformat() else None
     return data
@@ -66,7 +79,7 @@ def _load_json(path: Path) -> dict | None:
 def _save_json(path: Path, payload: dict) -> None:
     try:
         with path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+            json.dump({**payload, "cache_version": CACHE_VERSION}, f, ensure_ascii=False, indent=2)
     except OSError:
         logger.exception("Не удалось сохранить кэш TD-M4 в %s", path)
 
@@ -99,7 +112,7 @@ def get_td_m4_ytd(year: int | None = None, month: int | None = None) -> dict | N
     def _runner() -> dict | None:
         try:
             ref_y, ref_m = _normalize_period(year, month)
-            pairs = [(ref_y, ref_m)]
+            pairs = _tile_month_pairs(ref_y, ref_m)
             monthly_rows: list[dict] = []
             ref_row: dict | None = None
 

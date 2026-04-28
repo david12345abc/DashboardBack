@@ -23,6 +23,8 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from .odata_http import request_with_retry
+
 # ----- OData / общие ---------------------------------------------------------
 
 # Совпадает с остальными techdir-скриптами (OData 1С).
@@ -148,10 +150,13 @@ def fetch_all(session, url: str, page: int = 5000, timeout: int = 120):
     while True:
         sep = "&" if "?" in url else "?"
         page_url = f"{url}{sep}$top={page}&$skip={skip}"
-        r = session.get(page_url, timeout=timeout)
+        r = request_with_retry(session, page_url, timeout=timeout, retries=4, label="fot_techdir_fact")
+        if r is None:
+            print("  HTTP no-response after retries")
+            return rows
         if not r.ok:
             print(f"  HTTP {r.status_code}: {r.text[:300]}")
-            sys.exit(1)
+            return rows
         batch = r.json().get("value", [])
         if not batch:
             break
@@ -226,13 +231,13 @@ def load_fot_spec_structure_map(session):
         found = resolve_department_row(rows, exact_index, display_name, aliases)
         if not found:
             print(f"  Не удалось найти подразделение (структура): {display_name}")
-            sys.exit(1)
+            continue
         k = found["Ref_Key"]
         if k in key_first_name and key_first_name[k] != display_name:
             print(
                 f"  Один Ref_Key у двух строк перечня: {key_first_name[k]!r} и {display_name!r}"
             )
-            sys.exit(1)
+            continue
         key_first_name[k] = display_name
         name_to_key[display_name] = k
         name_to_structure_label[display_name] = (found.get("Description") or "").strip()
@@ -482,34 +487,60 @@ def _last_full_month() -> tuple[int, int]:
 
 def compute_td_fot_fact_monthly(year: int, month: int) -> dict:
     """Факт ФОТ по 19 п/п (сч. 26, статьи п. 4.2) за календарный месяц."""
-    p_start, p_end = _month_period_bounds(year, month)
-    session = requests.Session()
-    session.auth = AUTH
-    name_to_key, _labels = load_fot_spec_structure_map(session)
-    totals, article_totals = calc_techdir_spec_reg_fact(
-        session, p_start, p_end, name_to_key
-    )
-    total_fact = 0.0
-    groups_out: dict[str, dict] = {}
-    for n in FOT_GROUP_ORDER:
-        row = totals.get(n, {})
-        s = float(row.get("fact_salary", 0) or 0)
-        ins = float(row.get("fact_insurance", 0) or 0)
-        t = s + ins
-        total_fact += t
-        groups_out[n] = {
-            "fact_salary": s,
-            "fact_insurance": ins,
-            "fact_total": t,
+    try:
+        p_start, p_end = _month_period_bounds(year, month)
+        session = requests.Session()
+        session.auth = AUTH
+        name_to_key, _labels = load_fot_spec_structure_map(session)
+        totals, article_totals = calc_techdir_spec_reg_fact(
+            session, p_start, p_end, name_to_key
+        )
+        total_fact = 0.0
+        groups_out: dict[str, dict] = {}
+        for n in FOT_GROUP_ORDER:
+            row = totals.get(n, {})
+            s = float(row.get("fact_salary", 0) or 0)
+            ins = float(row.get("fact_insurance", 0) or 0)
+            t = s + ins
+            total_fact += t
+            groups_out[n] = {
+                "fact_salary": s,
+                "fact_insurance": ins,
+                "fact_total": t,
+            }
+        return {
+            "year": year,
+            "month": month,
+            "month_name": MONTH_RU.get(month, str(month)),
+            "groups": groups_out,
+            "total_fact": round(total_fact, 2),
+            "article_totals": dict(article_totals),
+            "debug": {
+                "status": "ok",
+                "kpi_id": "TD-M4-FACT",
+                "source": "fot_techdir_fact.py",
+            },
         }
-    return {
-        "year": year,
-        "month": month,
-        "month_name": MONTH_RU.get(month, str(month)),
-        "groups": groups_out,
-        "total_fact": round(total_fact, 2),
-        "article_totals": dict(article_totals),
-    }
+    except Exception as exc:
+        print(f"  ⚠ TD-M4 fact fallback for {year}-{month:02d}: {exc}")
+        groups_out = {
+            n: {"fact_salary": 0.0, "fact_insurance": 0.0, "fact_total": 0.0}
+            for n in FOT_GROUP_ORDER
+        }
+        return {
+            "year": year,
+            "month": month,
+            "month_name": MONTH_RU.get(month, str(month)),
+            "groups": groups_out,
+            "total_fact": 0.0,
+            "article_totals": {},
+            "debug": {
+                "status": "error",
+                "kpi_id": "TD-M4-FACT",
+                "source": "fot_techdir_fact.py",
+                "error": str(exc),
+            },
+        }
 
 
 def get_td_fot_fact_monthly(year: int | None = None, month: int | None = None) -> dict:
