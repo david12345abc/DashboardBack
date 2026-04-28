@@ -45,7 +45,7 @@ ARTICLE_SET = frozenset(COST_ARTICLES)
 ARTICLE_ORDER = list(COST_ARTICLES.keys())
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "fot_management_opdir_account26_v1"
+SOURCE_TAG = "fot_management_opdir_account26_v2_daily_refresh"
 
 MONTH_RU = {
     1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
@@ -346,11 +346,10 @@ def get_fot_management_monthly(year: int | None = None, month: int | None = None
     today = date.today()
     ref_year, ref_month = _normalize_period(year, month)
     cache_path = _cache_path_monthly(ref_year, ref_month)
-    is_current_month = ref_year == today.year and ref_month == today.month
 
     cached = _load_json(cache_path)
     if cached is not None and cached.get("source") == SOURCE_TAG:
-        if not is_current_month or cached.get("cache_date") == today.isoformat():
+        if cached.get("cache_date") == today.isoformat():
             return cached
 
     session = requests.Session()

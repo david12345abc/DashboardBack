@@ -25,6 +25,7 @@ from . import (
     komdir_dashboard,
     komdir_quarterly,
     techdir_m3,
+    techdir_m4,
     techdir_m2,
     techdir_projects,
     techdir_tekuchet,
@@ -1193,7 +1194,17 @@ def _build_kpi_entry(
             return entry
 
     if kpi_id == 'TD-M3':
-        td = techdir_m3.get_td_m3_ytd()
+        td = techdir_m3.get_td_m3_ytd(year=year, month=month)
+        if td is not None:
+            entry['data_granularity'] = td['data_granularity']
+            entry['monthly_data'] = td['monthly_data']
+            entry['last_full_month_row'] = td.get('last_full_month_row')
+            entry['ytd'] = td['ytd']
+            entry['kpi_period'] = td['kpi_period']
+            return entry
+
+    if kpi_id == 'TD-M4':
+        td = techdir_m4.get_td_m4_ytd(year=year, month=month)
         if td is not None:
             entry['data_granularity'] = td['data_granularity']
             entry['monthly_data'] = td['monthly_data']

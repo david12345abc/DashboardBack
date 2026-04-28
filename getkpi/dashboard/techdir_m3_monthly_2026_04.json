@@ -1,0 +1,27 @@
+{
+  "year": 2026,
+  "month": 4,
+  "total_plan": 20908783.07,
+  "total_fact": 0.0,
+  "has_data": true,
+  "debug": {
+    "subtree_size": 20,
+    "plan_scenario": "Плановые данные - ЦФО",
+    "fact_source": {
+      "doc_entity": "Document_ЗаявкаНаРасходованиеДенежныхСредств",
+      "tab_entity": "Document_ЗаявкаНаРасходованиеДенежныхСредств_РасшифровкаПлатежа",
+      "period_start": "2026-04-01T00:00:00",
+      "period_end": "2026-05-01T00:00:00",
+      "date_basis": "document_date",
+      "status_rule": "full_or_partial_paid",
+      "included_docs": [],
+      "doc_debug": {
+        "doc_filter": "Date ge datetime'2026-04-01T00:00:00' and Date lt datetime'2026-05-01T00:00:00' and Posted eq true and DeletionMark eq false"
+      },
+      "department_map_size": 19
+    },
+    "contour_mode": "single_root"
+  },
+  "source": "techdir_m3_monthly_v2_single_month_cache",
+  "cache_date": "2026-04-28"
+}

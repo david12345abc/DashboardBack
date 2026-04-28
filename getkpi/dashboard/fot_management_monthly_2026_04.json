@@ -1,6 +1,6 @@
 {
-  "cache_date": "2026-04-27",
-  "source": "fot_management_opdir_account26_v1",
+  "cache_date": "2026-04-28",
+  "source": "fot_management_opdir_account26_v2_daily_refresh",
   "year": 2026,
   "ref_month": 4,
   "months": [
@@ -5633,7 +5633,7 @@
       "year": 2026,
       "month": 4,
       "month_name": "апрель",
-      "plan": 6843338.1,
+      "plan": 7096795.07,
       "fact": 0.0,
       "kpi_pct": 0.0,
       "has_data": true,
@@ -7935,7 +7935,7 @@
     "year": 2026,
     "month": 4,
     "month_name": "апрель",
-    "plan": 6843338.1,
+    "plan": 7096795.07,
     "fact": 0.0,
     "kpi_pct": 0.0,
     "has_data": true,
@@ -10233,9 +10233,9 @@
     }
   },
   "ytd": {
-    "total_plan": 29068442.1,
+    "total_plan": 29321899.07,
     "total_fact": 62986521.88,
-    "kpi_pct": 216.7,
+    "kpi_pct": 214.8,
     "months_with_data": 4,
     "months_total": 4,
     "values_unit": "руб."
