@@ -63,7 +63,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_reclamations,
         calc_svoevremennaya_otgruzka,
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
-        techdir_projects,
+        techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet,
     )
     from .komdir_claims import fetch_claims_for_month
 
@@ -138,6 +138,18 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         ('techdir_projects',
          techdir_projects.CACHE_PATH,
          techdir_projects.get_projects_snapshot),
+
+        ('techdir_m3',
+         techdir_m3._cache_path(y, m),
+         lambda: techdir_m3.get_td_m3_ytd(year=y, month=m)),
+
+        ('techdir_m4',
+         techdir_m4._cache_path(y, m),
+         lambda: techdir_m4.get_td_m4_ytd(year=y, month=m)),
+
+        ('techdir_tekuchet',
+         techdir_tekuchet._cache_path(y, m),
+         lambda: techdir_tekuchet.get_td_q2_ytd(year=y, quarter=((m - 1) // 3) + 1)),
     ]
     return tasks
 

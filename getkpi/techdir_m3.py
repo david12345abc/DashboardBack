@@ -12,6 +12,8 @@ from . import calc_budget_techdir_m3
 logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_m3_monthly_v2_single_month_cache"
+CACHE_VERSION = 2
+AVAILABLE_MONTHS_2026 = tuple(sorted(calc_budget_techdir_m3.TD_M3_PLAN_TARGET_2026))
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -32,6 +34,15 @@ def _kpi_td_m3(plan: float | None, fact: float | None) -> float | None:
 def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]:
     today = date.today()
     return [(today.year, mm) for mm in range(1, today.month + 1)], (today.year, today.month)
+
+
+def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
+    """Месяцы, которые нужно вернуть в monthly_data для плитки."""
+    if year == 2026 and AVAILABLE_MONTHS_2026:
+        upper_month = max(max(AVAILABLE_MONTHS_2026), ref_month)
+    else:
+        upper_month = ref_month
+    return [(year, mm) for mm in range(1, upper_month + 1)]
 
 
 def _normalize_period(year: int | None = None, month: int | None = None) -> tuple[int, int]:
@@ -59,6 +70,8 @@ def _load_json(path: Path) -> dict | None:
         return None
     if data.get("source") != SOURCE_TAG:
         return None
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
     if data.get("year") == date.today().year and data.get("month") == date.today().month:
         return data if data.get("cache_date") == date.today().isoformat() else None
     return data
@@ -67,7 +80,7 @@ def _load_json(path: Path) -> dict | None:
 def _save_json(path: Path, payload: dict) -> None:
     try:
         with path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+            json.dump({**payload, "cache_version": CACHE_VERSION}, f, ensure_ascii=False, indent=2)
     except OSError:
         logger.exception("Не удалось сохранить кэш TD-M3 в %s", path)
 
@@ -93,7 +106,7 @@ def get_td_m3_ytd(year: int | None = None, month: int | None = None) -> dict | N
     def _runner() -> dict | None:
         try:
             ref_y, ref_m = _normalize_period(year, month)
-            pairs = [(ref_y, ref_m)]
+            pairs = _tile_month_pairs(ref_y, ref_m)
             monthly_rows: list[dict] = []
             ref_row: dict | None = None
 
