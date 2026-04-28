@@ -2,7 +2,7 @@ import json
 import logging
 import random
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from django.http import JsonResponse
@@ -512,6 +512,29 @@ def _public_unit_row(row: dict) -> dict:
     return out
 
 
+def _techdir_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) -> str | None:
+    if ref_y is None or ref_m is None:
+        return None
+
+    cache_files = {
+        'TD-M1': [techdir_projects.CACHE_PATH],
+        'TD-Q1': [techdir_projects.CACHE_PATH],
+        'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
+        'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
+        'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
+    }.get(kpi_id, [])
+
+    latest_mtime: float | None = None
+    for path in cache_files:
+        if path.exists():
+            mt = path.stat().st_mtime
+            if latest_mtime is None or mt > latest_mtime:
+                latest_mtime = mt
+    if latest_mtime is None:
+        return None
+    return datetime.fromtimestamp(latest_mtime).isoformat(timespec='seconds')
+
+
 def _build_tile_item(
     kpi: dict,
     pct: float | None,
@@ -544,7 +567,7 @@ def _build_tile_item(
         tile['kpi_period'] = entry.get('kpi_period')
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
         tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
-    tile['cache_updated_at'] = None
+    tile['cache_updated_at'] = _techdir_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
     if entry.get('last_full_month_row'):
         tile['last_full_month_row'] = _public_unit_row(entry['last_full_month_row'])
     if entry.get('monthly_data') is not None:

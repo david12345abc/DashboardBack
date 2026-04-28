@@ -2,14 +2,14 @@
   "source": "techdir_m4_monthly_v1_single_month_cache",
   "cache_date": "2026-04-28",
   "year": 2026,
-  "month": 4,
-  "total_plan": 10358694.0,
-  "total_fact": 0.0,
+  "month": 2,
+  "total_plan": 8555629.0,
+  "total_fact": 3834910.3,
   "plan_debug": {
     "status": "ok",
     "plan_source": "monthly_constants_from_screenshot",
     "year": 2026,
-    "month": 4
+    "month": 2
   },
   "fact_debug": {
     "status": "ok",

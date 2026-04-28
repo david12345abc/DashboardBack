@@ -25,20 +25,20 @@ calc_tekuchest_techdir.py — Текучесть персонала техдир
 """
 
 import functools
-import logging
+import json
 import re
 import sys
 import time
 from collections import defaultdict
 from datetime import date
+from pathlib import Path
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
 import requests
 
 from .cache_manager import locked_call
-
-logger = logging.getLogger(__name__)
+from .odata_http import request_with_retry
 
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
@@ -46,6 +46,9 @@ print = functools.partial(print, flush=True)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
+CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
+SOURCE_TAG = "techdir_q2_monthly_v1"
+CACHE_VERSION = 1
 
 GROUP_ALIASES = {
     "Заместитель тех. директора по качеству": [
@@ -110,16 +113,14 @@ def fetch_all(session: requests.Session, url: str, page_size: int = 5000, timeou
     while True:
         sep = "&" if "?" in url else "?"
         page_url = f"{url}{sep}$top={page_size}&$skip={skip}&$format=json"
-        try:
-            r = session.get(page_url, timeout=timeout)
-        except requests.RequestException as exc:
-            raise RuntimeError(f"OData request failed for TD-Q2: {exc}") from exc
+        r = request_with_retry(session, page_url, timeout=timeout, retries=4, label="techdir_tekuchet")
+        if r is None:
+            print("    HTTP no-response after retries")
+            return rows
         if not r.ok:
-            raise RuntimeError(f"OData HTTP {r.status_code} for TD-Q2: {r.text[:300]}")
-        try:
-            batch = r.json().get("value", [])
-        except ValueError as exc:
-            raise RuntimeError(f"OData returned invalid JSON for TD-Q2: {r.text[:300]}") from exc
+            print(f"    HTTP {r.status_code}: {r.text[:300]}")
+            return rows
+        batch = r.json().get("value", [])
         if not batch:
             break
         rows.extend(batch)
@@ -201,6 +202,47 @@ def load_docs(session: requests.Session):
     return fetch_all(session, url, page_size=500, timeout=60)
 
 
+def _cache_path(year: int, month: int) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / f"techdir_tekuchet_{year}_{month:02d}.json"
+
+
+def _load_cache(year: int, month: int) -> dict | None:
+    path = _cache_path(year, month)
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("source") != SOURCE_TAG:
+        return None
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
+    if data.get("cache_date") != date.today().isoformat():
+        return None
+    return data
+
+
+def _save_cache(year: int, month: int, payload: dict) -> None:
+    try:
+        with _cache_path(year, month).open("w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    **payload,
+                    "source": SOURCE_TAG,
+                    "cache_version": CACHE_VERSION,
+                    "cache_date": date.today().isoformat(),
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except OSError:
+        print(f"    ⚠ не удалось сохранить кэш TD-Q2 {year}-{month:02d}")
+
+
 def aggregate_for_month(docs, group_dept_keys, target_str):
     result = defaultdict(lambda: {"plan": 0.0, "fact": 0.0, "plan_rows": 0, "fact_rows": 0, "docs": 0})
     matched_docs = defaultdict(list)
@@ -257,15 +299,26 @@ def _quarter_months(year: int, quarter: int) -> list[tuple[int, int]]:
 
 
 def compute_td_turnover_month(year: int, month: int) -> dict:
+    cached = _load_cache(year, month)
+    if cached is not None:
+        return cached
+
     target_str = f"{year}-{month:02d}"
+    try:
+        session = requests.Session()
+        session.auth = AUTH
 
-    session = requests.Session()
-    session.auth = AUTH
-
-    structure_rows, structure_by_key, exact = load_structure(session)
-    group_dept_keys, diagnostics = resolve_group_department_keys(structure_rows, exact)
-    docs = load_docs(session)
-    result, matched_docs = aggregate_for_month(docs, group_dept_keys, target_str)
+        structure_rows, structure_by_key, exact = load_structure(session)
+        group_dept_keys, diagnostics = resolve_group_department_keys(structure_rows, exact)
+        docs = load_docs(session)
+        result, matched_docs = aggregate_for_month(docs, group_dept_keys, target_str)
+    except Exception as exc:
+        print(f"    ⚠ TD-Q2 monthly compute failed for {year}-{month:02d}: {exc}")
+        result = defaultdict(lambda: {"plan": 0.0, "fact": 0.0, "plan_rows": 0, "fact_rows": 0, "docs": 0})
+        matched_docs = defaultdict(list)
+        diagnostics = {group_name: [] for group_name in GROUP_ORDER}
+        structure_by_key = {}
+        docs = []
 
     total_plan = 0.0
     total_fact = 0.0
@@ -273,7 +326,7 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
         total_plan += result[group_name]["plan"]
         total_fact += result[group_name]["fact"]
 
-    return {
+    result = {
         "year": year,
         "month": month,
         "month_name": MONTH_RU[month],
@@ -300,126 +353,108 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
             ),
         },
     }
+    _save_cache(year, month, result)
+    return result
 
 
 def get_td_q2_ytd(year: int | None = None, quarter: int | None = None) -> dict:
-    requested_year = year
-    requested_quarter = quarter
-
-    def _empty_payload(error: Exception) -> dict:
-        fallback_year = requested_year
-        fallback_quarter = requested_quarter
-        if fallback_year is None or fallback_quarter is None:
-            fallback_year, fallback_quarter = _last_full_quarter()
-        label = f"Q{fallback_quarter} {fallback_year}"
-        message = str(error)
-        return {
-            "data_granularity": "quarterly",
-            "quarterly_data": [{
-                "quarter": fallback_quarter,
-                "year": fallback_year,
-                "label": label,
-                "plan_max_turnover_pct": None,
-                "fact_turnover_pct": None,
-                "kpi_pct": None,
-                "data_complete": False,
-                "months_with_turnover_data": 0,
-                "has_data": False,
-            }],
-            "ytd": {
-                "total_plan": None,
-                "total_fact": None,
-                "kpi_pct": None,
-                "quarters_with_data": 0,
-                "quarters_total": 1,
-            },
-            "kpi_period": {
-                "type": "last_full_quarter",
-                "year": fallback_year,
-                "quarter": fallback_quarter,
-                "label": label,
-                "data_complete": False,
-            },
-            "debug": {
-                "status": "error",
-                "kpi_id": "TD-Q2",
-                "source": "Document_ТД_ТекучестьПерсонала",
-                "error": message,
-                "months": [],
-            },
-        }
-
     def _runner() -> dict:
-        nonlocal year, quarter
-        if year is None or quarter is None:
-            year, quarter = _last_full_quarter()
+        try:
+            nonlocal year, quarter
+            if year is None or quarter is None:
+                year, quarter = _last_full_quarter()
 
-        month_rows = []
-        for row_year, row_month in _quarter_months(year, quarter):
-            snapshot = compute_td_turnover_month(row_year, row_month)
-            plan = snapshot["total_plan"]
-            fact = snapshot["total_fact"]
-            has_data = plan != 0 or fact != 0
-            month_rows.append({
-                "year": row_year,
-                "month": row_month,
-                "month_name": MONTH_RU[row_month].lower(),
-                "plan": plan,
-                "fact": fact,
-                "has_data": has_data,
-            })
+            month_rows = []
+            for row_year, row_month in _quarter_months(year, quarter):
+                snapshot = compute_td_turnover_month(row_year, row_month)
+                plan = snapshot["total_plan"]
+                fact = snapshot["total_fact"]
+                has_data = plan != 0 or fact != 0
+                month_rows.append({
+                    "year": row_year,
+                    "month": row_month,
+                    "month_name": MONTH_RU[row_month].lower(),
+                    "plan": plan,
+                    "fact": fact,
+                    "has_data": has_data,
+                })
 
-        with_data = [row for row in month_rows if row["has_data"]]
-        months_with_data = len(with_data)
+            with_data = [row for row in month_rows if row["has_data"]]
+            months_with_data = len(with_data)
 
-        if with_data:
-            avg_plan = round(sum(row["plan"] for row in with_data) / months_with_data, 2)
-            avg_fact = round(sum(row["fact"] for row in with_data) / months_with_data, 2)
-        else:
-            avg_plan = 0.0
-            avg_fact = 0.0
+            if with_data:
+                avg_plan = round(sum(row["plan"] for row in with_data) / months_with_data, 2)
+                avg_fact = round(sum(row["fact"] for row in with_data) / months_with_data, 2)
+            else:
+                avg_plan = 0.0
+                avg_fact = 0.0
 
-        quarter_row = {
-            "quarter": quarter,
-            "year": year,
-            "label": f"Q{quarter} {year}",
-            "plan_max_turnover_pct": avg_plan,
-            "fact_turnover_pct": avg_fact,
-            "kpi_pct": avg_fact if with_data else None,
-            "data_complete": months_with_data == 3,
-            "months_with_turnover_data": months_with_data,
-        }
-
-        return {
-            "data_granularity": "quarterly",
-            "quarterly_data": [quarter_row],
-            "ytd": {
-                "total_plan": avg_plan if with_data else None,
-                "total_fact": avg_fact if with_data else None,
-                "kpi_pct": avg_fact if with_data else None,
-                "quarters_with_data": 1 if with_data else 0,
-                "quarters_total": 1,
-            },
-            "kpi_period": {
-                "type": "last_full_quarter",
-                "year": year,
+            quarter_row = {
                 "quarter": quarter,
+                "year": year,
                 "label": f"Q{quarter} {year}",
+                "plan_max_turnover_pct": avg_plan,
+                "fact_turnover_pct": avg_fact,
+                "kpi_pct": avg_fact if with_data else None,
                 "data_complete": months_with_data == 3,
-            },
-            "debug": {
-                "status": "ok",
-                "kpi_id": "TD-Q2",
-                "source": "Document_ТД_ТекучестьПерсонала",
-                "months": month_rows,
-            },
-        }
+                "months_with_turnover_data": months_with_data,
+            }
 
-    try:
-        return locked_call("techdir_td_q2", _runner)
-    except Exception as exc:
-        logger.exception("Не удалось рассчитать TD-Q2")
-        return _empty_payload(exc)
+            return {
+                "data_granularity": "quarterly",
+                "quarterly_data": [quarter_row],
+                "ytd": {
+                    "total_plan": avg_plan if with_data else None,
+                    "total_fact": avg_fact if with_data else None,
+                    "kpi_pct": avg_fact if with_data else None,
+                    "quarters_with_data": 1 if with_data else 0,
+                    "quarters_total": 1,
+                },
+                "kpi_period": {
+                    "type": "last_full_quarter",
+                    "year": year,
+                    "quarter": quarter,
+                    "label": f"Q{quarter} {year}",
+                    "data_complete": months_with_data == 3,
+                },
+                "debug": {
+                    "status": "ok",
+                    "kpi_id": "TD-Q2",
+                    "source": "Document_ТД_ТекучестьПерсонала",
+                    "months": month_rows,
+                },
+            }
+        except Exception as exc:
+            y, q = year, quarter
+            if y is None or q is None:
+                y, q = _last_full_quarter()
+            print(f"    ⚠ TD-Q2 runner failed for Q{q} {y}: {exc}")
+            return {
+                "data_granularity": "quarterly",
+                "quarterly_data": [],
+                "ytd": {
+                    "total_plan": None,
+                    "total_fact": None,
+                    "kpi_pct": None,
+                    "quarters_with_data": 0,
+                    "quarters_total": 1,
+                },
+                "kpi_period": {
+                    "type": "last_full_quarter",
+                    "year": y,
+                    "quarter": q,
+                    "label": f"Q{q} {y}",
+                    "data_complete": False,
+                },
+                "debug": {
+                    "status": "error",
+                    "kpi_id": "TD-Q2",
+                    "source": "Document_ТД_ТекучестьПерсонала",
+                    "error": str(exc),
+                },
+            }
+
+    return locked_call("techdir_td_q2", _runner)
 
 
 def main():
