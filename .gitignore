@@ -31,3 +31,7 @@ staticfiles/
 # OS
 .DS_Store
 Thumbs.db
+
+# cashes 
+
+getkpi/dashboard/*.json
