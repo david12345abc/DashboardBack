@@ -53,7 +53,7 @@ MONTH_RU = {
     9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
 }
 
-
+print('ok')
 def normalize_name(value: str | None) -> str:
     value = (value or "").lower().replace("ё", "е")
     value = re.sub(r"[^0-9a-zа-я]+", " ", value)
