@@ -151,6 +151,41 @@ TD_M3_PLAN_TARGET_2026: dict[int, int] = {
     5: 7_363_581,
 }
 
+TD_M3_FACT_DEPARTMENTS: tuple[str, ...] = (
+    "Эксплуатационная служба",
+    "Электрик/энергетик",
+    "Зам. технического директора по качеству",
+    "Специалист по процессному управлению",
+    "ЗАМЕСТИТЕЛЬ ДИРЕКТОРА ПО КАЧЕСТВУ",
+    "Лаборатория неразрушающего контроля",
+    "Отдел управления несоответствиями",
+    "ОТК-1",
+    "ОТК-2",
+    "АХО",
+    "Зам. технического директора по сервису",
+    "Отдел по работе с рекламациями",
+    "Отдел технической поддержки",
+    "Сервисная служба",
+    "Отдел сервисного обслуживания",
+    "Служба технического директора",
+    "Сектор качества разработки",
+    "Сектор разработки тех. Решений",
+    "Сектор промышленной безопасности",
+)
+
+TD_M3_FACT_ARTICLES: tuple[str, ...] = (
+    "Оплата труда ГАРАНТИИ (26 сч) пр-во НПО!",
+    "Гарантийное обслуживание, поверка, ремонт (26 сч) НПО!",
+    "Гарантийное обслуживание, ТМЦ (26) НПО!",
+    "Гарантийное обслуживание, транспорт и ГСМ (26 сч) НПО!",
+    "Гарантийное обслуживание, командировка (26 сч) НПО!",
+)
+
+TD_M3_FACT_ARTICLE_NORMS = frozenset(fts.normalize_name(name) for name in TD_M3_FACT_ARTICLES)
+
+ACCOUNT_26_ROOT = "fb2bde43-6250-11e7-812d-001e67112509"
+SUBCONTO_TYPE_COST = "fb2bdde9-6250-11e7-812d-001e67112509"
+
 BUDGET_PLAN_ARTICLE_KEYS: frozenset[str] = frozenset()
 USE_PAYROLL_LIKE_BUDGET_PLAN_ARTICLES = False
 
@@ -336,6 +371,172 @@ def _sum_turnover_for_scenario(
             continue
         total += float(row.get("СуммаСценария") or 0)
     return total
+
+
+def _resolve_td_m3_department_map(session: requests.Session) -> tuple[dict[str, str], list[str]]:
+    structure_rows, by_key, _, exact_index = fts.load_structure(session)
+    name_to_key: dict[str, str] = {}
+    unresolved: list[str] = []
+    for display_name in TD_M3_FACT_DEPARTMENTS:
+        found = fts.resolve_department_row(structure_rows, exact_index, display_name, ())
+        if not found:
+            unresolved.append(display_name)
+            continue
+        key = found.get("Ref_Key")
+        if not key:
+            unresolved.append(display_name)
+            continue
+        name_to_key[display_name] = key
+    struct_map = fts.build_struct_key_to_fot_group(name_to_key, by_key)
+    return struct_map, unresolved
+
+
+def _get_subaccounts(session: requests.Session, parent_guid: str) -> set[str]:
+    collected = {parent_guid}
+    frontier = [parent_guid]
+    while frontier:
+        parent = frontier.pop()
+        flt = f"Parent_Key eq guid'{parent}'"
+        url = (
+            f"{fts.BASE}/{quote('ChartOfAccounts_Хозрасчетный')}"
+            f"?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select=Ref_Key,Code,Description,Parent_Key"
+        )
+        rows = fts.fetch_all(session, url, timeout=60)
+        for row in rows:
+            key = row.get("Ref_Key")
+            if key and key not in collected:
+                collected.add(key)
+                frontier.append(key)
+    return collected
+
+
+def _compute_td_m3_fact_monthly(session: requests.Session, year: int, month: int) -> dict[str, Any]:
+    p_start, p_end = _month_period_bounds(year, month)
+    struct_map, unresolved_departments = _resolve_td_m3_department_map(session)
+    article_names = fts.load_cost_articles(session)
+    allowed_article_keys = {
+        key
+        for key, value in article_names.items()
+        if fts.normalize_name(value) in TD_M3_FACT_ARTICLE_NORMS
+    }
+
+    target_accounts = _get_subaccounts(session, ACCOUNT_26_ROOT)
+    acc_or = " or ".join(f"AccountDr_Key eq guid'{a}'" for a in sorted(target_accounts))
+    flt = (
+        f"Period ge datetime'{p_start}' and Period lt datetime'{p_end}'"
+        f" and Active eq true and ({acc_or})"
+    )
+    sel = ",".join([
+        "Period", "AccountDr_Key", "ПодразделениеDr_Key",
+        "Сумма", "Сторно", "ExtDimensionDr1", "ExtDimensionTypeDr1_Key",
+    ])
+    url = (
+        f"{fts.BASE}/{quote('AccountingRegister_Хозрасчетный')}/RecordsWithExtDimensions"
+        f"?$format=json"
+        f"&$filter={quote(flt, safe='')}"
+        f"&$select={quote(sel, safe=',_')}"
+    )
+    records = _fetch_all_rows(session, url, label="td_m3/fact_26")
+
+    by_dept: dict[str, dict[str, Any]] = {
+        name: {
+            "total": 0.0,
+            "rows": 0,
+            "by_article": {article: 0.0 for article in TD_M3_FACT_ARTICLES},
+        }
+        for name in TD_M3_FACT_DEPARTMENTS
+    }
+    article_totals: dict[str, float] = {article: 0.0 for article in TD_M3_FACT_ARTICLES}
+    counts = {
+        "records_total": len(records),
+        "records_taken": 0,
+        "skipped_no_dept": 0,
+        "skipped_not_target_dept": 0,
+        "skipped_not_target_article": 0,
+        "account_root": ACCOUNT_26_ROOT,
+        "allocation_rule": "sum_account26_debit_by_department_and_article",
+    }
+    total_fact = 0.0
+
+    for rec in records:
+        dept_key = rec.get("ПодразделениеDr_Key") or fts.EMPTY
+        if dept_key == fts.EMPTY:
+            counts["skipped_no_dept"] += 1
+            continue
+        group_name = struct_map.get(dept_key)
+        if not group_name:
+            counts["skipped_not_target_dept"] += 1
+            continue
+
+        article_key = None
+        if rec.get("ExtDimensionTypeDr1_Key") == SUBCONTO_TYPE_COST:
+            article_key = rec.get("ExtDimensionDr1")
+        if not article_key or article_key not in allowed_article_keys:
+            counts["skipped_not_target_article"] += 1
+            continue
+
+        article_norm = fts.normalize_name(article_names.get(article_key, ""))
+        article_name = next(
+            (article for article in TD_M3_FACT_ARTICLES if fts.normalize_name(article) == article_norm),
+            None,
+        )
+        if not article_name:
+            counts["skipped_not_target_article"] += 1
+            continue
+
+        try:
+            amount = float(rec.get("Сумма") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if rec.get("Сторно"):
+            amount = -amount
+        if amount == 0:
+            continue
+
+        dept_row = by_dept[group_name]
+        dept_row["by_article"][article_name] += amount
+        dept_row["total"] += amount
+        dept_row["rows"] += 1
+        article_totals[article_name] += amount
+        total_fact += amount
+        counts["records_taken"] += 1
+
+    groups_out: dict[str, dict[str, Any]] = {}
+    for name in TD_M3_FACT_DEPARTMENTS:
+        row = by_dept[name]
+        groups_out[name] = {
+            "fact_total": round(float(row["total"]), 2),
+            "fact_salary": round(float(row["by_article"][TD_M3_FACT_ARTICLES[0]]), 2),
+            "fact_insurance": 0.0,
+            "rows": int(row["rows"]),
+            "by_article": {
+                article: round(float(amount), 2)
+                for article, amount in row["by_article"].items()
+            },
+        }
+
+    return {
+        "year": year,
+        "month": month,
+        "month_name": MONTH_NAMES[month],
+        "groups": groups_out,
+        "total_fact": round(total_fact, 2),
+        "counts": counts,
+        "debug": {
+            "fact_source": "AccountingRegister_Хозрасчетный/RecordsWithExtDimensions",
+            "period_start": p_start,
+            "period_end": p_end,
+            "department_map_size": len(struct_map),
+            "unresolved_departments": unresolved_departments,
+            "target_article_keys": sorted(allowed_article_keys),
+            "article_totals": {
+                article: round(float(amount), 2)
+                for article, amount in article_totals.items()
+            },
+        },
+    }
 
 
 _REQUEST_DOC_CACHE: tuple[str, str] | None = None
@@ -703,7 +904,6 @@ def compute_td_m3_costs_monthly(year: int, month: int) -> dict[str, Any]:
     session = requests.Session()
     session.auth = AUTH
     scenario_names = bdg.load_budget_scenarios(session)
-    name_to_key, _ = fts.load_fot_spec_structure_map(session)
     p0, p1 = _month_period_bounds(year, month)
     rows = bdg.load_budget_turnover_rows(session, p0, p1)
 
@@ -717,8 +917,8 @@ def compute_td_m3_costs_monthly(year: int, month: int) -> dict[str, Any]:
             rows, subtree_keys, scenario_names, bdg.load_budget_articles(session), BUDGET_SCENARIO_NAME
         )
         plan_source = "1c_budget_turnover"
-    request_fact = _compute_request_fact_monthly(session, year, month, name_to_key)
-    total_fact = request_fact.get("total_fact")
+    fact_payload = _compute_td_m3_fact_monthly(session, year, month)
+    total_fact = fact_payload.get("total_fact")
 
     has_data = total_plan is not None and total_fact is not None
     return {
@@ -731,7 +931,9 @@ def compute_td_m3_costs_monthly(year: int, month: int) -> dict[str, Any]:
             "subtree_size": len(subtree_keys),
             "plan_scenario": BUDGET_SCENARIO_NAME,
             "plan_source": plan_source,
-            "fact_source": request_fact.get("debug", {}),
+            "fact_source": fact_payload.get("debug", {}),
+            "fact_counts": fact_payload.get("counts", {}),
+            "fact_groups": fact_payload.get("groups", {}),
             "contour_mode": BUDGET_TD_CONTOUR_MODE,
         },
     }

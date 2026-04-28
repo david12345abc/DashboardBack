@@ -12,7 +12,7 @@ from . import calc_budget_techdir_m3
 logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_m3_monthly_v2_single_month_cache"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 AVAILABLE_MONTHS_2026 = tuple(sorted(calc_budget_techdir_m3.TD_M3_PLAN_TARGET_2026))
 
 MONTH_NAMES = {
