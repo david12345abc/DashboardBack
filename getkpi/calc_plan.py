@@ -1,7 +1,10 @@
 """
 calc_plan.py — Плановые показатели: Договоры, Деньги, Отгрузки (помесячно).
 
-Источник: AccumulationRegister_ТД_ПланированиеДоговоровОтгрузокДС_RecordType.
+Источники:
+  - маркетинговый план: AccumulationRegister_ТД_ПланированиеДоговоровОтгрузокДС_RecordType;
+  - ожидаемые деньги/отгрузки: Document_ТД_ПланированиеПроцессаПродажЕжемесячное;
+  - ожидаемые договоры: Document_КоммерческоеПредложениеКлиенту по плановой дате подписания.
 
 Логика (1С-запрос):
   - Период МЕЖДУ НачалоПериода(месяц) И КонецПериода(месяц)
@@ -56,7 +59,21 @@ MONTH_RU = {
 }
 
 REG = "AccumulationRegister_ТД_ПланированиеДоговоровОтгрузокДС_RecordType"
+EXPECTED_DOC = "Document_ТД_ПланированиеПроцессаПродажЕжемесячное"
+EXPECTED_CONTRACT_DOC = "Document_КоммерческоеПредложениеКлиенту"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
+CACHE_VERSION = 3
+PLAN_KEYS = ("dengi", "otgruzki", "dogovory")
+EXPECTED_KEYS = {
+    "dengi": "dengi_expected",
+    "otgruzki": "otgruzki_expected",
+    "dogovory": "dogovory_expected",
+}
+EXPECTED_TABLES = {
+    "dengi": "Деньги",
+    "otgruzki": "Отгрузки",
+    "dogovory": "Договоры",
+}
 
 
 def _last_full_month(today: date) -> tuple[int, int]:
@@ -82,7 +99,12 @@ def _load_cache(year: int, month: int) -> dict | None:
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if data.get("cache_date") == date.today().isoformat() and "by_dept" in data:
+        if (
+            data.get("cache_date") == date.today().isoformat()
+            and data.get("cache_version") == CACHE_VERSION
+            and "by_dept" in data
+            and all(k in data for k in (*PLAN_KEYS, *EXPECTED_KEYS.values()))
+        ):
             return data
     except (OSError, json.JSONDecodeError):
         pass
@@ -95,6 +117,7 @@ def _save_cache(year: int, month: int, totals: dict, by_dept: dict) -> None:
         with open(_cache_path(year, month), "w", encoding="utf-8") as f:
             json.dump({
                 "cache_date": date.today().isoformat(),
+                "cache_version": CACHE_VERSION,
                 **totals,
                 "by_dept": by_dept,
             }, f, ensure_ascii=False)
@@ -138,6 +161,89 @@ def _load_register(session: requests.Session,
     return rows
 
 
+def _load_expected_documents(session: requests.Session,
+                             year: int, ref_month: int) -> list[dict]:
+    """Загрузить месячные документы ожиданий по процессу продаж за январь–ref_month."""
+    d_from = f"{year}-01-01T00:00:00"
+    if ref_month == 12:
+        d_to = f"{year + 1}-01-01T00:00:00"
+    else:
+        d_to = f"{year}-{ref_month + 1:02d}-01T00:00:00"
+
+    sel = quote(
+        "Ref_Key,Date,Posted,DeletionMark,ДатаПланирования,Ответственный_Key,Подразделение_Key,Статус,"
+        "Деньги,Отгрузки,Договоры",
+        safe=",_",
+    )
+    flt = quote(
+        f"ДатаПланирования ge datetime'{d_from}' and ДатаПланирования lt datetime'{d_to}' "
+        f"and Posted eq true and DeletionMark eq false",
+        safe="",
+    )
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        url = (
+            f"{BASE}/{EXPECTED_DOC}?$format=json&$top=5000&$skip={skip}"
+            f"&$filter={flt}&$select={sel}"
+        )
+        r = request_with_retry(session, url, timeout=120, retries=4, label="ExpectedPlans")
+        if r is None:
+            logger.error("Expected plans: request dropped after retries")
+            break
+        if not r.ok:
+            logger.error("Expected plans HTTP %d", r.status_code)
+            break
+        batch = r.json().get("value", [])
+        rows.extend(batch)
+        if len(batch) < 5000:
+            break
+        skip += 5000
+    return rows
+
+
+def _load_expected_contract_proposals(session: requests.Session,
+                                      year: int,
+                                      ref_month: int) -> list[dict]:
+    """Коммерческие предложения с плановой датой подписания договора."""
+    d_from = f"{year}-01-01T00:00:00"
+    if ref_month == 12:
+        d_to = f"{year + 1}-01-01T00:00:00"
+    else:
+        d_to = f"{year}-{ref_month + 1:02d}-01T00:00:00"
+
+    sel = quote(
+        "Ref_Key,Number,Date,Posted,DeletionMark,ДатаПодписанияПлан,Менеджер_Key,"
+        "СуммаДокумента,СуммаБазыКБ,Статус,СогласованоСКлиентом",
+        safe=",_",
+    )
+    flt = quote(
+        f"ДатаПодписанияПлан ge datetime'{d_from}' and ДатаПодписанияПлан lt datetime'{d_to}' "
+        f"and DeletionMark eq false",
+        safe="",
+    )
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        url = (
+            f"{BASE}/{EXPECTED_CONTRACT_DOC}?$format=json&$top=5000&$skip={skip}"
+            f"&$filter={flt}&$select={sel}"
+        )
+        r = request_with_retry(session, url, timeout=120, retries=4, label="ExpectedContracts")
+        if r is None:
+            logger.error("Expected contracts: request dropped after retries")
+            break
+        if not r.ok:
+            logger.error("Expected contracts HTTP %d", r.status_code)
+            break
+        batch = r.json().get("value", [])
+        rows.extend(batch)
+        if len(batch) < 5000:
+            break
+        skip += 5000
+    return rows
+
+
 def _calc_plans(entries: list[dict],
                 ref_month: int) -> dict[int, dict]:
     """
@@ -149,8 +255,14 @@ def _calc_plans(entries: list[dict],
     for m in range(1, ref_month + 1):
         result[m] = {
             "dengi": 0.0, "otgruzki": 0.0, "dogovory": 0.0,
-            "by_dept": {d: {"dengi": 0.0, "otgruzki": 0.0, "dogovory": 0.0}
-                        for d in DEPT_SET},
+            "dengi_expected": 0.0, "otgruzki_expected": 0.0, "dogovory_expected": 0.0,
+            "by_dept": {
+                d: {
+                    "dengi": 0.0, "otgruzki": 0.0, "dogovory": 0.0,
+                    "dengi_expected": 0.0, "otgruzki_expected": 0.0, "dogovory_expected": 0.0,
+                }
+                for d in DEPT_SET
+            },
         }
 
     for row in entries:
@@ -184,13 +296,93 @@ def _calc_plans(entries: list[dict],
         result[m]["by_dept"][dept][key] += sm
 
     for m in result:
-        for k in ("dengi", "otgruzki", "dogovory"):
+        for k in (*PLAN_KEYS, *EXPECTED_KEYS.values()):
             result[m][k] = round(result[m][k], 2)
         for d in result[m]["by_dept"]:
-            for k in ("dengi", "otgruzki", "dogovory"):
+            for k in (*PLAN_KEYS, *EXPECTED_KEYS.values()):
                 result[m]["by_dept"][d][k] = round(result[m]["by_dept"][d][k], 2)
 
     return result
+
+
+def _proposal_expected_contract_amount(row: dict) -> float:
+    amount = float(row.get("СуммаБазыКБ") or row.get("СуммаДокумента") or 0)
+    # В отчёт «ожидаемые к заключению» не попадают мелкие согласованные КП,
+    # которые ещё не согласованы клиентом.
+    if (
+        row.get("Статус") == "Согласовано"
+        and not row.get("СогласованоСКлиентом")
+        and amount < 150_000
+    ):
+        return 0.0
+    return amount
+
+
+def _merge_expected_plans(result: dict[int, dict],
+                          documents: list[dict],
+                          ref_month: int,
+                          proposals: list[dict] | None = None) -> None:
+    """Добавить суммы из колонок «ожидаемые к ...» в уже собранный план."""
+    manager_dept_by_month: dict[tuple[int, str], str] = {}
+    for doc in documents:
+        date_str = (doc.get("ДатаПланирования") or "")[:10]
+        if len(date_str) < 7:
+            continue
+        try:
+            m = int(date_str[5:7])
+        except (ValueError, IndexError):
+            continue
+        if m < 1 or m > ref_month:
+            continue
+
+        dept = doc.get("Подразделение_Key", "")
+        if not dept or dept == EMPTY or dept not in DEPT_SET:
+            continue
+        if doc.get("Статус") not in (None, "", "Подготовлен", "Утвержден"):
+            continue
+
+        month_row = result[m]
+        dept_row = month_row["by_dept"][dept]
+        manager = doc.get("Ответственный_Key")
+        if manager:
+            manager_dept_by_month[(m, manager)] = dept
+        for plan_key, table_name in EXPECTED_TABLES.items():
+            if plan_key == "dogovory":
+                continue
+            expected_key = EXPECTED_KEYS[plan_key]
+            total = 0.0
+            table_rows = doc.get(table_name) or []
+            if not isinstance(table_rows, list):
+                table_rows = []
+            for item in table_rows:
+                total += float(item.get("Сумма") or 0)
+            month_row[expected_key] += total
+            dept_row[expected_key] += total
+
+    for row in proposals or []:
+        date_str = (row.get("ДатаПодписанияПлан") or "")[:10]
+        if len(date_str) < 7:
+            continue
+        try:
+            m = int(date_str[5:7])
+        except (ValueError, IndexError):
+            continue
+        if m < 1 or m > ref_month:
+            continue
+        manager = row.get("Менеджер_Key")
+        dept = manager_dept_by_month.get((m, manager))
+        if not dept:
+            continue
+        amount = _proposal_expected_contract_amount(row)
+        result[m]["dogovory_expected"] += amount
+        result[m]["by_dept"][dept]["dogovory_expected"] += amount
+
+    for m in result:
+        for k in EXPECTED_KEYS.values():
+            result[m][k] = round(result[m][k], 2)
+        for d in result[m]["by_dept"]:
+            for k in EXPECTED_KEYS.values():
+                result[m]["by_dept"][d][k] = round(result[m]["by_dept"][d][k], 2)
 
 
 def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
@@ -206,6 +398,9 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
             "dengi": bd.get("dengi", 0),
             "otgruzki": bd.get("otgruzki", 0),
             "dogovory": bd.get("dogovory", 0),
+            "dengi_expected": bd.get("dengi_expected", 0),
+            "otgruzki_expected": bd.get("otgruzki_expected", 0),
+            "dogovory_expected": bd.get("dogovory_expected", 0),
         })
     return {
         "cache_date": payload.get("cache_date"),
@@ -240,7 +435,12 @@ def get_plans_monthly(year: int | None = None,
             with open(mc, "r", encoding="utf-8") as f:
                 data = json.load(f)
             first_m = (data.get("months") or [{}])[0]
-            if data.get("cache_date") == today.isoformat() and "by_dept" in first_m:
+            if (
+                data.get("cache_date") == today.isoformat()
+                and data.get("cache_version") == CACHE_VERSION
+                and "by_dept" in first_m
+                and all(k in first_m for k in (*PLAN_KEYS, *EXPECTED_KEYS.values()))
+            ):
                 return _slice_payload(data, dept_guid)
         except (OSError, json.JSONDecodeError):
             pass
@@ -257,13 +457,12 @@ def get_plans_monthly(year: int | None = None,
             cd = _load_cache(ref_y, m)
             out_months.append({
                 "year": ref_y, "month": m,
-                "dengi": cd["dengi"],
-                "otgruzki": cd["otgruzki"],
-                "dogovory": cd["dogovory"],
+                **{k: cd[k] for k in (*PLAN_KEYS, *EXPECTED_KEYS.values())},
                 "by_dept": cd.get("by_dept", {}),
             })
         payload = {
             "cache_date": today.isoformat(),
+            "cache_version": CACHE_VERSION,
             "year": ref_y, "ref_month": ref_m,
             "months": out_months,
         }
@@ -280,16 +479,19 @@ def get_plans_monthly(year: int | None = None,
     logger.info("calc_plan: loading register for %d months 1-%d", ref_y, ref_m)
     entries = _load_register(session, ref_y, ref_m)
     computed = _calc_plans(entries, ref_m)
+    expected_documents = _load_expected_documents(session, ref_y, ref_m)
+    expected_contracts = _load_expected_contract_proposals(session, ref_y, ref_m)
+    _merge_expected_plans(computed, expected_documents, ref_m, expected_contracts)
 
     out_months = []
     for m in range(1, ref_m + 1):
         cached = _load_cache(ref_y, m)
         if cached is not None:
-            totals = {k: cached[k] for k in ("dengi", "otgruzki", "dogovory")}
+            totals = {k: cached[k] for k in (*PLAN_KEYS, *EXPECTED_KEYS.values())}
             by_dept = cached.get("by_dept", {})
         else:
             cm = computed[m]
-            totals = {k: cm[k] for k in ("dengi", "otgruzki", "dogovory")}
+            totals = {k: cm[k] for k in (*PLAN_KEYS, *EXPECTED_KEYS.values())}
             by_dept = cm["by_dept"]
             _save_cache(ref_y, m, totals, by_dept)
         out_months.append({
@@ -300,6 +502,7 @@ def get_plans_monthly(year: int | None = None,
 
     payload = {
         "cache_date": today.isoformat(),
+        "cache_version": CACHE_VERSION,
         "year": ref_y, "ref_month": ref_m,
         "months": out_months,
     }

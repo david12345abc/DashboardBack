@@ -454,6 +454,8 @@ def _extract_tile_plan_fact(entry: dict) -> dict:
             'fact': ref_row.get('fact'),
             'has_data': ref_row.get('has_data'),
         }
+        if ref_row.get('expected_plan') is not None:
+            out['expected_plan'] = ref_row.get('expected_plan')
         if ref_row.get('values_unit'):
             out['unit'] = ref_row.get('values_unit')
         return out
@@ -1305,8 +1307,9 @@ def _build_kpi_entry(
         )
         plans_months = (plans_payload or {}).get('months', [])
         plans_by_month = {r['month']: (r.get('dengi') or 0) for r in plans_months}
+        expected_by_month = {r['month']: (r.get('dengi_expected') or 0) for r in plans_months}
         tile = komdir_dashboard._build_plan_fact_tile(
-            dengi.get('months', []), plans_by_month, ref_y, ref_m,
+            dengi.get('months', []), plans_by_month, expected_by_month, ref_y, ref_m,
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = tile['monthly_data']

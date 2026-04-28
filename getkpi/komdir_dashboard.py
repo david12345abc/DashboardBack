@@ -166,15 +166,18 @@ def _generate_tile_monthly_data(kpi_id: str, plan: float,
 
 
 def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, float],
+                          expected_by_month: dict[int, float] | None,
                           ref_y: int, ref_m: int) -> dict:
     """Общая логика сборки плитки план/факт для KD-M1/M2/M3."""
     months = []
     ref_row = None
+    expected_by_month = expected_by_month or {}
     for row in raw_months:
         m = row.get('month')
         y = row.get('year', ref_y)
         fact = row.get('fact')
         plan = _prorate_if_current(plans_by_month.get(m) or 0, y, m)
+        expected_plan = expected_by_month.get(m) or 0
         pct = round(fact / plan * 100, 1) if plan and fact is not None else None
         mrow = {
             'month': m,
@@ -182,6 +185,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             'month_name': MONTH_NAMES_RU.get(m, ''),
             'plan': plan,
             'fact': fact,
+            'expected_plan': expected_plan,
             'kpi_pct': pct,
             'has_data': fact is not None,
         }
@@ -197,6 +201,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
         'ytd': {
             'total_plan': ref_row['plan'] if ref_row else fallback_plan,
             'total_fact': ref_row['fact'] if ref_row else 0,
+            'total_expected_plan': ref_row['expected_plan'] if ref_row else (expected_by_month.get(ref_m) or 0),
             'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
             'months_with_data': len(with_data),
             'months_total': len(months),
@@ -244,7 +249,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         plans_by_month = {r['month']: (r.get('dengi') or 0) for r in plans_months}
+        expected_by_month = {r['month']: (r.get('dengi_expected') or 0) for r in plans_months}
         return _build_plan_fact_tile(dengi.get('months', []), plans_by_month,
+                                     expected_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M2':
@@ -254,7 +261,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         plans_by_month = {r['month']: (r.get('otgruzki') or 0) for r in plans_months}
+        expected_by_month = {r['month']: (r.get('otgruzki_expected') or 0) for r in plans_months}
         return _build_plan_fact_tile(otg.get('months', []), plans_by_month,
+                                     expected_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M3':
@@ -264,7 +273,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         plans_by_month = {r['month']: (r.get('dogovory') or 0) for r in plans_months}
+        expected_by_month = {r['month']: (r.get('dogovory_expected') or 0) for r in plans_months}
         return _build_plan_fact_tile(dog.get('months', []), plans_by_month,
+                                     expected_by_month,
                                      ref_y, ref_m)
 
     if kpi_id == 'KD-M6':
@@ -627,6 +638,7 @@ def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
                 "year": row.get("year"),
                 "plan": row.get("plan"),
                 "fact": row.get("fact"),
+                "expected_plan": row.get("expected_plan"),
             })
         series.append({
             "kpi_id": kid,
@@ -686,6 +698,7 @@ def _build_bar_chart(by_id: dict, tiles_data: dict,
         categories.append(name)
         plan_val = lm.get('plan') if lm else None
         fact_val = lm.get('fact') if lm else None
+        expected_val = lm.get('expected_plan') if lm else None
         plan_values.append(plan_val)
         fact_values.append(fact_val)
         points.append({
@@ -695,6 +708,7 @@ def _build_bar_chart(by_id: dict, tiles_data: dict,
             "year": ref_y,
             "plan": plan_val,
             "fact": fact_val,
+            "expected_plan": expected_val,
             "kpi_pct": lm.get('kpi_pct') if lm else None,
         })
 
@@ -1024,6 +1038,7 @@ def build_komdir_payload(kpi_list: list[dict],
             "frequency": meta.get("frequency"),
             "plan": lm.get("plan") if lm else None,
             "fact": lm.get("fact") if lm else None,
+            "expected_plan": lm.get("expected_plan") if lm else None,
             "has_data": lm.get("has_data", True) if lm else False,
             "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
             "cache_updated_at": _tile_cache_updated_at(kid, ref_y, series_m),
