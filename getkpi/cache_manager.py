@@ -149,7 +149,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
 
         ('techdir_tekuchet',
          techdir_tekuchet._cache_path(y, m),
-         lambda: techdir_tekuchet.get_td_q2_ytd(year=y, quarter=((m - 1) // 3) + 1)),
+         lambda: techdir_tekuchet.get_td_q2_ytd(year=y, month=m)),
     ]
     return tasks
 

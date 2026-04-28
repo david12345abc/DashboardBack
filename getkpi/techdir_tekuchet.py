@@ -48,7 +48,17 @@ AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_q2_monthly_v1"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
+
+# Временные плановые значения TD-Q2 на 2026 год из согласованной картинки.
+TD_Q2_PLAN_TARGET_2026: dict[int, float] = {
+    1: 1.4,
+    2: 2.8,
+    3: 4.3,
+    4: 5.7,
+    5: 7.1,
+}
+AVAILABLE_MONTHS_2026 = tuple(sorted(TD_Q2_PLAN_TARGET_2026))
 
 GROUP_ALIASES = {
     "Заместитель тех. директора по качеству": [
@@ -207,6 +217,21 @@ def _cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"techdir_tekuchet_{year}_{month:02d}.json"
 
 
+def _td_q2_plan_target(year: int, month: int) -> float | None:
+    if year == 2026:
+        return TD_Q2_PLAN_TARGET_2026.get(month)
+    return None
+
+
+def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
+    """Месяцы, которые нужно вернуть в monthly_data для плитки."""
+    if year == 2026 and AVAILABLE_MONTHS_2026:
+        upper_month = max(max(AVAILABLE_MONTHS_2026), ref_month)
+    else:
+        upper_month = ref_month
+    return [(year, mm) for mm in range(1, upper_month + 1)]
+
+
 def _load_cache(year: int, month: int) -> dict | None:
     path = _cache_path(year, month)
     if not path.exists():
@@ -293,6 +318,13 @@ def _last_full_quarter() -> tuple[int, int]:
     return today.year, current_quarter - 1
 
 
+def _last_full_month() -> tuple[int, int]:
+    today = date.today()
+    if today.month == 1:
+        return today.year - 1, 12
+    return today.year, today.month - 1
+
+
 def _quarter_months(year: int, quarter: int) -> list[tuple[int, int]]:
     start_month = (quarter - 1) * 3 + 1
     return [(year, start_month + offset) for offset in range(3)]
@@ -304,6 +336,7 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
         return cached
 
     target_str = f"{year}-{month:02d}"
+    plan_source = "1c_tekuchet"
     try:
         session = requests.Session()
         session.auth = AUTH
@@ -320,10 +353,17 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
         structure_by_key = {}
         docs = []
 
-    total_plan = 0.0
+    plan_target = _td_q2_plan_target(year, month)
+    if plan_target is not None:
+        total_plan = float(plan_target)
+        plan_source = "monthly_constants_from_screenshot"
+    else:
+        total_plan = 0.0
+        for group_name in GROUP_ORDER:
+            total_plan += result[group_name]["plan"]
+
     total_fact = 0.0
     for group_name in GROUP_ORDER:
-        total_plan += result[group_name]["plan"]
         total_fact += result[group_name]["fact"]
 
     result = {
@@ -351,99 +391,93 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
             "source_department_count": len(
                 {d.get("Подразделение_Key") for d in docs if d.get("Подразделение_Key")}
             ),
+            "plan_source": plan_source,
+            "plan_target": plan_target,
         },
     }
     _save_cache(year, month, result)
     return result
 
 
-def get_td_q2_ytd(year: int | None = None, quarter: int | None = None) -> dict:
+def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
     def _runner() -> dict:
         try:
-            nonlocal year, quarter
-            if year is None or quarter is None:
-                year, quarter = _last_full_quarter()
+            nonlocal year, month
+            if year is None or month is None:
+                year, month = _last_full_month()
 
             month_rows = []
-            for row_year, row_month in _quarter_months(year, quarter):
+            for row_year, row_month in _tile_month_pairs(year, month):
                 snapshot = compute_td_turnover_month(row_year, row_month)
                 plan = snapshot["total_plan"]
                 fact = snapshot["total_fact"]
-                has_data = plan != 0 or fact != 0
+                has_data = plan is not None and fact is not None
                 month_rows.append({
                     "year": row_year,
                     "month": row_month,
                     "month_name": MONTH_RU[row_month].lower(),
                     "plan": plan,
                     "fact": fact,
+                    "kpi_pct": fact,
                     "has_data": has_data,
+                    "values_unit": "%",
                 })
 
             with_data = [row for row in month_rows if row["has_data"]]
             months_with_data = len(with_data)
-
-            if with_data:
-                avg_plan = round(sum(row["plan"] for row in with_data) / months_with_data, 2)
-                avg_fact = round(sum(row["fact"] for row in with_data) / months_with_data, 2)
-            else:
-                avg_plan = 0.0
-                avg_fact = 0.0
-
-            quarter_row = {
-                "quarter": quarter,
-                "year": year,
-                "label": f"Q{quarter} {year}",
-                "plan_max_turnover_pct": avg_plan,
-                "fact_turnover_pct": avg_fact,
-                "kpi_pct": avg_fact if with_data else None,
-                "data_complete": months_with_data == 3,
-                "months_with_turnover_data": months_with_data,
-            }
+            ref_row = next((row for row in month_rows if row["month"] == month and row["year"] == year), None)
+            if ref_row is None and month_rows:
+                ref_row = month_rows[-1]
 
             return {
-                "data_granularity": "quarterly",
-                "quarterly_data": [quarter_row],
+                "data_granularity": "monthly",
+                "monthly_data": month_rows,
+                "last_full_month_row": dict(ref_row) if ref_row else None,
                 "ytd": {
-                    "total_plan": avg_plan if with_data else None,
-                    "total_fact": avg_fact if with_data else None,
-                    "kpi_pct": avg_fact if with_data else None,
-                    "quarters_with_data": 1 if with_data else 0,
-                    "quarters_total": 1,
+                    "total_plan": ref_row.get("plan") if ref_row else None,
+                    "total_fact": ref_row.get("fact") if ref_row else None,
+                    "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+                    "months_with_data": months_with_data,
+                    "months_total": len(month_rows),
+                    "values_unit": "%",
                 },
                 "kpi_period": {
-                    "type": "last_full_quarter",
+                    "type": "last_full_month",
                     "year": year,
-                    "quarter": quarter,
-                    "label": f"Q{quarter} {year}",
-                    "data_complete": months_with_data == 3,
+                    "month": month,
+                    "month_name": MONTH_RU[month],
+                    "data_complete": ref_row is not None,
                 },
                 "debug": {
                     "status": "ok",
                     "kpi_id": "TD-Q2",
                     "source": "Document_ТД_ТекучестьПерсонала",
                     "months": month_rows,
+                    "plan_source": "monthly_constants_from_screenshot",
                 },
             }
         except Exception as exc:
-            y, q = year, quarter
-            if y is None or q is None:
-                y, q = _last_full_quarter()
-            print(f"    ⚠ TD-Q2 runner failed for Q{q} {y}: {exc}")
+            y, m = year, month
+            if y is None or m is None:
+                y, m = _last_full_month()
+            print(f"    ⚠ TD-Q2 runner failed for {y}-{m:02d}: {exc}")
             return {
-                "data_granularity": "quarterly",
-                "quarterly_data": [],
+                "data_granularity": "monthly",
+                "monthly_data": [],
+                "last_full_month_row": None,
                 "ytd": {
                     "total_plan": None,
                     "total_fact": None,
                     "kpi_pct": None,
-                    "quarters_with_data": 0,
-                    "quarters_total": 1,
+                    "months_with_data": 0,
+                    "months_total": 0,
+                    "values_unit": "%",
                 },
                 "kpi_period": {
-                    "type": "last_full_quarter",
+                    "type": "last_full_month",
                     "year": y,
-                    "quarter": q,
-                    "label": f"Q{q} {y}",
+                    "month": m,
+                    "month_name": MONTH_RU[m],
                     "data_complete": False,
                 },
                 "debug": {

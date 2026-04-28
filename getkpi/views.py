@@ -327,7 +327,7 @@ def _is_turnover_style_tile(kpi: dict) -> bool:
     nm = (kpi.get('name') or '').lower()
     if 'текучесть' in nm:
         return True
-    if kid.endswith('-Q5') or kid == 'ZKD-Q2':
+    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2'}:
         return True
     return False
 
@@ -427,8 +427,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         pct = float(pct)
     kid = kpi.get('kpi_id', '')
     if _is_turnover_style_tile(kpi):
-        qd = entry.get('quarterly_data') or []
-        turnover = qd[-1].get('fact_turnover_pct') if qd else None
+        md = entry.get('monthly_data') or []
+        turnover = md[-1].get('fact') if md else None
         color_src = pct if pct is not None else turnover
         color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
     elif kid == 'OD-M3.1':
@@ -1237,10 +1237,11 @@ def _build_kpi_entry(
             return entry
 
     if kpi_id == 'TD-Q2':
-        td = techdir_tekuchet.get_td_q2_ytd()
+        td = techdir_tekuchet.get_td_q2_ytd(year=year, month=month)
         if td is not None:
             entry['data_granularity'] = td['data_granularity']
-            entry['quarterly_data'] = td['quarterly_data']
+            entry['monthly_data'] = td['monthly_data']
+            entry['last_full_month_row'] = td.get('last_full_month_row')
             entry['ytd'] = td['ytd']
             entry['kpi_period'] = td['kpi_period']
             return entry
