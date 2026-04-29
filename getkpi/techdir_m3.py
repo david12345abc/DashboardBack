@@ -100,6 +100,75 @@ def _month_payload(year: int, month: int) -> dict[str, Any]:
     return payload
 
 
+def _build_td_m3_charts(monthly_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Собрать блок графиков TD-M3 из помесячных данных плитки."""
+    points = [
+        {
+            "month": row.get("month"),
+            "month_name": row.get("month_name"),
+            "year": row.get("year"),
+            "plan": row.get("plan"),
+            "fact": row.get("fact"),
+            "kpi_pct": row.get("kpi_pct"),
+        }
+        for row in monthly_rows
+    ]
+    categories = [row.get("month_name") for row in monthly_rows]
+    plan_values = [row.get("plan") for row in monthly_rows]
+    fact_values = [row.get("fact") for row in monthly_rows]
+
+    return {
+        "TD-M3-C1": {
+            "kpi_id": "TD-M3-C1",
+            "name": "Тренд 12 месяцев: бюджет затрат ТД",
+            "periodicity": "ежемесячно",
+            "chart_type": "multi_line_plan_fact_monthly",
+            "chart_type_label": "Линейный тренд",
+            "formula": "План и факт берутся из помесячной плитки TD-M3.",
+            "series": [{
+                "kpi_id": "TD-M3",
+                "name": "TD-M3",
+                "chart_type": "line_plan_fact_monthly",
+                "chart_type_label": "План/факт по месяцам",
+                "points": points,
+            }],
+        },
+        "TD-M3-C2": {
+            "kpi_id": "TD-M3-C2",
+            "name": "План/факт по месяцам: бюджет затрат ТД",
+            "periodicity": "ежемесячно",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "Столбцы",
+            "formula": "План и факт берутся из помесячной плитки TD-M3.",
+            "series": [{
+                "kpi_id": "TD-M3",
+                "name": "TD-M3",
+                "chart_type": "column_plan_fact_monthly",
+                "chart_type_label": "Столбцы",
+                "categories": categories,
+                "plan": plan_values,
+                "fact": fact_values,
+                "points": points,
+            }],
+        },
+        "TD-M3-C3": {
+            "kpi_id": "TD-M3-C3",
+            "name": "Структура плана/факта TD-M3",
+            "periodicity": "ежемесячно",
+            "chart_type": "heatmap_rag",
+            "chart_type_label": "Heatmap / структура",
+            "formula": "Тепловая карта по помесячным значениям TD-M3.",
+            "series": [{
+                "kpi_id": "TD-M3",
+                "name": "TD-M3",
+                "chart_type": "heatmap_rag",
+                "chart_type_label": "Heatmap / структура",
+                "points": points,
+            }],
+        },
+    }
+
+
 def get_td_m3_ytd(year: int | None = None, month: int | None = None) -> dict | None:
     """TD-M3: бюджет затрат блока техдирекции в пределах лимита (план/факт из оборотов бюджетов)."""
 
@@ -135,6 +204,7 @@ def get_td_m3_ytd(year: int | None = None, month: int | None = None) -> dict | N
                 "data_granularity": "monthly",
                 "monthly_data": monthly_rows,
                 "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+                "Графики": _build_td_m3_charts(monthly_rows),
                 "kpi_period": {
                     "type": "last_full_month",
                     "year": ref_y,

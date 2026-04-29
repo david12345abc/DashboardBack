@@ -32,6 +32,6 @@ staticfiles/
 .DS_Store
 Thumbs.db
 
-# cashes 
-
+# caches
 getkpi/dashboard/*.json
+getkpi/dashboard/**/*.json

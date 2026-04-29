@@ -824,6 +824,14 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
     if str(dept).strip().lower() == 'операционный директор':
         grafiki.update(_build_opdir_charts(tiles_meta, entries_by_id, ref_y, ref_m))
+    td_m3_entry = entries_by_id.get('TD-M3')
+    if td_m3_entry is not None:
+        try:
+            td_m3_payload = techdir_m3.get_td_m3_ytd(year=ref_y, month=ref_m)
+        except Exception:
+            td_m3_payload = None
+        if td_m3_payload:
+            grafiki.update(td_m3_payload.get('Графики') or {})
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",

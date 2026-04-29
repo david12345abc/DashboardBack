@@ -48,17 +48,7 @@ AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_q2_monthly_v1"
-CACHE_VERSION = 3
-
-# Временные плановые значения TD-Q2 на 2026 год из согласованной картинки.
-TD_Q2_PLAN_TARGET_2026: dict[int, float] = {
-    1: 1.4,
-    2: 2.8,
-    3: 4.3,
-    4: 5.7,
-    5: 7.1,
-}
-AVAILABLE_MONTHS_2026 = tuple(sorted(TD_Q2_PLAN_TARGET_2026))
+CACHE_VERSION = 4
 
 GROUP_ALIASES = {
     "Заместитель тех. директора по качеству": [
@@ -217,19 +207,9 @@ def _cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"techdir_tekuchet_{year}_{month:02d}.json"
 
 
-def _td_q2_plan_target(year: int, month: int) -> float | None:
-    if year == 2026:
-        return TD_Q2_PLAN_TARGET_2026.get(month)
-    return None
-
-
 def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
     """Месяцы, которые нужно вернуть в monthly_data для плитки."""
-    if year == 2026 and AVAILABLE_MONTHS_2026:
-        upper_month = max(max(AVAILABLE_MONTHS_2026), ref_month)
-    else:
-        upper_month = ref_month
-    return [(year, mm) for mm in range(1, upper_month + 1)]
+    return [(year, mm) for mm in range(1, ref_month + 1)]
 
 
 def _load_cache(year: int, month: int) -> dict | None:
@@ -310,6 +290,72 @@ def aggregate_for_month(docs, group_dept_keys, target_str):
     return result, matched_docs
 
 
+def _compute_td_q2_group_totals(docs, group_dept_keys, target_str):
+    """Собрать max(plan/fact) по каждой группе техдиректора за месяц."""
+    groups: dict[str, dict[str, float | int]] = {
+        group_name: {
+            "plan": 0.0,
+            "fact": 0.0,
+            "plan_rows": 0,
+            "fact_rows": 0,
+            "docs": 0,
+        }
+        for group_name in group_dept_keys
+    }
+    matched_docs = defaultdict(list)
+
+    for group_name, dept_keys in group_dept_keys.items():
+        group_plan = 0.0
+        group_fact = 0.0
+        group_plan_rows = 0
+        group_fact_rows = 0
+        group_docs = 0
+
+        for doc in docs:
+            if doc.get("Подразделение_Key", EMPTY) not in dept_keys:
+                continue
+            vid = str(doc.get("ВидДокумента", ""))
+            if vid not in {"0", "1"}:
+                continue
+
+            group_docs += 1
+            matched_docs[group_name].append(doc)
+
+            row_plan = 0.0
+            row_fact = 0.0
+            row_matches = 0
+            for row in doc.get("Текучесть", []) or []:
+                mes = str(row.get("Месяц", ""))
+                if len(mes) < 7 or mes[:7] != target_str:
+                    continue
+                row_matches += 1
+                row_plan = max(row_plan, float(row.get("План", 0) or 0))
+                row_fact = max(row_fact, float(row.get("Факт", 0) or 0))
+
+            if vid == "0":
+                if row_plan > group_plan:
+                    group_plan = row_plan
+                    group_plan_rows = row_matches
+                elif row_plan == group_plan and row_matches > group_plan_rows:
+                    group_plan_rows = row_matches
+            else:
+                if row_fact > group_fact:
+                    group_fact = row_fact
+                    group_fact_rows = row_matches
+                elif row_fact == group_fact and row_matches > group_fact_rows:
+                    group_fact_rows = row_matches
+
+        groups[group_name] = {
+            "plan": round(group_plan, 2),
+            "fact": round(group_fact, 2),
+            "plan_rows": group_plan_rows,
+            "fact_rows": group_fact_rows,
+            "docs": group_docs,
+        }
+
+    return groups, matched_docs
+
+
 def _last_full_quarter() -> tuple[int, int]:
     today = date.today()
     current_quarter = (today.month - 1) // 3 + 1
@@ -344,27 +390,36 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
         structure_rows, structure_by_key, exact = load_structure(session)
         group_dept_keys, diagnostics = resolve_group_department_keys(structure_rows, exact)
         docs = load_docs(session)
-        result, matched_docs = aggregate_for_month(docs, group_dept_keys, target_str)
+        result, matched_docs = _compute_td_q2_group_totals(docs, group_dept_keys, target_str)
     except Exception as exc:
         print(f"    ⚠ TD-Q2 monthly compute failed for {year}-{month:02d}: {exc}")
-        result = defaultdict(lambda: {"plan": 0.0, "fact": 0.0, "plan_rows": 0, "fact_rows": 0, "docs": 0})
+        result = {
+            group_name: {"plan": 0.0, "fact": 0.0, "plan_rows": 0, "fact_rows": 0, "docs": 0}
+            for group_name in GROUP_ORDER
+        }
         matched_docs = defaultdict(list)
         diagnostics = {group_name: [] for group_name in GROUP_ORDER}
         structure_by_key = {}
         docs = []
 
-    plan_target = _td_q2_plan_target(year, month)
-    if plan_target is not None:
-        total_plan = float(plan_target)
-        plan_source = "monthly_constants_from_screenshot"
-    else:
-        total_plan = 0.0
-        for group_name in GROUP_ORDER:
-            total_plan += result[group_name]["plan"]
-
-    total_fact = 0.0
-    for group_name in GROUP_ORDER:
-        total_fact += result[group_name]["fact"]
+    ordered_groups = sorted(
+        GROUP_ORDER,
+        key=lambda group_name: (result.get(group_name, {}).get("plan", 0.0), group_name),
+        reverse=True,
+    )
+    total_plan = round(
+        sum((result[group_name]["plan"] for group_name in ordered_groups[:2])),
+        2,
+    )
+    ordered_fact_groups = sorted(
+        GROUP_ORDER,
+        key=lambda group_name: (result.get(group_name, {}).get("fact", 0.0), group_name),
+        reverse=True,
+    )
+    total_fact = round(
+        sum((result[group_name]["fact"] for group_name in ordered_fact_groups[:2])),
+        2,
+    )
 
     result = {
         "year": year,
@@ -391,8 +446,8 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
             "source_department_count": len(
                 {d.get("Подразделение_Key") for d in docs if d.get("Подразделение_Key")}
             ),
-            "plan_source": plan_source,
-            "plan_target": plan_target,
+            "plan_source": "group_max_top2_1c_tekuchet",
+            "plan_target": None,
         },
     }
     _save_cache(year, month, result)
@@ -453,7 +508,7 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                     "kpi_id": "TD-Q2",
                     "source": "Document_ТД_ТекучестьПерсонала",
                     "months": month_rows,
-                    "plan_source": "monthly_constants_from_screenshot",
+                    "plan_source": "1c_tekuchet",
                 },
             }
         except Exception as exc:
@@ -493,73 +548,42 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
 
 def main():
     month_arg, year, month = parse_period()
-    target_str = f"{year}-{month:02d}"
-
-    session = requests.Session()
-    session.auth = AUTH
     t0 = time.time()
 
     print(f"════════════════════════════════════════════════════════════════════")
     print(f"  ТЕКУЧЕСТЬ ПЕРСОНАЛА ТЕХДИРЕКЦИИ — {month_arg}")
     print(f"════════════════════════════════════════════════════════════════════\n")
 
-    print("[1] Загрузка структуры предприятия ...")
-    structure_rows, structure_by_key, exact = load_structure(session)
-    print(f"    Подразделений загружено: {len(structure_rows)}")
-
-    group_dept_keys, diagnostics = resolve_group_department_keys(structure_rows, exact)
-    print("    Найденные подразделения по группам:")
-    for group_name in GROUP_ORDER:
-        keys = group_dept_keys[group_name]
-        print(f"      {group_name}: {len(keys)}")
-        for _, desc in diagnostics[group_name][:10]:
-            print(f"        - {desc}")
-    print(f"    ({time.time() - t0:.1f}с)")
-
-    print("\n[2] Загрузка документов Document_ТД_ТекучестьПерсонала ...")
-    docs = load_docs(session)
-    print(f"    Всего документов: {len(docs)}")
-
-    unique_doc_depts = sorted({d.get('Подразделение_Key') for d in docs if d.get('Подразделение_Key')})
-    print(f"    Уникальных подразделений в источнике: {len(unique_doc_depts)}")
-    for dept_key in unique_doc_depts:
-        dept_name = structure_by_key.get(dept_key, {}).get("Description", dept_key)
-        print(f"      {dept_name}")
-    print(f"    ({time.time() - t0:.1f}с)")
-
-    print(f"\n[3] Расчёт текучести за {MONTH_RU[month]} {year} ...")
-    result, matched_docs = aggregate_for_month(docs, group_dept_keys, target_str)
-    print(f"    Групп с найденными документами: {sum(1 for g in GROUP_ORDER if matched_docs[g])}")
+    print("[1] Получение TD-Q2 snapshot ...")
+    snapshot = compute_td_turnover_month(year, month)
+    print(f"    Групп с найденными документами: {snapshot['matched_group_count']}")
     print(f"    ({time.time() - t0:.1f}с)")
 
     print(f"\n{'═' * 94}")
     print(f"  ТЕКУЧЕСТЬ ПЕРСОНАЛА ТЕХДИРЕКЦИИ — {MONTH_RU[month]} {year}")
     print(f"{'═' * 94}")
-    print(f"  {'Подразделение':<70} {'План':>8} {'Факт':>8}")
-    print(f"  {'-' * 70} {'-' * 8} {'-' * 8}")
+    print(f"  {'Плитка TD-M3 / месяц':<30} {'План':>8} {'Факт':>8}")
+    print(f"  {'-' * 30} {'-' * 8} {'-' * 8}")
 
-    total_plan = 0.0
-    total_fact = 0.0
-
-    for group_name in GROUP_ORDER:
-        plan_val = result[group_name]["plan"]
-        fact_val = result[group_name]["fact"]
-        total_plan += plan_val
-        total_fact += fact_val
-        print(f"  {group_name:<70} {plan_val:>8.2f} {fact_val:>8.2f}")
-
-    print(f"  {'-' * 70} {'-' * 8} {'-' * 8}")
-    print(f"  {'ИТОГО':<70} {total_plan:>8.2f} {total_fact:>8.2f}")
-
-    print(f"\n  Детализация по источнику:")
-    for group_name in GROUP_ORDER:
-        docs_count = len(matched_docs[group_name])
-        plan_rows = result[group_name]["plan_rows"]
-        fact_rows = result[group_name]["fact_rows"]
+    months = snapshot.get("monthly_data") or []
+    for row in months:
         print(
-            f"    {group_name}: документов={docs_count}, "
-            f"строк плана={plan_rows}, строк факта={fact_rows}"
+            f"  {row['month_name'][:30]:<30} "
+            f"{(row.get('plan') or 0):>8.2f} "
+            f"{(row.get('fact') or 0):>8.2f}"
         )
+
+    print(f"  {'-' * 30} {'-' * 8} {'-' * 8}")
+    ref_row = snapshot.get("last_full_month_row") or {}
+    print(
+        f"  {'ИТОГО':<30} "
+        f"{(ref_row.get('plan') or snapshot.get('total_plan') or 0):>8.2f} "
+        f"{(ref_row.get('fact') or snapshot.get('total_fact') or 0):>8.2f}"
+    )
+
+    print(f"\n  Графики:")
+    print(f"    Линейный: {len(months)} точек")
+    print(f"    Столбчатая: {len(months)} точек")
 
     print(f"\n  Готово за {time.time() - t0:.1f}с")
 
