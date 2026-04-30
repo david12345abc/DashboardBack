@@ -55,7 +55,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",

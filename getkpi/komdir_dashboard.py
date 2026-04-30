@@ -957,6 +957,9 @@ def _build_overdue_table(ref_y: int, ref_m: int,
             "action": r.get("action") or "",
             "dept_key": r.get("dept_key") or "",
             "dept_name": r.get("dept_name") or "",
+            "source_dept_key": r.get("source_dept_key") or "",
+            "liquidated_dept_name": r.get("liquidated_dept_name") or "",
+            "Ликвидированное подразделение": r.get("liquidated_dept_name") or "",
         })
 
     return {
@@ -971,7 +974,7 @@ def _build_overdue_table(ref_y: int, ref_m: int,
         "total_overdue": detail.get("total_overdue", 0),
         "columns": [
             "№ Заказа клиента", "Контрагент", "Дн. просрочки",
-            "Причина", "Действие", "Сумма",
+            "Ликвидированное подразделение", "Причина", "Действие", "Сумма",
         ],
         "rows": rows,
     }

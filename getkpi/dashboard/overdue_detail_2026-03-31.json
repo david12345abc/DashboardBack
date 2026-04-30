@@ -1,12 +1,14 @@
 {
   "na_datu": "2026-03-31",
   "cache_date": "2026-04-30",
-  "dept_alias_source": "commercial_department_aliases_v1",
+  "dept_alias_source": "commercial_department_aliases_v2",
   "total_overdue": 166345322.47,
   "rows": [
     {
       "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
       "dept_name": "Отдел БМИ",
+      "source_dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
+      "liquidated_dept_name": "",
       "partner_key": "9c8295b1-32c8-11ef-951d-6cb31113810c",
       "partner_name": "РГП ООО",
       "counterparty": "РГП ООО",
@@ -37,6 +39,8 @@
     {
       "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
       "dept_name": "Отдел ПАО Газпром",
+      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
+      "liquidated_dept_name": "",
       "partner_key": "1a6c0dc7-677a-11e1-ae59-001e67112509",
       "partner_name": "Газпром автоматизация, ПАО",
       "counterparty": "Газпром автоматизация, ПАО",
@@ -61,6 +65,8 @@
     {
       "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
       "dept_name": "Отдел БМИ",
+      "source_dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
+      "liquidated_dept_name": "",
       "partner_key": "9223c944-62bc-11ee-9402-6cb31113810c",
       "partner_name": "СТРОЙПРОЕКТГРУПП ООО",
       "counterparty": "СТРОЙПРОЕКТГРУПП ООО",
@@ -97,6 +103,8 @@
     {
       "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
       "dept_name": "Отдел ПАО Газпром",
+      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
+      "liquidated_dept_name": "",
       "partner_key": "52158902-e51a-11e1-b078-001e67112509",
       "partner_name": "Газпром комплектация ООО",
       "counterparty": "Газпром комплектация ООО",
@@ -121,6 +129,8 @@
     {
       "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
       "dept_name": "Отдел ПАО Газпром",
+      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
+      "liquidated_dept_name": "",
       "partner_key": "00f26d25-f9b4-11ef-9623-6cb31113810c",
       "partner_name": "ЧЕРНОМОРТРАНСГАЗ",
       "counterparty": "ЧЕРНОМОРТРАНСГАЗ",
@@ -145,6 +155,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "liquidated_dept_name": "",
       "partner_key": "24d57e30-767c-11f0-96d0-6cb31113810e",
       "partner_name": "УПТС АО",
       "counterparty": "УПТС АО",
@@ -169,6 +181,8 @@
     {
       "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
       "dept_name": "Отдел ПАО Газпром",
+      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
+      "liquidated_dept_name": "",
       "partner_key": "52158902-e51a-11e1-b078-001e67112509",
       "partner_name": "Газпром комплектация ООО",
       "counterparty": "Газпром комплектация ООО",
@@ -193,6 +207,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "liquidated_dept_name": "",
       "partner_key": "0a625046-8f74-11ef-959b-6cb31113810e",
       "partner_name": "СТРОЙ-ГАЗ-СЕРВИС ООО",
       "counterparty": "СТРОЙ-ГАЗ-СЕРВИС ООО",
@@ -217,6 +233,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "83d0fa4f-8d47-11eb-8582-ac1f6b05524d",
       "partner_name": "УРСВ ГУП РО",
       "counterparty": "УРСВ ГУП РО",
@@ -241,6 +259,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -289,6 +309,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -331,6 +353,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "liquidated_dept_name": "",
       "partner_key": "0a625046-8f74-11ef-959b-6cb31113810e",
       "partner_name": "СТРОЙ-ГАЗ-СЕРВИС ООО",
       "counterparty": "СТРОЙ-ГАЗ-СЕРВИС ООО",
@@ -355,6 +379,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "liquidated_dept_name": "",
       "partner_key": "0a625046-8f74-11ef-959b-6cb31113810e",
       "partner_name": "СТРОЙ-ГАЗ-СЕРВИС ООО",
       "counterparty": "СТРОЙ-ГАЗ-СЕРВИС ООО",
@@ -379,6 +405,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
       "partner_name": "Ялаев А.А. ИП",
       "counterparty": "Ялаев А.А. ИП",
@@ -403,6 +431,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -445,6 +475,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "eba563f4-c3c2-11ed-9341-6cb31113810c",
       "partner_name": "РЕГИОНСТРОЙ ООО",
       "counterparty": "РЕГИОНСТРОЙ ООО",
@@ -481,6 +513,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -517,6 +551,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -547,6 +583,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "liquidated_dept_name": "",
       "partner_key": "0a625046-8f74-11ef-959b-6cb31113810e",
       "partner_name": "СТРОЙ-ГАЗ-СЕРВИС ООО",
       "counterparty": "СТРОЙ-ГАЗ-СЕРВИС ООО",
@@ -571,6 +609,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
       "partner_name": "Ялаев А.А. ИП",
       "counterparty": "Ялаев А.А. ИП",
@@ -595,6 +635,8 @@
     {
       "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
       "dept_name": "Отдел эталонного оборудования",
+      "source_dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "liquidated_dept_name": "",
       "partner_key": "07d8df57-48bf-11e6-811d-001e67112509",
       "partner_name": "Воронежнефтепродукт, АО",
       "counterparty": "Воронежнефтепродукт, АО",
@@ -619,6 +661,8 @@
     {
       "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
       "dept_name": "Отдел эталонного оборудования",
+      "source_dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "liquidated_dept_name": "",
       "partner_key": "07d8df57-48bf-11e6-811d-001e67112509",
       "partner_name": "Воронежнефтепродукт, АО",
       "counterparty": "Воронежнефтепродукт, АО",
@@ -643,6 +687,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
       "partner_name": "Ялаев А.А. ИП",
       "counterparty": "Ялаев А.А. ИП",
@@ -667,6 +713,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
       "partner_name": "Ялаев А.А. ИП",
       "counterparty": "Ялаев А.А. ИП",
@@ -691,6 +739,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "91fbcd96-35e2-11ee-93d2-6cb31113810e",
       "partner_name": "ТермТеплоСистем ООО",
       "counterparty": "ТермТеплоСистем ООО",
@@ -715,6 +765,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "eba563f4-c3c2-11ed-9341-6cb31113810c",
       "partner_name": "РЕГИОНСТРОЙ ООО",
       "counterparty": "РЕГИОНСТРОЙ ООО",
@@ -739,6 +791,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -769,6 +823,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -793,6 +849,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
       "partner_name": "Ялаев А.А. ИП",
       "counterparty": "Ялаев А.А. ИП",
@@ -817,6 +875,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -841,6 +901,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "91fbcd96-35e2-11ee-93d2-6cb31113810e",
       "partner_name": "ТермТеплоСистем ООО",
       "counterparty": "ТермТеплоСистем ООО",
@@ -865,6 +927,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "f7e46bd2-a5fb-11e0-a615-6c626db894df",
       "partner_name": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ТАМБОВ АО",
       "counterparty": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ТАМБОВ АО",
@@ -1051,6 +1115,8 @@
     {
       "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
       "dept_name": "Отдел эталонного оборудования",
+      "source_dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "liquidated_dept_name": "",
       "partner_key": "a3ae98af-54e0-11e8-8273-ac1f6b05524d",
       "partner_name": "ТЕПЛО МКП",
       "counterparty": "ТЕПЛО МКП",
@@ -1075,6 +1141,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -1099,6 +1167,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -1123,6 +1193,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -1159,6 +1231,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "91fbcd96-35e2-11ee-93d2-6cb31113810e",
       "partner_name": "ТермТеплоСистем ООО",
       "counterparty": "ТермТеплоСистем ООО",
@@ -1183,6 +1257,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -1219,6 +1295,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "91fbcd96-35e2-11ee-93d2-6cb31113810e",
       "partner_name": "ТермТеплоСистем ООО",
       "counterparty": "ТермТеплоСистем ООО",
@@ -1243,6 +1321,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "f7e46bd2-a5fb-11e0-a615-6c626db894df",
       "partner_name": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ТАМБОВ АО",
       "counterparty": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ТАМБОВ АО",
@@ -1339,6 +1419,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "4edcf3a0-9f99-11e4-80da-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж бытового оборудования",
       "partner_key": "bf86a0e3-b8ba-11e3-ad68-001e67112509",
       "partner_name": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ОРЕНБУРГ",
       "counterparty": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ОРЕНБУРГ",
@@ -1459,6 +1541,8 @@
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
+      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
+      "liquidated_dept_name": "",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
       "partner_name": "КомплексСтор ООО",
       "counterparty": "КомплексСтор ООО",
@@ -1483,6 +1567,8 @@
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "liquidated_dept_name": "",
       "partner_key": "04bbad28-6b81-11ef-956b-6cb31113810e",
       "partner_name": "КБГ ООО",
       "counterparty": "КБГ ООО",

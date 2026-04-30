@@ -2,7 +2,7 @@
   "year": 2026,
   "ref_month": 4,
   "kz_source": "predoplata_upr",
-  "dept_alias_source": "commercial_department_aliases_v1",
+  "dept_alias_source": "commercial_department_aliases_v2",
   "months": [
     {
       "year": 2026,

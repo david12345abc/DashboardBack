@@ -30,7 +30,10 @@ from urllib.parse import quote
 from collections import defaultdict
 from pathlib import Path
 
-from .commercial_department_aliases import normalize_commercial_dept_guid
+from .commercial_department_aliases import (
+    COMMERCIAL_DEPT_ALIASES,
+    normalize_commercial_dept_guid,
+)
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -53,7 +56,14 @@ DEPARTMENTS = {
 }
 
 TOLERANCE = 0.01
-DEPT_ALIAS_SOURCE = "commercial_department_aliases_v1"
+DEPT_ALIAS_SOURCE = "commercial_department_aliases_v2"
+LIQUIDATED_DEPT_NAMES = {
+    "4edcf3a0-9f99-11e4-80da-001e67112509": "(ликв.) Отдел дилерских продаж бытового оборудования",
+    "ff740269-d71e-11e6-8127-001e67112509": "(ликв.) Отдел дилерских продаж промышленного оборудования",
+    "c6810cc3-cf32-11ef-95e8-6cb31113810e": "(ликв.) Отдел по работе с холдингами 1",
+    "ebd2d511-cf38-11ef-95e8-6cb31113810e": "(ликв.) Отдел по работе с холдингами 2",
+    "ad83f8bd-cf39-11ef-95e8-6cb31113810e": "(ликв.) Отдел по работе с холдингами 3",
+}
 
 REGISTER = "AccumulationRegister_РасчетыСКлиентамиПоСрокам_RecordType"
 
@@ -183,10 +193,17 @@ def resolve_objects(session, obj_keys: set):
         for item in chunk:
             k = str(item.get("Ref_Key", EMPTY)).lower()
             if k in needed:
+                raw_dept = str(item.get("Подразделение_Key", EMPTY)).lower()
+                normalized_dept = normalize_commercial_dept_guid(raw_dept).lower()
+                liquidated_dept_name = (
+                    LIQUIDATED_DEPT_NAMES.get(raw_dept, "")
+                    if raw_dept in COMMERCIAL_DEPT_ALIASES
+                    else ""
+                )
                 catalog[k] = {
-                    "dept": normalize_commercial_dept_guid(
-                        str(item.get("Подразделение_Key", EMPTY)).lower()
-                    ).lower(),
+                    "dept": normalized_dept,
+                    "source_dept": raw_dept,
+                    "liquidated_dept_name": liquidated_dept_name,
                     "partner": str(item.get("Партнер_Key", EMPTY)).lower(),
                     "desc": item.get("Description", ""),
                     "number": item.get("Номер", "?"),
@@ -336,6 +353,7 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
             "dz_total": 0.0,       # Общая ДЗ: сумма НЕТТО-остатков по всем срокам
             "max_days": 0,
             "dept": "", "dept_name": "",
+            "source_dept": "", "liquidated_dept_name": "",
             "partner": "", "order_num": "", "order_date": "",
             "installments": [],    # детализация по срокам погашения
         }
@@ -359,6 +377,8 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
         entry = by_order[key]
         entry["dept"] = dept
         entry["dept_name"] = DEPARTMENTS.get(dept, dept[:8])
+        entry["source_dept"] = cat.get("source_dept", "")
+        entry["liquidated_dept_name"] = cat.get("liquidated_dept_name", "")
         entry["partner"] = partner_key
         entry["order_num"] = order_num
         entry["order_date"] = order_date
@@ -408,6 +428,8 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
         rows.append({
             "dept_key": dept,
             "dept_name": data["dept_name"],
+            "source_dept_key": data.get("source_dept", ""),
+            "liquidated_dept_name": data.get("liquidated_dept_name", ""),
             "partner_key": partner_key,
             "partner_name": partner_name,
             "counterparty": partner_name,
@@ -480,6 +502,18 @@ def _save_json(path: Path, data: dict) -> None:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except OSError:
         pass
+
+
+def _overdue_detail_cache_is_current(data: dict | None) -> bool:
+    """Кэш детализации должен содержать новую колонку ликвидированных подразделений."""
+    if data is None:
+        return False
+    if data.get("cache_date") != date.today().isoformat():
+        return False
+    if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
+        return False
+    rows = data.get("rows") or []
+    return not rows or all("liquidated_dept_name" in row for row in rows)
 
 
 def _calc_snapshot_for_date(na_datu: date) -> dict:
@@ -770,6 +804,7 @@ def get_komdir_dz_monthly(year: int | None = None,
         })
 
     payload = {
+        "cache_date": date.today().isoformat(),
         "year": ref_y,
         "ref_month": ref_m,
         "kz_source": "predoplata_upr",
@@ -830,11 +865,7 @@ def _ensure_debitorka_caches_for_period(ref_y: int, ref_m: int) -> None:
 
     def _overdue_needs_refresh(d: date) -> bool:
         od = _load_json(_cache_path_overdue_detail(d))
-        return (
-            od is None
-            or od.get("cache_date") != today.isoformat()
-            or od.get("dept_alias_source") != DEPT_ALIAS_SOURCE
-        )
+        return not _overdue_detail_cache_is_current(od)
 
     overdue_stale = [d for _, d in snap_dates if _overdue_needs_refresh(d)]
 
@@ -897,11 +928,7 @@ def get_overdue_detail(year: int | None = None,
     cache_path = _cache_path_overdue_detail(na_datu)
     cached = _load_json(cache_path)
 
-    if (
-        cached is not None
-        and cached.get("cache_date") == today.isoformat()
-        and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
-    ):
+    if _overdue_detail_cache_is_current(cached):
         data = cached
     else:
         data = _calc_overdue_detail(na_datu)

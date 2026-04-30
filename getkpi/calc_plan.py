@@ -69,7 +69,7 @@ REG = "AccumulationRegister_ТД_ПланированиеДоговоровОт�
 EXPECTED_DOC = "Document_ТД_ПланированиеПроцессаПродажЕжемесячное"
 EXPECTED_CONTRACT_DOC = "Document_КоммерческоеПредложениеКлиенту"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 PLAN_KEYS = ("dengi", "otgruzki", "dogovory")
 EXPECTED_KEYS = {
     "dengi": "dengi_expected",
@@ -539,6 +539,7 @@ def _load_shipment_order_rows(session: requests.Session,
                               year: int,
                               ref_month: int,
                               order_keys: set[str]) -> list[dict]:
+    d_from = _month_start(year, 1)
     d_to = _month_end_exclusive(year, ref_month)
     sel = quote(
         "Period,Active,Распоряжение,Распоряжение_Type,ВидДвиженияРегистра,Сумма,Сторно",
@@ -547,7 +548,8 @@ def _load_shipment_order_rows(session: requests.Session,
     rows: list[dict] = []
     for movement in ("Расход", "Приход"):
         flt = quote(
-            f"Period lt datetime'{d_to}' and Active eq true and Сторно eq false "
+            f"Period ge datetime'{d_from}' and Period lt datetime'{d_to}' "
+            f"and Active eq true and Сторно eq false "
             f"and Распоряжение_Type eq 'StandardODATA.Document_ЗаказКлиента' "
             f"and ВидДвиженияРегистра eq '{movement}'",
             safe="",
@@ -678,17 +680,21 @@ def _merge_expected_shipments(result: dict[int, dict],
     rows_sorted = sorted(rows, key=lambda x: (x.get("Period") or ""))
 
     for m in range(1, ref_month + 1):
+        start = _month_start(year, m)
         end = _month_end_exclusive(year, m)
         by_order: dict[str, float] = {}
         for row in rows_sorted:
-            if (row.get("Period") or "") >= end:
+            period = row.get("Period") or ""
+            if period >= end:
                 break
+            if period < start:
+                continue
             order_key = row.get("Распоряжение", "")
             order = orders.get(order_key)
             if not order:
                 continue
             ship_date = (order.get("ship_date") or "")[:10]
-            if not ship_date or ship_date >= end[:10]:
+            if not ship_date or not (start[:10] <= ship_date < end[:10]):
                 continue
             dept = _expected_order_passes_common_filters(order, resale_partners, resale_without_mgs)
             if not dept:
