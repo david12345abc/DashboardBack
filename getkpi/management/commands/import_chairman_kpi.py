@@ -156,8 +156,8 @@ FULL_DASHBOARD: list[dict] = [
         "quarterly_target": None,
         "yearly_target": "≥100%",
         "green_threshold": "≥100%",
-        "yellow_threshold": "95–99,9%",
-        "red_threshold": "<95%",
+        "yellow_threshold": "90–99,9%",
+        "red_threshold": "<90%",
         "weight_pct": 10.0,
     },
     # ── Графики (3 шт.) ─────────────────────────────────────────────────────

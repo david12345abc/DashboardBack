@@ -1,9 +1,9 @@
 """
-calc_psd_vipusk_plan.py — ПСД · Выпуск · ПЛАН отгрузки за месяц.
+calc_psd_vipusk_plan.py — ПСД · Выпуск · факт выпуска за месяц.
 
 Алгоритм (зафиксированные допущения, вариант A из ТЗ пользователя):
 
-  • Источник плана    : документ Document_ЗаказКлиента + табличная часть Товары.
+  • Источник факта    : документ Document_ЗаказКлиента + табличная часть Товары.
   • «За период»       : строка попадает в месяц, если ДатаОтгрузки в строке
                         принадлежит [месяц_начало; месяц_конец] — это
                         плановая дата отгрузки позиции в ЗК.
@@ -11,8 +11,7 @@ calc_psd_vipusk_plan.py — ПСД · Выпуск · ПЛАН отгрузки 
   • Исключаем         : DeletionMark=true, Posted=false,
                         ТД_НеУчитыватьВПланФакте=true, строки с Отменено=true,
                         статус НеСогласован (заказ не подтверждён).
-  • Объём             : Количество из строки ЗК (в базовой ед. измерения
-                        номенклатуры). Сумма не считается (по запросу).
+  • Объём             : сумма строки ЗК в рублях.
   • Детализация       : одна цифра на месяц (как в tiles_2026.json).
 
 Запуск:
@@ -58,7 +57,7 @@ PAGE = 5000
 BATCH = 15
 TIMEOUT = 120
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "psd_vipusk_plan_v1"
+SOURCE_TAG = "psd_vipusk_fact_rub_v2"
 
 
 # ═══════════════════════════════════════════════════════
@@ -109,7 +108,7 @@ def load_zk_lines(session: requests.Session, m_start: date, m_end: date) -> list
     )
     sel = ",".join([
         "Ref_Key", "LineNumber", "КодСтроки", "ДатаОтгрузки",
-        "Номенклатура_Key", "Количество", "Отменено", "Склад_Key",
+        "Номенклатура_Key", "Количество", "Сумма", "СуммаНДС", "СуммаСНДС", "Отменено", "Склад_Key",
     ])
     url = (
         f"{BASE}/Document_ЗаказКлиента_Товары"
@@ -239,8 +238,10 @@ def _calculate_month_result(month_arg: str, *, all_statuses: bool = False) -> di
         status_breakdown[st] = status_breakdown.get(st, 0) + 1
 
     total_qty = 0.0
+    total_rub = 0.0
     kept_lines: list[dict] = []
     by_org: dict[str, float] = {g: 0.0 for g in TURB_ORGS}
+    by_org_rub: dict[str, float] = {g: 0.0 for g in TURB_ORGS}
 
     for row in lines:
         g = row["Ref_Key"]
@@ -249,12 +250,15 @@ def _calculate_month_result(month_arg: str, *, all_statuses: bool = False) -> di
         if row.get("Отменено"):
             continue
         qty = float(row.get("Количество") or 0)
-        if qty <= 0:
+        amount = float(row.get("Сумма") or row.get("СуммаСНДС") or 0)
+        if qty <= 0 and amount <= 0:
             continue
         h = headers[g]
         org_k = h.get("Организация_Key")
         total_qty += qty
+        total_rub += amount
         by_org[org_k] = by_org.get(org_k, 0.0) + qty
+        by_org_rub[org_k] = by_org_rub.get(org_k, 0.0) + amount
         kept_lines.append({
             "zk_guid": g,
             "zk_number": h.get("Number"),
@@ -264,6 +268,9 @@ def _calculate_month_result(month_arg: str, *, all_statuses: bool = False) -> di
             "nomenclature_key": row.get("Номенклатура_Key"),
             "warehouse_key": row.get("Склад_Key"),
             "qty": qty,
+            "amount_rub": amount,
+            "amount_vat_rub": float(row.get("СуммаНДС") or 0),
+            "amount_with_vat_rub": float(row.get("СуммаСНДС") or 0),
             "org_key": org_k,
             "dept_key": h.get("Подразделение_Key") or EMPTY,
             "status": h.get("Статус"),
@@ -277,12 +284,17 @@ def _calculate_month_result(month_arg: str, *, all_statuses: bool = False) -> di
         "period_to": m_end.isoformat(),
         "generated": datetime.now().isoformat(timespec="seconds"),
         "source": SOURCE_TAG,
-        "algorithm": "A: плановая дата отгрузки строки ЗК в месяце",
+        "algorithm": "A: дата отгрузки строки ЗК в месяце, сумма строки ЗК в рублях",
         "organizations": list(TURB_ORGS.values()),
         "excluded_statuses": sorted(exclude_statuses),
-        "plan_qty_total": round(total_qty, 3),
+        "fact_rub_total": round(total_rub, 2),
+        "fact_qty_total": round(total_qty, 3),
         "by_org": {
             name: round(by_org.get(guid, 0.0), 3)
+            for guid, name in TURB_ORGS.items()
+        },
+        "by_org_rub": {
+            name: round(by_org_rub.get(guid, 0.0), 2)
             for guid, name in TURB_ORGS.items()
         },
         "status_breakdown_zk_count": status_breakdown,
@@ -322,7 +334,8 @@ def get_psd_vipusk_plan_monthly(year: int, ref_month: int) -> dict:
             "month": mm,
             "period_from": snap.get("period_from"),
             "period_to": snap.get("period_to"),
-            "plan_qty_total": float(snap.get("plan_qty_total") or 0),
+            "fact_rub_total": float(snap.get("fact_rub_total") or 0),
+            "fact_qty_total": float(snap.get("fact_qty_total") or snap.get("plan_qty_total") or 0),
         })
 
     payload = {
@@ -355,7 +368,7 @@ def main() -> None:
     m_start, m_end = parse_month_arg(month_arg)
 
     print("=" * 78)
-    print(f"  ПСД · Выпуск · ПЛАН отгрузки за {month_arg}")
+    print(f"  ПСД · Выпуск · факт выпуска за {month_arg}")
     print(f"  Период:       {m_start} — {m_end}")
     print(f"  Организации:  {', '.join(TURB_ORGS.values())}")
     print(f"  Источник:     Document_ЗаказКлиента_Товары.ДатаОтгрузки")
@@ -419,10 +432,12 @@ def main() -> None:
     print(f"  По статусам (прошедшие): {status_breakdown}")
 
     # ─── Шаг 4. Агрегация ───
-    print(f"\n▸ Шаг 4 · Σ Количество по плановым строкам")
+    print(f"\n▸ Шаг 4 · Σ Сумма по строкам выпуска")
     total_qty = 0.0
+    total_rub = 0.0
     kept_lines: list[dict] = []
     by_org: dict[str, float] = {g: 0.0 for g in TURB_ORGS}
+    by_org_rub: dict[str, float] = {g: 0.0 for g in TURB_ORGS}
     by_dept: dict[str, float] = {}
 
     for row in lines:
@@ -432,13 +447,16 @@ def main() -> None:
         if row.get("Отменено"):
             continue
         qty = float(row.get("Количество") or 0)
-        if qty <= 0:
+        amount = float(row.get("Сумма") or row.get("СуммаСНДС") or 0)
+        if qty <= 0 and amount <= 0:
             continue
         h = headers[g]
         org_k = h.get("Организация_Key")
         dept_k = h.get("Подразделение_Key") or EMPTY
         total_qty += qty
+        total_rub += amount
         by_org[org_k] = by_org.get(org_k, 0.0) + qty
+        by_org_rub[org_k] = by_org_rub.get(org_k, 0.0) + amount
         by_dept[dept_k] = by_dept.get(dept_k, 0.0) + qty
         kept_lines.append({
             "zk_guid": g,
@@ -449,6 +467,9 @@ def main() -> None:
             "nomenclature_key": row.get("Номенклатура_Key"),
             "warehouse_key": row.get("Склад_Key"),
             "qty": qty,
+            "amount_rub": amount,
+            "amount_vat_rub": float(row.get("СуммаНДС") or 0),
+            "amount_with_vat_rub": float(row.get("СуммаСНДС") or 0),
             "org_key": org_k,
             "dept_key": dept_k,
             "status": h.get("Статус"),
@@ -463,10 +484,11 @@ def main() -> None:
     print("\n" + "=" * 78)
     print(f"  РЕЗУЛЬТАТ · {month_arg}")
     print("=" * 78)
-    print(f"  План выпуска (кол-во к отгрузке): {total_qty:>14,.3f}")
+    print(f"  Факт выпуска, руб.: {total_rub:>14,.2f}")
+    print(f"  Количество справочно: {total_qty:>14,.3f}")
     print(f"\n  По организации:")
     for guid, name in TURB_ORGS.items():
-        print(f"    {name:<42s} {by_org.get(guid, 0.0):>14,.3f}")
+        print(f"    {name:<42s} {by_org_rub.get(guid, 0.0):>14,.2f}")
 
     print(f"\n  Время: {time.time()-t0:.1f}с")
 
@@ -477,12 +499,18 @@ def main() -> None:
             "period_from": m_start.isoformat(),
             "period_to": m_end.isoformat(),
             "generated": datetime.now().isoformat(timespec="seconds"),
-            "algorithm": "A: плановая дата отгрузки строки ЗК в месяце",
+            "source": SOURCE_TAG,
+            "algorithm": "A: дата отгрузки строки ЗК в месяце, сумма строки ЗК в рублях",
             "organizations": list(TURB_ORGS.values()),
             "excluded_statuses": sorted(exclude_statuses),
-            "plan_qty_total": round(total_qty, 3),
+            "fact_rub_total": round(total_rub, 2),
+            "fact_qty_total": round(total_qty, 3),
             "by_org": {
                 name: round(by_org.get(guid, 0.0), 3)
+                for guid, name in TURB_ORGS.items()
+            },
+            "by_org_rub": {
+                name: round(by_org_rub.get(guid, 0.0), 2)
                 for guid, name in TURB_ORGS.items()
             },
             "status_breakdown_zk_count": status_breakdown,

@@ -1,35 +1,39 @@
 {
   "year": 2026,
   "ref_month": 4,
-  "source": "psd_vipusk_plan_v1",
+  "source": "psd_vipusk_fact_rub_v2",
   "months": [
     {
       "year": 2026,
       "month": 1,
       "period_from": "2026-01-01",
       "period_to": "2026-01-31",
-      "plan_qty_total": 6572.0
+      "fact_rub_total": 432191118.29,
+      "fact_qty_total": 6572.0
     },
     {
       "year": 2026,
       "month": 2,
       "period_from": "2026-02-01",
       "period_to": "2026-02-28",
-      "plan_qty_total": 32736.0
+      "fact_rub_total": 158751485.14,
+      "fact_qty_total": 32736.0
     },
     {
       "year": 2026,
       "month": 3,
       "period_from": "2026-03-01",
       "period_to": "2026-03-31",
-      "plan_qty_total": 55341.0
+      "fact_rub_total": 151101955.35,
+      "fact_qty_total": 55341.0
     },
     {
       "year": 2026,
       "month": 4,
       "period_from": "2026-04-01",
       "period_to": "2026-04-30",
-      "plan_qty_total": 71599.5
+      "fact_rub_total": 231394523.84,
+      "fact_qty_total": 77434.5
     }
   ]
 }

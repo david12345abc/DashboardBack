@@ -28,14 +28,14 @@
       "year": 2026,
       "month": 3,
       "month_name": "март",
-      "plan": 47,
-      "fact": 46,
+      "plan": 48,
+      "fact": 47,
       "delays": 1,
       "deviation_count": 1,
       "kpi_pct": 97.9,
       "has_data": true
     }
   ],
-  "cache_date": "2026-04-28",
+  "cache_date": "2026-04-30",
   "source_tag": "svoevremennaya_monthly_v4_npo_timely_fact"
 }
