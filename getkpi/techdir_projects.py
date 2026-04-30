@@ -31,7 +31,7 @@ TIMEOUT = 60
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CACHE_DIR = cache_manager.CACHE_DIR
 CACHE_PATH = CACHE_DIR / "techdir_projects_snapshot.json"
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 OD_OVERDUE_MILESTONES_SCHEMA = "zero_duration_milestones_v1"
 _CREDENTIAL_FILES = (
     "API для dashboard.py",
@@ -571,7 +571,8 @@ def _build_monthly_payload(
             "year": y,
             "month_name": MONTH_NAMES[m],
             "plan": plan_count,
-            "fact": overdue_count,
+            "fact": on_time_count,
+            "fact_overdue": overdue_count,
             "kpi_pct": kpi_pct,
             "has_data": has_data,
             "projects_on_time": on_time_count,
@@ -595,6 +596,7 @@ def _build_monthly_payload(
         "ytd": {
             "total_plan": ref_row.get("plan") if ref_row else None,
             "total_fact": ref_row.get("fact") if ref_row else None,
+            "total_fact_overdue": ref_row.get("fact_overdue") if ref_row else None,
             "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
@@ -611,6 +613,7 @@ def _build_monthly_payload(
                     "month": row["month"],
                     "plan": row["plan"],
                     "fact": row["fact"],
+                    "fact_overdue": row.get("fact_overdue"),
                 }
                 for row in monthly_rows
             ],
