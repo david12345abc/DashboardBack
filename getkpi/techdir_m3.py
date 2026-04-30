@@ -13,7 +13,7 @@ from . import calc_budget_fact_techdir
 logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_m3_monthly_v2_single_month_cache"
-CACHE_VERSION = 5
+CACHE_VERSION = 7
 AVAILABLE_MONTHS_2026 = tuple(sorted(calc_budget_techdir_m3.TD_M3_PLAN_TARGET_2026))
 
 MONTH_NAMES = {
@@ -24,12 +24,12 @@ MONTH_NAMES = {
 
 
 def _kpi_td_m3(plan: float | None, fact: float | None) -> float | None:
-    """MIN(100; План/Факт·100) по методике TD-M3."""
+    """MIN(100; Факт/План·100) по методике TD-M3."""
     if plan is None or fact is None:
         return None
-    if fact == 0:
-        return 100.0 if plan <= 0 else None
-    return round(min(100.0, plan / fact * 100), 2)
+    if plan == 0:
+        return 100.0 if fact <= 0 else None
+    return round(min(100.0, fact / plan * 100), 2)
 
 
 def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]:
@@ -90,7 +90,27 @@ def _month_payload(year: int, month: int) -> dict[str, Any]:
         return cached
     payload = calc_budget_techdir_m3.get_td_m3_costs_monthly(year, month)
     fact_payload = calc_budget_fact_techdir.get_td_m3_fact_month(year, month)
-    payload["total_fact"] = fact_payload.get("total_fact")
+    fact_total = fact_payload.get("total_fact")
+    payload["total_fact"] = fact_total
+
+    monthly_data = payload.get("monthly_data")
+    if isinstance(monthly_data, list):
+        for row in monthly_data:
+            if not isinstance(row, dict):
+                continue
+            if row.get("year") == year and row.get("month") == month:
+                row["fact"] = fact_total
+                row["has_data"] = True if fact_total is not None else row.get("has_data")
+
+    last_row = payload.get("last_full_month_row")
+    if isinstance(last_row, dict) and last_row.get("year") == year and last_row.get("month") == month:
+        last_row["fact"] = fact_total
+        last_row["has_data"] = True if fact_total is not None else last_row.get("has_data")
+
+    ytd = payload.get("ytd")
+    if isinstance(ytd, dict):
+        ytd["total_fact"] = fact_total
+
     payload["debug"] = {
         **(payload.get("debug") or {}),
         "fact_source": "calc_budget_fact_techdir.py",

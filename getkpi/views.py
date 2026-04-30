@@ -449,6 +449,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif _is_budget_limit_m3_kpi(kid):
         color = _rag_dz_lower_better(pct)
+    elif kid == 'TD-M3':
+        color = _rag_dz_lower_better(pct)
     elif kid == 'TD-M4':
         color = _rag_td_m4_limit(pct)
     else:
