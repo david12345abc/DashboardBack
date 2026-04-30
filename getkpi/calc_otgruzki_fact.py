@@ -36,6 +36,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from .commercial_department_aliases import normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
+CACHE_VERSION = 3
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -108,6 +110,25 @@ def _monthly_cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"otgruzki_monthly_{year}_{month:02d}.json"
 
 
+def _has_nonzero_months(data: dict) -> bool:
+    return any((row.get("fact") or 0) for row in data.get("months", []))
+
+
+def _load_stale_monthly_cache(year: int, month: int) -> dict | None:
+    p = _monthly_cache_path(year, month)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        first_m = (data.get("months") or [{}])[0]
+        if "by_dept" in first_m and _has_nonzero_months(data):
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
 def _load_cache(year: int, month: int) -> dict | None:
     """Загрузить кэш месяца. Возвращает dict с total и by_dept, или None."""
     p = _cache_path(year, month)
@@ -116,7 +137,11 @@ def _load_cache(year: int, month: int) -> dict | None:
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if data.get("cache_date") == date.today().isoformat() and "by_dept" in data:
+        if (
+            data.get("cache_date") == date.today().isoformat()
+            and data.get("cache_version") == CACHE_VERSION
+            and "by_dept" in data
+        ):
             return data
     except (OSError, json.JSONDecodeError):
         pass
@@ -129,6 +154,7 @@ def _save_cache(year: int, month: int, total: float,
     try:
         with open(_cache_path(year, month), "w", encoding="utf-8") as f:
             json.dump({"cache_date": date.today().isoformat(),
+                       "cache_version": CACHE_VERSION,
                        "total": total, "by_dept": by_dept},
                       f, ensure_ascii=False)
     except OSError:
@@ -374,12 +400,14 @@ def _calc_main_otgruzki(session: requests.Session,
         if not od:
             continue
 
-        dept = od["dept"]
+        dept = normalize_commercial_dept_guid(od["dept"])
         if dept not in DEPT_SET or dept == EMPTY:
             continue
         if od["agreement"] in ("", EMPTY):
             continue
         if od["ne_uchit"]:
+            continue
+        if od["soprovozhd"]:
             continue
 
         pk = od["partner"]
@@ -450,7 +478,7 @@ def _calc_vozvrat_komisioner(session: requests.Session,
         if not dd:
             continue
 
-        dept = dd["dept"]
+        dept = normalize_commercial_dept_guid(dd["dept"])
         if dept not in DEPT_SET or dept == EMPTY:
             continue
         if dd["agreement"] in ("", EMPTY):
@@ -535,7 +563,11 @@ def get_otgruzki_monthly(year: int | None = None,
             with open(mc, "r", encoding="utf-8") as f:
                 data = json.load(f)
             first_m = (data.get("months") or [{}])[0]
-            if data.get("cache_date") == today.isoformat() and "by_dept" in first_m:
+            if (
+                data.get("cache_date") == today.isoformat()
+                and data.get("cache_version") == CACHE_VERSION
+                and "by_dept" in first_m
+            ):
                 return _slice_payload(data, dept_guid)
         except (OSError, json.JSONDecodeError):
             pass
@@ -557,6 +589,7 @@ def get_otgruzki_monthly(year: int | None = None,
             })
         payload = {
             "cache_date": today.isoformat(),
+            "cache_version": CACHE_VERSION,
             "year": ref_y, "ref_month": ref_m,
             "months": out_months,
         }
@@ -571,6 +604,12 @@ def get_otgruzki_monthly(year: int | None = None,
     session.auth = AUTH
 
     rashod = _load_rashod_records(session, ref_y, ref_m)
+    if not rashod:
+        fallback = _load_stale_monthly_cache(ref_y, ref_m)
+        if fallback is not None:
+            return _slice_payload(fallback, dept_guid)
+        return _slice_payload({"year": ref_y, "ref_month": ref_m, "months": []}, dept_guid)
+
     main_monthly = _calc_main_otgruzki(session, rashod, ref_y, ref_m)
 
     try:
@@ -599,6 +638,7 @@ def get_otgruzki_monthly(year: int | None = None,
 
     payload = {
         "cache_date": today.isoformat(),
+        "cache_version": CACHE_VERSION,
         "year": ref_y, "ref_month": ref_m,
         "months": out_months,
     }

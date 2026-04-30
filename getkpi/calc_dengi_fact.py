@@ -28,6 +28,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from .commercial_department_aliases import normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
+CACHE_VERSION = 2
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -91,6 +93,25 @@ def _monthly_cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"dengi_monthly_{year}_{month:02d}.json"
 
 
+def _has_nonzero_months(data: dict) -> bool:
+    return any((row.get("fact") or 0) for row in data.get("months", []))
+
+
+def _load_stale_monthly_cache(year: int, month: int) -> dict | None:
+    p = _monthly_cache_path(year, month)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        first_m = (data.get("months") or [{}])[0]
+        if "by_dept" in first_m and _has_nonzero_months(data):
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
 def _load_cache(year: int, month: int) -> dict | None:
     """Загрузить кэш месяца. Возвращает dict с total и by_dept, или None."""
     p = _cache_path(year, month)
@@ -99,7 +120,7 @@ def _load_cache(year: int, month: int) -> dict | None:
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if "by_dept" not in data:
+        if data.get("cache_version") != CACHE_VERSION or "by_dept" not in data:
             return None
         return data
     except (OSError, json.JSONDecodeError):
@@ -111,7 +132,11 @@ def _save_cache(year: int, month: int, total: float,
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
         with open(_cache_path(year, month), "w", encoding="utf-8") as f:
-            json.dump({"total": total, "by_dept": by_dept}, f, ensure_ascii=False)
+            json.dump({
+                "cache_version": CACHE_VERSION,
+                "total": total,
+                "by_dept": by_dept,
+            }, f, ensure_ascii=False)
     except OSError:
         pass
 
@@ -317,7 +342,8 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict, orders: dict,
         cat = catalog.get(obj_key)
         if not cat:
             continue
-        if _is_empty_ref(cat["dept"]) or cat["dept"] not in DEPT_SET:
+        cat_dept = normalize_commercial_dept_guid(cat["dept"])
+        if _is_empty_ref(cat_dept) or cat_dept not in DEPT_SET:
             continue
         if _is_empty_ref(cat["agreement"]):
             continue
@@ -330,7 +356,7 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict, orders: dict,
         if order["ne_uchit"] or order["soprovozhd"]:
             continue
 
-        order_dept = order.get("dept", "")
+        order_dept = normalize_commercial_dept_guid(order.get("dept", ""))
         cat_partner = cat.get("partner", "")
         if order_dept == OPBO_DEPT:
             if cat_partner in excl_no_mgs:
@@ -339,7 +365,7 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict, orders: dict,
             if cat_partner in excl_full and not order["soprovozhd"]:
                 continue
 
-        effective_dept = order_dept if order_dept in DEPT_SET else cat["dept"]
+        effective_dept = order_dept if order_dept in DEPT_SET else cat_dept
 
         amt = float(row.get("СуммаОплатыРегл") or row.get("СуммаОплаты") or 0)
         if not amt:
@@ -376,16 +402,18 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders: dict,
         if reg_partner in excl_full:
             continue
 
-        reg_dept = row.get("Подразделение_Key", "")
+        reg_dept = normalize_commercial_dept_guid(row.get("Подразделение_Key", ""))
         if _is_empty_ref(reg_dept) or reg_dept not in DEPT_SET:
             obj_key = row.get("ОбъектРасчетов", "")
             cat = catalog.get(obj_key) if obj_key else None
             if cat:
                 order = orders.get(cat.get("obj", ""))
-                if order and order["dept"] in DEPT_SET:
-                    reg_dept = order["dept"]
-                elif cat["dept"] in DEPT_SET:
-                    reg_dept = cat["dept"]
+                order_dept = normalize_commercial_dept_guid(order["dept"]) if order else ""
+                cat_dept = normalize_commercial_dept_guid(cat["dept"])
+                if order_dept in DEPT_SET:
+                    reg_dept = order_dept
+                elif cat_dept in DEPT_SET:
+                    reg_dept = cat_dept
                 else:
                     continue
             else:
@@ -419,7 +447,8 @@ def _calc_branch3(kk_rows: list[dict], catalog: dict, orders: dict,
         cat = catalog.get(obj_key)
         if not cat:
             continue
-        if _is_empty_ref(cat["dept"]) or cat["dept"] not in DEPT_SET:
+        cat_dept = normalize_commercial_dept_guid(cat["dept"])
+        if _is_empty_ref(cat_dept) or cat_dept not in DEPT_SET:
             continue
         if _is_empty_ref(cat["agreement"]):
             continue
@@ -434,9 +463,9 @@ def _calc_branch3(kk_rows: list[dict], catalog: dict, orders: dict,
         if order["ne_uchit"] or order["soprovozhd"]:
             continue
 
-        effective_dept = order.get("dept", "")
+        effective_dept = normalize_commercial_dept_guid(order.get("dept", ""))
         if effective_dept not in DEPT_SET:
-            effective_dept = cat["dept"]
+            effective_dept = cat_dept
 
         amt = float(row.get("СуммаРегл") or row.get("Сумма") or 0)
         if not amt:
@@ -487,7 +516,7 @@ def get_dengi_monthly(year: int | None = None,
             with open(mc, "r", encoding="utf-8") as f:
                 data = json.load(f)
             first_m = (data.get("months") or [{}])[0]
-            if "by_dept" in first_m:
+            if data.get("cache_version") == CACHE_VERSION and "by_dept" in first_m:
                 return _slice_payload(data, dept_guid)
         except (OSError, json.JSONDecodeError):
             pass
@@ -507,7 +536,12 @@ def get_dengi_monthly(year: int | None = None,
                 "fact": cd["total"],
                 "by_dept": cd.get("by_dept", {}),
             })
-        payload = {"year": ref_y, "ref_month": ref_m, "months": out_months}
+        payload = {
+            "cache_version": CACHE_VERSION,
+            "year": ref_y,
+            "ref_month": ref_m,
+            "months": out_months,
+        }
         try:
             with open(mc, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -521,6 +555,11 @@ def get_dengi_monthly(year: int | None = None,
     logger.info("calc_dengi_fact: loading registers for %d months 1-%d", ref_y, ref_m)
     ds_rows = _load_ds_register(session, ref_y, ref_m)
     kk_rows = _load_kk_register(session, ref_y, ref_m)
+    if not ds_rows and not kk_rows:
+        fallback = _load_stale_monthly_cache(ref_y, ref_m)
+        if fallback is not None:
+            return _slice_payload(fallback, dept_guid)
+        return _slice_payload({"year": ref_y, "ref_month": ref_m, "months": []}, dept_guid)
 
     obj_keys: set[str] = set()
     for x in ds_rows:
@@ -579,7 +618,12 @@ def get_dengi_monthly(year: int | None = None,
             "by_dept": by_dept,
         })
 
-    payload = {"year": ref_y, "ref_month": ref_m, "months": out_months}
+    payload = {
+        "cache_version": CACHE_VERSION,
+        "year": ref_y,
+        "ref_month": ref_m,
+        "months": out_months,
+    }
     try:
         with open(mc, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)

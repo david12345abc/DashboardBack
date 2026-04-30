@@ -1,7 +1,8 @@
 {
   "na_datu": "2026-03-31",
   "cache_date": "2026-04-30",
-  "total_overdue": 163295810.86,
+  "dept_alias_source": "commercial_department_aliases_v1",
+  "total_overdue": 166345322.47,
   "rows": [
     {
       "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
@@ -214,6 +215,30 @@
       "action": ""
     },
     {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "83d0fa4f-8d47-11eb-8582-ac1f6b05524d",
+      "partner_name": "УРСВ ГУП РО",
+      "counterparty": "УРСВ ГУП РО",
+      "order_key": "7c72b873-6b8e-11f0-96c1-6cb31113810e",
+      "order_num": "МПГ00011400",
+      "order_date": "2025-07-28",
+      "amount": 1319346.24,
+      "dz_total": 1319346.24,
+      "days_overdue": 95,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2025-12-26",
+          "amount": 1319346.24,
+          "days_overdue": 95,
+          "bucket": "60-179 дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
@@ -352,6 +377,30 @@
       "action": ""
     },
     {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
+      "partner_name": "Ялаев А.А. ИП",
+      "counterparty": "Ялаев А.А. ИП",
+      "order_key": "a1536bf3-c860-11ec-8899-ac1f6b05524d",
+      "order_num": "АЛ00-000110",
+      "order_date": "2020-01-28",
+      "amount": 464630.0,
+      "dz_total": 464630.0,
+      "days_overdue": 2220,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2020-03-02",
+          "amount": 464630.0,
+          "days_overdue": 2220,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
@@ -387,6 +436,42 @@
           "planned_date": "2022-12-16",
           "amount": 250452.0,
           "days_overdue": 1201,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "eba563f4-c3c2-11ed-9341-6cb31113810c",
+      "partner_name": "РЕГИОНСТРОЙ ООО",
+      "counterparty": "РЕГИОНСТРОЙ ООО",
+      "order_key": "b67171e7-c3c4-11ed-9341-6cb31113810c",
+      "order_num": "АЛ00-000488",
+      "order_date": "2023-03-16",
+      "amount": 394738.0,
+      "dz_total": 394738.0,
+      "days_overdue": 561,
+      "installments_count": 3,
+      "installments": [
+        {
+          "planned_date": "2024-09-16",
+          "amount": 235664.0,
+          "days_overdue": 561,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2024-12-27",
+          "amount": 74984.0,
+          "days_overdue": 459,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2024-12-29",
+          "amount": 84090.0,
+          "days_overdue": 457,
           "bucket": "180+ дн."
         }
       ],
@@ -484,6 +569,30 @@
       "action": ""
     },
     {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
+      "partner_name": "Ялаев А.А. ИП",
+      "counterparty": "Ялаев А.А. ИП",
+      "order_key": "95608f5e-c860-11ec-8899-ac1f6b05524d",
+      "order_num": "АЛ00-000165",
+      "order_date": "2020-02-07",
+      "amount": 210600.0,
+      "dz_total": 210600.0,
+      "days_overdue": 2212,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2020-03-10",
+          "amount": 210600.0,
+          "days_overdue": 2212,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
       "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
       "dept_name": "Отдел эталонного оборудования",
       "partner_key": "07d8df57-48bf-11e6-811d-001e67112509",
@@ -532,6 +641,54 @@
       "action": ""
     },
     {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
+      "partner_name": "Ялаев А.А. ИП",
+      "counterparty": "Ялаев А.А. ИП",
+      "order_key": "95608fc6-c860-11ec-8899-ac1f6b05524d",
+      "order_num": "АЛ00-000849",
+      "order_date": "2020-07-13",
+      "amount": 167252.37,
+      "dz_total": 167252.37,
+      "days_overdue": 2045,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2020-08-24",
+          "amount": 167252.37,
+          "days_overdue": 2045,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
+      "partner_name": "Ялаев А.А. ИП",
+      "counterparty": "Ялаев А.А. ИП",
+      "order_key": "6b8abd3b-c860-11ec-8899-ac1f6b05524d",
+      "order_num": "АЛ00-000355",
+      "order_date": "2020-03-26",
+      "amount": 142400.0,
+      "dz_total": 142400.0,
+      "days_overdue": 2153,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2020-05-08",
+          "amount": 142400.0,
+          "days_overdue": 2153,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
       "partner_key": "91fbcd96-35e2-11ee-93d2-6cb31113810e",
@@ -554,6 +711,30 @@
       ],
       "reason": "ФорсМажор",
       "action": "ПотребоватьВозвратНеоплаченногоОборудования"
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "eba563f4-c3c2-11ed-9341-6cb31113810c",
+      "partner_name": "РЕГИОНСТРОЙ ООО",
+      "counterparty": "РЕГИОНСТРОЙ ООО",
+      "order_key": "a8861e93-c3c5-11ed-9341-6cb31113810c",
+      "order_num": "АЛ00-000489",
+      "order_date": "2023-03-16",
+      "amount": 130000.0,
+      "dz_total": 130000.0,
+      "days_overdue": 455,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2024-12-31",
+          "amount": 130000.0,
+          "days_overdue": 455,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
     },
     {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
@@ -610,6 +791,30 @@
       "action": ""
     },
     {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "3a2f2c0b-9428-11e1-908c-001e67112509",
+      "partner_name": "Ялаев А.А. ИП",
+      "counterparty": "Ялаев А.А. ИП",
+      "order_key": "7d76046a-c860-11ec-8899-ac1f6b05524d",
+      "order_num": "АЛ00-000265",
+      "order_date": "2020-03-04",
+      "amount": 105300.0,
+      "dz_total": 105300.0,
+      "days_overdue": 2187,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2020-04-04",
+          "amount": 105300.0,
+          "days_overdue": 2187,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
       "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
       "dept_name": "Отдел ВЭД",
       "partner_key": "6ea3451b-2c29-11ec-8718-ac1f6b05524d",
@@ -656,6 +861,192 @@
       ],
       "reason": "ФорсМажор",
       "action": "ПотребоватьВозвратНеоплаченногоОборудования"
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "f7e46bd2-a5fb-11e0-a615-6c626db894df",
+      "partner_name": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ТАМБОВ АО",
+      "counterparty": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ТАМБОВ АО",
+      "order_key": "1ae60ebb-c862-11ec-8899-ac1f6b05524d",
+      "order_num": "МПГ077320",
+      "order_date": "2012-06-05",
+      "amount": 63920.0,
+      "dz_total": -21290.0,
+      "days_overdue": 2981,
+      "installments_count": 28,
+      "installments": [
+        {
+          "planned_date": "2018-01-31",
+          "amount": 8180.0,
+          "days_overdue": 2981,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-02-28",
+          "amount": 2590.0,
+          "days_overdue": 2953,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-03-31",
+          "amount": 4100.0,
+          "days_overdue": 2922,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-04-30",
+          "amount": 3440.0,
+          "days_overdue": 2892,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-05-21",
+          "amount": 2050.0,
+          "days_overdue": 2871,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-05-31",
+          "amount": 1390.0,
+          "days_overdue": 2861,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-07-20",
+          "amount": 6220.0,
+          "days_overdue": 2811,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-07-31",
+          "amount": 4170.0,
+          "days_overdue": 2800,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-09-14",
+          "amount": 1390.0,
+          "days_overdue": 2755,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-09-20",
+          "amount": 2590.0,
+          "days_overdue": 2749,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-09-30",
+          "amount": 17840.0,
+          "days_overdue": 2739,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-10-31",
+          "amount": 26790.0,
+          "days_overdue": 2708,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-11-30",
+          "amount": 23730.0,
+          "days_overdue": 2678,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-12-31",
+          "amount": 33410.0,
+          "days_overdue": 2647,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-01-29",
+          "amount": 2050.0,
+          "days_overdue": 2618,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-01-31",
+          "amount": 44840.0,
+          "days_overdue": 2616,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-02-22",
+          "amount": 2050.0,
+          "days_overdue": 2594,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-02-28",
+          "amount": 20570.0,
+          "days_overdue": 2588,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-03-15",
+          "amount": -186830.0,
+          "days_overdue": 2573,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-03-21",
+          "amount": 4100.0,
+          "days_overdue": 2567,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-03-31",
+          "amount": -19610.0,
+          "days_overdue": 2557,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-04-06",
+          "amount": -5060.0,
+          "days_overdue": 2551,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-04-30",
+          "amount": 5490.0,
+          "days_overdue": 2527,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-05-22",
+          "amount": -5490.0,
+          "days_overdue": 2505,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-05-31",
+          "amount": 18470.0,
+          "days_overdue": 2496,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-06-19",
+          "amount": -18470.0,
+          "days_overdue": 2477,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-06-30",
+          "amount": 62530.0,
+          "days_overdue": 2466,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-07-20",
+          "amount": 1390.0,
+          "days_overdue": 2446,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
     },
     {
       "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
@@ -843,6 +1234,222 @@
           "planned_date": "2025-06-05",
           "amount": 35250.0,
           "days_overdue": 299,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "f7e46bd2-a5fb-11e0-a615-6c626db894df",
+      "partner_name": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ТАМБОВ АО",
+      "counterparty": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ТАМБОВ АО",
+      "order_key": "14e686ac-c862-11ec-8899-ac1f6b05524d",
+      "order_num": "МПГ00000057",
+      "order_date": "2018-11-12",
+      "amount": 30035.0,
+      "dz_total": -0.0,
+      "days_overdue": 2981,
+      "installments_count": 13,
+      "installments": [
+        {
+          "planned_date": "2018-01-31",
+          "amount": 36773.0,
+          "days_overdue": 2981,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-03-31",
+          "amount": 11900.0,
+          "days_overdue": 2922,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-04-30",
+          "amount": 5560.0,
+          "days_overdue": 2892,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-07-31",
+          "amount": 6140.0,
+          "days_overdue": 2800,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-09-20",
+          "amount": 3360.0,
+          "days_overdue": 2749,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-10-31",
+          "amount": 26950.0,
+          "days_overdue": 2708,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-11-30",
+          "amount": 16260.0,
+          "days_overdue": 2678,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-12-31",
+          "amount": 16020.0,
+          "days_overdue": 2647,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-01-31",
+          "amount": 1680.0,
+          "days_overdue": 2616,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-02-28",
+          "amount": 3360.0,
+          "days_overdue": 2588,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-03-15",
+          "amount": -111731.0,
+          "days_overdue": 2573,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-05-31",
+          "amount": -16272.0,
+          "days_overdue": 2496,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-06-30",
+          "amount": 30035.0,
+          "days_overdue": 2466,
+          "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "partner_key": "bf86a0e3-b8ba-11e3-ad68-001e67112509",
+      "partner_name": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ОРЕНБУРГ",
+      "counterparty": "ГАЗПРОМ ГАЗОРАСПРЕДЕЛЕНИЕ ОРЕНБУРГ",
+      "order_key": "14e68690-c862-11ec-8899-ac1f6b05524d",
+      "order_num": "МПГ00000044",
+      "order_date": "2014-03-06",
+      "amount": 21290.0,
+      "dz_total": 21290.0,
+      "days_overdue": 2969,
+      "installments_count": 17,
+      "installments": [
+        {
+          "planned_date": "2018-02-12",
+          "amount": 27140.0,
+          "days_overdue": 2969,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-02-28",
+          "amount": 36400.0,
+          "days_overdue": 2953,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-04-30",
+          "amount": 14000.0,
+          "days_overdue": 2892,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-05-31",
+          "amount": 15240.0,
+          "days_overdue": 2861,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-07-20",
+          "amount": 21480.0,
+          "days_overdue": 2811,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-07-31",
+          "amount": 6200.0,
+          "days_overdue": 2800,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-09-20",
+          "amount": 8550.0,
+          "days_overdue": 2749,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-09-30",
+          "amount": 10380.0,
+          "days_overdue": 2739,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-10-31",
+          "amount": 12640.0,
+          "days_overdue": 2708,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-11-30",
+          "amount": 15570.0,
+          "days_overdue": 2678,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2018-12-31",
+          "amount": 18190.0,
+          "days_overdue": 2647,
+          "bucket": "180+ дн."
+        },
+        {
+          "planned_date": "2019-01-31",
+          "amount": -18967.0,
+          "days_overdue": 2616,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-02-28",
+          "amount": -42795.0,
+          "days_overdue": 2588,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-03-31",
+          "amount": -74083.0,
+          "days_overdue": 2557,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-04-30",
+          "amount": -20138.0,
+          "days_overdue": 2527,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-05-31",
+          "amount": -28035.0,
+          "days_overdue": 2496,
+          "bucket": ""
+        },
+        {
+          "planned_date": "2019-06-30",
+          "amount": 19518.0,
+          "days_overdue": 2466,
           "bucket": "180+ дн."
         }
       ],

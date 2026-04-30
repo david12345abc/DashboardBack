@@ -31,9 +31,25 @@ import random
 from datetime import date, datetime
 from pathlib import Path
 
-from . import cache_manager, calc_debitorka, calc_dengi_fact, calc_dogovory_fact, calc_dz_limits, calc_fot, calc_kp_price, calc_otgruzki_fact, calc_plan, calc_rashody, calc_tekuchest, calc_tkp_sla, valovaya_pribyl
+from . import (
+    cache_manager,
+    calc_debitorka,
+    calc_dengi_fact,
+    calc_dogovory_fact,
+    calc_dz_limits,
+    calc_fot,
+    calc_kp_price,
+    calc_otgruzki_fact,
+    calc_plan,
+    calc_rashody,
+    calc_tekuchest,
+    calc_tkp_sla,
+    kpi_reconciliation,
+    odp_excel_breakdown,
+    valovaya_pribyl,
+)
+from .commercial_department_aliases import DEALER_SALES_DEPT
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
-from .kpi_periods import last_full_month
 
 logger = logging.getLogger(__name__)
 
@@ -1127,6 +1143,27 @@ def build_komdir_payload(kpi_list: list[dict],
         )
     except Exception:
         pass
+
+    if dept_guid and str(dept_guid).lower() == DEALER_SALES_DEPT.lower():
+        try:
+            odp_ref = odp_excel_breakdown.load_odp_reference_table(ref_y, ref_m)
+            if odp_ref:
+
+                def _tile_fact(kpi: str) -> float | None:
+                    td = tiles_data.get(kpi) or {}
+                    lm = td.get("last_full_month_row") or {}
+                    v = lm.get("fact")
+                    return float(v) if v is not None else None
+
+                odp_ref = kpi_reconciliation.attach_dashboard_vs_reference(
+                    odp_ref,
+                    _tile_fact("KD-M3"),
+                    _tile_fact("KD-M1"),
+                    _tile_fact("KD-M2"),
+                )
+                tablitsy[odp_ref["kpi_id"]] = odp_ref
+        except Exception:
+            logger.exception("ODP-T-REFERENCE: не удалось загрузить выгрузку из temp")
 
     if not tablitsy:
         tablitsy = {

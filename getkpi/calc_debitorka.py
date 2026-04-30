@@ -30,6 +30,7 @@ from urllib.parse import quote
 from collections import defaultdict
 from pathlib import Path
 
+from .commercial_department_aliases import normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ DEPARTMENTS = {
 }
 
 TOLERANCE = 0.01
+DEPT_ALIAS_SOURCE = "commercial_department_aliases_v1"
 
 REGISTER = "AccumulationRegister_РасчетыСКлиентамиПоСрокам_RecordType"
 
@@ -151,7 +153,8 @@ def resolve_objects(session, obj_keys: set):
     """
     Загрузить Catalog_ОбъектыРасчетов страницами, собрать маппинг
     Ref_Key (lower) → {dept, partner, desc, number, date}.
-    Подразделение берётся напрямую из каталога.
+    Подразделение берётся из каталога и нормализуется:
+    ликвидированные ОДП/холдинги попадают в действующие отделы.
     """
     sel = quote(
         "Ref_Key,Подразделение_Key,Партнер_Key,Description,Номер,Дата",
@@ -181,7 +184,9 @@ def resolve_objects(session, obj_keys: set):
             k = str(item.get("Ref_Key", EMPTY)).lower()
             if k in needed:
                 catalog[k] = {
-                    "dept": str(item.get("Подразделение_Key", EMPTY)).lower(),
+                    "dept": normalize_commercial_dept_guid(
+                        str(item.get("Подразделение_Key", EMPTY)).lower()
+                    ).lower(),
                     "partner": str(item.get("Партнер_Key", EMPTY)).lower(),
                     "desc": item.get("Description", ""),
                     "number": item.get("Номер", "?"),
@@ -600,6 +605,7 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
 
     return {
         "na_datu": na_datu_str,
+        "dept_alias_source": DEPT_ALIAS_SOURCE,
         "total_dz": round(sum(dz_by_dept.values()), 2),
         "total_kz": round(sum(kz_by_dept.values()), 2),
         "total_overdue": round(sum(overdue_by_dept.values()), 2),
@@ -637,6 +643,7 @@ def _build_overdue_detail_from_data(na_datu: date, records: list,
     detail = {
         "na_datu": na_datu_str,
         "cache_date": date.today().isoformat(),
+        "dept_alias_source": DEPT_ALIAS_SOURCE,
         "total_overdue": total,
         "rows": rows,
     }
@@ -697,7 +704,11 @@ def get_snapshot_for_date(na_datu: date) -> dict:
     # Старые файлы кэша (без поля kz_source == "predoplata_upr") пересчитываем:
     # до v2 КЗ рассчитывался как отрицательные ДолгУпр-остатки и всегда был 0,
     # теперь КЗ — это ПредоплатаУпр-остатки (колонка «Наш долг» в 1С).
-    if cached is not None and cached.get("kz_source") == "predoplata_upr":
+    if (
+        cached is not None
+        and cached.get("kz_source") == "predoplata_upr"
+        and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
+    ):
         return cached
     payload = _calc_snapshot_for_date(na_datu)
     _save_json(_cache_path_snapshot(na_datu), payload)
@@ -724,9 +735,13 @@ def get_komdir_dz_monthly(year: int | None = None,
 
     if dept_name is None:
         cached = _load_json(_cache_path_monthly(ref_y, ref_m))
-        # Старые кэши без маркера kz_source="predoplata_upr" пересобираем —
-        # в них КЗ был нулевым (до миграции на ПредоплатаУпр).
-        if cached is not None and cached.get("kz_source") == "predoplata_upr":
+        # Старые кэши без маркера kz_source="predoplata_upr" или без алиасов
+        # коммерческих подразделений пересобираем.
+        if (
+            cached is not None
+            and cached.get("kz_source") == "predoplata_upr"
+            and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
+        ):
             rows = cached.get("months") or []
             if not rows or all("kz_fact" in r for r in rows):
                 return cached
@@ -758,6 +773,7 @@ def get_komdir_dz_monthly(year: int | None = None,
         "year": ref_y,
         "ref_month": ref_m,
         "kz_source": "predoplata_upr",
+        "dept_alias_source": DEPT_ALIAS_SOURCE,
         "months": out_rows,
     }
     if dept_name is None:
@@ -802,14 +818,23 @@ def _ensure_debitorka_caches_for_period(ref_y: int, ref_m: int) -> None:
 
     def _snapshot_needs_refresh(d: date) -> bool:
         snap = _load_json(_cache_path_snapshot(d))
-        # «Старые» файлы (до v2 КЗ по ПредоплатаУпр) пересобираем.
-        return snap is None or snap.get("kz_source") != "predoplata_upr"
+        # «Старые» файлы (до v2 КЗ по ПредоплатаУпр или до алиасов коммерческих
+        # подразделений) пересобираем.
+        return (
+            snap is None
+            or snap.get("kz_source") != "predoplata_upr"
+            or snap.get("dept_alias_source") != DEPT_ALIAS_SOURCE
+        )
 
     uncached = [d for _, d in snap_dates if _snapshot_needs_refresh(d)]
 
     def _overdue_needs_refresh(d: date) -> bool:
         od = _load_json(_cache_path_overdue_detail(d))
-        return od is None or od.get("cache_date") != today.isoformat()
+        return (
+            od is None
+            or od.get("cache_date") != today.isoformat()
+            or od.get("dept_alias_source") != DEPT_ALIAS_SOURCE
+        )
 
     overdue_stale = [d for _, d in snap_dates if _overdue_needs_refresh(d)]
 
@@ -844,6 +869,7 @@ def _calc_overdue_detail(na_datu: date) -> dict:
     return {
         "na_datu": na_datu_str,
         "cache_date": date.today().isoformat(),
+        "dept_alias_source": DEPT_ALIAS_SOURCE,
         "total_overdue": total,
         "rows": rows,
     }
@@ -871,7 +897,11 @@ def get_overdue_detail(year: int | None = None,
     cache_path = _cache_path_overdue_detail(na_datu)
     cached = _load_json(cache_path)
 
-    if cached is not None and cached.get("cache_date") == today.isoformat():
+    if (
+        cached is not None
+        and cached.get("cache_date") == today.isoformat()
+        and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
+    ):
         data = cached
     else:
         data = _calc_overdue_detail(na_datu)
@@ -879,7 +909,7 @@ def get_overdue_detail(year: int | None = None,
 
     rows = data.get("rows", [])
     if dept_guid:
-        dept_lower = dept_guid.lower()
+        dept_lower = normalize_commercial_dept_guid(dept_guid.lower()).lower()
         rows = [r for r in rows if r.get("dept_key") == dept_lower]
 
     total = round(sum(r["amount"] for r in rows), 2)
