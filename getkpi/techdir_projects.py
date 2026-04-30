@@ -21,6 +21,7 @@ TARGET_ORGANIZATION = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
 TARGET_PROJECT_TYPE_TD_M1 = "ВнешнийЗаказ"
 TARGET_PROJECT_TYPE_TD_Q1 = "РазвитияИУлучшений"
 TARGET_PROJECT_TYPE_OD_Q1 = None
+TARGET_TECHDIR_PODRAZDELENIE = "ТЕХНИЧЕСКИЙ ДИРЕКТОР"
 PRODUCTION_DEPUTY_PROJECT_DEPARTMENTS = {
     "Производственный цех №1",
     "Производственный цех №2",
@@ -348,6 +349,8 @@ def _overdue_milestone_rows(
 
 def _is_target_project(data_1c: dict[str, Any], project_type: str | None = None) -> bool:
     if data_1c.get("organizatsiya") != TARGET_ORGANIZATION:
+        return False
+    if data_1c.get("podrazdelenie") != TARGET_TECHDIR_PODRAZDELENIE:
         return False
     if project_type is None:
         return True

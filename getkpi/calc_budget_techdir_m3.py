@@ -16,6 +16,7 @@ import logging
 from collections import defaultdict
 from datetime import date
 import re
+import xml.etree.ElementTree as ET
 from typing import Any
 from urllib.parse import quote
 
@@ -86,6 +87,7 @@ REQUEST_ALLOWED_ARTICLES = frozenset(
 )
 REQUEST_HEADER_DATE_FIELDS = ("Date", "Дата")
 REQUEST_HEADER_STATUS_FIELDS = ("Статус", "Состояние", "Status", "State")
+REQUEST_HEADER_DEPT_FIELDS = ("Подразделение_Key", "Подразделение", "ТД_ЦФО_Key", "ТД_ЦФО")
 REQUEST_HEADER_PAID_FIELDS = (
     "СуммаОплатыРегл",
     "СуммаОплаты",
@@ -93,6 +95,7 @@ REQUEST_HEADER_PAID_FIELDS = (
     "Оплачено",
     "СуммаФакт",
     "СуммаПлатежа",
+    "СуммаДокумента",
 )
 REQUEST_LINE_AMOUNT_FIELDS = (
     "Сумма",
@@ -103,7 +106,7 @@ REQUEST_LINE_AMOUNT_FIELDS = (
     "Оплачено",
     "СуммаФакт",
 )
-REQUEST_LINE_DEPT_FIELDS = ("Подразделение_Key", "Подразделение")
+REQUEST_LINE_DEPT_FIELDS = ("Подразделение_Key", "Подразделение", "ТД_ЦФО_Key", "ТД_ЦФО")
 REQUEST_LINE_ARTICLE_FIELDS = ("СтатьяРасходов_Key", "СтатьяРасходов", "СтатьяБюджетов")
 REQUEST_PERIOD_FIELD = "Date"
 REQUEST_PAID_STATUS_HINTS = (
@@ -111,6 +114,7 @@ REQUEST_PAID_STATUS_HINTS = (
     "частич",
     "полная оплата",
     "оплачено",
+    "к оплате",
 )
 REQUEST_UNPAID_STATUS_HINTS = (
     "не оплачен",
@@ -540,6 +544,7 @@ def _compute_td_m3_fact_monthly(session: requests.Session, year: int, month: int
 
 
 _REQUEST_DOC_CACHE: tuple[str, str] | None = None
+_REQUEST_NAV_DESC_CACHE: dict[str, str] = {}
 
 
 def _normalize(value: Any) -> str:
@@ -598,50 +603,24 @@ def _discover_request_entities(session: requests.Session) -> tuple[str, str]:
 
     # Сначала быстро пробуем наиболее вероятные имена, чтобы не ждать полный $metadata.
     for candidate in REQUEST_DOC_ENTITY_CANDIDATES:
+        print(f"    [doc_probe] {candidate}")
         url = f"{fts.BASE}/{quote(candidate)}?$format=json&$top=1"
         resp = request_with_retry(session, url, timeout=10, retries=1, label="td_m3/doc_probe")
         if resp is not None and resp.ok:
+            print(f"    [doc_probe] ok -> {candidate}")
             doc_entity = candidate
             break
+        print(f"    [doc_probe] miss -> {candidate}")
 
     for candidate in REQUEST_TAB_ENTITY_CANDIDATES:
+        print(f"    [tab_probe] {candidate}")
         url = f"{fts.BASE}/{quote(candidate)}?$format=json&$top=1"
         resp = request_with_retry(session, url, timeout=10, retries=1, label="td_m3/tab_probe")
         if resp is not None and resp.ok:
+            print(f"    [tab_probe] ok -> {candidate}")
             tab_entity = candidate
             break
-
-    # Если быстрые кандидаты не сработали, пытаемся угадать по $metadata.
-    if doc_entity == REQUEST_DOC_ENTITY_DEFAULT and tab_entity == f"{doc_entity}_Строки":
-        try:
-            r = request_with_retry(session, f"{fts.BASE}/$metadata", timeout=20, retries=1, label="td_m3/metadata")
-            if r is not None and r.ok and r.text:
-                names = sorted(set(re.findall(r'EntitySet\s+Name="(Document_[^"]+)"', r.text)))
-                doc_candidates = [
-                    n for n in names
-                    if _score_request_entity(n) > 0
-                ]
-                if doc_candidates:
-                    doc_entity = sorted(
-                        doc_candidates,
-                        key=lambda n: (_score_request_entity(n), -len(n), n),
-                        reverse=True,
-                    )[0]
-                    prefix = f"{doc_entity}_"
-                    tab_candidates = [n for n in names if n.startswith(prefix) and n != doc_entity]
-                    if not tab_candidates:
-                        tab_candidates = [
-                            n for n in names
-                            if _score_request_entity(n) > 0 and n != doc_entity
-                        ]
-                    if tab_candidates:
-                        tab_entity = sorted(
-                            tab_candidates,
-                            key=lambda n: (1 if any(s in n.lower() for s in ("строк", "тч", "таб", "расшифр")) else 0, -len(n), n),
-                            reverse=True,
-                        )[0]
-        except Exception as exc:
-            logger.warning("TD-M3: metadata discovery failed: %s", exc)
+        print(f"    [tab_probe] miss -> {candidate}")
 
     _REQUEST_DOC_CACHE = (doc_entity, tab_entity)
     return _REQUEST_DOC_CACHE
@@ -685,6 +664,51 @@ def _fetch_request_lines(session: requests.Session, tab_entity: str, doc_ref: st
     flt = f"Ref_Key eq guid'{doc_ref}'"
     url = f"{fts.BASE}/{quote(tab_entity)}?$format=json&$filter={quote(flt, safe='')}"
     return _fetch_all_rows(session, url, label="td_m3/lines")
+
+
+def _extract_request_lines_from_doc(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    for value in doc.values():
+        if isinstance(value, list) and value and all(isinstance(item, dict) for item in value):
+            return value
+    return []
+
+
+def _nav_description(session: requests.Session, nav_url: str | None) -> str:
+    if not nav_url:
+        return ""
+    cached = _REQUEST_NAV_DESC_CACHE.get(nav_url)
+    if cached is not None:
+        return cached
+    try:
+        resp = request_with_retry(session, f"{fts.BASE}/{nav_url}", timeout=20, retries=2, label="td_m3/nav_desc")
+        if resp is None or not resp.ok or not resp.text:
+            _REQUEST_NAV_DESC_CACHE[nav_url] = ""
+            return ""
+        root = ET.fromstring(resp.text)
+        ns = {"d": "http://schemas.microsoft.com/ado/2007/08/dataservices"}
+        desc = root.find(".//d:Description", ns)
+        text = _normalize(desc.text if desc is not None else "")
+    except Exception:
+        text = ""
+    _REQUEST_NAV_DESC_CACHE[nav_url] = text
+    return text
+
+
+def _request_department_candidates(session: requests.Session, doc: dict[str, Any], line: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    for field in REQUEST_LINE_DEPT_FIELDS:
+        value = line.get(field)
+        if value not in (None, ""):
+            candidates.append(_normalize(value))
+    for field in REQUEST_HEADER_DEPT_FIELDS:
+        key_value = doc.get(field)
+        if key_value not in (None, ""):
+            candidates.append(_normalize(key_value))
+        nav_name = field.replace("_Key", "")
+        desc = _nav_description(session, doc.get(f"{nav_name}@navigationLinkUrl"))
+        if desc:
+            candidates.append(desc)
+    return candidates
 
 
 def _resolve_request_group(
@@ -795,7 +819,9 @@ def _compute_request_fact_monthly(
             counts["docs_skipped_empty"] += 1
             continue
 
-        lines = _fetch_request_lines(session, tab_entity, doc_ref)
+        lines = _extract_request_lines_from_doc(doc)
+        if not lines and tab_entity:
+            lines = _fetch_request_lines(session, tab_entity, doc_ref)
         if not lines:
             counts["docs_skipped_empty"] += 1
             continue
@@ -834,12 +860,11 @@ def _compute_request_fact_monthly(
         )
 
         for line in lines:
-            raw_dept = None
-            for field in REQUEST_LINE_DEPT_FIELDS:
-                if field in line and line.get(field) not in (None, ""):
-                    raw_dept = line.get(field)
+            group_name = None
+            for raw_dept in _request_department_candidates(session, doc, line):
+                group_name = _resolve_request_group(raw_dept, struct_map, structure_rows, exact_index)
+                if group_name:
                     break
-            group_name = _resolve_request_group(raw_dept, struct_map, structure_rows, exact_index)
             if not group_name:
                 counts["lines_skipped_dept"] += 1
                 continue

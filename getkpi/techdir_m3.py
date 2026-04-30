@@ -8,11 +8,12 @@ from typing import Any
 
 from .cache_manager import locked_call
 from . import calc_budget_techdir_m3
+from . import calc_budget_fact_techdir
 
 logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_m3_monthly_v2_single_month_cache"
-CACHE_VERSION = 3
+CACHE_VERSION = 5
 AVAILABLE_MONTHS_2026 = tuple(sorted(calc_budget_techdir_m3.TD_M3_PLAN_TARGET_2026))
 
 MONTH_NAMES = {
@@ -38,10 +39,7 @@ def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]
 
 def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
     """Месяцы, которые нужно вернуть в monthly_data для плитки."""
-    if year == 2026 and AVAILABLE_MONTHS_2026:
-        upper_month = max(max(AVAILABLE_MONTHS_2026), ref_month)
-    else:
-        upper_month = ref_month
+    upper_month = ref_month
     return [(year, mm) for mm in range(1, upper_month + 1)]
 
 
@@ -91,6 +89,14 @@ def _month_payload(year: int, month: int) -> dict[str, Any]:
     if cached is not None:
         return cached
     payload = calc_budget_techdir_m3.get_td_m3_costs_monthly(year, month)
+    fact_payload = calc_budget_fact_techdir.get_td_m3_fact_month(year, month)
+    payload["total_fact"] = fact_payload.get("total_fact")
+    payload["debug"] = {
+        **(payload.get("debug") or {}),
+        "fact_source": "calc_budget_fact_techdir.py",
+        "fact_algorithm": "request_based_fact",
+        "fact_counts": fact_payload.get("counts"),
+    }
     payload = {
         **payload,
         "source": SOURCE_TAG,

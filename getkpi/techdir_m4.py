@@ -12,7 +12,7 @@ from . import fot_techdir_fact, fot_techdir_plan
 logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_m4_monthly_v1_single_month_cache"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 AVAILABLE_MONTHS_2026 = tuple(sorted(fot_techdir_plan.PLANNED_FOT_TARGET_2026))
 
 MONTH_NAMES = {
@@ -37,10 +37,7 @@ def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]
 
 def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
     """Месяцы, которые нужно вернуть в monthly_data для плитки."""
-    if year == 2026 and AVAILABLE_MONTHS_2026:
-        upper_month = max(max(AVAILABLE_MONTHS_2026), ref_month)
-    else:
-        upper_month = ref_month
+    upper_month = ref_month
     return [(year, mm) for mm in range(1, upper_month + 1)]
 
 
@@ -106,6 +103,75 @@ def _month_payload(year: int, month: int) -> dict[str, Any]:
     return payload
 
 
+def _build_td_m4_charts(monthly_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Собрать блок графиков TD-M4 из помесячных данных плитки."""
+    points = [
+        {
+            "month": row.get("month"),
+            "month_name": row.get("month_name"),
+            "year": row.get("year"),
+            "plan": row.get("plan"),
+            "fact": row.get("fact"),
+            "kpi_pct": row.get("kpi_pct"),
+        }
+        for row in monthly_rows
+    ]
+    categories = [row.get("month_name") for row in monthly_rows]
+    plan_values = [row.get("plan") for row in monthly_rows]
+    fact_values = [row.get("fact") for row in monthly_rows]
+
+    return {
+        "TD-M4-C1": {
+            "kpi_id": "TD-M4-C1",
+            "name": "Тренд 12 месяцев: ФОТ блока техдирекции",
+            "periodicity": "ежемесячно",
+            "chart_type": "multi_line_plan_fact_monthly",
+            "chart_type_label": "Линейный тренд",
+            "formula": "План и факт берутся из помесячной плитки TD-M4.",
+            "series": [{
+                "kpi_id": "TD-M4",
+                "name": "TD-M4",
+                "chart_type": "line_plan_fact_monthly",
+                "chart_type_label": "План/факт по месяцам",
+                "points": points,
+            }],
+        },
+        "TD-M4-C2": {
+            "kpi_id": "TD-M4-C2",
+            "name": "План/факт по месяцам: ФОТ блока техдирекции",
+            "periodicity": "ежемесячно",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "Столбцы",
+            "formula": "План и факт берутся из помесячной плитки TD-M4.",
+            "series": [{
+                "kpi_id": "TD-M4",
+                "name": "TD-M4",
+                "chart_type": "column_plan_fact_monthly",
+                "chart_type_label": "Столбцы",
+                "categories": categories,
+                "plan": plan_values,
+                "fact": fact_values,
+                "points": points,
+            }],
+        },
+        "TD-M4-C3": {
+            "kpi_id": "TD-M4-C3",
+            "name": "Структура плана/факта TD-M4",
+            "periodicity": "ежемесячно",
+            "chart_type": "heatmap_rag",
+            "chart_type_label": "Heatmap / структура",
+            "formula": "Тепловая карта по помесячным значениям TD-M4.",
+            "series": [{
+                "kpi_id": "TD-M4",
+                "name": "TD-M4",
+                "chart_type": "heatmap_rag",
+                "chart_type_label": "Heatmap / структура",
+                "points": points,
+            }],
+        },
+    }
+
+
 def get_td_m4_ytd(year: int | None = None, month: int | None = None) -> dict | None:
     """TD-M4: ФОТ блока техдирекции в пределах лимита (план/факт из ЗУП и бухоборота)."""
 
@@ -141,6 +207,7 @@ def get_td_m4_ytd(year: int | None = None, month: int | None = None) -> dict | N
                 "data_granularity": "monthly",
                 "monthly_data": monthly_rows,
                 "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+                "Графики": _build_td_m4_charts(monthly_rows),
                 "kpi_period": {
                     "type": "last_full_month",
                     "year": ref_y,
