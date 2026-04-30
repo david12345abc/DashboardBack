@@ -75,9 +75,9 @@
         "Эксплуатационная служба"
       ]
     },
-    "source_department_count": 20
+    "source_department_count": 25
   },
   "source": "techdir_q2_monthly_v1",
   "cache_version": 1,
-  "cache_date": "2026-04-28"
+  "cache_date": "2026-04-30"
 }

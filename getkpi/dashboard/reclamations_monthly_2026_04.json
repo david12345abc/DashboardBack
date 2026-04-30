@@ -33,11 +33,11 @@
       "year": 2026,
       "month": 4,
       "month_name": "апрель",
-      "plan": 324,
-      "fact": 252,
-      "kpi_pct": 77.8,
+      "plan": 336,
+      "fact": 276,
+      "kpi_pct": 82.1,
       "has_data": true
     }
   ],
-  "cache_date": "2026-04-28"
+  "cache_date": "2026-04-30"
 }
