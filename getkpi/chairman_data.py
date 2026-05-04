@@ -65,22 +65,18 @@ _T5_DATA: dict[int, tuple[int, int]] = {1: (3, 1), 2: (2, 0), 3: (4, 2)}
 _T7_PLAN = {1: 120_000_000, 2: 120_000_000, 3: 120_000_000}
 _T7_FACT = {1: 98_500_000, 2: 115_200_000, 3: 132_400_000}
 
-# FND-T9  Выпуск / план-факт, руб. План задан двумя строками ПСД и суммируется по месяцу.
-_T9_PLAN_ROWS = (
-    {
-        1: 51_850_261, 2: 40_528_324, 3: 112_879_583, 4: 131_788_552,
-        5: 147_474_990, 6: 187_746_649, 7: 158_217_075, 8: 133_320_522,
-        9: 168_974_477, 10: 111_959_640, 11: 102_591_730, 12: 203_883_850,
-    },
-    {
-        1: 3_964_943, 2: 7_641_156, 3: 19_801_269, 4: 23_760_543,
-        5: 25_857_206, 6: 34_007_643, 7: 42_543_313, 8: 45_794_767,
-        9: 42_258_602, 10: 38_213_686, 11: 20_511_236, 12: 15_363_074,
-    },
-)
-_T9_PLAN = {
-    month: sum(row.get(month, 0) for row in _T9_PLAN_ROWS)
-    for month in range(1, 13)
+# FND-T9  Выпуск / план-факт: НПО в рублях, АЛМАЗ в штуках.
+_T9_NPO_ORG = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
+_T9_ALMAZ_ORG = "АЛМАЗ ООО"
+_T9_NPO_PLAN_RUB = {
+    1: 51_850_261, 2: 40_528_324, 3: 112_879_583, 4: 131_788_552,
+    5: 147_474_990, 6: 187_746_649, 7: 158_217_075, 8: 133_320_522,
+    9: 168_974_477, 10: 111_959_640, 11: 102_591_730, 12: 203_883_850,
+}
+_T9_ALMAZ_PLAN_QTY = {
+    1: 763, 2: 1_537, 3: 4_534, 4: 5_708,
+    5: 6_429, 6: 8_735, 7: 10_714, 8: 11_863,
+    9: 10_677, 10: 9_334, 11: 4_403, 12: 2_844,
 }
 _T9_THRESHOLDS = {
     "green": "≥100%",
@@ -485,8 +481,8 @@ def _build_fnd_t6_portfolio_rows(months: list[int], ref_y: int) -> list[dict]:
 def _build_fnd_t9_vipusk_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T9 «Выпуск — план/факт».
 
-    Факт берём из `calc_psd_vipusk_plan.py` как помесячный выпуск в рублях.
-    План задан пользователем по месяцам 2026 года. KPI = факт / план × 100.
+    Факт берём из `calc_psd_vipusk_plan.py` по организациям:
+    НПО — в рублях, АЛМАЗ — в штуках. KPI = среднее выполнение двух строк.
     """
     if not months:
         return []
@@ -508,20 +504,50 @@ def _build_fnd_t9_vipusk_rows(months: list[int], ref_y: int) -> list[dict]:
     rows: list[dict] = []
     for m in months:
         row = by_m.get(m) or {}
-        plan = float(_T9_PLAN.get(m, 0) or 0) if ref_y == 2026 else 0.0
-        fact = float(row.get("fact_rub_total") or 0)
-        pct = round(fact / plan * 100, 1) if plan > 0 else None
+        by_org = row.get("by_org") or {}
+        by_org_rub = row.get("by_org_rub") or {}
+
+        npo_plan = float(_T9_NPO_PLAN_RUB.get(m, 0) or 0) if ref_y == 2026 else 0.0
+        npo_fact = float(by_org_rub.get(_T9_NPO_ORG) or 0)
+        npo_pct = round(npo_fact / npo_plan * 100, 1) if npo_plan > 0 else None
+
+        almaz_plan = float(_T9_ALMAZ_PLAN_QTY.get(m, 0) or 0) if ref_y == 2026 else 0.0
+        almaz_fact = float(by_org.get(_T9_ALMAZ_ORG) or 0)
+        almaz_pct = round(almaz_fact / almaz_plan * 100, 1) if almaz_plan > 0 else None
+
+        pct_values = [p for p in (npo_pct, almaz_pct) if p is not None]
+        pct = round(sum(pct_values) / len(pct_values), 1) if pct_values else None
+        plan_fact_rows = [
+            {
+                "label": "АЛМАЗ",
+                "plan": round(almaz_plan, 2),
+                "fact": round(almaz_fact, 2),
+                "unit": "шт.",
+                "kpi_pct": almaz_pct,
+            },
+            {
+                "label": "НПО Турбулентность-Дон",
+                "plan": round(npo_plan, 2),
+                "fact": round(npo_fact, 2),
+                "unit": "руб.",
+                "kpi_pct": npo_pct,
+            },
+        ]
         rows.append({
             "month": m,
             "year": ref_y,
             "month_name": MONTH_NAMES[m],
-            "plan": round(plan, 2),
-            "fact": round(fact, 2),
+            "plan": round(npo_plan, 2),
+            "fact": round(npo_fact, 2),
             "kpi_pct": pct,
-            "has_data": plan > 0 or fact > 0,
-            "plan_rub_total": round(plan, 2),
-            "fact_rub_total": round(fact, 2),
-            "fact_qty_total": round(float(row.get("fact_qty_total") or 0), 2),
+            "has_data": any((r["plan"] or 0) > 0 or (r["fact"] or 0) > 0 for r in plan_fact_rows),
+            "plan_fact_rows": plan_fact_rows,
+            "plan_rub_total": round(npo_plan, 2),
+            "fact_rub_total": round(npo_fact, 2),
+            "plan_qty_total": round(almaz_plan, 2),
+            "fact_qty_total": round(almaz_fact, 2),
+            "fact_rub_all_orgs": round(float(row.get("fact_rub_total") or 0), 2),
+            "fact_qty_all_orgs": round(float(row.get("fact_qty_total") or 0), 2),
         })
     return rows
 
@@ -1799,13 +1825,18 @@ def build_chairman_payload(
                 if extra_key in lm:
                     tile[extra_key] = lm[extra_key]
         if kid == "FND-T9":
-            tile["unit"] = "руб."
+            tile["unit"] = ""
             tile["thresholds"] = dict(_T9_THRESHOLDS)
             tile["green_threshold"] = _T9_THRESHOLDS["green"]
             tile["yellow_threshold"] = _T9_THRESHOLDS["yellow"]
             tile["red_threshold"] = _T9_THRESHOLDS["red"]
             if lm:
-                for extra_key in ("plan_rub_total", "fact_rub_total", "fact_qty_total"):
+                for extra_key in (
+                    "plan_fact_rows",
+                    "plan_rub_total", "fact_rub_total",
+                    "plan_qty_total", "fact_qty_total",
+                    "fact_rub_all_orgs", "fact_qty_all_orgs",
+                ):
                     if extra_key in lm:
                         tile[extra_key] = lm[extra_key]
 

@@ -34,7 +34,7 @@ ALLOWED_DEPARTMENTS = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 ALLOWED_CLAIM_STATUSES = frozenset({
     "Зарегистрирована",
     "Обрабатывается",
@@ -43,6 +43,10 @@ ALLOWED_CLAIM_STATUSES = frozenset({
 CLAIM_STATUS_LABELS = {
     "НаКонтроле": "На контроле",
 }
+EXCLUDED_CLAIM_REASON_OBRASHCHENIE = "7a4719be-3e1b-11ec-8742-ac1f6b05524d"
+EXCLUDED_CLAIM_REASON_KEYS = frozenset({
+    EXCLUDED_CLAIM_REASON_OBRASHCHENIE,  # Обращение
+})
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -146,7 +150,8 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
     select_claims = (
         "Ref_Key,Code,Description,Партнер_Key,ДатаРегистрации,ДатаОкончания,"
         "ТД_ДатаОкончанияПлан,ТД_ЗаказКлиента_Key,ТД_Номенклатура_Key,"
-        "ТД_Характеристика_Key,ОписаниеПретензии,DeletionMark,Статус"
+        "ТД_Характеристика_Key,ОписаниеПретензии,DeletionMark,Статус,"
+        "ПричинаВозникновения_Key"
     )
 
     claims = []
@@ -289,6 +294,8 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
         desc = (c.get("ОписаниеПретензии") or "").replace("\r\n", " ").replace("\n", " ")
         raw_status = c.get("Статус", "")
         if raw_status not in ALLOWED_CLAIM_STATUSES:
+            continue
+        if c.get("ПричинаВозникновения_Key") in EXCLUDED_CLAIM_REASON_KEYS:
             continue
         status = CLAIM_STATUS_LABELS.get(raw_status, raw_status)
 

@@ -7,7 +7,8 @@ calc_psd_vipusk_plan.py — ПСД · Выпуск · факт выпуска з
   • «За период»       : строка попадает в месяц, если ДатаОтгрузки в строке
                         принадлежит [месяц_начало; месяц_конец] — это
                         плановая дата отгрузки позиции в ЗК.
-  • Организации       : ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО и Турбулентность-Дон ООО.
+  • Организации       : ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО, Турбулентность-Дон ООО,
+                        АЛМАЗ ООО.
   • Исключаем         : DeletionMark=true, Posted=false,
                         ТД_НеУчитыватьВПланФакте=true, строки с Отменено=true,
                         статус НеСогласован (заказ не подтверждён).
@@ -48,6 +49,7 @@ EMPTY = "00000000-0000-0000-0000-000000000000"
 TURB_ORGS = {
     "fbca2148-6cfd-11e7-812d-001e67112509": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
     "fbca2143-6cfd-11e7-812d-001e67112509": "Турбулентность-Дон ООО",
+    "fbca2146-6cfd-11e7-812d-001e67112509": "АЛМАЗ ООО",
 }
 
 # Статусы 1С ERP 2.5 для ЗаказКлиента, которые НЕ учитываем в плане.
@@ -57,7 +59,7 @@ PAGE = 5000
 BATCH = 15
 TIMEOUT = 120
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "psd_vipusk_fact_rub_v2"
+SOURCE_TAG = "psd_vipusk_fact_by_org_v3"
 
 
 # ═══════════════════════════════════════════════════════
@@ -336,6 +338,8 @@ def get_psd_vipusk_plan_monthly(year: int, ref_month: int) -> dict:
             "period_to": snap.get("period_to"),
             "fact_rub_total": float(snap.get("fact_rub_total") or 0),
             "fact_qty_total": float(snap.get("fact_qty_total") or snap.get("plan_qty_total") or 0),
+            "by_org": snap.get("by_org") or {},
+            "by_org_rub": snap.get("by_org_rub") or {},
         })
 
     payload = {
