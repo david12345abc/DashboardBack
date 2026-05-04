@@ -8,10 +8,13 @@ from typing import Any
 
 from .cache_manager import locked_call
 from . import calc_budget_techdir_m3
+from . import calc_budget_fact_techdir
 
 logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_m3_monthly_v2_single_month_cache"
+CACHE_VERSION = 7
+AVAILABLE_MONTHS_2026 = tuple(sorted(calc_budget_techdir_m3.TD_M3_PLAN_TARGET_2026))
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -21,17 +24,23 @@ MONTH_NAMES = {
 
 
 def _kpi_td_m3(plan: float | None, fact: float | None) -> float | None:
-    """MIN(100; План/Факт·100) по методике TD-M3."""
+    """MIN(100; Факт/План·100) по методике TD-M3."""
     if plan is None or fact is None:
         return None
-    if fact == 0:
-        return 100.0 if plan <= 0 else None
-    return round(min(100.0, plan / fact * 100), 2)
+    if plan == 0:
+        return 100.0 if fact <= 0 else None
+    return round(min(100.0, fact / plan * 100), 2)
 
 
 def _month_pairs_from_january() -> tuple[list[tuple[int, int]], tuple[int, int]]:
     today = date.today()
     return [(today.year, mm) for mm in range(1, today.month + 1)], (today.year, today.month)
+
+
+def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
+    """Месяцы, которые нужно вернуть в monthly_data для плитки."""
+    upper_month = ref_month
+    return [(year, mm) for mm in range(1, upper_month + 1)]
 
 
 def _normalize_period(year: int | None = None, month: int | None = None) -> tuple[int, int]:
@@ -59,6 +68,8 @@ def _load_json(path: Path) -> dict | None:
         return None
     if data.get("source") != SOURCE_TAG:
         return None
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
     if data.get("year") == date.today().year and data.get("month") == date.today().month:
         return data if data.get("cache_date") == date.today().isoformat() else None
     return data
@@ -67,7 +78,7 @@ def _load_json(path: Path) -> dict | None:
 def _save_json(path: Path, payload: dict) -> None:
     try:
         with path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+            json.dump({**payload, "cache_version": CACHE_VERSION}, f, ensure_ascii=False, indent=2)
     except OSError:
         logger.exception("Не удалось сохранить кэш TD-M3 в %s", path)
 
@@ -78,6 +89,34 @@ def _month_payload(year: int, month: int) -> dict[str, Any]:
     if cached is not None:
         return cached
     payload = calc_budget_techdir_m3.get_td_m3_costs_monthly(year, month)
+    fact_payload = calc_budget_fact_techdir.get_td_m3_fact_month(year, month)
+    fact_total = fact_payload.get("total_fact")
+    payload["total_fact"] = fact_total
+
+    monthly_data = payload.get("monthly_data")
+    if isinstance(monthly_data, list):
+        for row in monthly_data:
+            if not isinstance(row, dict):
+                continue
+            if row.get("year") == year and row.get("month") == month:
+                row["fact"] = fact_total
+                row["has_data"] = True if fact_total is not None else row.get("has_data")
+
+    last_row = payload.get("last_full_month_row")
+    if isinstance(last_row, dict) and last_row.get("year") == year and last_row.get("month") == month:
+        last_row["fact"] = fact_total
+        last_row["has_data"] = True if fact_total is not None else last_row.get("has_data")
+
+    ytd = payload.get("ytd")
+    if isinstance(ytd, dict):
+        ytd["total_fact"] = fact_total
+
+    payload["debug"] = {
+        **(payload.get("debug") or {}),
+        "fact_source": "calc_budget_fact_techdir.py",
+        "fact_algorithm": "request_based_fact",
+        "fact_counts": fact_payload.get("counts"),
+    }
     payload = {
         **payload,
         "source": SOURCE_TAG,
@@ -87,13 +126,82 @@ def _month_payload(year: int, month: int) -> dict[str, Any]:
     return payload
 
 
+def _build_td_m3_charts(monthly_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Собрать блок графиков TD-M3 из помесячных данных плитки."""
+    points = [
+        {
+            "month": row.get("month"),
+            "month_name": row.get("month_name"),
+            "year": row.get("year"),
+            "plan": row.get("plan"),
+            "fact": row.get("fact"),
+            "kpi_pct": row.get("kpi_pct"),
+        }
+        for row in monthly_rows
+    ]
+    categories = [row.get("month_name") for row in monthly_rows]
+    plan_values = [row.get("plan") for row in monthly_rows]
+    fact_values = [row.get("fact") for row in monthly_rows]
+
+    return {
+        "TD-M3-C1": {
+            "kpi_id": "TD-M3-C1",
+            "name": "Тренд 12 месяцев: бюджет затрат ТД",
+            "periodicity": "ежемесячно",
+            "chart_type": "multi_line_plan_fact_monthly",
+            "chart_type_label": "Линейный тренд",
+            "formula": "План и факт берутся из помесячной плитки TD-M3.",
+            "series": [{
+                "kpi_id": "TD-M3",
+                "name": "TD-M3",
+                "chart_type": "line_plan_fact_monthly",
+                "chart_type_label": "План/факт по месяцам",
+                "points": points,
+            }],
+        },
+        "TD-M3-C2": {
+            "kpi_id": "TD-M3-C2",
+            "name": "План/факт по месяцам: бюджет затрат ТД",
+            "periodicity": "ежемесячно",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "Столбцы",
+            "formula": "План и факт берутся из помесячной плитки TD-M3.",
+            "series": [{
+                "kpi_id": "TD-M3",
+                "name": "TD-M3",
+                "chart_type": "column_plan_fact_monthly",
+                "chart_type_label": "Столбцы",
+                "categories": categories,
+                "plan": plan_values,
+                "fact": fact_values,
+                "points": points,
+            }],
+        },
+        "TD-M3-C3": {
+            "kpi_id": "TD-M3-C3",
+            "name": "Структура плана/факта TD-M3",
+            "periodicity": "ежемесячно",
+            "chart_type": "heatmap_rag",
+            "chart_type_label": "Heatmap / структура",
+            "formula": "Тепловая карта по помесячным значениям TD-M3.",
+            "series": [{
+                "kpi_id": "TD-M3",
+                "name": "TD-M3",
+                "chart_type": "heatmap_rag",
+                "chart_type_label": "Heatmap / структура",
+                "points": points,
+            }],
+        },
+    }
+
+
 def get_td_m3_ytd(year: int | None = None, month: int | None = None) -> dict | None:
     """TD-M3: бюджет затрат блока техдирекции в пределах лимита (план/факт из оборотов бюджетов)."""
 
     def _runner() -> dict | None:
         try:
             ref_y, ref_m = _normalize_period(year, month)
-            pairs = [(ref_y, ref_m)]
+            pairs = _tile_month_pairs(ref_y, ref_m)
             monthly_rows: list[dict] = []
             ref_row: dict | None = None
 
@@ -122,6 +230,7 @@ def get_td_m3_ytd(year: int | None = None, month: int | None = None) -> dict | N
                 "data_granularity": "monthly",
                 "monthly_data": monthly_rows,
                 "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+                "Графики": _build_td_m3_charts(monthly_rows),
                 "kpi_period": {
                     "type": "last_full_month",
                     "year": ref_y,

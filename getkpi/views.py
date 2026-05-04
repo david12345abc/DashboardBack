@@ -329,7 +329,7 @@ def _is_turnover_style_tile(kpi: dict) -> bool:
     nm = (kpi.get('name') or '').lower()
     if 'текучесть' in nm:
         return True
-    if kid.endswith('-Q5') or kid == 'ZKD-Q2':
+    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2'}:
         return True
     return False
 
@@ -339,6 +339,17 @@ def _rag_dz_lower_better(pct: float | None) -> str:
     if pct is None:
         return 'unknown'
     if pct < 100:
+        return 'green'
+    if pct <= 110:
+        return 'yellow'
+    return 'red'
+
+
+def _rag_td_m4_limit(pct: float | None) -> str:
+    """TD-M4: <= 100 % → зелёный, 100,1–110 % → жёлтый, > 110 % → красный."""
+    if pct is None:
+        return 'unknown'
+    if pct <= 100:
         return 'green'
     if pct <= 110:
         return 'yellow'
@@ -429,8 +440,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         pct = float(pct)
     kid = kpi.get('kpi_id', '')
     if _is_turnover_style_tile(kpi):
-        qd = entry.get('quarterly_data') or []
-        turnover = qd[-1].get('fact_turnover_pct') if qd else None
+        md = entry.get('monthly_data') or []
+        turnover = md[-1].get('fact') if md else None
         color_src = pct if pct is not None else turnover
         color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
     elif kid == 'OD-M3.1':
@@ -440,6 +451,10 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif _is_budget_limit_m3_kpi(kid):
         color = _rag_dz_lower_better(pct)
+    elif kid == 'TD-M3':
+        color = _rag_dz_lower_better(pct)
+    elif kid == 'TD-M4':
+        color = _rag_td_m4_limit(pct)
     else:
         color = _rag_higher_better(pct)
     return pct, color
@@ -751,6 +766,113 @@ def _build_opdir_charts(
     return charts
 
 
+def _build_techdir_charts(
+    tiles_meta: list[dict],
+    entries_by_id: dict[str, dict],
+    tile_values_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    by_id = {k['kpi_id']: k for k in tiles_meta}
+    line_kpis = ['TD-M3', 'TD-M4']
+    display_names = {
+        'TD-M3': 'Бюджет',
+        'TD-M4': 'ФОТ',
+    }
+    series: list[dict] = []
+
+    for kid in line_kpis:
+        kpi_meta = by_id.get(kid, {})
+        entry = entries_by_id.get(kid) or {}
+        monthly = entry.get('monthly_data') or []
+        points = [
+            {
+                'month': row.get('month'),
+                'month_name': row.get('month_name'),
+                'year': row.get('year'),
+                'plan': row.get('plan'),
+                'fact': row.get('fact'),
+            }
+            for row in monthly
+        ]
+        if not points:
+            continue
+        if not any((p.get('plan') is not None or p.get('fact') is not None) for p in points):
+            continue
+
+        series.append({
+            'kpi_id': kid,
+            'name': display_names.get(kid, kpi_meta.get('name', kid)),
+            'chart_type': 'line_plan_fact_monthly',
+            'chart_type_label': f"План/Факт по месяцам: {display_names.get(kid, kpi_meta.get('name', kid))}",
+            'points': points,
+        })
+
+    if not series:
+        return {}
+
+    bar_categories: list[str] = []
+    bar_plan_values: list[float | None] = []
+    bar_fact_values: list[float | None] = []
+    bar_points: list[dict] = []
+    for kid in ['TD-M3', 'TD-M4']:
+        kpi_meta = by_id.get(kid, {})
+        entry = entries_by_id.get(kid) or {}
+        tile_vals = tile_values_by_id.get(kid) or {}
+        point = {
+            'plan': tile_vals.get('plan'),
+            'fact': tile_vals.get('fact'),
+            'kpi_pct': tile_vals.get('kpi_pct'),
+        }
+        if point['plan'] is None and point['fact'] is None:
+            point = entry.get('last_full_month_row') or _pick_monthly_row_for_period(entry.get('monthly_data') or [], ref_y, ref_m) or {}
+        display_name = display_names.get(kid, kpi_meta.get('name', kid))
+        bar_categories.append(display_name)
+        bar_plan_values.append(point.get('plan'))
+        bar_fact_values.append(point.get('fact'))
+        bar_points.append({
+            'kpi_id': kid,
+            'name': display_name,
+            'month': ref_m,
+            'year': ref_y,
+            'plan': point.get('plan'),
+            'fact': point.get('fact'),
+            'kpi_pct': point.get('kpi_pct'),
+        })
+
+    charts = {
+        'TD-C1': {
+            'kpi_id': 'TD-C1',
+            'name': 'Динамика: Бюджет, ФОТ',
+            'periodicity': 'ежемесячно',
+            'chart_type': 'multi_line_plan_fact_monthly',
+            'chart_type_label': 'Линейный тренд по месяцам (план/факт)',
+            'series': series,
+        }
+    }
+
+    if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
+        charts['TD-C2'] = {
+            'kpi_id': 'TD-C2',
+            'name': 'KPI за месяц: Бюджет, ФОТ',
+            'periodicity': 'ежемесячно',
+            'chart_type': 'column_plan_fact_monthly',
+            'chart_type_label': 'Столбцы: план/факт за месяц',
+            'series': [{
+                'kpi_id': 'TD-C2',
+                'name': 'План/факт за месяц',
+                'chart_type': 'column_plan_fact_monthly',
+                'chart_type_label': 'Столбцы',
+                'categories': bar_categories,
+                'plan': bar_plan_values,
+                'fact': bar_fact_values,
+                'points': bar_points,
+            }],
+        }
+
+    return charts
+
+
 def _build_universal_payload(dept: str, all_kpis: list[dict],
                              *, month: int | None = None,
                              year: int | None = None) -> dict:
@@ -805,6 +927,8 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
+        elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1'}:
+            tile['unit'] = 'шт.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
         if period_label:
@@ -826,6 +950,17 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
     if str(dept).strip().lower() == 'операционный директор':
         grafiki.update(_build_opdir_charts(tiles_meta, entries_by_id, ref_y, ref_m))
+    if _is_techdir_department(dept):
+        techdir_tile_values = {
+            item['kpi_id']: {
+                'plan': item.get('plan'),
+                'fact': item.get('fact'),
+                'kpi_pct': item.get('kpi_pct'),
+            }
+            for item in plitki_items
+            if item.get('kpi_id') in {'TD-M3', 'TD-M4'}
+        }
+        grafiki.update(_build_techdir_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m))
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -1215,7 +1350,8 @@ def _build_kpi_entry(
         td = techdir_projects.get_td_q1_ytd()
         if td is not None:
             entry['data_granularity'] = td['data_granularity']
-            entry['quarterly_data'] = td['quarterly_data']
+            entry['monthly_data'] = td.get('monthly_data') or td.get('quarterly_data') or []
+            entry['last_full_month_row'] = td.get('last_full_month_row')
             entry['ytd'] = td['ytd']
             entry['kpi_period'] = td['kpi_period']
             return entry
@@ -1241,48 +1377,11 @@ def _build_kpi_entry(
             return entry
 
     if kpi_id == 'TD-Q2':
-        try:
-            td = techdir_tekuchet.get_td_q2_ytd()
-        except Exception as exc:
-            logger.exception("Не удалось собрать TD-Q2")
-            q_year, q_num = last_full_quarter()
-            q_label = f"Q{q_num} {q_year}"
-            td = {
-                'data_granularity': 'quarterly',
-                'quarterly_data': [{
-                    'quarter': q_num,
-                    'year': q_year,
-                    'label': q_label,
-                    'plan_max_turnover_pct': None,
-                    'fact_turnover_pct': None,
-                    'kpi_pct': None,
-                    'data_complete': False,
-                    'months_with_turnover_data': 0,
-                    'has_data': False,
-                }],
-                'ytd': {
-                    'total_plan': None,
-                    'total_fact': None,
-                    'kpi_pct': None,
-                    'quarters_with_data': 0,
-                    'quarters_total': 1,
-                },
-                'kpi_period': {
-                    'type': 'last_full_quarter',
-                    'year': q_year,
-                    'quarter': q_num,
-                    'label': q_label,
-                    'data_complete': False,
-                },
-                'debug': {
-                    'status': 'error',
-                    'kpi_id': 'TD-Q2',
-                    'error': str(exc),
-                },
-            }
+        td = techdir_tekuchet.get_td_q2_ytd(year=year, month=month)
         if td is not None:
             entry['data_granularity'] = td['data_granularity']
-            entry['quarterly_data'] = td['quarterly_data']
+            entry['monthly_data'] = td['monthly_data']
+            entry['last_full_month_row'] = td.get('last_full_month_row')
             entry['ytd'] = td['ytd']
             entry['kpi_period'] = td['kpi_period']
             return entry
