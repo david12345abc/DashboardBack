@@ -21,7 +21,8 @@ TARGET_ORGANIZATION = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
 TARGET_PROJECT_TYPE_TD_M1 = "ВнешнийЗаказ"
 TARGET_PROJECT_TYPE_TD_Q1 = "РазвитияИУлучшений"
 TARGET_PROJECT_TYPE_OD_Q1 = None
-TARGET_TECHDIR_PODRAZDELENIE = "ТЕХНИЧЕСКИЙ ДИРЕКТОР"
+# Проекты техдира: вместо фильтра по подразделению — по ФИО в полях 1С (data_1c).
+TECHDIR_PROJECT_OWNER = "Улановский Константин Владимирович"
 PRODUCTION_DEPUTY_PROJECT_DEPARTMENTS = {
     "Производственный цех №1",
     "Производственный цех №2",
@@ -31,7 +32,7 @@ TIMEOUT = 60
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CACHE_DIR = cache_manager.CACHE_DIR
 CACHE_PATH = CACHE_DIR / "techdir_projects_snapshot.json"
-CACHE_VERSION = 8
+CACHE_VERSION = 10
 OD_OVERDUE_MILESTONES_SCHEMA = "zero_duration_milestones_v1"
 _CREDENTIAL_FILES = (
     "API для dashboard.py",
@@ -347,14 +348,34 @@ def _overdue_milestone_rows(
     return rows
 
 
-def _is_target_project(data_1c: dict[str, Any], project_type: str | None = None) -> bool:
+def _normalize_person_label(value: Any) -> str:
+    return " ".join(str(value or "").replace("ё", "е").strip().lower().split())
+
+
+def _snapshot_row_as_data_1c(project: dict[str, Any]) -> dict[str, Any]:
+    """Поля 1С из строки снимка — та же схема, что в details['data_1c'] при первичной выборке."""
+    return {
+        "organizatsiya": project.get("organizatsiya"),
+        "tip_proekta": project.get("tip_proekta"),
+        "kurator": project.get("kurator"),
+        "rukovoditel": project.get("project_manager"),
+    }
+
+
+def _is_target_project(data_1c: dict[str, Any], _project_type: str | None = None) -> bool:
+    """Проект попадает в снимок техдира: организация + тип + владелец по правилам TD-M1 / TD-Q1."""
     if data_1c.get("organizatsiya") != TARGET_ORGANIZATION:
         return False
-    if data_1c.get("podrazdelenie") != TARGET_TECHDIR_PODRAZDELENIE:
-        return False
-    if project_type is None:
-        return True
-    return data_1c.get("tip_proekta") == project_type
+    tip = str(data_1c.get("tip_proekta") or "").strip()
+    owner = _normalize_person_label(TECHDIR_PROJECT_OWNER)
+    if tip == TARGET_PROJECT_TYPE_TD_M1:
+        return _normalize_person_label(data_1c.get("kurator")) == owner
+    if tip == TARGET_PROJECT_TYPE_TD_Q1:
+        return (
+            _normalize_person_label(data_1c.get("rukovoditel")) == owner
+            or _normalize_person_label(data_1c.get("kurator")) == owner
+        )
+    return False
 
 
 def _project_summary(
@@ -370,6 +391,7 @@ def _project_summary(
         "file_id": summary_item.get("id"),
         "project_name": project_meta.get("name") or summary_item.get("original_name"),
         "project_manager": data_1c.get("rukovoditel"),
+        "kurator": data_1c.get("kurator"),
         "project_code": data_1c.get("nomer_proekta"),
         "organizatsiya": data_1c.get("organizatsiya"),
         "tip_proekta": data_1c.get("tip_proekta"),
@@ -443,6 +465,12 @@ def _compute_projects_snapshot() -> dict:
         "projects": target_projects,
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
+            "techdir_project_owner": TECHDIR_PROJECT_OWNER,
+            "filter_td_m1": f"tip_proekta={TARGET_PROJECT_TYPE_TD_M1!r}, kurator==owner",
+            "filter_td_q1": (
+                f"tip_proekta={TARGET_PROJECT_TYPE_TD_Q1!r}, "
+                "rukovoditel==owner OR kurator==owner"
+            ),
             "target_projects": target_projects,
         },
     }
@@ -472,6 +500,11 @@ def _projects_for_filter(
             project
             for project in projects
             if project.get("podrazdelenie") in departments
+        ]
+    elif project_type in {TARGET_PROJECT_TYPE_TD_M1, TARGET_PROJECT_TYPE_TD_Q1}:
+        # Таблицы TD-T-* и помесячные TD-M1 / TD-Q1: те же правила, что при сборке снимка.
+        projects = [
+            p for p in projects if _is_target_project(_snapshot_row_as_data_1c(p))
         ]
     return projects
 
@@ -822,6 +855,15 @@ def _build_deviation_table(
         TARGET_PROJECT_TYPE_TD_M1: "Внешний Заказ",
         TARGET_PROJECT_TYPE_TD_Q1: "Улучшение и развитие",
     }.get(project_type, project_type)
+    selection_note = (
+        f"Отбор: организация «{TARGET_ORGANIZATION}», тип «{project_type_label}», "
+        f"куратор «{TECHDIR_PROJECT_OWNER}»."
+        if project_type == TARGET_PROJECT_TYPE_TD_M1
+        else (
+            f"Отбор: организация «{TARGET_ORGANIZATION}», тип «{project_type_label}», "
+            f"руководитель или куратор «{TECHDIR_PROJECT_OWNER}»."
+        )
+    )
     target_projects = _projects_for_type(project_type)
     month_end = _month_start_end(ref_y, ref_m)[1]
     as_of_date = min(month_end, date.today())
@@ -870,7 +912,8 @@ def _build_deviation_table(
         "periodicity": "ежемесячно",
         "description": (
             "Проекты выбранного периода, у которых есть отклонения по вехам. "
-            "Одна строка = один проект."
+            "Одна строка = один проект. "
+            f"{selection_note}"
         ),
         "period": {
             "year": ref_y,

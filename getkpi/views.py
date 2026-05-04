@@ -37,6 +37,7 @@ from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komd
 from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter
 from .models import KpiDefinition
+from .devdir import projects as devdir_projects
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
 _structure_cache: dict | None = None
@@ -272,6 +273,14 @@ def _is_techdir_department(dept: str | None) -> bool:
     return (dept or '').strip().lower() == 'технический директор'
 
 
+def _is_devdir_department(dept: str | None) -> bool:
+    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
+    return normalized in {
+        'директор по развитию',
+        'директор по развитию / руководитель службы развития',
+    }
+
+
 def _is_prod_deputy_department(dept: str | None) -> bool:
     normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
     normalized = re.sub(r'\s*-\s*', '-', normalized)
@@ -449,6 +458,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_budget_fact_div_plan(pct)
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
+    elif kid == 'RD-M2-1':
+        color = _rag_td_m4_limit(pct)
     elif _is_budget_limit_m3_kpi(kid):
         color = _rag_dz_lower_better(pct)
     elif kid == 'TD-M3':
@@ -1375,6 +1386,39 @@ def _build_kpi_entry(
             entry['ytd'] = td['ytd']
             entry['kpi_period'] = td['kpi_period']
             return entry
+
+    if kpi_id == 'RD-M2-1':
+        dev = devdir_projects.get_rd_m2_1_ytd(year=year, month=month)
+        if dev is not None:
+            entry['data_granularity'] = dev.get('data_granularity', 'monthly')
+            entry['monthly_data'] = dev.get('monthly_data') or []
+            entry['last_full_month_row'] = dev.get('last_full_month_row')
+            entry['ytd'] = dev.get('ytd') or {}
+            entry['kpi_period'] = dev.get('kpi_period')
+            entry['debug'] = dev.get('debug')
+            return entry
+        today = date.today()
+        ref_y = int(year) if year is not None else today.year
+        ref_m = int(month) if month is not None else today.month
+        ref_m = max(1, min(12, ref_m))
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = []
+        entry['last_full_month_row'] = None
+        entry['ytd'] = {
+            'total_plan': None,
+            'total_fact': None,
+            'kpi_pct': None,
+            'months_with_data': 0,
+            'months_total': 0,
+            'values_unit': 'шт.',
+        }
+        entry['kpi_period'] = {
+            'type': 'last_full_month',
+            'year': ref_y,
+            'month': ref_m,
+            'month_name': MONTH_NAMES[ref_m],
+        }
+        return entry
 
     if kpi_id == 'TD-Q2':
         td = techdir_tekuchet.get_td_q2_ytd(year=year, month=month)
