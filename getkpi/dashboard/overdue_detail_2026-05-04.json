@@ -1,8 +1,8 @@
 {
-  "na_datu": "2026-02-28",
+  "na_datu": "2026-05-04",
   "cache_date": "2026-05-04",
   "dept_alias_source": "commercial_department_aliases_v2",
-  "total_overdue": 223854777.54,
+  "total_overdue": 148811419.96,
   "rows": [
     {
       "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
@@ -17,19 +17,19 @@
       "order_date": "2024-12-12",
       "amount": 50725837.1,
       "dz_total": 50725837.1,
-      "days_overdue": 403,
+      "days_overdue": 468,
       "installments_count": 2,
       "installments": [
         {
           "planned_date": "2025-01-21",
           "amount": 47548125.63,
-          "days_overdue": 403,
+          "days_overdue": 468,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2025-04-14",
           "amount": 3177711.47,
-          "days_overdue": 320,
+          "days_overdue": 385,
           "bucket": "180+ дн."
         }
       ],
@@ -49,13 +49,13 @@
       "order_date": "2025-01-17",
       "amount": 43500000.0,
       "dz_total": 43500000.0,
-      "days_overdue": 296,
+      "days_overdue": 361,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-05-08",
           "amount": 43500000.0,
-          "days_overdue": 296,
+          "days_overdue": 361,
           "bucket": "180+ дн."
         }
       ],
@@ -75,25 +75,25 @@
       "order_date": "2024-08-02",
       "amount": 42000000.0,
       "dz_total": 42000000.0,
-      "days_overdue": 398,
+      "days_overdue": 463,
       "installments_count": 3,
       "installments": [
         {
           "planned_date": "2025-01-26",
           "amount": 10500000.0,
-          "days_overdue": 398,
+          "days_overdue": 463,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2025-03-02",
           "amount": 12600000.0,
-          "days_overdue": 363,
+          "days_overdue": 428,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2025-03-22",
           "amount": 18900000.0,
-          "days_overdue": 343,
+          "days_overdue": 408,
           "bucket": "180+ дн."
         }
       ],
@@ -101,192 +101,30 @@
       "action": ""
     },
     {
-      "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
-      "dept_name": "Отдел БМИ",
-      "source_dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
       "liquidated_dept_name": "",
-      "partner_key": "0f403db4-2e2e-11e6-8118-001e67112509",
-      "partner_name": "УРАЛЭЛЕКТРОМЕДЬ, АО",
-      "counterparty": "УРАЛЭЛЕКТРОМЕДЬ, АО",
-      "order_key": "e701f6f1-b401-11f0-9729-6cb31113810e",
-      "order_num": "НП00-001787",
-      "order_date": "2025-10-28",
-      "amount": 26772241.29,
-      "dz_total": 33189506.56,
-      "days_overdue": 6,
-      "installments_count": 1,
-      "installments": [
-        {
-          "planned_date": "2026-02-22",
-          "amount": 26772241.29,
-          "days_overdue": 6,
-          "bucket": "1-29 дн."
-        }
-      ],
-      "reason": "ПроблемыУКлиентаСФинансированием",
-      "action": "НаправитьОфициальноеПисьмо"
-    },
-    {
-      "dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
-      "dept_name": "Отдел ВЭД",
-      "source_dept_key": "49480c10-e401-11e8-8283-ac1f6b05524d",
-      "liquidated_dept_name": "",
-      "partner_key": "fc9cc029-d3dd-11ef-95ee-6cb31113810e",
-      "partner_name": "ТОО «Ardis Almaty»",
-      "counterparty": "ТОО «Ardis Almaty»",
-      "order_key": "c5382904-e76e-11ef-960a-6cb31113810e",
-      "order_num": "НП00-000161",
-      "order_date": "2025-02-10",
-      "amount": 21400000.0,
-      "dz_total": 21400000.0,
-      "days_overdue": 190,
-      "installments_count": 2,
-      "installments": [
-        {
-          "planned_date": "2025-08-22",
-          "amount": 10700000.0,
-          "days_overdue": 190,
-          "bucket": "180+ дн."
-        },
-        {
-          "planned_date": "2025-09-30",
-          "amount": 10700000.0,
-          "days_overdue": 151,
-          "bucket": "60-179 дн."
-        }
-      ],
-      "reason": "",
-      "action": ""
-    },
-    {
-      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "dept_name": "Отдел ПАО Газпром",
-      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "liquidated_dept_name": "",
-      "partner_key": "19b132f6-2d4f-11e2-84ab-001e67112509",
-      "partner_name": "ЗАВОД НЕФТЕГАЗОБОРУДОВАНИЕ ООО",
-      "counterparty": "ЗАВОД НЕФТЕГАЗОБОРУДОВАНИЕ ООО",
-      "order_key": "45324d1c-62f9-11f0-96b4-6cb31113810e",
-      "order_num": "НП00-001097",
-      "order_date": "2025-07-17",
-      "amount": 9865785.0,
-      "dz_total": 9865785.0,
-      "days_overdue": 47,
-      "installments_count": 1,
-      "installments": [
-        {
-          "planned_date": "2026-01-12",
-          "amount": 9865785.0,
-          "days_overdue": 47,
-          "bucket": "30-59 дн."
-        }
-      ],
-      "reason": "",
-      "action": ""
-    },
-    {
-      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "dept_name": "Отдел ПАО Газпром",
-      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "liquidated_dept_name": "",
-      "partner_key": "52158902-e51a-11e1-b078-001e67112509",
-      "partner_name": "Газпром комплектация ООО",
-      "counterparty": "Газпром комплектация ООО",
-      "order_key": "99ca2384-84b0-11f0-96e4-6cb31113810c",
-      "order_num": "НП00-001370",
-      "order_date": "2025-08-29",
-      "amount": 9208886.51,
-      "dz_total": 9208886.51,
-      "days_overdue": 1,
-      "installments_count": 1,
-      "installments": [
-        {
-          "planned_date": "2026-02-27",
-          "amount": 9208886.51,
-          "days_overdue": 1,
-          "bucket": "1-29 дн."
-        }
-      ],
-      "reason": "ПроблемыУКлиентаСФинансированием",
-      "action": "СвязатьсяСЛПР"
-    },
-    {
-      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "dept_name": "Отдел ПАО Газпром",
-      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "liquidated_dept_name": "",
-      "partner_key": "00f26d25-f9b4-11ef-9623-6cb31113810c",
-      "partner_name": "ЧЕРНОМОРТРАНСГАЗ",
-      "counterparty": "ЧЕРНОМОРТРАНСГАЗ",
-      "order_key": "d02596bd-9885-11f0-9703-6cb31113810e",
-      "order_num": "НП00-001550",
-      "order_date": "2025-09-23",
-      "amount": 5167500.0,
-      "dz_total": 5167500.0,
-      "days_overdue": 39,
-      "installments_count": 1,
-      "installments": [
-        {
-          "planned_date": "2026-01-20",
-          "amount": 5167500.0,
-          "days_overdue": 39,
-          "bucket": "30-59 дн."
-        }
-      ],
-      "reason": "СпорПоКачествуКомплектации",
-      "action": "НаправитьОфициальноеПисьмо"
-    },
-    {
-      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "dept_name": "Отдел ПАО Газпром",
-      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "liquidated_dept_name": "",
-      "partner_key": "3b846250-d9be-11e3-abea-001e67112509",
-      "partner_name": "ГСП РЕМОНТ",
-      "counterparty": "ГСП РЕМОНТ",
-      "order_key": "068238cb-fff0-11ef-962b-6cb31113810e",
-      "order_num": "НП00-000352",
-      "order_date": "2025-03-13",
-      "amount": 4109041.86,
-      "dz_total": 4109041.86,
-      "days_overdue": 74,
+      "partner_key": "24d57e30-767c-11f0-96d0-6cb31113810e",
+      "partner_name": "УПТС АО",
+      "counterparty": "УПТС АО",
+      "order_key": "eaf630a4-34c5-11f1-97de-6cb31113810e",
+      "order_num": "АЛ00-001953",
+      "order_date": "2025-12-16",
+      "amount": 2140648.34,
+      "dz_total": 2140648.34,
+      "days_overdue": 139,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-12-16",
-          "amount": 4109041.86,
-          "days_overdue": 74,
+          "amount": 2140648.34,
+          "days_overdue": 139,
           "bucket": "60-179 дн."
         }
       ],
-      "reason": "",
-      "action": ""
-    },
-    {
-      "dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "dept_name": "Отдел ПАО Газпром",
-      "source_dept_key": "bd7b5184-9f9c-11e4-80da-001e67112509",
-      "liquidated_dept_name": "",
-      "partner_key": "19b132f6-2d4f-11e2-84ab-001e67112509",
-      "partner_name": "ЗАВОД НЕФТЕГАЗОБОРУДОВАНИЕ ООО",
-      "counterparty": "ЗАВОД НЕФТЕГАЗОБОРУДОВАНИЕ ООО",
-      "order_key": "9dc58fab-ab35-11f0-971d-6cb31113810e",
-      "order_num": "НП00-001716",
-      "order_date": "2025-10-17",
-      "amount": 1955768.96,
-      "dz_total": 20934002.83,
-      "days_overdue": 127,
-      "installments_count": 1,
-      "installments": [
-        {
-          "planned_date": "2025-10-24",
-          "amount": 1955768.96,
-          "days_overdue": 127,
-          "bucket": "60-179 дн."
-        }
-      ],
-      "reason": "",
-      "action": ""
+      "reason": "ПроблемыУКлиентаСФинансированием",
+      "action": "СогласоватьГрафикПогашения"
     },
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
@@ -301,13 +139,13 @@
       "order_date": "2025-03-21",
       "amount": 1489233.12,
       "dz_total": 1489233.12,
-      "days_overdue": 257,
+      "days_overdue": 322,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-06-16",
           "amount": 1489233.12,
-          "days_overdue": 257,
+          "days_overdue": 322,
           "bucket": "180+ дн."
         }
       ],
@@ -327,14 +165,40 @@
       "order_date": "2025-07-28",
       "amount": 1319346.24,
       "dz_total": 1319346.24,
-      "days_overdue": 64,
+      "days_overdue": 129,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-12-26",
           "amount": 1319346.24,
-          "days_overdue": 64,
+          "days_overdue": 129,
           "bucket": "60-179 дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "dept_name": "Отдел эталонного оборудования",
+      "source_dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "liquidated_dept_name": "",
+      "partner_key": "b07700dc-8489-11e2-a064-001e67112509",
+      "partner_name": "ВОЛОГОДСКИЙ ЦСМ ФБУ",
+      "counterparty": "ВОЛОГОДСКИЙ ЦСМ ФБУ",
+      "order_key": "7552f10f-1c83-11f1-97bd-6cb31113810c",
+      "order_num": "АЛ00-000311",
+      "order_date": "2026-03-05",
+      "amount": 805000.0,
+      "dz_total": 805000.0,
+      "days_overdue": 4,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-04-30",
+          "amount": 805000.0,
+          "days_overdue": 4,
+          "bucket": "1-29 дн."
         }
       ],
       "reason": "",
@@ -353,37 +217,37 @@
       "order_date": "2022-09-16",
       "amount": 789320.0,
       "dz_total": 789320.0,
-      "days_overdue": 1240,
+      "days_overdue": 1305,
       "installments_count": 5,
       "installments": [
         {
           "planned_date": "2022-10-07",
           "amount": 25694.0,
-          "days_overdue": 1240,
+          "days_overdue": 1305,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-10-21",
           "amount": 23310.0,
-          "days_overdue": 1226,
+          "days_overdue": 1291,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-11-07",
           "amount": 62052.0,
-          "days_overdue": 1209,
+          "days_overdue": 1274,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2023-01-13",
           "amount": 314400.0,
-          "days_overdue": 1142,
+          "days_overdue": 1207,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2023-01-20",
           "amount": 363864.0,
-          "days_overdue": 1135,
+          "days_overdue": 1200,
           "bucket": "180+ дн."
         }
       ],
@@ -403,31 +267,31 @@
       "order_date": "2022-08-16",
       "amount": 631516.0,
       "dz_total": 631516.0,
-      "days_overdue": 1254,
+      "days_overdue": 1319,
       "installments_count": 4,
       "installments": [
         {
           "planned_date": "2022-09-23",
           "amount": 314400.0,
-          "days_overdue": 1254,
+          "days_overdue": 1319,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-11-07",
           "amount": 3196.0,
-          "days_overdue": 1209,
+          "days_overdue": 1274,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2023-01-13",
           "amount": 158268.0,
-          "days_overdue": 1142,
+          "days_overdue": 1207,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2023-01-20",
           "amount": 155652.0,
-          "days_overdue": 1135,
+          "days_overdue": 1200,
           "bucket": "180+ дн."
         }
       ],
@@ -447,13 +311,13 @@
       "order_date": "2025-03-21",
       "amount": 479920.12,
       "dz_total": 479920.12,
-      "days_overdue": 257,
+      "days_overdue": 322,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-06-16",
           "amount": 479920.12,
-          "days_overdue": 257,
+          "days_overdue": 322,
           "bucket": "180+ дн."
         }
       ],
@@ -473,13 +337,13 @@
       "order_date": "2025-03-21",
       "amount": 479920.12,
       "dz_total": 479920.12,
-      "days_overdue": 257,
+      "days_overdue": 322,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-06-16",
           "amount": 479920.12,
-          "days_overdue": 257,
+          "days_overdue": 322,
           "bucket": "180+ дн."
         }
       ],
@@ -499,13 +363,13 @@
       "order_date": "2020-01-28",
       "amount": 464630.0,
       "dz_total": 464630.0,
-      "days_overdue": 2189,
+      "days_overdue": 2254,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2020-03-02",
           "amount": 464630.0,
-          "days_overdue": 2189,
+          "days_overdue": 2254,
           "bucket": "180+ дн."
         }
       ],
@@ -525,31 +389,31 @@
       "order_date": "2022-10-05",
       "amount": 445490.0,
       "dz_total": 445490.0,
-      "days_overdue": 1209,
+      "days_overdue": 1274,
       "installments_count": 4,
       "installments": [
         {
           "planned_date": "2022-11-07",
           "amount": 20964.0,
-          "days_overdue": 1209,
+          "days_overdue": 1274,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-11-21",
           "amount": 51768.0,
-          "days_overdue": 1195,
+          "days_overdue": 1260,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-12-02",
           "amount": 122306.0,
-          "days_overdue": 1184,
+          "days_overdue": 1249,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-12-16",
           "amount": 250452.0,
-          "days_overdue": 1170,
+          "days_overdue": 1235,
           "bucket": "180+ дн."
         }
       ],
@@ -569,25 +433,25 @@
       "order_date": "2023-03-16",
       "amount": 394738.0,
       "dz_total": 394738.0,
-      "days_overdue": 530,
+      "days_overdue": 595,
       "installments_count": 3,
       "installments": [
         {
           "planned_date": "2024-09-16",
           "amount": 235664.0,
-          "days_overdue": 530,
+          "days_overdue": 595,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2024-12-27",
           "amount": 74984.0,
-          "days_overdue": 428,
+          "days_overdue": 493,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2024-12-29",
           "amount": 84090.0,
-          "days_overdue": 426,
+          "days_overdue": 491,
           "bucket": "180+ дн."
         }
       ],
@@ -607,25 +471,25 @@
       "order_date": "2022-08-03",
       "amount": 322365.0,
       "dz_total": 322365.0,
-      "days_overdue": 1209,
+      "days_overdue": 1274,
       "installments_count": 3,
       "installments": [
         {
           "planned_date": "2022-11-07",
           "amount": 77965.0,
-          "days_overdue": 1209,
+          "days_overdue": 1274,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-12-16",
           "amount": 157200.0,
-          "days_overdue": 1170,
+          "days_overdue": 1235,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2023-01-13",
           "amount": 87200.0,
-          "days_overdue": 1142,
+          "days_overdue": 1207,
           "bucket": "180+ дн."
         }
       ],
@@ -645,20 +509,46 @@
       "order_date": "2022-08-19",
       "amount": 269154.2,
       "dz_total": 269154.2,
-      "days_overdue": 1240,
+      "days_overdue": 1305,
       "installments_count": 2,
       "installments": [
         {
           "planned_date": "2022-10-07",
           "amount": 159114.2,
-          "days_overdue": 1240,
+          "days_overdue": 1305,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-12-16",
           "amount": 110040.0,
-          "days_overdue": 1170,
+          "days_overdue": 1235,
           "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "dept_name": "Отдел эталонного оборудования",
+      "source_dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "liquidated_dept_name": "",
+      "partner_key": "d50f6bdb-6108-11e1-ae59-001e67112509",
+      "partner_name": "ПРИОКСКИЙ ЦСМ ФБУ",
+      "counterparty": "ПРИОКСКИЙ ЦСМ ФБУ",
+      "order_key": "16330b35-2f51-11f1-97d7-6cb31113810e",
+      "order_num": "НП00-000442",
+      "order_date": "2026-04-08",
+      "amount": 263599.0,
+      "dz_total": 263599.0,
+      "days_overdue": 4,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-04-30",
+          "amount": 263599.0,
+          "days_overdue": 4,
+          "bucket": "1-29 дн."
         }
       ],
       "reason": "",
@@ -677,13 +567,13 @@
       "order_date": "2025-03-21",
       "amount": 225174.62,
       "dz_total": 225174.62,
-      "days_overdue": 257,
+      "days_overdue": 322,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-06-16",
           "amount": 225174.62,
-          "days_overdue": 257,
+          "days_overdue": 322,
           "bucket": "180+ дн."
         }
       ],
@@ -703,14 +593,40 @@
       "order_date": "2020-02-07",
       "amount": 210600.0,
       "dz_total": 210600.0,
-      "days_overdue": 2181,
+      "days_overdue": 2246,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2020-03-10",
           "amount": 210600.0,
-          "days_overdue": 2181,
+          "days_overdue": 2246,
           "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "dept_name": "Отдел эталонного оборудования",
+      "source_dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "liquidated_dept_name": "",
+      "partner_key": "d50f6bdb-6108-11e1-ae59-001e67112509",
+      "partner_name": "ПРИОКСКИЙ ЦСМ ФБУ",
+      "counterparty": "ПРИОКСКИЙ ЦСМ ФБУ",
+      "order_key": "35a564af-2f5a-11f1-97d7-6cb31113810e",
+      "order_num": "НП00-000443",
+      "order_date": "2026-04-08",
+      "amount": 209006.0,
+      "dz_total": 209006.0,
+      "days_overdue": 4,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-04-30",
+          "amount": 209006.0,
+          "days_overdue": 4,
+          "bucket": "1-29 дн."
         }
       ],
       "reason": "",
@@ -729,13 +645,13 @@
       "order_date": "2020-07-13",
       "amount": 167252.37,
       "dz_total": 167252.37,
-      "days_overdue": 2014,
+      "days_overdue": 2079,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2020-08-24",
           "amount": 167252.37,
-          "days_overdue": 2014,
+          "days_overdue": 2079,
           "bucket": "180+ дн."
         }
       ],
@@ -755,13 +671,13 @@
       "order_date": "2020-03-26",
       "amount": 142400.0,
       "dz_total": 142400.0,
-      "days_overdue": 2122,
+      "days_overdue": 2187,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2020-05-08",
           "amount": 142400.0,
-          "days_overdue": 2122,
+          "days_overdue": 2187,
           "bucket": "180+ дн."
         }
       ],
@@ -781,13 +697,13 @@
       "order_date": "2025-04-28",
       "amount": 134835.0,
       "dz_total": 134835.0,
-      "days_overdue": 246,
+      "days_overdue": 311,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-06-27",
           "amount": 134835.0,
-          "days_overdue": 246,
+          "days_overdue": 311,
           "bucket": "180+ дн."
         }
       ],
@@ -807,13 +723,13 @@
       "order_date": "2023-03-16",
       "amount": 130000.0,
       "dz_total": 130000.0,
-      "days_overdue": 424,
+      "days_overdue": 489,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2024-12-31",
           "amount": 130000.0,
-          "days_overdue": 424,
+          "days_overdue": 489,
           "bucket": "180+ дн."
         }
       ],
@@ -833,46 +749,20 @@
       "order_date": "2022-09-16",
       "amount": 123022.0,
       "dz_total": 123022.0,
-      "days_overdue": 1226,
+      "days_overdue": 1291,
       "installments_count": 2,
       "installments": [
         {
           "planned_date": "2022-10-21",
           "amount": 73428.0,
-          "days_overdue": 1226,
+          "days_overdue": 1291,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-12-16",
           "amount": 49594.0,
-          "days_overdue": 1170,
+          "days_overdue": 1235,
           "bucket": "180+ дн."
-        }
-      ],
-      "reason": "",
-      "action": ""
-    },
-    {
-      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
-      "dept_name": "Отдел дилерских продаж",
-      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
-      "liquidated_dept_name": "",
-      "partner_key": "956b4629-b6ca-11e2-931a-001e67112509",
-      "partner_name": "КИПЭнергоГаз, ООО",
-      "counterparty": "КИПЭнергоГаз, ООО",
-      "order_key": "b448ef0f-0027-11f1-9792-6cb31113810c",
-      "order_num": "НП00-000138",
-      "order_date": "2026-02-02",
-      "amount": 113538.5,
-      "dz_total": 113538.5,
-      "days_overdue": 1,
-      "installments_count": 1,
-      "installments": [
-        {
-          "planned_date": "2026-02-27",
-          "amount": 113538.5,
-          "days_overdue": 1,
-          "bucket": "1-29 дн."
         }
       ],
       "reason": "",
@@ -891,13 +781,13 @@
       "order_date": "2022-10-28",
       "amount": 108178.0,
       "dz_total": 108178.0,
-      "days_overdue": 1163,
+      "days_overdue": 1228,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2022-12-23",
           "amount": 108178.0,
-          "days_overdue": 1163,
+          "days_overdue": 1228,
           "bucket": "180+ дн."
         }
       ],
@@ -917,14 +807,40 @@
       "order_date": "2020-03-04",
       "amount": 105300.0,
       "dz_total": 105300.0,
-      "days_overdue": 2156,
+      "days_overdue": 2221,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2020-04-04",
           "amount": 105300.0,
-          "days_overdue": 2156,
+          "days_overdue": 2221,
           "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "dept_name": "Отдел эталонного оборудования",
+      "source_dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "liquidated_dept_name": "",
+      "partner_key": "4b2e3252-14ef-11e5-80f9-001e67112509",
+      "partner_name": "НИТИ ИМ. А. П. АЛЕКСАНДРОВА ФГУП",
+      "counterparty": "НИТИ ИМ. А. П. АЛЕКСАНДРОВА ФГУП",
+      "order_key": "3b9059a0-bf04-11f0-9738-6cb31113810e",
+      "order_num": "НП00-001860",
+      "order_date": "2025-11-11",
+      "amount": 82245.1,
+      "dz_total": 82245.1,
+      "days_overdue": 4,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-04-30",
+          "amount": 82245.1,
+          "days_overdue": 4,
+          "bucket": "1-29 дн."
         }
       ],
       "reason": "",
@@ -943,13 +859,13 @@
       "order_date": "2022-11-29",
       "amount": 77481.0,
       "dz_total": 77481.0,
-      "days_overdue": 1142,
+      "days_overdue": 1207,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2023-01-13",
           "amount": 77481.0,
-          "days_overdue": 1142,
+          "days_overdue": 1207,
           "bucket": "180+ дн."
         }
       ],
@@ -969,13 +885,13 @@
       "order_date": "2025-05-06",
       "amount": 73400.0,
       "dz_total": 73400.0,
-      "days_overdue": 268,
+      "days_overdue": 333,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-06-05",
           "amount": 73400.0,
-          "days_overdue": 268,
+          "days_overdue": 333,
           "bucket": "180+ дн."
         }
       ],
@@ -995,175 +911,175 @@
       "order_date": "2012-06-05",
       "amount": 63920.0,
       "dz_total": -21290.0,
-      "days_overdue": 2950,
+      "days_overdue": 3015,
       "installments_count": 28,
       "installments": [
         {
           "planned_date": "2018-01-31",
           "amount": 8180.0,
-          "days_overdue": 2950,
+          "days_overdue": 3015,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-02-28",
           "amount": 2590.0,
-          "days_overdue": 2922,
+          "days_overdue": 2987,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-03-31",
           "amount": 4100.0,
-          "days_overdue": 2891,
+          "days_overdue": 2956,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-04-30",
           "amount": 3440.0,
-          "days_overdue": 2861,
+          "days_overdue": 2926,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-05-21",
           "amount": 2050.0,
-          "days_overdue": 2840,
+          "days_overdue": 2905,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-05-31",
           "amount": 1390.0,
-          "days_overdue": 2830,
+          "days_overdue": 2895,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-07-20",
           "amount": 6220.0,
-          "days_overdue": 2780,
+          "days_overdue": 2845,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-07-31",
           "amount": 4170.0,
-          "days_overdue": 2769,
+          "days_overdue": 2834,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-09-14",
           "amount": 1390.0,
-          "days_overdue": 2724,
+          "days_overdue": 2789,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-09-20",
           "amount": 2590.0,
-          "days_overdue": 2718,
+          "days_overdue": 2783,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-09-30",
           "amount": 17840.0,
-          "days_overdue": 2708,
+          "days_overdue": 2773,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-10-31",
           "amount": 26790.0,
-          "days_overdue": 2677,
+          "days_overdue": 2742,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-11-30",
           "amount": 23730.0,
-          "days_overdue": 2647,
+          "days_overdue": 2712,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-12-31",
           "amount": 33410.0,
-          "days_overdue": 2616,
+          "days_overdue": 2681,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-01-29",
           "amount": 2050.0,
-          "days_overdue": 2587,
+          "days_overdue": 2652,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-01-31",
           "amount": 44840.0,
-          "days_overdue": 2585,
+          "days_overdue": 2650,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-02-22",
           "amount": 2050.0,
-          "days_overdue": 2563,
+          "days_overdue": 2628,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-02-28",
           "amount": 20570.0,
-          "days_overdue": 2557,
+          "days_overdue": 2622,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-03-15",
           "amount": -186830.0,
-          "days_overdue": 2542,
+          "days_overdue": 2607,
           "bucket": ""
         },
         {
           "planned_date": "2019-03-21",
           "amount": 4100.0,
-          "days_overdue": 2536,
+          "days_overdue": 2601,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-03-31",
           "amount": -19610.0,
-          "days_overdue": 2526,
+          "days_overdue": 2591,
           "bucket": ""
         },
         {
           "planned_date": "2019-04-06",
           "amount": -5060.0,
-          "days_overdue": 2520,
+          "days_overdue": 2585,
           "bucket": ""
         },
         {
           "planned_date": "2019-04-30",
           "amount": 5490.0,
-          "days_overdue": 2496,
+          "days_overdue": 2561,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-05-22",
           "amount": -5490.0,
-          "days_overdue": 2474,
+          "days_overdue": 2539,
           "bucket": ""
         },
         {
           "planned_date": "2019-05-31",
           "amount": 18470.0,
-          "days_overdue": 2465,
+          "days_overdue": 2530,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-06-19",
           "amount": -18470.0,
-          "days_overdue": 2446,
+          "days_overdue": 2511,
           "bucket": ""
         },
         {
           "planned_date": "2019-06-30",
           "amount": 62530.0,
-          "days_overdue": 2435,
+          "days_overdue": 2500,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-07-20",
           "amount": 1390.0,
-          "days_overdue": 2415,
+          "days_overdue": 2480,
           "bucket": "180+ дн."
         }
       ],
@@ -1183,13 +1099,13 @@
       "order_date": "2018-05-15",
       "amount": 56640.0,
       "dz_total": 0.0,
-      "days_overdue": 2775,
+      "days_overdue": 2840,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2018-07-25",
           "amount": 56640.0,
-          "days_overdue": 2775,
+          "days_overdue": 2840,
           "bucket": "180+ дн."
         }
       ],
@@ -1209,13 +1125,13 @@
       "order_date": "2022-12-16",
       "amount": 50835.0,
       "dz_total": 50835.0,
-      "days_overdue": 1142,
+      "days_overdue": 1207,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2023-01-13",
           "amount": 50835.0,
-          "days_overdue": 1142,
+          "days_overdue": 1207,
           "bucket": "180+ дн."
         }
       ],
@@ -1235,14 +1151,40 @@
       "order_date": "2022-07-07",
       "amount": 49255.8,
       "dz_total": 49255.8,
-      "days_overdue": 1247,
+      "days_overdue": 1312,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2022-09-30",
           "amount": 49255.8,
-          "days_overdue": 1247,
+          "days_overdue": 1312,
           "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "dept_name": "Отдел эталонного оборудования",
+      "source_dept_key": "34497ef7-810f-11e4-80d6-001e67112509",
+      "liquidated_dept_name": "",
+      "partner_key": "4b2e3252-14ef-11e5-80f9-001e67112509",
+      "partner_name": "НИТИ ИМ. А. П. АЛЕКСАНДРОВА ФГУП",
+      "counterparty": "НИТИ ИМ. А. П. АЛЕКСАНДРОВА ФГУП",
+      "order_key": "1664addc-245a-11f1-97c9-6cb31113810e",
+      "order_num": "НП00-000355",
+      "order_date": "2026-03-20",
+      "amount": 48906.2,
+      "dz_total": 48906.2,
+      "days_overdue": 4,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-04-30",
+          "amount": 48906.2,
+          "days_overdue": 4,
+          "bucket": "1-29 дн."
         }
       ],
       "reason": "",
@@ -1261,25 +1203,25 @@
       "order_date": "2022-09-16",
       "amount": 47768.0,
       "dz_total": 47768.0,
-      "days_overdue": 1240,
+      "days_overdue": 1305,
       "installments_count": 3,
       "installments": [
         {
           "planned_date": "2022-10-07",
           "amount": 6988.0,
-          "days_overdue": 1240,
+          "days_overdue": 1305,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-10-21",
           "amount": 23310.0,
-          "days_overdue": 1226,
+          "days_overdue": 1291,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-11-07",
           "amount": 17470.0,
-          "days_overdue": 1209,
+          "days_overdue": 1274,
           "bucket": "180+ дн."
         }
       ],
@@ -1299,13 +1241,13 @@
       "order_date": "2025-02-14",
       "amount": 47000.0,
       "dz_total": 47000.0,
-      "days_overdue": 253,
+      "days_overdue": 318,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-06-20",
           "amount": 47000.0,
-          "days_overdue": 253,
+          "days_overdue": 318,
           "bucket": "180+ дн."
         }
       ],
@@ -1325,25 +1267,25 @@
       "order_date": "2022-07-25",
       "amount": 42573.63,
       "dz_total": 42573.63,
-      "days_overdue": 1314,
+      "days_overdue": 1379,
       "installments_count": 3,
       "installments": [
         {
           "planned_date": "2022-07-25",
           "amount": 17625.0,
-          "days_overdue": 1314,
+          "days_overdue": 1379,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-09-27",
           "amount": 7323.63,
-          "days_overdue": 1250,
+          "days_overdue": 1315,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2022-12-13",
           "amount": 17625.0,
-          "days_overdue": 1173,
+          "days_overdue": 1238,
           "bucket": "180+ дн."
         }
       ],
@@ -1363,13 +1305,13 @@
       "order_date": "2025-02-05",
       "amount": 35250.0,
       "dz_total": 35250.0,
-      "days_overdue": 268,
+      "days_overdue": 333,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-06-05",
           "amount": 35250.0,
-          "days_overdue": 268,
+          "days_overdue": 333,
           "bucket": "180+ дн."
         }
       ],
@@ -1389,85 +1331,85 @@
       "order_date": "2018-11-12",
       "amount": 30035.0,
       "dz_total": -0.0,
-      "days_overdue": 2950,
+      "days_overdue": 3015,
       "installments_count": 13,
       "installments": [
         {
           "planned_date": "2018-01-31",
           "amount": 36773.0,
-          "days_overdue": 2950,
+          "days_overdue": 3015,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-03-31",
           "amount": 11900.0,
-          "days_overdue": 2891,
+          "days_overdue": 2956,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-04-30",
           "amount": 5560.0,
-          "days_overdue": 2861,
+          "days_overdue": 2926,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-07-31",
           "amount": 6140.0,
-          "days_overdue": 2769,
+          "days_overdue": 2834,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-09-20",
           "amount": 3360.0,
-          "days_overdue": 2718,
+          "days_overdue": 2783,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-10-31",
           "amount": 26950.0,
-          "days_overdue": 2677,
+          "days_overdue": 2742,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-11-30",
           "amount": 16260.0,
-          "days_overdue": 2647,
+          "days_overdue": 2712,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-12-31",
           "amount": 16020.0,
-          "days_overdue": 2616,
+          "days_overdue": 2681,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-01-31",
           "amount": 1680.0,
-          "days_overdue": 2585,
+          "days_overdue": 2650,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-02-28",
           "amount": 3360.0,
-          "days_overdue": 2557,
+          "days_overdue": 2622,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-03-15",
           "amount": -111731.0,
-          "days_overdue": 2542,
+          "days_overdue": 2607,
           "bucket": ""
         },
         {
           "planned_date": "2019-05-31",
           "amount": -16272.0,
-          "days_overdue": 2465,
+          "days_overdue": 2530,
           "bucket": ""
         },
         {
           "planned_date": "2019-06-30",
           "amount": 30035.0,
-          "days_overdue": 2435,
+          "days_overdue": 2500,
           "bucket": "180+ дн."
         }
       ],
@@ -1487,109 +1429,109 @@
       "order_date": "2014-03-06",
       "amount": 21290.0,
       "dz_total": 21290.0,
-      "days_overdue": 2938,
+      "days_overdue": 3003,
       "installments_count": 17,
       "installments": [
         {
           "planned_date": "2018-02-12",
           "amount": 27140.0,
-          "days_overdue": 2938,
+          "days_overdue": 3003,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-02-28",
           "amount": 36400.0,
-          "days_overdue": 2922,
+          "days_overdue": 2987,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-04-30",
           "amount": 14000.0,
-          "days_overdue": 2861,
+          "days_overdue": 2926,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-05-31",
           "amount": 15240.0,
-          "days_overdue": 2830,
+          "days_overdue": 2895,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-07-20",
           "amount": 21480.0,
-          "days_overdue": 2780,
+          "days_overdue": 2845,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-07-31",
           "amount": 6200.0,
-          "days_overdue": 2769,
+          "days_overdue": 2834,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-09-20",
           "amount": 8550.0,
-          "days_overdue": 2718,
+          "days_overdue": 2783,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-09-30",
           "amount": 10380.0,
-          "days_overdue": 2708,
+          "days_overdue": 2773,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-10-31",
           "amount": 12640.0,
-          "days_overdue": 2677,
+          "days_overdue": 2742,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-11-30",
           "amount": 15570.0,
-          "days_overdue": 2647,
+          "days_overdue": 2712,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2018-12-31",
           "amount": 18190.0,
-          "days_overdue": 2616,
+          "days_overdue": 2681,
           "bucket": "180+ дн."
         },
         {
           "planned_date": "2019-01-31",
           "amount": -18967.0,
-          "days_overdue": 2585,
+          "days_overdue": 2650,
           "bucket": ""
         },
         {
           "planned_date": "2019-02-28",
           "amount": -42795.0,
-          "days_overdue": 2557,
+          "days_overdue": 2622,
           "bucket": ""
         },
         {
           "planned_date": "2019-03-31",
           "amount": -74083.0,
-          "days_overdue": 2526,
+          "days_overdue": 2591,
           "bucket": ""
         },
         {
           "planned_date": "2019-04-30",
           "amount": -20138.0,
-          "days_overdue": 2496,
+          "days_overdue": 2561,
           "bucket": ""
         },
         {
           "planned_date": "2019-05-31",
           "amount": -28035.0,
-          "days_overdue": 2465,
+          "days_overdue": 2530,
           "bucket": ""
         },
         {
           "planned_date": "2019-06-30",
           "amount": 19518.0,
-          "days_overdue": 2435,
+          "days_overdue": 2500,
           "bucket": "180+ дн."
         }
       ],
@@ -1609,44 +1551,18 @@
       "order_date": "2022-12-09",
       "amount": 8335.0,
       "dz_total": 8335.0,
-      "days_overdue": 1156,
+      "days_overdue": 1221,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2022-12-30",
           "amount": 8335.0,
-          "days_overdue": 1156,
+          "days_overdue": 1221,
           "bucket": "180+ дн."
         }
       ],
       "reason": "БанкротствоЛиквидацияКлиента",
       "action": "ИскВАрбитражныйСуд"
-    },
-    {
-      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
-      "dept_name": "Отдел дилерских продаж",
-      "source_dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
-      "liquidated_dept_name": "",
-      "partner_key": "04bbad28-6b81-11ef-956b-6cb31113810e",
-      "partner_name": "КБГ ООО",
-      "counterparty": "КБГ ООО",
-      "order_key": "0840c66d-df23-11f0-9767-6cb31113810e",
-      "order_num": "НП00-002098",
-      "order_date": "2025-12-22",
-      "amount": 0.1,
-      "dz_total": 0.1,
-      "days_overdue": 16,
-      "installments_count": 1,
-      "installments": [
-        {
-          "planned_date": "2026-02-12",
-          "amount": 0.1,
-          "days_overdue": 16,
-          "bucket": "1-29 дн."
-        }
-      ],
-      "reason": "ОшибкаВДокументах",
-      "action": "НаправитьОфициальноеПисьмо"
     }
   ]
 }
