@@ -1,12 +1,11 @@
 """
-Получение претензий (Catalog_Претензии) из 1С OData за указанный месяц.
+Получение активных претензий (Catalog_Претензии) из 1С OData.
 
 Логика идентична export_claims2.py, но возвращает список dict (для JSON API),
 а не записывает CSV. Результат кэшируется на день в JSON-файл.
 """
 from __future__ import annotations
 
-import calendar
 import json
 import logging
 from datetime import date
@@ -16,6 +15,7 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from .commercial_department_aliases import normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,15 @@ ALLOWED_DEPARTMENTS = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
+CACHE_VERSION = 5
+ALLOWED_CLAIM_STATUSES = frozenset({
+    "Зарегистрирована",
+    "Обрабатывается",
+    "НаКонтроле",
+})
+CLAIM_STATUS_LABELS = {
+    "НаКонтроле": "На контроле",
+}
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -54,7 +63,10 @@ def _load_cache(year: int, month: int, include_all: bool = False) -> list[dict] 
     try:
         with open(p, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        if data.get('date') == date.today().isoformat():
+        if (
+            data.get('date') == date.today().isoformat()
+            and data.get('cache_version') == CACHE_VERSION
+        ):
             return data.get('rows')
     except (json.JSONDecodeError, OSError):
         pass
@@ -65,7 +77,15 @@ def _save_cache(year: int, month: int, rows: list[dict], include_all: bool = Fal
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
         with open(_cache_path(year, month, include_all=include_all), 'w', encoding='utf-8') as f:
-            json.dump({'date': date.today().isoformat(), 'rows': rows}, f, ensure_ascii=False)
+            json.dump(
+                {
+                    'date': date.today().isoformat(),
+                    'cache_version': CACHE_VERSION,
+                    'rows': rows,
+                },
+                f,
+                ensure_ascii=False,
+            )
     except OSError:
         pass
 
@@ -118,10 +138,7 @@ def _fetch_single(session: requests.Session,
 
 
 def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[dict]:
-    """Загружает претензии из 1С OData за указанный месяц."""
-    last_day = calendar.monthrange(year, month)[1]
-    date_from = f"{year}-{month:02d}-01T00:00:00"
-    date_to = f"{year}-{month:02d}-{last_day}T23:59:59"
+    """Загружает все претензии из 1С OData с разрешенными статусами."""
 
     session = requests.Session()
     session.auth = AUTH
@@ -134,11 +151,12 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
 
     claims = []
     skip = 0
+    status_filter = " or ".join(
+        f"Статус eq '{status}'" for status in sorted(ALLOWED_CLAIM_STATUSES)
+    )
     while True:
         odata_filter = (
-            f"ДатаРегистрации ge datetime'{date_from}'"
-            f" and ДатаРегистрации le datetime'{date_to}'"
-            f" and Статус ne 'Удовлетворена'"
+            f"({status_filter})"
         )
         url = (
             f"{BASE}/Catalog_Претензии?$format=json"
@@ -249,7 +267,8 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
             continue
 
         order_dept_key = order.get("Подразделение_Key", "")
-        if not include_all and order_dept_key not in ALLOWED_DEPARTMENTS:
+        normalized_dept_key = normalize_commercial_dept_guid(order_dept_key)
+        if not include_all and normalized_dept_key not in ALLOWED_DEPARTMENTS:
             continue
 
         partner = partners.get(c.get("Партнер_Key", ""), c.get("Партнер_Key", ""))
@@ -268,7 +287,10 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
         char = char_names.get(char_key, char_key if char_key and char_key != EMPTY else "")
 
         desc = (c.get("ОписаниеПретензии") or "").replace("\r\n", " ").replace("\n", " ")
-        status = c.get("Статус", "")
+        raw_status = c.get("Статус", "")
+        if raw_status not in ALLOWED_CLAIM_STATUSES:
+            continue
+        status = CLAIM_STATUS_LABELS.get(raw_status, raw_status)
 
         result_rows.append({
             "code": c.get("Code", ""),
@@ -280,6 +302,7 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
             "order_num": order_num,
             "order_dept": order_dept,
             "order_dept_key": order_dept_key,
+            "normalized_order_dept_key": normalized_dept_key,
             "nomenclature": nom,
             "characteristic": char,
             "order_sum": order_sum,
@@ -291,7 +314,7 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
 
 
 def fetch_claims_for_month(year: int, month: int, include_all: bool = False) -> list[dict]:
-    """Возвращает список претензий за месяц (с кэшированием на день)."""
+    """Возвращает список активных претензий (с кэшированием на день)."""
     cached = _load_cache(year, month, include_all=include_all)
     if cached is not None:
         return cached

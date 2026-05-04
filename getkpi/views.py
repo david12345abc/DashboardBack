@@ -878,7 +878,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
                              year: int | None = None) -> dict:
     """
     Универсальный билдер: Плитки, Графики, Таблицы.
-    Таблицы — претензии из 1С (Catalog_Претензии) за выбранный месяц.
+    Таблицы — активные претензии из 1С (Catalog_Претензии) по разрешенным статусам.
     """
     from .komdir_claims import fetch_claims_for_month
     from .kpi_periods import last_full_month as _lfm
@@ -982,9 +982,9 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
         tablitsy.update({
             "KD-T-CLAIMS": {
-                "name": f"Претензии за {month_names[ref_m]} {ref_y}",
+                "name": "Активные претензии",
                 "periodicity": "ежемесячно",
-                "description": "Претензии из 1С (Catalog_Претензии) за выбранный месяц",
+                "description": "Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле",
                 "period": {
                     "year": ref_y,
                     "month": ref_m,
@@ -1085,7 +1085,10 @@ def _fetch_claims_rows_for_department(year: int, month: int, department: str) ->
     include_all = not isinstance(commercial_kpi_key(canonical_dept), str) and dept_guid is None
     rows = fetch_claims_for_month(year, month, include_all=include_all)
     if dept_guid:
-        rows = [r for r in rows if r.get('order_dept_key') == dept_guid]
+        rows = [
+            r for r in rows
+            if (r.get('normalized_order_dept_key') or r.get('order_dept_key')) == dept_guid
+        ]
     return rows
 
 
@@ -1637,9 +1640,9 @@ def get_kpi(request):
         month_name = MONTH_NAMES.get(ref_m, str(ref_m))
         tables.update({
             'KD-T-CLAIMS': {
-                'name': f'Претензии за {month_name} {ref_y}',
+                'name': 'Активные претензии',
                 'periodicity': 'ежемесячно',
-                'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+                'description': 'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле',
                 'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
                 'rows': claims_rows,
             },
@@ -1782,9 +1785,9 @@ def get_all_departments(request):
             month_name = MONTH_NAMES.get(ref_m, str(ref_m))
             tables.update({
                 'KD-T-CLAIMS': {
-                    'name': f'Претензии за {month_name} {ref_y}',
+                    'name': 'Активные претензии',
                     'periodicity': 'ежемесячно',
-                    'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+                    'description': 'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле',
                     'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
                     'rows': claims_rows,
                 },
@@ -1865,9 +1868,9 @@ def get_all_departments(request):
             month_name = MONTH_NAMES.get(ref_m, str(ref_m))
             tables.update({
                 'KD-T-CLAIMS': {
-                    'name': f'Претензии за {month_name} {ref_y}',
+                    'name': 'Активные претензии',
                     'periodicity': 'ежемесячно',
-                    'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+                    'description': 'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле',
                     'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
                     'rows': claims_rows,
                 },
