@@ -5,11 +5,10 @@ calc_otgruzki_fact.py — Факт отгрузок за месяц (помес�
 
   1. AccumulationRegister_РаспоряженияНаОтгрузку_RecordType
      ВидДвиженияРегистра = 'Расход'
-     → -Сумма * курс валюты заказа
+     → abs(Сумма) * курс валюты заказа
 
-  2. AccumulationRegister_СебестоимостьТоваров_RecordType
-     Recorder_Type = ВозвратТоваровОтКлиента, Договор.ТипДоговора = СКомиссионером
-     → -СтоимостьРегл (expense-часть)
+Алгоритм синхронизирован с calc_tiles.py: факт отгрузок считается только по
+AccumulationRegister_РаспоряженияНаОтгрузку_RecordType.
 
 Фильтрация:
   – Подразделение заказа ∈ 6 целевых отделов продаж, ≠ пусто
@@ -55,7 +54,9 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 4
+CACHE_VERSION = 6
+ORDER_TYPE = "StandardODATA.Document_ЗаказКлиента"
+KEEPER_TRANSFER_TYPE = "StandardODATA.Document_ПередачаТоваровХранителю"
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -65,6 +66,21 @@ EXCLUDE_PARTNER_NAMES = {
     "Метрогазсервис ООО",
 }
 EXCLUDE_PARTNER_NAMES_NO_MGS = EXCLUDE_PARTNER_NAMES - {"Метрогазсервис ООО"}
+
+EXCLUDE_PARTNER_KEYS = frozenset({
+    "6ff45495-a8c5-11e7-8266-ac1f6b05524d",  # АЛМАЗ ООО (рабочий)
+    "6ac41964-88a0-11e7-812e-001e67112509",  # Турбулентность-Дон ООО
+    "6cdfe9f3-a8c4-11e7-8266-ac1f6b05524d",  # Турбулентность-ДОН ООО НПО
+    "4babc7a7-a8c7-11e7-8266-ac1f6b05524d",  # СКТБ Турбо-Дон ООО
+    "d7f5ff44-a8c6-11e7-8266-ac1f6b05524d",  # Метрогазсервис ООО
+    "237a2c5f-3b94-11e7-812b-001e67112509",  # Газпром межрегионгаз Владикавказ, ООО
+})
+EXCLUDE_PARTNER_KEYS_NO_MGS = EXCLUDE_PARTNER_KEYS - frozenset({
+    "d7f5ff44-a8c6-11e7-8266-ac1f6b05524d",
+})
+KEEPER_TRANSFER_PARTNER_KEYS = frozenset({
+    "237a2c5f-3b94-11e7-812b-001e67112509",  # Газпром межрегионгаз Владикавказ, ООО
+})
 
 CURRENCY_KEYS = {
     "0a7c6f22-e1b6-11df-963e-001cc4d04388": "USD",
@@ -170,10 +186,14 @@ def _load_rashod_records(session: requests.Session,
 
     flt = quote(
         f"Period ge datetime'{d_from}' and Period le datetime'{d_to}' "
+        f"and Active eq true "
         f"and ВидДвиженияРегистра eq 'Расход'",
         safe="",
     )
-    sel = "Period,Распоряжение,Распоряжение_Type,Сумма"
+    sel = (
+        "Period,Active,Recorder_Type,Распоряжение,Распоряжение_Type,"
+        "ВидДвиженияРегистра,Сумма,Сторно"
+    )
 
     rows: list[dict] = []
     skip = 0
@@ -375,8 +395,12 @@ def _calc_main_otgruzki(session: requests.Session,
             partner_keys_set.add(pk)
 
     partners_map = _batch_load_partners(session, sorted(partner_keys_set))
-    excl_full = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES}
-    excl_no_mgs = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS}
+    excl_full = set(EXCLUDE_PARTNER_KEYS) | {
+        k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES
+    }
+    excl_no_mgs = set(EXCLUDE_PARTNER_KEYS_NO_MGS) | {
+        k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS
+    }
 
     monthly: dict[str, dict[int, float]] = {
         d: {m: 0.0 for m in range(1, max_month + 1)} for d in DEPT_SET
@@ -396,6 +420,8 @@ def _calc_main_otgruzki(session: requests.Session,
         ok = row.get("Распоряжение", "")
         if not ok or ok == EMPTY:
             continue
+        if row.get("Распоряжение_Type") != ORDER_TYPE:
+            continue
         od = orders.get(ok)
         if not od:
             continue
@@ -407,13 +433,15 @@ def _calc_main_otgruzki(session: requests.Session,
             continue
         if od["ne_uchit"]:
             continue
-        if od["soprovozhd"]:
-            continue
 
         pk = od["partner"]
         soprovozhd = od["soprovozhd"]
         if dept == OPBO_DEPT:
-            if pk in excl_no_mgs:
+            keeper_transfer_allowed = (
+                pk in KEEPER_TRANSFER_PARTNER_KEYS
+                and row.get("Recorder_Type") == KEEPER_TRANSFER_TYPE
+            )
+            if pk in excl_no_mgs and not keeper_transfer_allowed:
                 continue
         else:
             if pk in excl_full and not soprovozhd:
@@ -423,7 +451,7 @@ def _calc_main_otgruzki(session: requests.Session,
         cur_code = CURRENCY_KEYS.get(od["currency"], "RUB")
         rate = EXCHANGE_RATES.get(cur_code, 1.0)
 
-        monthly[dept][m] += -amount * rate
+        monthly[dept][m] += abs(amount) * rate
 
     return monthly
 
@@ -610,15 +638,7 @@ def get_otgruzki_monthly(year: int | None = None,
             return _slice_payload(fallback, dept_guid)
         return _slice_payload({"year": ref_y, "ref_month": ref_m, "months": []}, dept_guid)
 
-    main_monthly = _calc_main_otgruzki(session, rashod, ref_y, ref_m)
-
-    try:
-        vozvrat = _load_vozvrat_komisioner(session, ref_y, ref_m)
-        voz_monthly = _calc_vozvrat_komisioner(session, vozvrat, ref_y, ref_m)
-    except Exception:
-        voz_monthly = {d: {m: 0.0 for m in range(1, ref_m + 1)} for d in DEPT_SET}
-
-    merged = _merge_by_dept(main_monthly, voz_monthly, ref_m)
+    merged = _calc_main_otgruzki(session, rashod, ref_y, ref_m)
 
     out_months = []
     for m in range(1, ref_m + 1):
