@@ -785,7 +785,7 @@ def _build_techdir_charts(
     ref_m: int,
 ) -> dict:
     by_id = {k['kpi_id']: k for k in tiles_meta}
-    line_kpis = ['TD-M3', 'TD-M4']
+    line_kpis = ['TD-M3', 'TD-M4', 'TD-M5']
     display_names = {
         'TD-M3': 'Бюджет',
         'TD-M4': 'ФОТ',
@@ -826,7 +826,7 @@ def _build_techdir_charts(
     bar_plan_values: list[float | None] = []
     bar_fact_values: list[float | None] = []
     bar_points: list[dict] = []
-    for kid in ['TD-M3', 'TD-M4']:
+    for kid in ['TD-M3', 'TD-M4', 'TD-M5']:
         kpi_meta = by_id.get(kid, {})
         entry = entries_by_id.get(kid) or {}
         tile_vals = tile_values_by_id.get(kid) or {}
@@ -854,7 +854,7 @@ def _build_techdir_charts(
     charts = {
         'TD-C1': {
             'kpi_id': 'TD-C1',
-            'name': 'Динамика: Бюджет, ФОТ',
+            'name': 'Динамика: бюджет, ФОТ и другие помесячные KPI',
             'periodicity': 'ежемесячно',
             'chart_type': 'multi_line_plan_fact_monthly',
             'chart_type_label': 'Линейный тренд по месяцам (план/факт)',
@@ -865,7 +865,7 @@ def _build_techdir_charts(
     if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
         charts['TD-C2'] = {
             'kpi_id': 'TD-C2',
-            'name': 'KPI за месяц: Бюджет, ФОТ',
+            'name': 'KPI за месяц: бюджет, ФОТ и др.',
             'periodicity': 'ежемесячно',
             'chart_type': 'column_plan_fact_monthly',
             'chart_type_label': 'Столбцы: план/факт за месяц',
@@ -969,7 +969,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
                 'kpi_pct': item.get('kpi_pct'),
             }
             for item in plitki_items
-            if item.get('kpi_id') in {'TD-M3', 'TD-M4'}
+            if item.get('kpi_id') in {'TD-M3', 'TD-M4', 'TD-M5'}
         }
         grafiki.update(_build_techdir_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m))
     month_names = {
