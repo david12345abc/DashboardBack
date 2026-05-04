@@ -11,10 +11,10 @@
       "docs": 0
     },
     "Зам. технического директора по сервису": {
-      "plan": 4.6,
+      "plan": 2.3,
       "fact": 0.0,
-      "plan_rows": 2,
-      "fact_rows": 2,
+      "plan_rows": 1,
+      "fact_rows": 1,
       "docs": 4
     },
     "Сектор качества разработки": {
@@ -25,9 +25,9 @@
       "docs": 2
     },
     "Зам. технического директора по проектированию, автоматизации и метрологии": {
-      "plan": 2.5,
+      "plan": 2.0,
       "fact": 0.0,
-      "plan_rows": 2,
+      "plan_rows": 1,
       "fact_rows": 1,
       "docs": 3
     },
@@ -46,7 +46,7 @@
       "docs": 2
     }
   },
-  "total_plan": 10.4,
+  "total_plan": 4.3,
   "total_fact": 0.0,
   "matched_group_count": 5,
   "diagnostics": {
@@ -75,9 +75,11 @@
         "Эксплуатационная служба"
       ]
     },
-    "source_department_count": 25
+    "source_department_count": 25,
+    "plan_source": "group_max_top2_1c_tekuchet",
+    "plan_target": null
   },
   "source": "techdir_q2_monthly_v1",
-  "cache_version": 1,
-  "cache_date": "2026-04-30"
+  "cache_version": 4,
+  "cache_date": "2026-05-04"
 }
