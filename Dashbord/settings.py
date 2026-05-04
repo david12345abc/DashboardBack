@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'User',
     'getkpi',
     'searchengine',
+    'devdir',
 ]
 
 MIDDLEWARE = [
