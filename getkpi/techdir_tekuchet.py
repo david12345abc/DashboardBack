@@ -157,11 +157,17 @@ def is_active_dept(row: dict) -> bool:
     return "ликв" not in text
 
 
-def resolve_group_department_keys(rows, exact):
+def resolve_group_department_keys(
+    rows,
+    exact,
+    group_aliases: dict[str, list[str]] | None = None,
+):
+    """Сопоставление групп KPI с Ref_Key подразделений в Catalog_СтруктураПредприятия."""
+    aliases_src = group_aliases if group_aliases is not None else GROUP_ALIASES
     group_keys = {}
     diagnostics = {}
 
-    for group_name, aliases in GROUP_ALIASES.items():
+    for group_name, aliases in aliases_src.items():
         matched_rows = []
         seen = set()
 
@@ -248,6 +254,31 @@ def _save_cache(year: int, month: int, payload: dict) -> None:
         print(f"    ⚠ не удалось сохранить кэш TD-Q2 {year}-{month:02d}")
 
 
+def _normalize_viddokumenta(raw) -> str | None:
+    """ВидДокумента: план=0, факт=1 (в OData — строка или целое; bool не маппим)."""
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        if int(raw) == 0:
+            return "0"
+        if int(raw) == 1:
+            return "1"
+    s = str(raw).strip()
+    if s in {"0", "1"}:
+        return s
+    return None
+
+
+def _month_cell_matches(mes: object, target_str: str) -> bool:
+    """Строка табличной части относится к целевому ГГГГ-ММ (как в target_str)."""
+    if mes is None:
+        return False
+    s = str(mes).strip()
+    return len(s) >= 7 and s[:7] == target_str
+
+
 def aggregate_for_month(docs, group_dept_keys, target_str):
     result = defaultdict(lambda: {"plan": 0.0, "fact": 0.0, "plan_rows": 0, "fact_rows": 0, "docs": 0})
     matched_docs = defaultdict(list)
@@ -264,7 +295,7 @@ def aggregate_for_month(docs, group_dept_keys, target_str):
         if not matched_groups:
             continue
 
-        vid = str(doc.get("ВидДокумента", ""))
+        vid = _normalize_viddokumenta(doc.get("ВидДокумента"))
         rows = doc.get("Текучесть", [])
 
         for group_name in matched_groups:
@@ -272,8 +303,7 @@ def aggregate_for_month(docs, group_dept_keys, target_str):
             result[group_name]["docs"] += 1
 
         for row in rows:
-            mes = row.get("Месяц", "")
-            if not mes or mes[:7] != target_str:
+            if not _month_cell_matches(row.get("Месяц"), target_str):
                 continue
 
             plan_val = float(row.get("План", 0) or 0)
@@ -290,8 +320,22 @@ def aggregate_for_month(docs, group_dept_keys, target_str):
     return result, matched_docs
 
 
-def _compute_td_q2_group_totals(docs, group_dept_keys, target_str):
-    """Собрать max(plan/fact) по каждой группе техдиректора за месяц."""
+def _compute_td_q2_group_totals(
+    docs,
+    group_dept_keys,
+    target_str,
+    *,
+    branch_aggregate: str = "max",
+):
+    """Собрать план/факт по группам за месяц из Текучесть + ВидДокумента.
+
+    branch_aggregate:
+      - ``max`` (TD-Q2): по каждому документу max(План)/max(Факт) по строкам месяца,
+        затем по группе max по документам (подразделение).
+      - ``sum_lines`` (QD-Q2 при aggregate sum_all): по документу сумма План/Факт
+        по всем строкам целевого месяца, по группе — сумма вкладов документов
+        (несколько документов на одно подразделение складываются).
+    """
     groups: dict[str, dict[str, float | int]] = {
         group_name: {
             "plan": 0.0,
@@ -314,7 +358,7 @@ def _compute_td_q2_group_totals(docs, group_dept_keys, target_str):
         for doc in docs:
             if doc.get("Подразделение_Key", EMPTY) not in dept_keys:
                 continue
-            vid = str(doc.get("ВидДокумента", ""))
+            vid = _normalize_viddokumenta(doc.get("ВидДокумента"))
             if vid not in {"0", "1"}:
                 continue
 
@@ -325,14 +369,26 @@ def _compute_td_q2_group_totals(docs, group_dept_keys, target_str):
             row_fact = 0.0
             row_matches = 0
             for row in doc.get("Текучесть", []) or []:
-                mes = str(row.get("Месяц", ""))
-                if len(mes) < 7 or mes[:7] != target_str:
+                if not _month_cell_matches(row.get("Месяц"), target_str):
                     continue
                 row_matches += 1
-                row_plan = max(row_plan, float(row.get("План", 0) or 0))
-                row_fact = max(row_fact, float(row.get("Факт", 0) or 0))
+                p = float(row.get("План", 0) or 0)
+                f = float(row.get("Факт", 0) or 0)
+                if branch_aggregate == "sum_lines":
+                    row_plan += p
+                    row_fact += f
+                else:
+                    row_plan = max(row_plan, p)
+                    row_fact = max(row_fact, f)
 
-            if vid == "0":
+            if branch_aggregate == "sum_lines":
+                if vid == "0":
+                    group_plan += row_plan
+                    group_plan_rows += row_matches
+                else:
+                    group_fact += row_fact
+                    group_fact_rows += row_matches
+            elif vid == "0":
                 if row_plan > group_plan:
                     group_plan = row_plan
                     group_plan_rows = row_matches
@@ -376,52 +432,80 @@ def _quarter_months(year: int, quarter: int) -> list[tuple[int, int]]:
     return [(year, start_month + offset) for offset in range(3)]
 
 
-def compute_td_turnover_month(year: int, month: int) -> dict:
-    cached = _load_cache(year, month)
-    if cached is not None:
-        return cached
+def build_turnover_month_payload(
+    year: int,
+    month: int,
+    *,
+    group_aliases: dict[str, list[str]],
+    group_order: list[str],
+    aggregate: str = "top2",
+) -> dict:
+    """Снимок текучести за месяц из Document_ТД_ТекучестьПерсонала (без файлового кэша).
 
+    TD-Q2 (aggregate top2): по группе max по строкам месяца в документе, затем max по документам.
+    QD-Q2 (aggregate sum_all): по группе сумма строк месяца в каждом документе, затем сумма по документам.
+
+    aggregate:
+      - ``top2`` (как TD-Q2): итог = сумма двух крупнейших групп по плану и по факту;
+      - ``sum_all`` (QD-Q2): итог = сумма по группам; внутри группы строки месяца
+        **суммируются** (и по нескольким документам одного подразделения), не max.
+    """
     target_str = f"{year}-{month:02d}"
-    plan_source = "1c_tekuchet"
+    branch_aggregate = "sum_lines" if aggregate == "sum_all" else "max"
     try:
         session = requests.Session()
         session.auth = AUTH
 
         structure_rows, structure_by_key, exact = load_structure(session)
-        group_dept_keys, diagnostics = resolve_group_department_keys(structure_rows, exact)
+        group_dept_keys, diagnostics = resolve_group_department_keys(
+            structure_rows, exact, group_aliases,
+        )
         docs = load_docs(session)
-        result, matched_docs = _compute_td_q2_group_totals(docs, group_dept_keys, target_str)
+        result, matched_docs = _compute_td_q2_group_totals(
+            docs, group_dept_keys, target_str, branch_aggregate=branch_aggregate,
+        )
     except Exception as exc:
-        print(f"    ⚠ TD-Q2 monthly compute failed for {year}-{month:02d}: {exc}")
+        print(f"    ⚠ turnover monthly compute failed for {year}-{month:02d}: {exc}")
         result = {
             group_name: {"plan": 0.0, "fact": 0.0, "plan_rows": 0, "fact_rows": 0, "docs": 0}
-            for group_name in GROUP_ORDER
+            for group_name in group_order
         }
         matched_docs = defaultdict(list)
-        diagnostics = {group_name: [] for group_name in GROUP_ORDER}
-        structure_by_key = {}
+        diagnostics = {group_name: [] for group_name in group_order}
         docs = []
 
-    ordered_groups = sorted(
-        GROUP_ORDER,
-        key=lambda group_name: (result.get(group_name, {}).get("plan", 0.0), group_name),
-        reverse=True,
-    )
-    total_plan = round(
-        sum((result[group_name]["plan"] for group_name in ordered_groups[:2])),
-        2,
-    )
-    ordered_fact_groups = sorted(
-        GROUP_ORDER,
-        key=lambda group_name: (result.get(group_name, {}).get("fact", 0.0), group_name),
-        reverse=True,
-    )
-    total_fact = round(
-        sum((result[group_name]["fact"] for group_name in ordered_fact_groups[:2])),
-        2,
-    )
+    if aggregate == "sum_all":
+        total_plan = round(
+            sum(result[group_name]["plan"] for group_name in group_order),
+            2,
+        )
+        total_fact = round(
+            sum(result[group_name]["fact"] for group_name in group_order),
+            2,
+        )
+        plan_agg_label = "sum_all_groups_1c_tekuchet"
+    else:
+        ordered_groups = sorted(
+            group_order,
+            key=lambda group_name: (result.get(group_name, {}).get("plan", 0.0), group_name),
+            reverse=True,
+        )
+        total_plan = round(
+            sum((result[group_name]["plan"] for group_name in ordered_groups[:2])),
+            2,
+        )
+        ordered_fact_groups = sorted(
+            group_order,
+            key=lambda group_name: (result.get(group_name, {}).get("fact", 0.0), group_name),
+            reverse=True,
+        )
+        total_fact = round(
+            sum((result[group_name]["fact"] for group_name in ordered_fact_groups[:2])),
+            2,
+        )
+        plan_agg_label = "group_max_top2_1c_tekuchet"
 
-    result = {
+    return {
         "year": year,
         "month": month,
         "month_name": MONTH_RU[month],
@@ -433,23 +517,35 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
                 "fact_rows": result[group_name]["fact_rows"],
                 "docs": len(matched_docs[group_name]),
             }
-            for group_name in GROUP_ORDER
+            for group_name in group_order
         },
         "total_plan": round(total_plan, 2),
         "total_fact": round(total_fact, 2),
-        "matched_group_count": sum(1 for g in GROUP_ORDER if matched_docs[g]),
+        "matched_group_count": sum(1 for g in group_order if matched_docs[g]),
         "diagnostics": {
             "matched_departments": {
                 group_name: [desc for _, desc in diagnostics[group_name]]
-                for group_name in GROUP_ORDER
+                for group_name in group_order
             },
             "source_department_count": len(
                 {d.get("Подразделение_Key") for d in docs if d.get("Подразделение_Key")}
             ),
-            "plan_source": "group_max_top2_1c_tekuchet",
+            "plan_source": plan_agg_label,
+            "aggregation": aggregate,
+            "branch_aggregate": branch_aggregate,
             "plan_target": None,
         },
     }
+
+
+def compute_td_turnover_month(year: int, month: int) -> dict:
+    cached = _load_cache(year, month)
+    if cached is not None:
+        return cached
+
+    result = build_turnover_month_payload(
+        year, month, group_aliases=GROUP_ALIASES, group_order=GROUP_ORDER,
+    )
     _save_cache(year, month, result)
     return result
 

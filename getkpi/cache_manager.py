@@ -66,6 +66,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet,
     )
     from .komdir_claims import fetch_claims_for_month
+    from qualdir.turnover import get_qd_q2_ytd, turnover_month_cache_path
 
     y, m = ref_y, ref_m
     cd = CACHE_DIR
@@ -150,6 +151,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         ('techdir_tekuchet',
          techdir_tekuchet._cache_path(y, m),
          lambda: techdir_tekuchet.get_td_q2_ytd(year=y, month=m)),
+
+        ('qualdir_tekuchet',
+         turnover_month_cache_path(y, m),
+         lambda: get_qd_q2_ytd(year=y, month=m)),
     ]
     td_as_of = date.today()
     tasks.append((
