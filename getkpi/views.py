@@ -1039,7 +1039,9 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
     if _is_prod_deputy_department(dept) or 'PD-Q1' in entries_by_id:
         try:
-            pd_q1_table = techdir_projects.get_pd_q1_deviation_table(month=ref_m, year=ref_y)
+            from . import calc_prod_deputy_projects
+
+            pd_q1_table = calc_prod_deputy_projects.get_pd_q1_deviation_table(month=ref_m, year=ref_y)
         except Exception:
             pd_q1_table = None
         if pd_q1_table:
@@ -1324,6 +1326,8 @@ def _build_kpi_entry(
         return entry
 
     if kpi_id == 'PD-Q1':
+        from . import calc_prod_deputy_projects
+
         if year and month:
             ref_y, ref_m = year, month
         else:
@@ -1331,7 +1335,7 @@ def _build_kpi_entry(
             ref_y, ref_m = today.year, today.month
         data = cache_manager.locked_call(
             f'pd_q1_projects_{ref_y}_{ref_m}',
-            techdir_projects.get_pd_q1_monthly,
+            calc_prod_deputy_projects.get_pd_q1_monthly,
             year=ref_y,
             month=ref_m,
         )
