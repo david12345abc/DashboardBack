@@ -24,20 +24,20 @@
       "year": 2026,
       "month": 3,
       "month_name": "март",
-      "plan": 411,
+      "plan": 407,
       "fact": 394,
-      "kpi_pct": 95.9,
+      "kpi_pct": 96.8,
       "has_data": true
     },
     {
       "year": 2026,
       "month": 4,
       "month_name": "апрель",
-      "plan": 336,
-      "fact": 276,
-      "kpi_pct": 82.1,
+      "plan": 338,
+      "fact": 284,
+      "kpi_pct": 84.0,
       "has_data": true
     }
   ],
-  "cache_date": "2026-05-04"
+  "cache_date": "2026-05-05"
 }

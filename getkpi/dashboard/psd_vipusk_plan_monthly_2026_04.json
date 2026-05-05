@@ -1,24 +1,32 @@
 {
   "year": 2026,
   "ref_month": 4,
-  "source": "psd_vipusk_fact_by_org_v3",
+  "source": "psd_vipusk_fact_movement_products_v4",
   "months": [
     {
       "year": 2026,
       "month": 1,
       "period_from": "2026-01-01",
       "period_to": "2026-01-31",
-      "fact_rub_total": 446673260.34,
-      "fact_qty_total": 13121.0,
+      "fact_rub_total": 49277005.51,
+      "fact_qty_total": 4323.0,
       "by_org": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 6572.0,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 28.0,
         "Турбулентность-Дон ООО": 0.0,
-        "АЛМАЗ ООО": 6549.0
+        "АЛМАЗ ООО": 4295.0
       },
       "by_org_rub": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 432191118.29,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 45232562.42,
         "Турбулентность-Дон ООО": 0.0,
-        "АЛМАЗ ООО": 14482142.05
+        "АЛМАЗ ООО": 4044443.09
+      },
+      "npo_reject_stats": {
+        "no_stage": 0,
+        "stage_not_found": 0,
+        "no_production_order": 0,
+        "production_order_not_found": 0,
+        "no_customer_order": 0,
+        "customer_line_not_found": 0
       }
     },
     {
@@ -26,17 +34,25 @@
       "month": 2,
       "period_from": "2026-02-01",
       "period_to": "2026-02-28",
-      "fact_rub_total": 184191025.2,
-      "fact_qty_total": 40044.0,
+      "fact_rub_total": 165871947.55,
+      "fact_qty_total": 7538.0,
       "by_org": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 32736.0,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 57.0,
         "Турбулентность-Дон ООО": 0.0,
-        "АЛМАЗ ООО": 7308.0
+        "АЛМАЗ ООО": 7481.0
       },
       "by_org_rub": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 158751485.14,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 155453916.34,
         "Турбулентность-Дон ООО": 0.0,
-        "АЛМАЗ ООО": 25439540.06
+        "АЛМАЗ ООО": 10418031.21
+      },
+      "npo_reject_stats": {
+        "no_stage": 0,
+        "stage_not_found": 0,
+        "no_production_order": 0,
+        "production_order_not_found": 0,
+        "no_customer_order": 0,
+        "customer_line_not_found": 0
       }
     },
     {
@@ -44,17 +60,25 @@
       "month": 3,
       "period_from": "2026-03-01",
       "period_to": "2026-03-31",
-      "fact_rub_total": 184912195.59,
-      "fact_qty_total": 60221.0,
+      "fact_rub_total": 88152966.24,
+      "fact_qty_total": 5307.0,
       "by_org": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 55341.0,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 48.0,
         "Турбулентность-Дон ООО": 0.0,
-        "АЛМАЗ ООО": 4880.0
+        "АЛМАЗ ООО": 5259.0
       },
       "by_org_rub": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 151101955.35,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 80926865.26,
         "Турбулентность-Дон ООО": 0.0,
-        "АЛМАЗ ООО": 33810240.24
+        "АЛМАЗ ООО": 7226100.98
+      },
+      "npo_reject_stats": {
+        "no_stage": 0,
+        "stage_not_found": 0,
+        "no_production_order": 0,
+        "production_order_not_found": 0,
+        "no_customer_order": 0,
+        "customer_line_not_found": 0
       }
     },
     {
@@ -62,17 +86,25 @@
       "month": 4,
       "period_from": "2026-04-01",
       "period_to": "2026-04-30",
-      "fact_rub_total": 254612243.48,
-      "fact_qty_total": 85711.5,
+      "fact_rub_total": 169962882.22,
+      "fact_qty_total": 8447.0,
       "by_org": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 77935.5,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 53.0,
         "Турбулентность-Дон ООО": 0.0,
-        "АЛМАЗ ООО": 7776.0
+        "АЛМАЗ ООО": 8394.0
       },
       "by_org_rub": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 231292440.72,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 157609545.62,
         "Турбулентность-Дон ООО": 0.0,
-        "АЛМАЗ ООО": 23319802.76
+        "АЛМАЗ ООО": 12353336.6
+      },
+      "npo_reject_stats": {
+        "no_stage": 0,
+        "stage_not_found": 0,
+        "no_production_order": 0,
+        "production_order_not_found": 0,
+        "no_customer_order": 0,
+        "customer_line_not_found": 0
       }
     }
   ]

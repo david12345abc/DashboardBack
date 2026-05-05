@@ -1,13 +1,13 @@
 """
-calc_ks_razvitie.py — Плановые показатели блока «КС развитие» (ТД).
+calc_ks_razvitie.py — показатели блока «КС развитие» (ТД).
 
 Источник: Document_ТД_КСРазвитие с табличной частью «Показатели».
 Каждый документ = один показатель × одно подразделение × 12 месяцев.
 Единица измерения берётся из реквизита документа «ЕдИзмерения».
 
 По ТЗ: для каждой пары (подразделение × показатель) выдаём помесячный ряд
-{ plan, fact }. Факт пока всегда 0 — в 1С учёта фактических значений нет,
-на дашборде отображаются только планы.
+{ plan, fact }. Большинство фактов в 1С не ведётся, но для диаграммы
+«Новые заказчики по услугам» факт рассчитывается по реализациям.
 
 Фильтрация по подразделению выполняется уже на уровне дашборда
 (см. `by_dept_guid` + поле `charts` на срезе отдела). Модуль отдаёт:
@@ -70,6 +70,7 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from .commercial_department_aliases import normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,20 @@ ALLOWED_DEPARTMENTS: dict[str, str] = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = "ks_razvitie_units_v1"
+CACHE_VERSION = "ks_razvitie_units_v4_project_bookmarks_fact"
+TARGET_SERVICE_CUSTOMERS_DEPT_KEY = "34497ef7-810f-11e4-80d6-001e67112509"
+TARGET_SERVICE_CUSTOMERS_DEPT_NAME = "Отдел продаж эталонного оборудования и услуг"
+TARGET_SERVICE_CUSTOMERS_INDICATOR = "Новые заказчики по услугам"
+PROJECT_BOOKMARKS_INDICATOR = "Закладки в проекты"
+PROJECT_BOOKMARKS_DOC = "Document_КоммерческоеПредложениеКлиенту"
+PROJECT_BOOKMARK_DEPARTMENTS: dict[str, str] = {
+    "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО «Газпром»",
+    "9edaa7d4-37a5-11ee-93d3-6cb31113810e": "Отдел продаж БМИ",
+}
+SERVICE_WORK_TYPES = {"услуга", "работа"}
+ORDER_TYPE = "StandardODATA.Document_ЗаказКлиента"
+REALIZATION_DOC = "Document_РеализацияТоваровУслуг"
+FACT_HISTORY_START = "2000-01-01T00:00:00"
 
 # Возможные варианты имени EntitySet в OData и имени таб.части.
 DOC_ENTITY_CANDIDATES = [
@@ -277,6 +291,354 @@ def _fetch_tab_rows(session: requests.Session, tab_entity: str) -> list[dict]:
             break
         skip += PAGE
     return rows
+
+
+def _fetch_all_json(session: requests.Session, url: str, *, label: str, page: int = 5000) -> list[dict]:
+    rows: list[dict] = []
+    skip = 0
+    sep = "&" if "?" in url else "?"
+    while True:
+        r = request_with_retry(
+            session,
+            f"{url}{sep}$top={page}&$skip={skip}",
+            timeout=120,
+            retries=4,
+            label=label,
+        )
+        if r is None or not r.ok:
+            if r is not None:
+                logger.warning("%s HTTP %s: %s", label, r.status_code, r.text[:250])
+            return rows
+        batch = r.json().get("value", []) or []
+        rows.extend(batch)
+        if len(batch) < page:
+            return rows
+        skip += page
+
+
+def _fetch_by_refs(
+    session: requests.Session,
+    entity: str,
+    refs: set[str],
+    select: str,
+    *,
+    label: str,
+    ref_field: str = "Ref_Key",
+    batch_size: int = 25,
+) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    ref_list = sorted(ref for ref in refs if ref and ref != EMPTY)
+    for i in range(0, len(ref_list), batch_size):
+        batch = ref_list[i:i + batch_size]
+        flt = " or ".join(f"{ref_field} eq guid'{ref}'" for ref in batch)
+        url = (
+            f"{BASE}/{quote(entity)}?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select={quote(select, safe=',_')}"
+        )
+        for row in _fetch_all_json(session, url, label=label, page=batch_size):
+            key = row.get(ref_field)
+            if key:
+                out[key] = row
+    return out
+
+
+def _fetch_table_by_refs(
+    session: requests.Session,
+    entity: str,
+    refs: set[str],
+    select: str,
+    *,
+    label: str,
+    batch_size: int = 25,
+) -> list[dict]:
+    rows: list[dict] = []
+    ref_list = sorted(ref for ref in refs if ref and ref != EMPTY)
+    for i in range(0, len(ref_list), batch_size):
+        batch = ref_list[i:i + batch_size]
+        flt = " or ".join(f"Ref_Key eq guid'{ref}'" for ref in batch)
+        url = (
+            f"{BASE}/{quote(entity)}?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select={quote(select, safe=',_')}"
+        )
+        rows.extend(_fetch_all_json(session, url, label=label))
+    return rows
+
+
+def _normalize_text(value: object) -> str:
+    raw = str(value or "").strip().lower().replace("ё", "е")
+    return " ".join("".join(ch if ch.isalnum() else " " for ch in raw).split())
+
+
+def _load_service_work_order_keys(session: requests.Session, order_keys: set[str]) -> set[str]:
+    lines = _fetch_table_by_refs(
+        session,
+        "Document_ЗаказКлиента_Товары",
+        order_keys,
+        "Ref_Key,Номенклатура_Key,Отменено",
+        label="ks_razvitie/order_lines",
+    )
+    nomenclature_keys = {
+        row.get("Номенклатура_Key")
+        for row in lines
+        if not row.get("Отменено") and row.get("Номенклатура_Key")
+    }
+    nomenclature = _fetch_by_refs(
+        session,
+        "Catalog_Номенклатура",
+        set(nomenclature_keys),
+        "Ref_Key,ТипНоменклатуры",
+        label="ks_razvitie/nomenclature",
+    )
+    service_nomenclature = {
+        key for key, row in nomenclature.items()
+        if _normalize_text(row.get("ТипНоменклатуры")) in SERVICE_WORK_TYPES
+    }
+    service_orders: set[str] = set()
+    for row in lines:
+        if row.get("Отменено"):
+            continue
+        if row.get("Номенклатура_Key") in service_nomenclature:
+            service_orders.add(row.get("Ref_Key"))
+    return service_orders
+
+
+def _load_realizations(
+    session: requests.Session,
+    date_from: str,
+    date_to: str,
+    *,
+    partner_keys: set[str] | None = None,
+) -> list[dict]:
+    select = (
+        "Ref_Key,Date,Number,Подразделение_Key,Партнер_Key,"
+        "ЗаказКлиента,ЗаказКлиента_Type"
+    )
+    base_filter = (
+        f"Date ge datetime'{date_from}' and Date lt datetime'{date_to}' "
+        f"and Posted eq true and DeletionMark eq false "
+        f"and Подразделение_Key eq guid'{TARGET_SERVICE_CUSTOMERS_DEPT_KEY}'"
+    )
+    if not partner_keys:
+        url = (
+            f"{BASE}/{REALIZATION_DOC}?$format=json"
+            f"&$filter={quote(base_filter, safe='')}"
+            f"&$select={quote(select, safe=',_')}"
+        )
+        return _fetch_all_json(session, url, label="ks_razvitie/service_realizations")
+
+    rows: list[dict] = []
+    keys = sorted(k for k in partner_keys if k and k != EMPTY)
+    for i in range(0, len(keys), 25):
+        batch = keys[i:i + 25]
+        partner_filter = " or ".join(f"Партнер_Key eq guid'{key}'" for key in batch)
+        flt = f"{base_filter} and ({partner_filter})"
+        url = (
+            f"{BASE}/{REALIZATION_DOC}?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select={quote(select, safe=',_')}"
+        )
+        rows.extend(_fetch_all_json(session, url, label="ks_razvitie/service_realizations_by_partner"))
+    return rows
+
+
+def _service_realization_events(session: requests.Session, shipments: list[dict]) -> list[tuple[str, int, int]]:
+    order_keys = {
+        row["ЗаказКлиента"]
+        for row in shipments
+        if row.get("ЗаказКлиента_Type") == ORDER_TYPE and row.get("ЗаказКлиента")
+    }
+    if not order_keys:
+        return []
+
+    orders = _fetch_by_refs(
+        session,
+        "Document_ЗаказКлиента",
+        order_keys,
+        "Ref_Key,Подразделение_Key,Партнер_Key,ТД_НеУчитыватьВПланФакте",
+        label="ks_razvitie/orders",
+    )
+    target_order_keys = {
+        key for key, order in orders.items()
+        if (
+            normalize_commercial_dept_guid(order.get("Подразделение_Key") or "")
+            == TARGET_SERVICE_CUSTOMERS_DEPT_KEY
+            and not order.get("ТД_НеУчитыватьВПланФакте")
+            and order.get("Партнер_Key") not in ("", EMPTY, None)
+        )
+    }
+    service_orders = _load_service_work_order_keys(session, target_order_keys)
+
+    events: list[tuple[str, int, int]] = []
+    for shipment in shipments:
+        order_key = shipment.get("ЗаказКлиента")
+        if order_key not in service_orders:
+            continue
+        order = orders.get(order_key)
+        if not order:
+            continue
+        partner = order.get("Партнер_Key") or shipment.get("Партнер_Key") or ""
+        if not partner or partner == EMPTY:
+            continue
+        period = str(shipment.get("Date") or "")
+        if len(period) < 7:
+            continue
+        try:
+            y = int(period[:4])
+            m = int(period[5:7])
+        except ValueError:
+            continue
+        if y >= 1900 and 1 <= m <= 12:
+            events.append((partner, y, m))
+    return events
+
+
+def _load_new_service_customers_fact(session: requests.Session, year: int) -> dict:
+    """Факт для «Новые заказчики по услугам».
+
+    Заказчик: Document_ЗаказКлиента.Партнер_Key.
+    Отгрузка/реализация: проведённый Document_РеализацияТоваровУслуг
+    по целевому подразделению. Период берём по Date документа реализации.
+    Услуга/Работа: Catalog_Номенклатура.ТипНоменклатуры в строках заказа.
+    """
+    year_start = f"{int(year)}-01-01T00:00:00"
+    year_end = f"{int(year) + 1}-01-01T00:00:00"
+    current_shipments = _load_realizations(session, year_start, year_end)
+    current_events = _service_realization_events(session, current_shipments)
+
+    candidate_partners = {partner for partner, _y, _m in current_events}
+    if candidate_partners:
+        history_shipments = _load_realizations(
+            session,
+            FACT_HISTORY_START,
+            year_end,
+            partner_keys=candidate_partners,
+        )
+        history_events = _service_realization_events(session, history_shipments)
+    else:
+        history_shipments = []
+        history_events = []
+
+    first_month_by_partner: dict[str, tuple[int, int]] = {}
+    for partner, y, m in history_events:
+        current = first_month_by_partner.get(partner)
+        if current is None or (y, m) < current:
+            first_month_by_partner[partner] = (y, m)
+
+    facts = {m: 0 for m in range(1, 13)}
+    for y, m in first_month_by_partner.values():
+        if y == int(year):
+            facts[m] += 1
+    return {
+        "facts_by_month": facts,
+        "partners_total": len(first_month_by_partner),
+        "current_shipment_rows": len(current_shipments),
+        "current_service_events": len(current_events),
+        "candidate_partners": len(candidate_partners),
+        "history_shipment_rows": len(history_shipments),
+        "history_service_events": len(history_events),
+    }
+
+
+def _load_manager_departments(session: requests.Session, manager_keys: set[str]) -> dict[str, str]:
+    managers = _fetch_by_refs(
+        session,
+        "Catalog_Пользователи",
+        manager_keys,
+        "Ref_Key,Подразделение_Key",
+        label="ks_razvitie/managers",
+    )
+    return {
+        key: normalize_commercial_dept_guid(row.get("Подразделение_Key") or "")
+        for key, row in managers.items()
+    }
+
+
+def _load_project_bookmarks_fact(session: requests.Session, year: int) -> dict:
+    """Факт для «Закладки в проекты».
+
+    Документ: проведённый Document_КоммерческоеПредложениеКлиенту.
+    Период: Date документа КП.
+    Отбор: ТД_ПроектнаяЗакладка = true.
+    Подразделение: Catalog_Пользователи.Подразделение_Key по Менеджер_Key.
+    """
+    year_start = f"{int(year)}-01-01T00:00:00"
+    year_end = f"{int(year) + 1}-01-01T00:00:00"
+    flt = (
+        f"Date ge datetime'{year_start}' and Date lt datetime'{year_end}' "
+        f"and Posted eq true and DeletionMark eq false "
+        f"and ТД_ПроектнаяЗакладка eq true"
+    )
+    select = "Ref_Key,Date,Number,Менеджер_Key,ТД_ПроектнаяЗакладка"
+    url = (
+        f"{BASE}/{PROJECT_BOOKMARKS_DOC}?$format=json"
+        f"&$filter={quote(flt, safe='')}"
+        f"&$select={quote(select, safe=',_')}"
+    )
+    docs = _fetch_all_json(session, url, label="ks_razvitie/project_bookmarks")
+    manager_keys = {
+        row.get("Менеджер_Key")
+        for row in docs
+        if row.get("Менеджер_Key") and row.get("Менеджер_Key") != EMPTY
+    }
+    manager_depts = _load_manager_departments(session, set(manager_keys))
+
+    facts_by_dept = {
+        dept_key: {m: 0 for m in range(1, 13)}
+        for dept_key in PROJECT_BOOKMARK_DEPARTMENTS
+    }
+    docs_by_dept = {dept_key: 0 for dept_key in PROJECT_BOOKMARK_DEPARTMENTS}
+    skipped_no_manager_dept = 0
+    for row in docs:
+        manager = row.get("Менеджер_Key") or ""
+        dept_key = manager_depts.get(manager)
+        if not dept_key:
+            skipped_no_manager_dept += 1
+            continue
+        if dept_key not in facts_by_dept:
+            continue
+        period = str(row.get("Date") or "")
+        if len(period) < 7:
+            continue
+        try:
+            month = int(period[5:7])
+        except ValueError:
+            continue
+        if not (1 <= month <= 12):
+            continue
+        facts_by_dept[dept_key][month] += 1
+        docs_by_dept[dept_key] += 1
+
+    return {
+        "facts_by_dept": facts_by_dept,
+        "docs_total": len(docs),
+        "managers_loaded": len(manager_depts),
+        "docs_by_dept": docs_by_dept,
+        "skipped_no_manager_dept": skipped_no_manager_dept,
+    }
+
+
+def _find_or_create_indicator_key(
+    by_dept_agg: dict[str, dict[str, dict[str, float]]],
+    indicator_labels: dict[str, str],
+    unit_by_dept_indicator: dict[tuple[str, str], str],
+    *,
+    dept_name: str = TARGET_SERVICE_CUSTOMERS_DEPT_NAME,
+    indicator: str = TARGET_SERVICE_CUSTOMERS_INDICATOR,
+    unit: str = "шт.",
+) -> str:
+    target_norm = _normalize_text(indicator)
+    for ind_key, label in indicator_labels.items():
+        if _normalize_text(label) != target_norm:
+            continue
+        dept_months = by_dept_agg.get(dept_name) or {}
+        if any(ind_key in month_map for month_map in dept_months.values()):
+            return ind_key
+    ind_key = f"{indicator}@@unit:{unit}"
+    indicator_labels[ind_key] = indicator
+    unit_by_dept_indicator[(dept_name, ind_key)] = unit
+    return ind_key
 
 
 def _parse_month(value) -> int | None:
@@ -485,6 +847,66 @@ def _fetch_from_odata(year: int) -> dict:
             "unit": unit_by_dept_indicator.get(unit_key, unit),
         }
 
+    service_customers_debug: dict = {}
+    try:
+        service_fact = _load_new_service_customers_fact(session, int(year))
+        service_customers_debug = {
+            key: value
+            for key, value in service_fact.items()
+            if key != "facts_by_month"
+        }
+        indicator_key = _find_or_create_indicator_key(
+            by_dept_agg,
+            indicator_labels,
+            unit_by_dept_indicator,
+        )
+        indicators_set.add(indicator_key)
+        dept_bucket = by_dept_agg.setdefault(TARGET_SERVICE_CUSTOMERS_DEPT_NAME, {})
+        unit_by_dept_indicator[(TARGET_SERVICE_CUSTOMERS_DEPT_NAME, indicator_key)] = "шт."
+        for m, fact in (service_fact.get("facts_by_month") or {}).items():
+            month_bucket = dept_bucket.setdefault(str(m), {})
+            prev = month_bucket.get(indicator_key) or {"plan": 0.0, "fact": 0.0, "unit": "шт."}
+            month_bucket[indicator_key] = {
+                "plan": round(float(prev.get("plan") or 0.0), 4),
+                "fact": round(float(fact or 0.0), 4),
+                "unit": "шт.",
+            }
+    except Exception:
+        logger.exception("ks_razvitie: failed to calculate new service customers fact")
+
+    project_bookmarks_debug: dict = {}
+    try:
+        project_fact = _load_project_bookmarks_fact(session, int(year))
+        project_bookmarks_debug = {
+            key: value
+            for key, value in project_fact.items()
+            if key != "facts_by_dept"
+        }
+        for dept_key, dept_name in PROJECT_BOOKMARK_DEPARTMENTS.items():
+            dept_name_by_key[dept_key] = dept_name
+            indicator_key = _find_or_create_indicator_key(
+                by_dept_agg,
+                indicator_labels,
+                unit_by_dept_indicator,
+                dept_name=dept_name,
+                indicator=PROJECT_BOOKMARKS_INDICATOR,
+                unit="шт.",
+            )
+            indicators_set.add(indicator_key)
+            dept_bucket = by_dept_agg.setdefault(dept_name, {})
+            unit_by_dept_indicator[(dept_name, indicator_key)] = "шт."
+            facts_by_month = (project_fact.get("facts_by_dept") or {}).get(dept_key) or {}
+            for m, fact in facts_by_month.items():
+                month_bucket = dept_bucket.setdefault(str(m), {})
+                prev = month_bucket.get(indicator_key) or {"plan": 0.0, "fact": 0.0, "unit": "шт."}
+                month_bucket[indicator_key] = {
+                    "plan": round(float(prev.get("plan") or 0.0), 4),
+                    "fact": round(float(fact or 0.0), 4),
+                    "unit": "шт.",
+                }
+    except Exception:
+        logger.exception("ks_razvitie: failed to calculate project bookmarks fact")
+
     indicators = sorted(indicators_set)
 
     # Индикаторы per-dept: только те, что реально есть в документах
@@ -595,6 +1017,10 @@ def _fetch_from_odata(year: int) -> dict:
         "by_dept_guid": by_dept_guid,       # то же, ключ — GUID подразделения
         "dept_indicators": dept_indicators, # какие показатели есть у каждого отдела
         "charts": flat_charts,              # плоский список диаграмм (КД / ПСД ком.блока)
+        "fact_debug": {
+            "new_service_customers": service_customers_debug,
+            "project_bookmarks": project_bookmarks_debug,
+        },
     }
 
 
