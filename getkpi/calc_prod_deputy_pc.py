@@ -18,11 +18,10 @@ from urllib.parse import quote
 
 import requests
 
-from . import calc_budget_techdir_plan_fact as bdg
-from . import calc_fot_management, fot_techdir_plan
+from . import calc_fot_management
 from . import calc_budget_limit
 from .calc_budget_limit import AUTH, EMPTY, period_bounds
-from .calc_fot_management import MONTH_RU, _normalize_period, _prorate_if_current
+from .calc_fot_management import MONTH_RU, _normalize_period
 
 ShopKey = Literal["pc1", "pc2"]
 
@@ -33,7 +32,7 @@ PC_SHOP_ROOT_NAME: dict[ShopKey, str] = {
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG_BUDGET = "prod_deputy_pc_budget_v4_paid_requests_by_cfo_nav"
-SOURCE_TAG_FOT = "prod_deputy_pc_fot_v1"
+SOURCE_TAG_FOT = "prod_deputy_pc_fot_v3_pc1_account26_fact"
 
 PC_BUDGET_PLAN: dict[ShopKey, list[float]] = {
     "pc1": [
@@ -47,6 +46,36 @@ PC_BUDGET_PLAN: dict[ShopKey, list[float]] = {
         34_215_075, 31_442_195, 19_803_164, 16_736_543,
     ],
 }
+
+PC_FOT_PLAN: dict[ShopKey, list[float]] = {
+    "pc1": [
+        4_599_526, 4_134_637, 8_164_107, 9_370_296,
+        9_618_778, 12_210_328, 11_095_698, 9_936_417,
+        10_877_749, 8_724_093, 7_835_742, 12_638_527,
+    ],
+    "pc2": [
+        3_544_225, 3_545_159, 3_673_152, 3_814_617,
+        3_597_997, 3_504_695, 3_957_994, 4_240_369,
+        3_728_505, 3_743_244, 3_494_346, 3_584_674,
+    ],
+}
+
+PC1_FOT_DEPARTMENTS = (
+    "Служба ремонта и обслуживания оборудования",
+    "Планово-диспетчерская служба",
+    "Участок ремонта пром.оборудования производственного цеха №1",
+    "Производственный цех №1",
+    "Монтажный участок №2",
+    "Механический цех",
+    "Механический участок №1",
+    "Сборочный участок №1",
+    "Сборочный участок №2",
+    "Участок ультразвуковых датчиков",
+    "Производство несерийных изделий",
+    "Экспериментальный производственный цех",
+    "Цех БМИ",
+    "Служба подготовки производства",
+)
 
 PC_BUDGET_CFO_NAME: dict[ShopKey, str] = {
     "pc1": "Производство №1",
@@ -208,31 +237,130 @@ def _budget_fact_paid_requests(session: requests.Session, shop: ShopKey, year: i
     return round(total, 2)
 
 
-def _fot_plan_for_subtree(
-    session: requests.Session,
-    year: int,
-    month: int,
-    department_keys: frozenset[str],
-) -> float:
-    p_start, p_end = period_bounds(year, month)
-    scenario_names = bdg.load_budget_scenarios(session)
-    article_names = bdg.load_budget_articles(session)
-    rows = fot_techdir_plan.load_budget_rows(session, p_start, p_end)
-    total = 0.0
-
+def _resolve_department_keys(
+    structure_by_key: dict[str, dict],
+    department_names: tuple[str, ...],
+) -> dict[str, str]:
+    rows = [row for row in structure_by_key.values() if not row.get("DeletionMark")]
+    by_norm: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
-        if scenario_names.get(row.get("Сценарий_Key"), "") != fot_techdir_plan.BUDGET_SCENARIO:
-            continue
-        dk = row.get("Подразделение_Key") or ""
-        if not dk or dk == EMPTY or dk not in department_keys:
-            continue
-        article_key = row.get("СтатьяБюджетов") or ""
-        article_name = article_names.get(article_key, "")
-        if not fot_techdir_plan.classify_plan_article(article_name, "payroll"):
-            continue
-        total += float(row.get("СуммаСценария") or 0)
+        by_norm.setdefault(_normalize_name(row.get("Description")), []).append(row)
 
-    return round(total, 2)
+    resolved: dict[str, str] = {}
+    for name in department_names:
+        target = _normalize_name(name)
+        candidates = by_norm.get(target) or [
+            row
+            for row in rows
+            if target and target in _normalize_name(row.get("Description"))
+        ]
+        candidates.sort(key=lambda row: str(row.get("Description") or ""))
+        if candidates and candidates[0].get("Ref_Key"):
+            resolved[name] = candidates[0]["Ref_Key"]
+    return resolved
+
+
+def _blank_fot_articles_row() -> dict[str, Any]:
+    return {
+        "salary": 0.0,
+        "insurance": 0.0,
+        "total": 0.0,
+        "rows": 0,
+        "by_article": {article: 0.0 for article in calc_fot_management.ARTICLE_ORDER},
+    }
+
+
+def _pc1_fot_fact_account26(session: requests.Session, year: int, month: int) -> dict[str, Any]:
+    p_start, p_end = period_bounds(year, month)
+    structure_by_key, _by_parent = calc_fot_management._load_structure(session)
+    dept_name_to_key = _resolve_department_keys(structure_by_key, PC1_FOT_DEPARTMENTS)
+    dept_key_to_name = {key: name for name, key in dept_name_to_key.items()}
+
+    target_accounts = calc_fot_management._get_subaccounts(session, calc_fot_management.ACCOUNT_26_ROOT)
+    acc_or = " or ".join(f"AccountDr_Key eq guid'{account}'" for account in sorted(target_accounts))
+    flt = (
+        f"Period ge datetime'{p_start}' and Period lt datetime'{p_end}'"
+        f" and Active eq true and ({acc_or})"
+    )
+    sel = ",".join([
+        "Period", "AccountDr_Key", "ПодразделениеDr_Key",
+        "Сумма", "Сторно", "ExtDimensionDr1", "ExtDimensionTypeDr1_Key",
+    ])
+    url = (
+        f"{calc_fot_management.BASE}/{quote('AccountingRegister_Хозрасчетный')}/RecordsWithExtDimensions"
+        f"?$format=json"
+        f"&$filter={quote(flt, safe='')}"
+        f"&$select={quote(sel, safe=',_')}"
+    )
+    records = calc_fot_management._fetch_all(session, url)
+
+    by_dept = {name: _blank_fot_articles_row() for name in PC1_FOT_DEPARTMENTS}
+    by_article = {article: 0.0 for article in calc_fot_management.ARTICLE_ORDER}
+    skipped_no_dept = 0
+    skipped_not_target_dept = 0
+    skipped_not_target_article = 0
+    taken = 0
+
+    for rec in records:
+        dept_key = rec.get("ПодразделениеDr_Key") or EMPTY
+        if dept_key == EMPTY:
+            skipped_no_dept += 1
+            continue
+        dept_name = dept_key_to_name.get(dept_key)
+        if not dept_name:
+            skipped_not_target_dept += 1
+            continue
+
+        article_key = None
+        if rec.get("ExtDimensionTypeDr1_Key") == calc_fot_management.SUBCONTO_TYPE_COST:
+            article_key = rec.get("ExtDimensionDr1")
+        if article_key not in calc_fot_management.ARTICLE_SET:
+            skipped_not_target_article += 1
+            continue
+
+        amount = float(rec.get("Сумма", 0) or 0)
+        if rec.get("Сторно"):
+            amount = -amount
+
+        row = by_dept[dept_name]
+        row["by_article"][article_key] += amount
+        row["total"] += amount
+        row["rows"] += 1
+        if article_key == calc_fot_management.ARTICLE_ORDER[0]:
+            row["salary"] += amount
+        elif article_key == calc_fot_management.ARTICLE_ORDER[1]:
+            row["insurance"] += amount
+        by_article[article_key] += amount
+        taken += 1
+
+    matrix = []
+    for dept_name in PC1_FOT_DEPARTMENTS:
+        row = by_dept[dept_name]
+        matrix.append({
+            "department": dept_name,
+            "department_key": dept_name_to_key.get(dept_name, ""),
+            "salary": round(row["salary"], 2),
+            "insurance": round(row["insurance"], 2),
+            "total": round(row["total"], 2),
+            "rows": row["rows"],
+            "by_article": {key: round(value, 2) for key, value in row["by_article"].items()},
+        })
+
+    total = round(sum(float(row["total"] or 0) for row in by_dept.values()), 2)
+    return {
+        "total": total,
+        "matrix": matrix,
+        "by_article": {key: round(value, 2) for key, value in by_article.items()},
+        "departments_count": len(dept_name_to_key),
+        "unresolved_departments": [
+            name for name in PC1_FOT_DEPARTMENTS if name not in dept_name_to_key
+        ],
+        "records_total": len(records),
+        "records_taken": taken,
+        "skipped_no_dept": skipped_no_dept,
+        "skipped_not_target_dept": skipped_not_target_dept,
+        "skipped_not_target_article": skipped_not_target_article,
+    }
 
 
 def _build_payload(
@@ -319,33 +447,39 @@ def get_pc_fot_monthly(shop: ShopKey, year: int | None = None, month: int | None
     today = date.today()
     ref_year, ref_month = _normalize_period(year, month)
     cache_path = _cache_path("fot", shop, ref_year, ref_month)
-    is_current_month = ref_year == today.year and ref_month == today.month
 
     cached = _load_json(cache_path)
-    if cached is not None and cached.get("source") == SOURCE_TAG_FOT:
-        if not is_current_month or cached.get("cache_date") == today.isoformat():
-            return cached
-
-    session = requests.Session()
-    session.auth = AUTH
-    root_name = PC_SHOP_ROOT_NAME[shop]
-    department_keys = _subtree_keys_for_shop(session, shop)
+    if (
+        cached is not None
+        and cached.get("source") == SOURCE_TAG_FOT
+        and cached.get("cache_date") == today.isoformat()
+    ):
+        return cached
 
     months_out: list[dict] = []
+    session = None
     for mm in range(1, ref_month + 1):
-        fact_payload = calc_fot_management.calc_fact_for_department_root(session, ref_year, mm, root_name)
-        fact = float(fact_payload.get("total") or 0)
-        plan_raw = _fot_plan_for_subtree(session, ref_year, mm, department_keys)
-        plan = _prorate_if_current(plan_raw, ref_year, mm)
+        plan = float(PC_FOT_PLAN[shop][mm - 1])
+        fact_payload = None
+        if shop == "pc1":
+            if session is None:
+                session = requests.Session()
+                session.auth = AUTH
+            fact_payload = _pc1_fot_fact_account26(session, ref_year, mm)
+            fact = float(fact_payload.get("total") or 0)
+        else:
+            fact = 0.0
         months_out.append({
             "year": ref_year,
             "month": mm,
             "month_name": MONTH_RU[mm].lower(),
-            "plan": round(plan, 2) if plan is not None else None,
+            "plan": round(plan, 2),
             "fact": round(fact, 2),
-            "kpi_pct": round(fact / plan * 100, 1) if plan and plan > 0 else None,
-            "has_data": (plan is not None and plan > 0) or abs(fact) > 0,
+            "kpi_pct": round(fact / plan * 100, 1) if plan > 0 else None,
+            "has_data": abs(plan) > 0 or abs(fact) > 0,
             "values_unit": "руб.",
+            **({"fact_matrix": fact_payload.get("matrix") or []} if fact_payload else {}),
+            **({"unresolved_departments": fact_payload.get("unresolved_departments") or []} if fact_payload else {}),
         })
 
     payload = _build_payload(
