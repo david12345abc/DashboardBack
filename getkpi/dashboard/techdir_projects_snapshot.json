@@ -17,8 +17,8 @@
       "planovaya_data_nachala": "2026-02-03",
       "planovaya_data_okonchaniya": "2026-05-30",
       "data_okonchaniya": "2026-05-30",
-      "overdue_milestones_count": 3,
-      "project_progress_pct": 43.8,
+      "overdue_milestones_count": 1,
+      "project_progress_pct": 56.2,
       "milestone_months": [
         "2026-02",
         "2026-03",
@@ -30,18 +30,6 @@
         "2026-04"
       ],
       "overdue_milestones": [
-        {
-          "name": "Регламент скорректирован",
-          "start_date": "2026-04-21T10:00:00",
-          "finish_date": "2026-04-21T10:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Регламент скорректирован",
-          "start_date": "2026-04-21T10:00:00",
-          "finish_date": "2026-04-21T10:00:00",
-          "percent_complete": 0.0
-        },
         {
           "name": "Новые требования описаны и готовы к ОПЭ",
           "start_date": "2026-04-21T16:00:00",
@@ -67,7 +55,7 @@
       "planovaya_data_nachala": "2026-03-18",
       "planovaya_data_okonchaniya": "2026-06-30",
       "data_okonchaniya": "2026-06-30",
-      "overdue_milestones_count": 2,
+      "overdue_milestones_count": 3,
       "project_progress_pct": 44.0,
       "milestone_months": [
         "2026-02",
@@ -77,7 +65,8 @@
         "2026-06"
       ],
       "overdue_milestone_months": [
-        "2026-04"
+        "2026-04",
+        "2026-05"
       ],
       "overdue_milestones": [
         {
@@ -90,6 +79,12 @@
           "name": "Совет по качеству ",
           "start_date": "2026-04-29T17:00:00",
           "finish_date": "2026-04-29T17:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Проведение курсов повышения квалификации персонала промышленной безопасности на производственных корпусах проведена ",
+          "start_date": "2026-05-04T09:30:00",
+          "finish_date": "2026-05-04T09:30:00",
           "percent_complete": 0.0
         }
       ]
@@ -143,8 +138,8 @@
         "planovaya_data_nachala": "2026-02-03",
         "planovaya_data_okonchaniya": "2026-05-30",
         "data_okonchaniya": "2026-05-30",
-        "overdue_milestones_count": 3,
-        "project_progress_pct": 43.8,
+        "overdue_milestones_count": 1,
+        "project_progress_pct": 56.2,
         "milestone_months": [
           "2026-02",
           "2026-03",
@@ -156,18 +151,6 @@
           "2026-04"
         ],
         "overdue_milestones": [
-          {
-            "name": "Регламент скорректирован",
-            "start_date": "2026-04-21T10:00:00",
-            "finish_date": "2026-04-21T10:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Регламент скорректирован",
-            "start_date": "2026-04-21T10:00:00",
-            "finish_date": "2026-04-21T10:00:00",
-            "percent_complete": 0.0
-          },
           {
             "name": "Новые требования описаны и готовы к ОПЭ",
             "start_date": "2026-04-21T16:00:00",
@@ -193,7 +176,7 @@
         "planovaya_data_nachala": "2026-03-18",
         "planovaya_data_okonchaniya": "2026-06-30",
         "data_okonchaniya": "2026-06-30",
-        "overdue_milestones_count": 2,
+        "overdue_milestones_count": 3,
         "project_progress_pct": 44.0,
         "milestone_months": [
           "2026-02",
@@ -203,7 +186,8 @@
           "2026-06"
         ],
         "overdue_milestone_months": [
-          "2026-04"
+          "2026-04",
+          "2026-05"
         ],
         "overdue_milestones": [
           {
@@ -216,6 +200,12 @@
             "name": "Совет по качеству ",
             "start_date": "2026-04-29T17:00:00",
             "finish_date": "2026-04-29T17:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Проведение курсов повышения квалификации персонала промышленной безопасности на производственных корпусах проведена ",
+            "start_date": "2026-05-04T09:30:00",
+            "finish_date": "2026-05-04T09:30:00",
             "percent_complete": 0.0
           }
         ]
@@ -250,7 +240,7 @@
       }
     ]
   },
-  "cache_date": "2026-05-04",
+  "cache_date": "2026-05-05",
   "cache_version": 8,
   "od_overdue_milestones_schema": "zero_duration_milestones_v1"
 }

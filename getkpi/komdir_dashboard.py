@@ -674,13 +674,33 @@ def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
     }
 
 
-def _build_pie_charts(ref_y: int, ref_m: int) -> dict:
+def _build_pie_charts(
+    ref_y: int,
+    ref_m: int,
+    active_dealers_report: dict | None = None,
+) -> dict:
     """KD-C2: круговые диаграммы — 5 направлений."""
     random.seed(hash(('KD-C2-pies', ref_y, ref_m)))
     pie_data = []
+
+    dealer_fact: float | None = None
+    dealer_has_data = False
+    if active_dealers_report and active_dealers_report.get("has_data"):
+        dealer_fact = float(active_dealers_report.get("pie_value", 0))
+        dealer_has_data = True
+
     for cat in PIE_CHART_CATEGORIES:
-        value = round(random.uniform(5, 35), 1)
-        pie_data.append({"name": cat, "value": value})
+        if cat == "Развитие дилеров" and dealer_fact is not None:
+            value = round(dealer_fact, 1)
+            pie_data.append({
+                "name": cat,
+                "value": value,
+                "has_data": dealer_has_data,
+                "unit": "шт",
+            })
+        else:
+            value = round(random.uniform(5, 35), 1)
+            pie_data.append({"name": cat, "value": value, "has_data": False})
 
     total = sum(d['value'] for d in pie_data)
     for d in pie_data:
@@ -1065,9 +1085,21 @@ def build_komdir_payload(kpi_list: list[dict],
         }
         plitki_items.append(tile_item)
 
+    active_dealers_report: dict | None = None
+    try:
+        from . import calc_komdir_active_dealers
+
+        active_dealers_report = cache_manager.locked_call(
+            f"active_dealers_{date.today().isoformat()}",
+            calc_komdir_active_dealers.compute_active_dealers_report,
+            date.today(),
+        )
+    except Exception:
+        logger.exception("Действующие дилеры: не удалось получить отчёт (кэш/1С)")
+
     grafiki = {
         "KD-C1": _build_line_chart(by_id, tiles_data),
-        "KD-C2": _build_pie_charts(ref_y, series_m),
+        "KD-C2": _build_pie_charts(ref_y, series_m, active_dealers_report),
         "KD-C3": _build_bar_chart(by_id, tiles_data, ref_y, ref_m),
     }
     try:
@@ -1129,6 +1161,63 @@ def build_komdir_payload(kpi_list: list[dict],
         logger.exception("KS-RAZVITIE: failed to load plans")
 
     tablitsy: dict = {}
+
+    if active_dealers_report:
+        ad_rep = active_dealers_report
+        dd = ad_rep.get("dealer_detection") or {}
+        tablitsy["KD-T-ACTIVE-DEALERS"] = {
+            "kpi_id": "KD-T-ACTIVE-DEALERS",
+            "name": "Действующие дилеры (12 мес.)",
+            "periodicity": "скользящий год",
+            "description": (
+                "Уникальные дилеры с оплатой и/или отгрузкой по заказам клиента "
+                "за последние 12 месяцев от даты формирования."
+            ),
+            "report_as_of": ad_rep.get("as_of"),
+            "period_from": ad_rep.get("period_from"),
+            "period_to": ad_rep.get("period_to"),
+            "dealer_rule_ru": dd.get("description_ru"),
+            "dealer_rule_method": dd.get("method"),
+            "active_dealers_count": ad_rep.get("active_dealers_count", 0),
+            "columns": [
+                "Дилер",
+                "Код",
+                "Идентификатор (Ref_Key)",
+                "Последняя оплата",
+                "Сумма оплат",
+                "Последняя отгрузка",
+                "Сумма отгрузок",
+                "Основание",
+            ],
+            "rows": [
+                {
+                    # Поля для универсального грида (api.js tableRowHasDisplayableData)
+                    "name": r.get("dealer_name"),
+                    "code": r.get("dealer_code"),
+                    "partner": r.get("dealer_name"),
+                    "fact": round(
+                        float(r.get("payments_sum") or 0) + float(r.get("shipments_sum") or 0),
+                        2,
+                    ),
+                    "comment": (
+                        f"Основание: {r.get('basis')}; "
+                        f"оплаты {r.get('payments_sum')} (последняя {r.get('last_payment_date')}); "
+                        f"отгрузки {r.get('shipments_sum')} (последняя {r.get('last_shipment_date')})"
+                    ),
+                    "Дилер": r.get("dealer_name"),
+                    "Код": r.get("dealer_code"),
+                    "Идентификатор (Ref_Key)": r.get("dealer_ref"),
+                    "Последняя оплата": r.get("last_payment_date"),
+                    "Сумма оплат": r.get("payments_sum"),
+                    "Последняя отгрузка": r.get("last_shipment_date"),
+                    "Сумма отгрузок": r.get("shipments_sum"),
+                    "Основание": r.get("basis"),
+                }
+                for r in (ad_rep.get("rows") or [])
+            ],
+            "segments_used": dd.get("segments"),
+            "warnings": [dd["warning"]] if dd.get("warning") else [],
+        }
 
     try:
         tablitsy.update(_build_claims_table(ref_y, series_m, dept_guid=dept_guid))
