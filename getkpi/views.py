@@ -69,8 +69,9 @@ def _get_kpi_dicts(department: str) -> list[dict]:
     """Все KPI подразделения из БД в формате dict (как был kpi_data.json)."""
     rows = [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
     if _is_prod_deputy_department(department):
-        has_new_pd = any(str(row.get('kpi_id') or '').startswith('PD-') for row in rows)
-        if not has_new_pd:
+        split_ids = {'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2'}
+        has_split_pd = split_ids.issubset({str(row.get('kpi_id') or '') for row in rows})
+        if not has_split_pd:
             try:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
             except Exception:
@@ -100,8 +101,9 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
         return None
     rows = [obj.to_dict() for obj in qs]
     if _is_prod_deputy_department(department):
-        has_new_pd = any(str(row.get('kpi_id') or '').startswith('PD-') for row in rows)
-        if not has_new_pd:
+        split_ids = {'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2'}
+        has_split_pd = split_ids.issubset({str(row.get('kpi_id') or '') for row in rows})
+        if not has_split_pd:
             try:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
             except Exception:
@@ -319,8 +321,10 @@ def _rag_lower_turnover(fact_pct: float | None) -> str:
 
 
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
-    """Плитки «в пределах лимита»: поддерживаем суффиксы *-M3-1/*-M3-2 и *.1/*.2."""
+    """Плитки «в пределах лимита»: M3 плюс разрез ПЦ1/ПЦ2 для зам. операционного."""
     normalized = (kpi_id or '').upper()
+    if normalized.startswith('PD-M3.B') or normalized.startswith('PD-M3.F'):
+        return True
     return normalized.endswith(('-M3-1', '-M3-2', 'M3.1', 'M3.2'))
 
 
@@ -919,7 +923,10 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         if monthly_data is not None:
             tile['monthly_data'] = monthly_data
 
-        if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2', 'PD-M3.1', 'PD-M3.2'}:
+        if kpi.get('kpi_id') in {
+            'OD-M1', 'OD-M3.1', 'OD-M3.2',
+            'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
+        }:
             tile['unit'] = 'руб.'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
@@ -1269,6 +1276,52 @@ def _build_kpi_entry(
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             return entry
+
+    if kpi_id in {'PD-M3.B1', 'PD-M3.B2'}:
+        from . import calc_prod_deputy_pc
+
+        shop = 'pc1' if kpi_id.endswith('B1') else 'pc2'
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'pd_pc_budget_{shop}_{ref_y}_{ref_m}',
+            calc_prod_deputy_pc.get_pc_budget_monthly,
+            shop,
+            ref_y,
+            ref_m,
+        )
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = data.get('months') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        return entry
+
+    if kpi_id in {'PD-M3.F1', 'PD-M3.F2'}:
+        from . import calc_prod_deputy_pc
+
+        shop = 'pc1' if kpi_id.endswith('F1') else 'pc2'
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'pd_pc_fot_{shop}_{ref_y}_{ref_m}',
+            calc_prod_deputy_pc.get_pc_fot_monthly,
+            shop,
+            ref_y,
+            ref_m,
+        )
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = data.get('months') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        return entry
 
     if kpi_id == 'PD-Q1':
         if year and month:

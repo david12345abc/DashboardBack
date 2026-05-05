@@ -181,7 +181,14 @@ class DdsCache:
         return self.names.get(key, f"<{key[:8]}…>") or "<пусто>"
 
 
-def calc_month(session: requests.Session, year: int, month: int, dds: DdsCache) -> dict:
+def calc_month(
+    session: requests.Session,
+    year: int,
+    month: int,
+    dds: DdsCache,
+    *,
+    department_keys: frozenset[str] | None = None,
+) -> dict:
     p_start, p_end = period_bounds(year, month)
     rows = load_records(session, p_start, p_end)
 
@@ -198,6 +205,10 @@ def calc_month(session: requests.Session, year: int, month: int, dds: DdsCache) 
     art_keys: set[str] = set()
 
     for r in rows:
+        if department_keys is not None:
+            dk = r.get("Подразделение_Key") or EMPTY
+            if dk == EMPTY or dk not in department_keys:
+                continue
         sign = -1 if r.get("Сторно") else 1
         in_limit = float(r.get("СуммаКВыплатеВРамкахЛимита") or 0) * sign
         over = float(r.get("СуммаКВыплатеСверхЛимита") or 0) * sign

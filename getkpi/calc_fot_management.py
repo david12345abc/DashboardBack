@@ -53,7 +53,6 @@ MONTH_RU = {
     9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
 }
 
-print('ok')
 def normalize_name(value: str | None) -> str:
     value = (value or "").lower().replace("ё", "е")
     value = re.sub(r"[^0-9a-zа-я]+", " ", value)
@@ -224,10 +223,15 @@ def _blank_dept_row() -> dict:
     }
 
 
-def calc_fact(session: requests.Session, year: int, month: int) -> dict:
+def calc_fact_for_department_root(
+    session: requests.Session,
+    year: int,
+    month: int,
+    department_root_name: str,
+) -> dict:
     p_start, p_end = period_bounds(year, month)
     by_key, by_parent = _load_structure(session)
-    root = _resolve_department_root(by_key, OPDIR_ROOT_NAME)
+    root = _resolve_department_root(by_key, department_root_name)
     departments = _collect_subtree_ordered(root["Ref_Key"], by_key, by_parent)
     dept_keys = {row["Ref_Key"] for row in departments}
 
@@ -325,6 +329,10 @@ def calc_fact(session: requests.Session, year: int, month: int) -> dict:
         "skipped_not_target_dept": skipped_not_target_dept,
         "skipped_not_target_article": skipped_not_target_article,
     }
+
+
+def calc_fact(session: requests.Session, year: int, month: int) -> dict:
+    return calc_fact_for_department_root(session, year, month, OPDIR_ROOT_NAME)
 
 
 def calc_month(session: requests.Session, year: int, month: int) -> dict:
