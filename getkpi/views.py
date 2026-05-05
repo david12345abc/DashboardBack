@@ -466,6 +466,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif kid == 'TD-M4':
         color = _rag_td_m4_limit(pct)
+    elif kid == 'TD-M5':
+        color = _rag_td_m4_limit(pct)
     else:
         color = _rag_higher_better(pct)
     return pct, color
@@ -547,6 +549,7 @@ def _techdir_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None)
     cache_files = {
         'TD-M1': [techdir_projects.CACHE_PATH],
         'TD-Q1': [techdir_projects.CACHE_PATH],
+        'TD-M5': [techdir_projects.CACHE_PATH],
         'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
         'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
         'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
@@ -789,6 +792,7 @@ def _build_techdir_charts(
     display_names = {
         'TD-M3': 'Бюджет',
         'TD-M4': 'ФОТ',
+        'TD-M5': 'Внешние заказы',
     }
     series: list[dict] = []
 
@@ -940,6 +944,8 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1'}:
             tile['unit'] = 'шт.'
+        elif kpi.get('kpi_id') == 'TD-M5':
+            tile['unit'] = 'руб.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
         if period_label:
@@ -1385,6 +1391,17 @@ def _build_kpi_entry(
             entry['last_full_month_row'] = td.get('last_full_month_row')
             entry['ytd'] = td['ytd']
             entry['kpi_period'] = td['kpi_period']
+            return entry
+
+    if kpi_id == 'TD-M5':
+        td = techdir_projects.get_td_m5_ytd(year=year, month=month)
+        if td is not None:
+            entry['data_granularity'] = td['data_granularity']
+            entry['monthly_data'] = td['monthly_data']
+            entry['last_full_month_row'] = td.get('last_full_month_row')
+            entry['ytd'] = td['ytd']
+            entry['kpi_period'] = td['kpi_period']
+            entry['debug'] = td.get('debug')
             return entry
 
     if kpi_id == 'RD-M2-1':

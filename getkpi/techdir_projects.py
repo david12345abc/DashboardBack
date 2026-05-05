@@ -32,7 +32,7 @@ TIMEOUT = 60
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CACHE_DIR = cache_manager.CACHE_DIR
 CACHE_PATH = CACHE_DIR / "techdir_projects_snapshot.json"
-CACHE_VERSION = 10
+CACHE_VERSION = 12
 OD_OVERDUE_MILESTONES_SCHEMA = "zero_duration_milestones_v1"
 _CREDENTIAL_FILES = (
     "API для dashboard.py",
@@ -410,6 +410,8 @@ def _project_summary(
         "milestone_months": _milestone_month_keys(tasks),
         "overdue_milestone_months": _overdue_milestone_month_keys(overdue_milestones),
         "overdue_milestones": overdue_milestones,
+        "byudzhet_plan": _safe_float(data_1c.get("byudzhet_plan")),
+        "byudzhet_fakt": _safe_float(data_1c.get("byudzhet_fakt")),
     }
 
 
@@ -567,6 +569,106 @@ def _normalize_ref_period(year: int | None = None, month: int | None = None) -> 
 
 def _month_pairs_until(ref_y: int, ref_m: int) -> list[tuple[int, int]]:
     return [(ref_y, mm) for mm in range(1, ref_m + 1)]
+
+
+def _td_m5_plan_fact_kpi_pct(plan: float, fact: float) -> float:
+    """Доля факта к плану в % (как помесячный TD-M4: при нулевом плане — 0, не null)."""
+    if plan == 0:
+        return 0.0
+    return round(fact / plan * 100, 2)
+
+
+def _build_td_m5_budget_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
+    """Помесячные суммы плана (byudzhet_plan) и факта (byudzhet_fakt) по проектам внешних заказов техдира (как TD-M1)."""
+    target_projects = _projects_for_filter(TARGET_PROJECT_TYPE_TD_M1)
+    ref_y, ref_m = _normalize_ref_period(year, month)
+    pairs = _month_pairs_until(ref_y, ref_m)
+    monthly_rows: list[dict[str, Any]] = []
+    ref_row: dict[str, Any] | None = None
+
+    for y, m in pairs:
+        plan_sum = 0.0
+        fact_sum = 0.0
+        alive_count = 0
+        for project in target_projects:
+            if not _project_is_alive_in_month(project, y, m):
+                continue
+            alive_count += 1
+            pv = _safe_float(project.get("byudzhet_plan"))
+            if pv is not None:
+                plan_sum += pv
+            fv = _safe_float(project.get("byudzhet_fakt"))
+            if fv is not None:
+                fact_sum += fv
+        plan_sum = round(plan_sum, 2)
+        fact_sum = round(fact_sum, 2)
+        has_data = alive_count > 0
+        if has_data:
+            kpi_pct = _td_m5_plan_fact_kpi_pct(plan_sum, fact_sum)
+            row = {
+                "month": m,
+                "year": y,
+                "month_name": MONTH_NAMES[m],
+                "plan": plan_sum,
+                "fact": fact_sum,
+                "kpi_pct": kpi_pct,
+                "has_data": True,
+                "values_unit": "руб.",
+            }
+        else:
+            row = {
+                "month": m,
+                "year": y,
+                "month_name": MONTH_NAMES[m],
+                "plan": None,
+                "fact": None,
+                "kpi_pct": None,
+                "has_data": False,
+            }
+        monthly_rows.append(row)
+        if (y, m) == (ref_y, ref_m):
+            ref_row = row
+
+    ytd_block: dict[str, Any] = {
+        "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
+        "months_total": len(monthly_rows),
+    }
+    if ref_row and ref_row.get("has_data"):
+        ytd_block.update({
+            "total_plan": ref_row.get("plan"),
+            "total_fact": ref_row.get("fact"),
+            "kpi_pct": ref_row.get("kpi_pct"),
+            "values_unit": "руб.",
+        })
+    else:
+        ytd_block.update({
+            "total_plan": None,
+            "total_fact": None,
+            "kpi_pct": None,
+        })
+
+    return {
+        "data_granularity": "monthly",
+        "monthly_data": monthly_rows,
+        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+        "kpi_period": {
+            "type": "last_full_month",
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "ytd": ytd_block,
+        "debug": {
+            "kpi_id": "TD-M5",
+            "filter": (
+                f"tip_proekta={TARGET_PROJECT_TYPE_TD_M1!r}, "
+                f"организация «{TARGET_ORGANIZATION}», куратор «{TECHDIR_PROJECT_OWNER}»"
+            ),
+            "plan_field": "byudzhet_plan",
+            "fact_field": "byudzhet_fakt",
+            "target_projects_count": len(target_projects),
+        },
+    }
 
 
 def _build_monthly_payload(
@@ -952,6 +1054,19 @@ def get_td_m1_ytd() -> dict | None:
             return None
 
     return cache_manager.locked_call("techdir_td_m1", _runner)
+
+
+def get_td_m5_ytd(year: int | None = None, month: int | None = None) -> dict | None:
+    """TD-M5: суммы плана (byudzhet_plan) и факта (byudzhet_fakt) по проектам внешних заказов техдира."""
+
+    def _runner() -> dict | None:
+        try:
+            return _build_td_m5_budget_payload(year=year, month=month)
+        except Exception:
+            logger.exception("Ошибка при расчёте TD-M5 (бюджет проектов по внешним заказам)")
+            return None
+
+    return cache_manager.locked_call("techdir_td_m5", _runner)
 
 
 def get_td_q1_ytd() -> dict | None:
