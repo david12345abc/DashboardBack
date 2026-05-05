@@ -354,6 +354,11 @@ def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     return normalized.endswith(('-M3-1', '-M3-2', 'M3.1', 'M3.2'))
 
 
+def _is_prod_deputy_pc_m3_kpi(kpi_id: str) -> bool:
+    normalized = (kpi_id or '').upper()
+    return normalized.startswith('PD-M3.B') or normalized.startswith('PD-M3.F')
+
+
 def _is_turnover_style_tile(kpi: dict) -> bool:
     kid = kpi.get('kpi_id') or ''
     nm = (kpi.get('name') or '').lower()
@@ -1286,7 +1291,7 @@ def _build_kpi_entry(
             entry['kpi_period'] = dz.get('kpi_period')
             return entry
 
-    if dept_key and _is_budget_limit_m3_kpi(kpi_id):
+    if dept_key and _is_budget_limit_m3_kpi(kpi_id) and not _is_prod_deputy_pc_m3_kpi(kpi_id):
         bm = dept_budget_m3.get_dept_budget_m3_ytd(dept_key)
         if bm is not None:
             entry['data_granularity'] = 'monthly'
