@@ -19,7 +19,7 @@ from .calc_prod_deputy_pc_common import (
     save_json,
 )
 
-SOURCE_TAG_FOT = "prod_deputy_pc_fot_v3_pc1_account26_fact"
+SOURCE_TAG_FOT = "prod_deputy_pc_fot_v4_pc1_pc2_account26_fact"
 
 PC1_FOT_DEPARTMENTS = (
     "Служба ремонта и обслуживания оборудования",
@@ -36,6 +36,18 @@ PC1_FOT_DEPARTMENTS = (
     "Экспериментальный производственный цех",
     "Цех БМИ",
     "Служба подготовки производства",
+)
+
+PC2_FOT_DEPARTMENTS = (
+    "Производственный цех №2",
+    "Участок переповерки приборов",
+    "Ремонтный участок стендов",
+    "Участок ремонта гарантийных приборов",
+    "Участок Гранд SPI",
+    "Участок сборки счетчиков",
+    "Участок СПУ-5 (АЛМАЗ)",
+    "Участок упаковки",
+    "Участок ремонта гарантийных плат",
 )
 
 
@@ -78,10 +90,15 @@ def _blank_fot_articles_row() -> dict[str, Any]:
     }
 
 
-def _pc1_fot_fact_account26(session: requests.Session, year: int, month: int) -> dict[str, Any]:
+def _fot_fact_account26(
+    session: requests.Session,
+    year: int,
+    month: int,
+    department_names: tuple[str, ...],
+) -> dict[str, Any]:
     p_start, p_end = period_bounds(year, month)
     structure_by_key, _by_parent = calc_fot_management._load_structure(session)
-    dept_name_to_key = _resolve_department_keys(structure_by_key, PC1_FOT_DEPARTMENTS)
+    dept_name_to_key = _resolve_department_keys(structure_by_key, department_names)
     dept_key_to_name = {key: name for name, key in dept_name_to_key.items()}
 
     target_accounts = calc_fot_management._get_subaccounts(session, calc_fot_management.ACCOUNT_26_ROOT)
@@ -102,7 +119,7 @@ def _pc1_fot_fact_account26(session: requests.Session, year: int, month: int) ->
     )
     records = calc_fot_management._fetch_all(session, url)
 
-    by_dept = {name: _blank_fot_articles_row() for name in PC1_FOT_DEPARTMENTS}
+    by_dept = {name: _blank_fot_articles_row() for name in department_names}
     by_article = {article: 0.0 for article in calc_fot_management.ARTICLE_ORDER}
     skipped_no_dept = 0
     skipped_not_target_dept = 0
@@ -142,7 +159,7 @@ def _pc1_fot_fact_account26(session: requests.Session, year: int, month: int) ->
         taken += 1
 
     matrix = []
-    for dept_name in PC1_FOT_DEPARTMENTS:
+    for dept_name in department_names:
         row = by_dept[dept_name]
         matrix.append({
             "department": dept_name,
@@ -151,17 +168,30 @@ def _pc1_fot_fact_account26(session: requests.Session, year: int, month: int) ->
             "insurance": round(row["insurance"], 2),
             "total": round(row["total"], 2),
             "rows": row["rows"],
-            "by_article": {key: round(value, 2) for key, value in row["by_article"].items()},
+            "by_article": {
+                calc_fot_management.COST_ARTICLES.get(key, key): round(value, 2)
+                for key, value in row["by_article"].items()
+            },
         })
 
     total = round(sum(float(row["total"] or 0) for row in by_dept.values()), 2)
+    by_article_named = {
+        calc_fot_management.COST_ARTICLES.get(key, key): round(value, 2)
+        for key, value in by_article.items()
+    }
     return {
         "total": total,
         "matrix": matrix,
-        "by_article": {key: round(value, 2) for key, value in by_article.items()},
+        "by_article": by_article_named,
+        "totals": {
+            "salary": round(by_article.get(calc_fot_management.ARTICLE_ORDER[0], 0.0), 2),
+            "insurance": round(by_article.get(calc_fot_management.ARTICLE_ORDER[1], 0.0), 2),
+            "total": total,
+            "by_article": by_article_named,
+        },
         "departments_count": len(dept_name_to_key),
         "unresolved_departments": [
-            name for name in PC1_FOT_DEPARTMENTS if name not in dept_name_to_key
+            name for name in department_names if name not in dept_name_to_key
         ],
         "records_total": len(records),
         "records_taken": taken,
@@ -169,6 +199,10 @@ def _pc1_fot_fact_account26(session: requests.Session, year: int, month: int) ->
         "skipped_not_target_dept": skipped_not_target_dept,
         "skipped_not_target_article": skipped_not_target_article,
     }
+
+
+def _departments_for_shop(shop: ShopKey) -> tuple[str, ...]:
+    return PC1_FOT_DEPARTMENTS if shop == "pc1" else PC2_FOT_DEPARTMENTS
 
 
 def get_pc_fot_monthly(shop: ShopKey, year: int | None = None, month: int | None = None) -> dict:
@@ -189,18 +223,16 @@ def get_pc_fot_monthly(shop: ShopKey, year: int | None = None, month: int | None
     for mm in range(1, ref_month + 1):
         plan = float(PC_FOT_PLAN[shop][mm - 1])
         extra = {}
-        if shop == "pc1":
-            if session is None:
-                session = requests.Session()
-                session.auth = AUTH
-            fact_payload = _pc1_fot_fact_account26(session, ref_year, mm)
-            fact = float(fact_payload.get("total") or 0)
-            extra = {
-                "fact_matrix": fact_payload.get("matrix") or [],
-                "unresolved_departments": fact_payload.get("unresolved_departments") or [],
-            }
-        else:
-            fact = 0.0
+        if session is None:
+            session = requests.Session()
+            session.auth = AUTH
+        fact_payload = _fot_fact_account26(session, ref_year, mm, _departments_for_shop(shop))
+        fact = float(fact_payload.get("total") or 0)
+        extra = {
+            "fact_matrix": fact_payload.get("matrix") or [],
+            "fact_totals": fact_payload.get("totals") or {},
+            "unresolved_departments": fact_payload.get("unresolved_departments") or [],
+        }
         months_out.append(month_row(ref_year, mm, plan, fact, **extra))
 
     payload = build_payload(SOURCE_TAG_FOT, shop, ref_year, ref_month, months_out)
