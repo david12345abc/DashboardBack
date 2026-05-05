@@ -38,6 +38,7 @@ from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter
 from .models import KpiDefinition
 from .devdir import projects as devdir_projects
+from qualdir.turnover import get_qd_q2_ytd, turnover_month_cache_path
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
 _structure_cache: dict | None = None
@@ -281,6 +282,22 @@ def _is_devdir_department(dept: str | None) -> bool:
     }
 
 
+def _is_qualdir_department(dept: str | None) -> bool:
+    """Дашборд службы качества (QD-*): одна роль, разные подписи в оргструктуре и БД.
+
+    «Заместитель / зам. технического директора по качеству» и «директор по качеству» —
+    это один контур для KPI; опорный месяц в API — календарный (не last_full_month).
+    Ключ ``qualdir`` — служебное имя отдела в настройках.
+    """
+    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
+    return normalized in {
+        'директор по качеству',
+        'qualdir',
+        'заместитель тех. директора по качеству',
+        'зам. технического директора по качеству',
+    }
+
+
 def _is_prod_deputy_department(dept: str | None) -> bool:
     normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
     normalized = re.sub(r'\s*-\s*', '-', normalized)
@@ -338,7 +355,7 @@ def _is_turnover_style_tile(kpi: dict) -> bool:
     nm = (kpi.get('name') or '').lower()
     if 'текучесть' in nm:
         return True
-    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2'}:
+    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2', 'QD-Q2'}:
         return True
     return False
 
@@ -553,6 +570,7 @@ def _techdir_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None)
         'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
         'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
         'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
+        'QD-Q2': [turnover_month_cache_path(ref_y, ref_m)],
     }.get(kpi_id, [])
 
     latest_mtime: float | None = None
@@ -904,13 +922,26 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
     plitki_items: list[dict] = []
     entries_by_id: dict[str, dict] = {}
 
-    if month and year:
-        ref_y, ref_m = year, month
-    elif _is_techdir_department(dept) or str(dept).strip().lower() == 'операционный директор' or _is_prod_deputy_department(dept):
-        today = date.today()
-        ref_y, ref_m = today.year, today.month
+    # Нельзя писать «if month and year»: при ?month=5 без year второй аргумент
+    # игнорировался, ref становился «сегодня», а не май.
+    today = date.today()
+    if year is not None and month is not None:
+        ref_y, ref_m = int(year), max(1, min(12, int(month)))
+    elif (
+        _is_techdir_department(dept)
+        or str(dept).strip().lower() == 'операционный директор'
+        or _is_prod_deputy_department(dept)
+        or _is_qualdir_department(dept)
+    ):
+        if year is not None and month is None:
+            ref_y = int(year)
+            ref_m = today.month if ref_y == today.year else 12
+        elif month is not None and year is None:
+            ref_y, ref_m = today.year, max(1, min(12, int(month)))
+        else:
+            ref_y, ref_m = today.year, today.month
     else:
-        ref_y, ref_m = _lfm(date.today())
+        ref_y, ref_m = _lfm(today)
 
     for kpi in tiles_meta:
         entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
@@ -919,7 +950,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         tile = _build_tile_item(kpi, pct, color, entry, ref_y=ref_y, ref_m=ref_m)
 
         monthly_data = entry.get('monthly_data')
-        lm = _pick_monthly_row_for_period(monthly_data, year, month) if monthly_data else {}
+        lm = _pick_monthly_row_for_period(monthly_data, ref_y, ref_m) if monthly_data else {}
         if not lm:
             lm = entry.get('last_full_month_row') or {}
         if lm:
@@ -1119,10 +1150,18 @@ def _fetch_lawsuits_rows_for_department(year: int, month: int, department: str) 
     return rows
 
 
-def _generate_monthly_data(plan: float, *, include_current_month: bool = False) -> list[dict]:
-    """Помесячные точки: до текущего месяца или до последнего полного."""
+def _generate_monthly_data(
+    plan: float,
+    *,
+    include_current_month: bool = False,
+    ref_year: int | None = None,
+    ref_month: int | None = None,
+) -> list[dict]:
+    """Помесячные точки: до ref_year/ref_month (если заданы), иначе до текущего или до последнего полного."""
     today = date.today()
-    if include_current_month:
+    if ref_year is not None and ref_month is not None:
+        ref_y, ref_m = int(ref_year), max(1, min(12, int(ref_month)))
+    elif include_current_month:
         ref_y, ref_m = today.year, today.month
     else:
         ref_y, ref_m = last_full_month(today)
@@ -1447,6 +1486,17 @@ def _build_kpi_entry(
             entry['kpi_period'] = td['kpi_period']
             return entry
 
+    if kpi_id == 'QD-Q2':
+        qd = get_qd_q2_ytd(year=year, month=month)
+        if qd is not None:
+            entry['data_granularity'] = qd['data_granularity']
+            entry['monthly_data'] = qd['monthly_data']
+            entry['last_full_month_row'] = qd.get('last_full_month_row')
+            entry['ytd'] = qd['ytd']
+            entry['kpi_period'] = qd['kpi_period']
+            entry['debug'] = qd.get('debug')
+            return entry
+
     if kpi_id == 'TD-Y1':
         td = techdir_y1.get_td_y1_ytd()
         entry['data_granularity'] = td['data_granularity']
@@ -1457,7 +1507,10 @@ def _build_kpi_entry(
 
     if kpi_id == 'KD-M1':
         today = date.today()
-        _, ref_y, ref_m = komdir_dashboard._get_monthly_pairs()
+        if year is not None and month is not None:
+            ref_y, ref_m = int(year), max(1, min(12, int(month)))
+        else:
+            _, ref_y, ref_m = komdir_dashboard._get_monthly_pairs()
         series_m = komdir_dashboard._series_through_month(today, ref_y, ref_m)
         dengi = calc_dengi_fact.get_dengi_monthly(
             year=ref_y, month=series_m, dept_guid=dg,
@@ -1478,7 +1531,10 @@ def _build_kpi_entry(
         entry['kpi_period'] = tile.get('kpi_period')
     elif kpi_id == 'KD-M6':
         vp_data = valovaya_pribyl.get_vp_ytd(dept_guid=dg)
-        ry, rm = last_full_month(date.today())
+        if year is not None and month is not None:
+            ry, rm = int(year), max(1, min(12, int(month)))
+        else:
+            ry, rm = last_full_month(date.today())
         lm = komdir_dashboard._vp_row_for_period(vp_data, ry, rm) or vp_data.get('last_full_month_row')
         pct = lm.get('kpi_pct') if lm else None
         entry['data_granularity'] = 'monthly'
@@ -1576,6 +1632,8 @@ def _build_kpi_entry(
             entry['monthly_data'] = _generate_monthly_data(
                 plan,
                 include_current_month=is_opdir_monthly,
+                ref_year=year,
+                ref_month=month,
             )
             months = entry['monthly_data']
             with_data = [r for r in months if r.get('kpi_pct') is not None]
