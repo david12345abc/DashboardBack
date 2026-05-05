@@ -1215,6 +1215,8 @@ def _build_kpi_entry(
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = data.get('months') or []
+        entry['quarterly_data'] = data.get('quarterly_data') or []
+        entry['yearly_data'] = data.get('yearly_data') or []
         entry['last_full_month_row'] = data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
@@ -1234,6 +1236,8 @@ def _build_kpi_entry(
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = data.get('months') or []
+        entry['quarterly_data'] = data.get('quarterly_data') or []
+        entry['yearly_data'] = data.get('yearly_data') or []
         entry['last_full_month_row'] = data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
@@ -1253,6 +1257,8 @@ def _build_kpi_entry(
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = data.get('months') or []
+        entry['quarterly_data'] = data.get('quarterly_data') or []
+        entry['yearly_data'] = data.get('yearly_data') or []
         entry['last_full_month_row'] = data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
@@ -1297,6 +1303,8 @@ def _build_kpi_entry(
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = data.get('months') or []
+        entry['quarterly_data'] = data.get('quarterly_data') or []
+        entry['yearly_data'] = data.get('yearly_data') or []
         entry['last_full_month_row'] = data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
@@ -1320,6 +1328,8 @@ def _build_kpi_entry(
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = data.get('months') or []
+        entry['quarterly_data'] = data.get('quarterly_data') or []
+        entry['yearly_data'] = data.get('yearly_data') or []
         entry['last_full_month_row'] = data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
