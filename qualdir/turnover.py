@@ -18,8 +18,8 @@ from getkpi.techdir_tekuchet import MONTH_RU, build_turnover_month_payload
 
 # Кэш в каталоге getkpi/dashboard — как у остальных KPI-бэкендов.
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_qd_q2_monthly_v2"
-CACHE_VERSION = 2
+SOURCE_TAG = "qualdir_qd_q2_monthly_v3"
+CACHE_VERSION = 3
 
 QD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
     "ОТК-1": [
@@ -41,6 +41,20 @@ QD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
 }
 
 QD_Q2_GROUP_ORDER = list(QD_Q2_GROUP_ALIASES.keys())
+
+
+def _qd_q2_kpi_pct(plan: Any, fact: Any) -> float | None:
+    """KPI по формуле плитки: факт / план × 100 %."""
+    if plan is None or fact is None:
+        return None
+    try:
+        pv = float(plan)
+        fv = float(fact)
+    except (TypeError, ValueError):
+        return None
+    if pv <= 0:
+        return None
+    return round(fv / pv * 100.0, 1)
 
 
 def turnover_month_cache_path(year: int, month: int) -> Path:
@@ -132,7 +146,7 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "month_name": MONTH_RU[row_month].lower(),
                     "plan": plan,
                     "fact": fact,
-                    "kpi_pct": fact,
+                    "kpi_pct": _qd_q2_kpi_pct(plan, fact),
                     "has_data": has_data,
                     "values_unit": "шт.",
                 })
@@ -203,4 +217,7 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                 },
             }
 
-    return locked_call("qualdir_qd_q2", _runner)
+    lock_y, lock_m = year, month
+    if lock_y is None or lock_m is None:
+        lock_y, lock_m = _last_full_month()
+    return locked_call(f"qualdir_qd_q2_{lock_y}_{lock_m:02d}", _runner)

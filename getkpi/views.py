@@ -38,7 +38,7 @@ from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter
 from .models import KpiDefinition
 from .devdir import projects as devdir_projects
-from qualdir.turnover import get_qd_q2_ytd, turnover_month_cache_path
+from qualdir.turnover import _qd_q2_kpi_pct, get_qd_q2_ytd, turnover_month_cache_path
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
 _structure_cache: dict | None = None
@@ -458,16 +458,36 @@ def _synthetic_year_row_for_tile(kpi: dict) -> tuple[dict, dict]:
     return row, period
 
 
+def _qd_q2_pct_from_entry(entry: dict) -> float | None:
+    """Факт/план×100 для QD-Q2 из ytd или последней строки monthly_data (не из ytd['kpi_pct'])."""
+    ytd = entry.get('ytd') or {}
+    tp, tf = ytd.get('total_plan'), ytd.get('total_fact')
+    if tp is None or tf is None:
+        md = entry.get('monthly_data') or []
+        lr = md[-1] if md else {}
+        tp = tp if tp is not None else lr.get('plan')
+        tf = tf if tf is not None else lr.get('fact')
+    return _qd_q2_kpi_pct(tp, tf)
+
+
 def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     """Вычислить kpi_pct и RAG-цвет для плитки."""
     ytd = entry.get('ytd') or {}
+    kid = kpi.get('kpi_id', '')
+    # QD-Q2: на плитке KPI = факт/план×100; пороги карточки (≤5 / 5,1–7 / >7 %) — к этому же значению,
+    # а не к «сырому» факту (иначе при расхождении опорного месяца и md[-1] или разных шкал цвет не совпадает с %).
+    if kid == 'QD-Q2':
+        pct = _qd_q2_pct_from_entry(entry)
+        color = _rag_lower_turnover(float(pct) if pct is not None else None)
+        return pct, color
+
     pct = ytd.get('kpi_pct')
     if pct is not None:
         pct = float(pct)
-    kid = kpi.get('kpi_id', '')
     if _is_turnover_style_tile(kpi):
         md = entry.get('monthly_data') or []
-        turnover = md[-1].get('fact') if md else None
+        last_row = md[-1] if md else {}
+        turnover = last_row.get('fact') if md else None
         color_src = pct if pct is not None else turnover
         color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
     elif kid == 'OD-M3.1':
@@ -618,9 +638,26 @@ def _build_tile_item(
         tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
     tile['cache_updated_at'] = _techdir_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
     if entry.get('last_full_month_row'):
-        tile['last_full_month_row'] = _public_unit_row(entry['last_full_month_row'])
+        lfr = entry['last_full_month_row']
+        if kpi.get('kpi_id') == 'QD-Q2' and isinstance(lfr, dict):
+            lfr = {
+                **lfr,
+                'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
+            }
+        tile['last_full_month_row'] = _public_unit_row(lfr)
     if entry.get('monthly_data') is not None:
-        tile['monthly_data'] = [_public_unit_row(row) for row in entry.get('monthly_data') or []]
+        raw_rows = entry.get('monthly_data') or []
+        if kpi.get('kpi_id') == 'QD-Q2':
+            raw_rows = [
+                {
+                    **row,
+                    'kpi_pct': _qd_q2_kpi_pct(row.get('plan'), row.get('fact')),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
+        tile['monthly_data'] = [_public_unit_row(row) for row in raw_rows]
     if entry.get('quarterly_data') is not None:
         tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
     if entry.get('yearly_data') is not None:
@@ -962,8 +999,19 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
                 tile['plan_by_dept'] = lm.get('plan_by_dept')
             if 'fact_by_dept' in lm:
                 tile['fact_by_dept'] = lm.get('fact_by_dept')
-        if monthly_data is not None:
-            tile['monthly_data'] = monthly_data
+        # Не подменять tile['monthly_data'] сырым entry: _build_tile_item уже положил
+        # нормализованные строки (QD-Q2 — пересчёт kpi_pct); иначе фронт может снова
+        # окрасить плитку по «сырым» kpi_pct и правилу «чем выше % — тем лучше».
+
+        if kpi.get('kpi_id') == 'QD-Q2':
+            p_fin = tile.get('plan')
+            f_fin = tile.get('fact')
+            tpct = _qd_q2_kpi_pct(p_fin, f_fin)
+            if tpct is not None:
+                tile['kpi_pct'] = tpct
+            tile['color'] = _rag_lower_turnover(float(tpct) if tpct is not None else None)
+            # Подсказка фронту: kpi_pct = факт/план×100, зелёный при малых значениях порога, не при ≥100.
+            tile['pct_lower_is_better'] = True
 
         if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2', 'PD-M3.1', 'PD-M3.2'}:
             tile['unit'] = 'руб.'
