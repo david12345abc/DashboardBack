@@ -212,7 +212,11 @@ def resolve_department_row(rows, exact_index, display_name: str, aliases: tuple[
     return None
 
 
-def load_fot_spec_structure_map(session):
+def load_fot_structure_map_for_spec(
+    session,
+    spec: list[tuple[str, tuple[str, ...]]],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Карта «карточка ФОТ → Ref_Key структуры» для произвольного перечня п/п (QD-M4 и т.д.)."""
     url = (
         f"{BASE}/{quote('Catalog_СтруктураПредприятия')}"
         f"?$format=json"
@@ -227,7 +231,7 @@ def load_fot_spec_structure_map(session):
     name_to_key: dict[str, str] = {}
     name_to_structure_label: dict[str, str] = {}
     key_first_name: dict[str, str] = {}
-    for display_name, aliases in FOT_SPEC:
+    for display_name, aliases in spec:
         found = resolve_department_row(rows, exact_index, display_name, aliases)
         if not found:
             print(f"  Не удалось найти подразделение (структура): {display_name}")
@@ -243,6 +247,10 @@ def load_fot_spec_structure_map(session):
         name_to_structure_label[display_name] = (found.get("Description") or "").strip()
 
     return name_to_key, name_to_structure_label
+
+
+def load_fot_spec_structure_map(session):
+    return load_fot_structure_map_for_spec(session, FOT_SPEC)
 
 
 def load_structure(session):

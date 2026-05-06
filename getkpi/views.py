@@ -38,6 +38,9 @@ from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter
 from .models import KpiDefinition
 from .devdir import projects as devdir_projects
+from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp
+from qualdir.qd_m3 import get_qd_m3_ytd
+from qualdir.qd_m4 import get_qd_m4_ytd
 from qualdir.turnover import _qd_q2_kpi_pct, get_qd_q2_ytd, turnover_month_cache_path
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
@@ -344,6 +347,40 @@ def _rag_lower_turnover(fact_pct: float | None) -> str:
     return 'red'
 
 
+def _normalize_dashboard_kpi_id(raw: object) -> str:
+    """Код KPI для веток views: ASCII-дефис, без ZWSP/BOM, латиница вместо «похожей» кириллицы.
+
+    Иначе «QD-М3» (кириллическая М) не попадает в if kpi_id == 'QD-M3' и уходит в синтетику plan=100.
+    """
+    s = str(raw or '').strip()
+    for z in ('\u200b', '\u200c', '\u200d', '\ufeff'):
+        s = s.replace(z, '')
+    for d in (
+        '\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2015',
+        '\u2212', '\ufe58', '\ufe63', '\uff0d',
+    ):
+        s = s.replace(d, '-')
+    s = s.upper()
+    # Заглавные кириллические буквы, часто перепутанные с латиницей в кодах KPI (напр. «М» в QD-М3).
+    for cyr, lat in (
+        ('\u0410', 'A'),
+        ('\u0412', 'B'),
+        ('\u0421', 'C'),
+        ('\u0415', 'E'),
+        ('\u041d', 'H'),
+        ('\u041a', 'K'),
+        ('\u041c', 'M'),
+        ('\u041e', 'O'),
+        ('\u0420', 'P'),
+        ('\u0422', 'T'),
+        ('\u0423', 'Y'),
+        ('\u0425', 'X'),
+    ):
+        s = s.replace(cyr, lat)
+    s = s.translate(str.maketrans('０１２３４５６７８９', '0123456789'))
+    return s
+
+
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     """Плитки «в пределах лимита»: поддерживаем суффиксы *-M3-1/*-M3-2 и *.1/*.2."""
     normalized = (kpi_id or '').upper()
@@ -473,12 +510,19 @@ def _qd_q2_pct_from_entry(entry: dict) -> float | None:
 def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     """Вычислить kpi_pct и RAG-цвет для плитки."""
     ytd = entry.get('ytd') or {}
-    kid = kpi.get('kpi_id', '')
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
     # QD-Q2: на плитке KPI = факт/план×100; пороги карточки (≤5 / 5,1–7 / >7 %) — к этому же значению,
     # а не к «сырому» факту (иначе при расхождении опорного месяца и md[-1] или разных шкал цвет не совпадает с %).
     if kid == 'QD-Q2':
         pct = _qd_q2_pct_from_entry(entry)
         color = _rag_lower_turnover(float(pct) if pct is not None else None)
+        return pct, color
+
+    if kid == 'QD-M1':
+        pct = ytd.get('kpi_pct')
+        if pct is not None:
+            pct = float(pct)
+        color = _rag_td_m4_limit(pct)
         return pct, color
 
     pct = ytd.get('kpi_pct')
@@ -502,6 +546,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     elif kid == 'TD-M3':
         color = _rag_dz_lower_better(pct)
     elif kid == 'TD-M4':
+        color = _rag_td_m4_limit(pct)
+    elif kid in {'QD-M3', 'QD-M4'}:
         color = _rag_td_m4_limit(pct)
     elif kid == 'TD-M5':
         color = _rag_td_m4_limit(pct)
@@ -591,6 +637,7 @@ def _techdir_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None)
         'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
         'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
         'QD-Q2': [turnover_month_cache_path(ref_y, ref_m)],
+        'QD-M1': qd_m1_excel_paths_for_cache_stamp(),
     }.get(kpi_id, [])
 
     latest_mtime: float | None = None
@@ -662,6 +709,8 @@ def _build_tile_item(
         tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
     if entry.get('yearly_data') is not None:
         tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
+    if kpi.get('kpi_id') == 'QD-M1' and entry.get('articles') is not None:
+        tile['articles'] = entry.get('articles') or []
     return tile
 
 
@@ -1023,7 +1072,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1'}:
             tile['unit'] = 'шт.'
-        elif kpi.get('kpi_id') == 'TD-M5':
+        elif kpi.get('kpi_id') in {'TD-M5', 'QD-M3', 'QD-M4'}:
             tile['unit'] = 'руб.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
@@ -1261,7 +1310,8 @@ def _build_kpi_entry(
         'weight_pct': kpi['weight_pct'],
     }
 
-    kpi_id = kpi['kpi_id']
+    # Нормализация кода KPI: см. _normalize_dashboard_kpi_id (иначе уходит в синтетику).
+    kpi_id = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
     dg = _dept_guid_for_universal(dept_key)
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
@@ -1544,6 +1594,38 @@ def _build_kpi_entry(
             entry['kpi_period'] = qd['kpi_period']
             entry['debug'] = qd.get('debug')
             return entry
+
+    if kpi_id == 'QD-M1':
+        qd = get_qd_m1_ytd(year=year, month=month)
+        if qd is not None:
+            entry['data_granularity'] = qd['data_granularity']
+            entry['monthly_data'] = qd['monthly_data']
+            entry['last_full_month_row'] = qd.get('last_full_month_row')
+            entry['ytd'] = qd['ytd']
+            entry['kpi_period'] = qd['kpi_period']
+            entry['articles'] = qd.get('articles') or []
+            entry['debug'] = qd.get('debug')
+            return entry
+
+    if kpi_id == 'QD-M4':
+        qd = get_qd_m4_ytd(year=year, month=month)
+        entry['data_granularity'] = qd['data_granularity']
+        entry['monthly_data'] = qd['monthly_data']
+        entry['last_full_month_row'] = qd.get('last_full_month_row')
+        entry['ytd'] = qd['ytd']
+        entry['kpi_period'] = qd['kpi_period']
+        entry['debug'] = qd.get('debug')
+        return entry
+
+    if kpi_id == 'QD-M3':
+        qd = get_qd_m3_ytd(year=year, month=month)
+        entry['data_granularity'] = qd['data_granularity']
+        entry['monthly_data'] = qd['monthly_data']
+        entry['last_full_month_row'] = qd.get('last_full_month_row')
+        entry['ytd'] = qd['ytd']
+        entry['kpi_period'] = qd['kpi_period']
+        entry['debug'] = qd.get('debug')
+        return entry
 
     if kpi_id == 'TD-Y1':
         td = techdir_y1.get_td_y1_ytd()
