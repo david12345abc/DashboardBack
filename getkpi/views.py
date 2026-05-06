@@ -1077,7 +1077,12 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
     tablitsy = {}
 
-    if not _is_techdir_department(dept):
+    include_generic_tables = (
+        not _is_techdir_department(dept)
+        and not _is_prod_deputy_department(dept)
+    )
+
+    if include_generic_tables:
         try:
             rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
         except Exception:

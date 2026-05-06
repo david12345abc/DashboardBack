@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import json
 import threading
 from datetime import date, datetime
 from pathlib import Path
@@ -41,6 +42,15 @@ def is_cache_fresh(path: Path | str) -> bool:
     p = Path(path) if isinstance(path, str) else path
     if not p.exists():
         return False
+    try:
+        with p.open('r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            cache_date = data.get('cache_date') or data.get('cached_at')
+            if cache_date:
+                return str(cache_date)[:10] == date.today().isoformat()
+    except (OSError, json.JSONDecodeError, TypeError):
+        pass
     return (datetime.now().timestamp() - p.stat().st_mtime) < MAX_AGE_SECONDS
 
 
@@ -59,12 +69,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from . import (
         calc_debitorka, calc_dengi_fact, calc_dogovory_fact,
         calc_dz_limits, calc_fot, calc_komdir_active_dealers, calc_kp_price,
-        calc_otgruzki_fact, calc_plan, calc_rashody,
+        calc_otgruzki_fact, calc_otif_vypusk_zam_proizvodstva, calc_plan,
+        calc_prod_deputy_pc, calc_prod_deputy_projects, calc_rashody,
         calc_reclamations,
         calc_svoevremennaya_otgruzka,
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
         techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet,
     )
+    from .calc_prod_deputy_pc_common import cache_path as prod_deputy_pc_cache_path
     from .komdir_claims import fetch_claims_for_month
     from qualdir.turnover import get_qd_q2_ytd, turnover_month_cache_path
 
@@ -155,6 +167,30 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         ('qualdir_tekuchet',
          turnover_month_cache_path(y, m),
          lambda: get_qd_q2_ytd(year=y, month=m)),
+
+        (f'pd_m2_otif_{y}_{m}',
+         cd / f'otif_vypusk_prod_monthly_{y}_{m:02d}.json',
+         lambda: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(year=y, month=m)),
+
+        (f'pd_pc_budget_pc1_{y}_{m}',
+         prod_deputy_pc_cache_path('budget', 'pc1', y, m),
+         lambda: calc_prod_deputy_pc.get_pc_budget_monthly('pc1', y, m)),
+
+        (f'pd_pc_budget_pc2_{y}_{m}',
+         prod_deputy_pc_cache_path('budget', 'pc2', y, m),
+         lambda: calc_prod_deputy_pc.get_pc_budget_monthly('pc2', y, m)),
+
+        (f'pd_pc_fot_pc1_{y}_{m}',
+         prod_deputy_pc_cache_path('fot', 'pc1', y, m),
+         lambda: calc_prod_deputy_pc.get_pc_fot_monthly('pc1', y, m)),
+
+        (f'pd_pc_fot_pc2_{y}_{m}',
+         prod_deputy_pc_cache_path('fot', 'pc2', y, m),
+         lambda: calc_prod_deputy_pc.get_pc_fot_monthly('pc2', y, m)),
+
+        ('prod_deputy_projects',
+         calc_prod_deputy_projects.CACHE_PATH,
+         lambda: calc_prod_deputy_projects.get_pd_q1_monthly(year=y, month=m)),
     ]
     td_as_of = date.today()
     tasks.append((
