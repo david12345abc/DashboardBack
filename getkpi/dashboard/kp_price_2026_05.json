@@ -1,5 +1,5 @@
 {
-  "cache_date": "2026-05-05",
+  "cache_date": "2026-05-06",
   "year": 2026,
   "ref_month": 5,
   "months": [
@@ -96,11 +96,17 @@
     {
       "year": 2026,
       "month": 5,
-      "total_fact": 0.0,
-      "total_calc": 0.0,
-      "fact_by_dept": {},
-      "calc_by_dept": {},
-      "doc_count": 0
+      "total_fact": 1682961.0,
+      "total_calc": 1682961.09,
+      "fact_by_dept": {
+        "7587c178-92f6-11f0-96f9-6cb31113810e": 1494774.0,
+        "34497ef7-810f-11e4-80d6-001e67112509": 188187.0
+      },
+      "calc_by_dept": {
+        "7587c178-92f6-11f0-96f9-6cb31113810e": 1494774.09,
+        "34497ef7-810f-11e4-80d6-001e67112509": 188187.0
+      },
+      "doc_count": 3
     }
   ]
 }

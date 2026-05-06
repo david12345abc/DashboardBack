@@ -58,8 +58,12 @@ DOC_TYPES = [
     "Document_ТД_КартаЗаказаTFG",
     "Document_ТД_КартаЗаказаUFL",
     "Document_ТД_КартаЗаказаПлотномер",
+    "Document_ТД_КартаЗаказаГранд",
+    "Document_ТД_КартаЗаказаСПУ3М",
+    "Document_ТД_КартаЗаказаРаботУслуг",
 ]
 DOC_TYPE_SET = {f"StandardODATA.{dt}" for dt in DOC_TYPES}
+MONITORING_REGISTER = "AccumulationRegister_ТД_МониторингЭтаповОпросныхЛистов_RecordType"
 
 MONTH_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -119,7 +123,7 @@ def _load_paginated(session, base_url, page_size=5000, timeout=120):
             logger.error("TKP_SLA: request dropped after retries")
             break
         if not r.ok:
-            logger.error("TKP_SLA HTTP %d: %s", r.status_code, r.text[:200])
+            logger.error("TKP_SLA HTTP %d for %s: %s", r.status_code, base_url[:220], r.text[:200])
             break
         items = r.json().get("value", [])
         all_items.extend(items)
@@ -195,21 +199,22 @@ def _detect_manager_field(session: requests.Session, flt: str) -> str | None:
     if _detected_mgr_field is not None:
         return _detected_mgr_field
 
-    for field in MANAGER_FIELD_CANDIDATES:
-        url = (
-            f"{BASE}/{quote(DOC_TYPES[0])}"
-            f"?$filter={quote(flt, safe='')}"
-            f"&$select=Ref_Key,{field}"
-            f"&$top=1&$format=json"
-        )
-        try:
-            r = session.get(url, timeout=15)
-            if r.ok:
-                _detected_mgr_field = field
-                logger.info("calc_tkp_sla: detected manager field = %s", field)
-                return field
-        except Exception:
-            continue
+    for doc_type in DOC_TYPES:
+        for field in MANAGER_FIELD_CANDIDATES:
+            url = (
+                f"{BASE}/{quote(doc_type)}"
+                f"?$filter={quote(flt, safe='')}"
+                f"&$select=Ref_Key,{field}"
+                f"&$top=1&$format=json"
+            )
+            try:
+                r = session.get(url, timeout=15)
+                if r.ok:
+                    _detected_mgr_field = field
+                    logger.info("calc_tkp_sla: detected manager field = %s on %s", field, doc_type)
+                    return field
+            except Exception:
+                continue
 
     logger.warning("calc_tkp_sla: no manager field found on КартаЗаказа documents")
     return None
@@ -327,7 +332,7 @@ def _compute_month(session: requests.Session,
         f" and ДатаЗавершенияФакт ne datetime'{EMPTY_DATE}'"
     )
     url_tkp = (
-        f"{BASE}/{quote('AccumulationRegister_ТД_МониторингЭтаповОпросныхЛистов_RecordType')}"
+        f"{BASE}/{quote(MONITORING_REGISTER)}"
         f"?$filter={quote(flt_tkp, safe='')}"
         f"&$select=Recorder,ДатаЗавершенияФакт"
     )
@@ -341,7 +346,7 @@ def _compute_month(session: requests.Session,
         f" and ДатаЗавершенияФакт ne datetime'{EMPTY_DATE}'"
     )
     url_ann = (
-        f"{BASE}/{quote('AccumulationRegister_ТД_МониторингЭтаповОпросныхЛистов_RecordType')}"
+        f"{BASE}/{quote(MONITORING_REGISTER)}"
         f"?$filter={quote(flt_ann, safe='')}"
         f"&$select=Recorder,ДатаЗавершенияФакт"
     )

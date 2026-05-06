@@ -43,3 +43,40 @@ class User(models.Model):
     @property
     def priority(self) -> int:
         return self.ROLE_PRIORITY.get(self.role, 5)
+
+
+class AccessRequest(models.Model):
+    class RequestType(models.TextChoices):
+        REGISTRATION = 'registration', 'Регистрация'
+        PASSWORD_RESET = 'password_reset', 'Сброс пароля'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Ожидает'
+        APPROVED = 'approved', 'Одобрена'
+        REJECTED = 'rejected', 'Отклонена'
+
+    request_type = models.CharField(max_length=32, choices=RequestType.choices)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    nickname = models.CharField(max_length=150)
+    password_hash = models.CharField(max_length=256)
+    department = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    processed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='processed_access_requests',
+    )
+    comment = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'access_requests'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.get_request_type_display()} {self.nickname} ({self.status})'
+
+    def set_password(self, raw_password: str):
+        self.password_hash = make_password(raw_password)

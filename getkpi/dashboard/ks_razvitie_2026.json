@@ -6604,11 +6604,11 @@
   "fact_debug": {
     "new_service_customers": {
       "partners_total": 114,
-      "current_shipment_rows": 247,
-      "current_service_events": 235,
+      "current_shipment_rows": 249,
+      "current_service_events": 237,
       "candidate_partners": 114,
-      "history_shipment_rows": 3856,
-      "history_service_events": 3758
+      "history_shipment_rows": 3858,
+      "history_service_events": 3760
     },
     "project_bookmarks": {
       "docs_total": 3,
@@ -6620,6 +6620,6 @@
       "skipped_no_manager_dept": 0
     }
   },
-  "cached_at": "2026-05-05",
+  "cached_at": "2026-05-06",
   "source_tag": "ks_razvitie_units_v4_project_bookmarks_fact"
 }

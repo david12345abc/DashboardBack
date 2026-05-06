@@ -1,13 +1,15 @@
 import json
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from pathlib import Path
 
 import jwt
 from django.conf import settings
 from django.http import JsonResponse
+from django.utils import timezone as django_timezone
 from django.views.decorators.http import require_POST, require_GET, require_http_methods
 
-from .models import User
+from .models import AccessRequest, User
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +82,62 @@ def _user_to_dict(user: User) -> dict:
     }
 
 
+def _access_request_to_dict(req: AccessRequest) -> dict:
+    return {
+        'id': req.id,
+        'request_type': req.request_type,
+        'request_type_label': req.get_request_type_display(),
+        'status': req.status,
+        'status_label': req.get_status_display(),
+        'nickname': req.nickname,
+        'department': req.department,
+        'created_at': req.created_at.isoformat(),
+        'processed_at': req.processed_at.isoformat() if req.processed_at else None,
+        'processed_by': req.processed_by.nickname if req.processed_by else None,
+        'comment': req.comment,
+    }
+
+
+def _parse_json_body(request) -> tuple[dict | None, JsonResponse | None]:
+    try:
+        return json.loads(request.body or b'{}'), None
+    except json.JSONDecodeError:
+        return None, JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+
+def _flatten_structure_departments(node, out: list[str]) -> None:
+    if not isinstance(node, dict):
+        return
+    for name, children in node.items():
+        if isinstance(name, str) and name.strip():
+            out.append(name.strip())
+        _flatten_structure_departments(children, out)
+
+
+def _load_departments() -> list[str]:
+    path = Path(settings.BASE_DIR) / 'getkpi' / 'structure.json'
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    departments: list[str] = []
+    _flatten_structure_departments(data, departments)
+    seen: set[str] = set()
+    unique: list[str] = []
+    for dep in departments:
+        key = dep.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(dep)
+    return unique
+
+
+def _validate_department(department: str) -> bool:
+    return department in set(_load_departments())
+
+
 # ---------------------------------------------------------------------------
 # POST /api/user/login/
 # ---------------------------------------------------------------------------
@@ -110,6 +168,80 @@ def login(request):
         'token': token,
         'user': _user_to_dict(user),
     })
+
+
+@require_GET
+def departments(request):
+    deps = _load_departments()
+    return JsonResponse({'departments': deps, 'count': len(deps)})
+
+
+@require_POST
+def request_registration(request):
+    data, error = _parse_json_body(request)
+    if error:
+        return error
+
+    nickname = data.get('nickname', '').strip()
+    password = data.get('password', '')
+    department = data.get('department', '').strip()
+
+    if not nickname or not password or not department:
+        return JsonResponse({'error': 'nickname, password and department are required'}, status=400)
+    if len(password) < 6:
+        return JsonResponse({'error': 'password must contain at least 6 characters'}, status=400)
+    if not _validate_department(department):
+        return JsonResponse({'error': 'Unknown department'}, status=400)
+    if User.objects.filter(nickname=nickname).exists():
+        return JsonResponse({'error': 'User with this nickname already exists'}, status=409)
+    if AccessRequest.objects.filter(
+        nickname=nickname,
+        request_type=AccessRequest.RequestType.REGISTRATION,
+        status=AccessRequest.Status.PENDING,
+    ).exists():
+        return JsonResponse({'error': 'Registration request is already pending'}, status=409)
+
+    req = AccessRequest(
+        request_type=AccessRequest.RequestType.REGISTRATION,
+        nickname=nickname,
+        department=department,
+    )
+    req.set_password(password)
+    req.save()
+    return JsonResponse({'request': _access_request_to_dict(req)}, status=201)
+
+
+@require_POST
+def request_password_reset(request):
+    data, error = _parse_json_body(request)
+    if error:
+        return error
+
+    nickname = data.get('nickname', '').strip()
+    password = data.get('password', '')
+    if not nickname or not password:
+        return JsonResponse({'error': 'nickname and password are required'}, status=400)
+    if len(password) < 6:
+        return JsonResponse({'error': 'password must contain at least 6 characters'}, status=400)
+    try:
+        user = User.objects.get(nickname=nickname)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found'}, status=404)
+    if AccessRequest.objects.filter(
+        nickname=nickname,
+        request_type=AccessRequest.RequestType.PASSWORD_RESET,
+        status=AccessRequest.Status.PENDING,
+    ).exists():
+        return JsonResponse({'error': 'Password reset request is already pending'}, status=409)
+
+    req = AccessRequest(
+        request_type=AccessRequest.RequestType.PASSWORD_RESET,
+        nickname=nickname,
+        department=user.department,
+    )
+    req.set_password(password)
+    req.save()
+    return JsonResponse({'request': _access_request_to_dict(req)}, status=201)
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +304,70 @@ def get_user(request, user_id):
 def list_users(request):
     users = User.objects.all().order_by('id')
     return JsonResponse({'users': [_user_to_dict(u) for u in users]})
+
+
+@require_GET
+@admin_required
+def list_access_requests(request):
+    status = request.GET.get('status', '').strip()
+    qs = AccessRequest.objects.all()
+    if status:
+        if status not in AccessRequest.Status.values:
+            return JsonResponse({'error': 'Invalid status'}, status=400)
+        qs = qs.filter(status=status)
+    return JsonResponse({'requests': [_access_request_to_dict(req) for req in qs]})
+
+
+@require_POST
+@admin_required
+def approve_access_request(request, request_id):
+    try:
+        req = AccessRequest.objects.get(id=request_id)
+    except AccessRequest.DoesNotExist:
+        return JsonResponse({'error': 'Request not found'}, status=404)
+    if req.status != AccessRequest.Status.PENDING:
+        return JsonResponse({'error': 'Request is already processed'}, status=400)
+
+    if req.request_type == AccessRequest.RequestType.REGISTRATION:
+        if User.objects.filter(nickname=req.nickname).exists():
+            return JsonResponse({'error': 'User with this nickname already exists'}, status=409)
+        user = User(nickname=req.nickname, password=req.password_hash, role=User.Role.USER5, department=req.department)
+        user.save()
+    elif req.request_type == AccessRequest.RequestType.PASSWORD_RESET:
+        try:
+            user = User.objects.get(nickname=req.nickname)
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+        user.password = req.password_hash
+        user.save(update_fields=['password'])
+    else:
+        return JsonResponse({'error': 'Unknown request type'}, status=400)
+
+    req.status = AccessRequest.Status.APPROVED
+    req.processed_at = django_timezone.now()
+    req.processed_by = request.current_user
+    req.save(update_fields=['status', 'processed_at', 'processed_by'])
+    return JsonResponse({'request': _access_request_to_dict(req)})
+
+
+@require_POST
+@admin_required
+def reject_access_request(request, request_id):
+    try:
+        req = AccessRequest.objects.get(id=request_id)
+    except AccessRequest.DoesNotExist:
+        return JsonResponse({'error': 'Request not found'}, status=404)
+    if req.status != AccessRequest.Status.PENDING:
+        return JsonResponse({'error': 'Request is already processed'}, status=400)
+    data, error = _parse_json_body(request)
+    if error:
+        return error
+    req.status = AccessRequest.Status.REJECTED
+    req.processed_at = django_timezone.now()
+    req.processed_by = request.current_user
+    req.comment = (data.get('comment') or '').strip()
+    req.save(update_fields=['status', 'processed_at', 'processed_by', 'comment'])
+    return JsonResponse({'request': _access_request_to_dict(req)})
 
 
 # ---------------------------------------------------------------------------
