@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from calendar import monthrange
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
@@ -13,8 +14,9 @@ from .cache_manager import CACHE_DIR
 from .calc_fot_management import MONTH_RU, _normalize_period
 
 ShopKey = Literal["pc1", "pc2"]
+OutputPeriod = Literal["month", "week", "total"]
 
-SOURCE_TAG = "prod_deputy_output_fact_production_plan_v2"
+SOURCE_TAG = "prod_deputy_output_fact_production_plan_v3"
 DOC_ENTITY = "Document_ТД_ПроизводственныйПлан"
 TABULAR_FIELD = "ВыполнениеПроизводственногоПлана"
 
@@ -82,6 +84,10 @@ def _period_bounds(year: int, month: int) -> tuple[str, str]:
     return f"{year}-{month:02d}-01T00:00:00", f"{year}-{month + 1:02d}-01T00:00:00"
 
 
+def _datetime_bounds(start: date, end_exclusive: date) -> tuple[str, str]:
+    return f"{start.isoformat()}T00:00:00", f"{end_exclusive.isoformat()}T00:00:00"
+
+
 def _fetch_all(session: requests.Session, url: str, page: int = 500) -> list[dict]:
     rows: list[dict] = []
     skip = 0
@@ -96,8 +102,12 @@ def _fetch_all(session: requests.Session, url: str, page: int = 500) -> list[dic
         skip += len(batch)
 
 
-def _load_month_docs(session: requests.Session, shop: ShopKey, year: int, month: int) -> list[dict]:
-    p_start, p_end = _period_bounds(year, month)
+def _load_docs_between(
+    session: requests.Session,
+    shop: ShopKey,
+    p_start: str,
+    p_end: str,
+) -> list[dict]:
     flt = (
         "Posted eq true and DeletionMark eq false"
         f" and Подразделение_Key eq guid'{PRODUCTION_DEPT_KEY[shop]}'"
@@ -110,6 +120,11 @@ def _load_month_docs(session: requests.Session, shop: ShopKey, year: int, month:
         f"&$select={quote(sel, safe=',_')}"
     )
     return _fetch_all(session, url)
+
+
+def _load_month_docs(session: requests.Session, shop: ShopKey, year: int, month: int) -> list[dict]:
+    p_start, p_end = _period_bounds(year, month)
+    return _load_docs_between(session, shop, p_start, p_end)
 
 
 def _fact_from_production_plan(
@@ -142,6 +157,107 @@ def _fact_from_production_plan(
         "fact_field": fact_field,
         "documents": doc_debug,
     }
+
+
+def _fact_from_docs_between(
+    session: requests.Session,
+    shop: ShopKey,
+    start: date,
+    end_exclusive: date,
+) -> tuple[float, dict]:
+    p_start, p_end = _datetime_bounds(start, end_exclusive)
+    docs = _load_docs_between(session, shop, p_start, p_end)
+    fact_field = "ФактРуб" if shop == "pc1" else "ФактШт"
+    total = 0.0
+    doc_debug = []
+
+    for doc in docs:
+        doc_total = 0.0
+        for row in doc.get(TABULAR_FIELD) or []:
+            doc_total += _to_float(row.get(fact_field))
+        total += doc_total
+        doc_debug.append({
+            "number": doc.get("Number"),
+            "date": doc.get("Date"),
+            "period_from": doc.get("ПериодС"),
+            "period_to": doc.get("ПериодПо"),
+            "fact": round(doc_total, 2),
+            "rows": len(doc.get(TABULAR_FIELD) or []),
+        })
+
+    return round(total, 2), {
+        "documents_count": len(docs),
+        "fact_field": fact_field,
+        "period_start": start.isoformat(),
+        "period_end": (end_exclusive - timedelta(days=1)).isoformat(),
+        "documents": doc_debug,
+    }
+
+
+def _last_week_bounds(ref_year: int, ref_month: int) -> tuple[date, date]:
+    ranges = _month_week_ranges(ref_year, ref_month)
+    if ranges:
+        return ranges[-1]
+    month_start = date(ref_year, ref_month, 1)
+    return month_start, month_start + timedelta(days=1)
+
+
+def _daily_plan(shop: ShopKey, day: date) -> float:
+    return float(OUTPUT_PLAN[shop][day.month - 1]) / float(monthrange(day.year, day.month)[1])
+
+
+def _week_plan(shop: ShopKey, start: date, end_exclusive: date) -> float:
+    total = 0.0
+    cur = start
+    while cur < end_exclusive:
+        total += _daily_plan(shop, cur)
+        cur += timedelta(days=1)
+    return round(total, 2)
+
+
+def _month_week_ranges(year: int, month: int) -> list[tuple[date, date]]:
+    month_start = date(year, month, 1)
+    month_end_exclusive = date(year, month, monthrange(year, month)[1]) + timedelta(days=1)
+    ranges: list[tuple[date, date]] = []
+    start = month_start
+    while start < month_end_exclusive:
+        end = min(start + timedelta(days=7 - start.weekday()), month_end_exclusive)
+        ranges.append((start, end))
+        start = end
+    return ranges
+
+
+def _weekly_cumulative_points(
+    session: requests.Session,
+    shop: ShopKey,
+    year: int,
+    month: int,
+    unit: str,
+) -> tuple[list[dict], dict]:
+    month_start = date(year, month, 1)
+    ranges = _month_week_ranges(year, month)
+    points: list[dict] = []
+    debug: dict[str, dict] = {}
+
+    for idx, (week_start, week_end_exclusive) in enumerate(ranges, start=1):
+        cumulative_plan = _week_plan(shop, month_start, week_end_exclusive)
+        cumulative_fact, fact_debug = _fact_from_docs_between(session, shop, month_start, week_end_exclusive)
+        week_end = week_end_exclusive - timedelta(days=1)
+        label = f"{week_start.strftime('%d.%m')}–{week_end.strftime('%d.%m')}"
+        points.append({
+            "week": idx,
+            "label": label,
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+            "plan": cumulative_plan,
+            "fact": cumulative_fact,
+            "kpi_pct": _kpi_pct(cumulative_plan, cumulative_fact),
+            "has_data": cumulative_plan > 0 or cumulative_fact > 0,
+            "values_unit": unit,
+        })
+        debug[label] = fact_debug
+
+    return points, debug
 
 
 def _aggregate_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -245,6 +361,27 @@ def get_prod_deputy_output_monthly(
     quarterly_data, yearly_data = _aggregate_rows(rows)
     total_plan = sum(float(row.get("plan") or 0) for row in rows)
     total_fact = sum(float(row.get("fact") or 0) for row in rows)
+    week_start, week_end_exclusive = _last_week_bounds(ref_year, ref_month)
+    week_plan = _week_plan(shop, week_start, week_end_exclusive)
+    week_fact, week_debug = _fact_from_docs_between(session, shop, week_start, week_end_exclusive)
+    weekly_cumulative, weekly_cumulative_debug = _weekly_cumulative_points(
+        session,
+        shop,
+        ref_year,
+        ref_month,
+        unit,
+    )
+    week_row = {
+        "year": week_start.year,
+        "week_start": week_start.isoformat(),
+        "week_end": (week_end_exclusive - timedelta(days=1)).isoformat(),
+        "label": f"{week_start.strftime('%d.%m')}–{(week_end_exclusive - timedelta(days=1)).strftime('%d.%m.%Y')}",
+        "plan": week_plan,
+        "fact": week_fact,
+        "kpi_pct": _kpi_pct(week_plan, week_fact),
+        "has_data": week_plan > 0 or week_fact > 0,
+        "values_unit": unit,
+    }
 
     payload = {
         "cache_date": today.isoformat(),
@@ -253,6 +390,8 @@ def get_prod_deputy_output_monthly(
         "year": ref_year,
         "ref_month": ref_month,
         "months": rows,
+        "last_week_row": week_row,
+        "weekly_cumulative": weekly_cumulative,
         "quarterly_data": quarterly_data,
         "yearly_data": yearly_data,
         "last_full_month_row": dict(rows[-1]) if rows else None,
@@ -275,10 +414,94 @@ def get_prod_deputy_output_monthly(
             "tabular_field": TABULAR_FIELD,
             "production_dept_key": PRODUCTION_DEPT_KEY[shop],
             "months": debug_by_month,
+            "last_week": week_debug,
+            "weekly_cumulative": weekly_cumulative_debug,
         },
     }
     _save_json(path, payload)
     return payload
 
 
-__all__ = ["ShopKey", "cache_path", "get_prod_deputy_output_monthly"]
+def get_prod_deputy_output_period(
+    shop: ShopKey,
+    period: OutputPeriod,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict:
+    data = get_prod_deputy_output_monthly(shop, year=year, month=month)
+    period = period if period in {"month", "week", "total"} else "month"
+    unit = VALUES_UNIT[shop]
+
+    if period == "week":
+        row = dict(data.get("last_week_row") or {})
+        return {
+            **data,
+            "period_type": "week",
+            "selected_row": row,
+            "last_full_month_row": row,
+            "monthly_data": [],
+            "quarterly_data": [],
+            "yearly_data": [],
+            "ytd": {
+                "total_plan": row.get("plan"),
+                "total_fact": row.get("fact"),
+                "kpi_pct": row.get("kpi_pct"),
+                "months_with_data": 1 if row.get("has_data") else 0,
+                "months_total": 1,
+                "values_unit": unit,
+            },
+            "kpi_period": {
+                "type": "last_week",
+                "label": row.get("label"),
+                "week_start": row.get("week_start"),
+                "week_end": row.get("week_end"),
+            },
+        }
+
+    if period == "total":
+        ytd = dict(data.get("ytd") or {})
+        row = {
+            "year": data.get("year"),
+            "label": f"Итого за {data.get('year')} год",
+            "plan": ytd.get("total_plan"),
+            "fact": ytd.get("total_fact"),
+            "kpi_pct": ytd.get("kpi_pct"),
+            "has_data": bool(ytd.get("months_with_data")),
+            "values_unit": unit,
+        }
+        return {
+            **data,
+            "period_type": "total",
+            "selected_row": row,
+            "last_full_month_row": row,
+            "ytd": ytd,
+            "kpi_period": {
+                "type": "ytd",
+                "year": data.get("year"),
+                "month": data.get("ref_month"),
+            },
+        }
+
+    row = dict(data.get("last_full_month_row") or {})
+    return {
+        **data,
+        "period_type": "month",
+        "selected_row": row,
+        "ytd": {
+            "total_plan": row.get("plan"),
+            "total_fact": row.get("fact"),
+            "kpi_pct": row.get("kpi_pct"),
+            "months_with_data": 1 if row.get("has_data") else 0,
+            "months_total": 1,
+            "values_unit": unit,
+        },
+    }
+
+
+__all__ = [
+    "ShopKey",
+    "OutputPeriod",
+    "cache_path",
+    "get_prod_deputy_output_monthly",
+    "get_prod_deputy_output_period",
+]

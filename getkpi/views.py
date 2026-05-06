@@ -45,6 +45,15 @@ _structure_cache: dict | None = None
 _structure_mtime: float | None = None
 logger = logging.getLogger(__name__)
 
+PROD_DEPUTY_OUTPUT_PERIOD_BY_ID = {
+    'PD-M1.1.M': ('pc1', 'month'),
+    'PD-M1.1.W': ('pc1', 'week'),
+    'PD-M1.1.T': ('pc1', 'total'),
+    'PD-M1.2.M': ('pc2', 'month'),
+    'PD-M1.2.W': ('pc2', 'week'),
+    'PD-M1.2.T': ('pc2', 'total'),
+}
+
 
 def get_structure_data() -> dict:
     """
@@ -70,9 +79,15 @@ def _get_departments() -> list[str]:
 def _get_kpi_dicts(department: str) -> list[dict]:
     """Все KPI подразделения из БД в формате dict (как был kpi_data.json)."""
     rows = [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
+    if _is_logistics_head_department(department) and not rows:
+        try:
+            from .management.commands.import_logistics_kpi import LOGISTICS_KPI_DEFINITIONS
+        except Exception:
+            return rows
+        return [{**dict(item), 'department': department} for item in LOGISTICS_KPI_DEFINITIONS]
     if _is_prod_deputy_department(department):
         split_ids = {
-            'PD-M1.1', 'PD-M1.2',
+            *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
             'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
             'PD-Q2.1', 'PD-Q2.2',
         }
@@ -98,6 +113,12 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
     if not qs.exists():
         qs = KpiDefinition.objects.filter(department__iexact=department)
     if not qs.exists():
+        if _is_logistics_head_department(department):
+            try:
+                from .management.commands.import_logistics_kpi import LOGISTICS_KPI_DEFINITIONS
+            except Exception:
+                return None
+            return [{**dict(item), 'department': department} for item in LOGISTICS_KPI_DEFINITIONS]
         if _is_prod_deputy_department(department):
             try:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
@@ -108,7 +129,7 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
     rows = [obj.to_dict() for obj in qs]
     if _is_prod_deputy_department(department):
         split_ids = {
-            'PD-M1.1', 'PD-M1.2',
+            *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
             'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
             'PD-Q2.1', 'PD-Q2.2',
         }
@@ -314,6 +335,11 @@ def _is_prod_deputy_department(dept: str | None) -> bool:
     return normalized == 'заместитель операционного директора-директор по производству'
 
 
+def _is_logistics_head_department(dept: str | None) -> bool:
+    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
+    return normalized == 'начальник службы логистики'
+
+
 
 def _thresholds_block(kpi: dict) -> dict:
     return {
@@ -501,7 +527,7 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     pct = ytd.get('kpi_pct')
     if pct is not None:
         pct = float(pct)
-    if kid in {'PD-M1.1', 'PD-M1.2'}:
+    if kid in {'PD-M1.1', 'PD-M1.2'} or kid in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID:
         ref_row = entry.get('last_full_month_row') or {}
         pct = ref_row.get('kpi_pct')
         if pct is not None:
@@ -704,6 +730,18 @@ def _plan_fact_period_label_from_kpi_period(period: dict | None) -> str | None:
             return f"Q{quarter} {year}"
     if ptype == 'last_full_year' and year is not None:
         return str(year)
+    if ptype == 'last_week':
+        label = period.get('label')
+        if label:
+            return str(label)
+    if ptype == 'ytd' and year is not None:
+        month = period.get('month')
+        if month:
+            try:
+                return f"С начала {year} г. по {MONTH_NAMES[int(month)]}"
+            except Exception:
+                return f"С начала {year} г."
+        return f"С начала {year} г."
     return None
 
 
@@ -977,12 +1015,13 @@ def _line_values_from_points(points: list[dict], key: str) -> list[float | None]
     return values
 
 
-def _build_prod_deputy_charts(entries_by_id: dict[str, dict]) -> dict:
+def _build_prod_deputy_charts(entries_by_id: dict[str, dict], ref_y: int, ref_m: int) -> dict:
     shops = [
         ("pc1", "ПЦ1", "PD-M3.B1", "PD-M3.F1"),
         ("pc2", "ПЦ2", "PD-M3.B2", "PD-M3.F2"),
     ]
     series: list[dict] = []
+    bar_series: list[dict] = []
 
     for shop, label, budget_id, fot_id in shops:
         budget_points = _build_monthly_points_from_entry(entries_by_id.get(budget_id) or {})
@@ -1058,11 +1097,44 @@ def _build_prod_deputy_charts(entries_by_id: dict[str, dict]) -> dict:
             "disable_all_option": True,
         })
 
-    if not series:
+    try:
+        from . import calc_prod_deputy_output
+        for shop, label, _budget_id, _fot_id in shops:
+            chart_data = cache_manager.locked_call(
+                f'pd_m1_output_{shop}_{ref_y}_{ref_m}',
+                calc_prod_deputy_output.get_prod_deputy_output_monthly,
+                shop,
+                year=ref_y,
+                month=ref_m,
+            )
+            points = chart_data.get("weekly_cumulative") or []
+            if not points:
+                continue
+            bar_series.append({
+                "kpi_id": f"PD-C2-{shop.upper()}",
+                "name": label,
+                "option_label": label,
+                "chart_type": "column_plan_fact_weekly_cumulative",
+                "chart_type_label": "Накопительный план/факт по неделям месяца",
+                "categories": [p.get("label") for p in points],
+                "plan": [p.get("plan") for p in points],
+                "fact": [p.get("fact") for p in points],
+                "points": points,
+                "unit": chart_data.get("ytd", {}).get("values_unit"),
+                "x_axis_title": "Недели месяца",
+                "y_axis_title": chart_data.get("ytd", {}).get("values_unit") or "Значение",
+                "single_indicator": True,
+                "disable_all_option": True,
+            })
+    except Exception:
+        logger.exception("Не удалось собрать недельный график выполнения производственного плана")
+
+    if not series and not bar_series:
         return {}
 
-    return {
-        "PD-C1": {
+    charts = {}
+    if series:
+        charts["PD-C1"] = {
             "kpi_id": "PD-C1",
             "name": "Производство 1/2: ФОТ и бюджет",
             "periodicity": "ежемесячно",
@@ -1070,7 +1142,16 @@ def _build_prod_deputy_charts(entries_by_id: dict[str, dict]) -> dict:
             "chart_type_label": "План пунктиром, факт сплошной линией",
             "series": series,
         }
-    }
+    if bar_series:
+        charts["PD-C2"] = {
+            "kpi_id": "PD-C2",
+            "name": "Выполнение производственного плана",
+            "periodicity": "еженедельно",
+            "chart_type": "column_plan_fact_weekly_cumulative",
+            "chart_type_label": "Накопительный эффект по неделям выбранного месяца",
+            "series": bar_series,
+        }
+    return charts
 
 
 def _build_universal_payload(dept: str, all_kpis: list[dict],
@@ -1145,10 +1226,11 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
         if kpi.get('kpi_id') in {
             'OD-M1', 'OD-M3.1', 'OD-M3.2',
-            'PD-M1.1', 'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
+            'PD-M1.1', 'PD-M1.1.M', 'PD-M1.1.W', 'PD-M1.1.T',
+            'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
         }:
             tile['unit'] = 'руб.'
-        elif kpi.get('kpi_id') == 'PD-M1.2':
+        elif kpi.get('kpi_id') in {'PD-M1.2', 'PD-M1.2.M', 'PD-M1.2.W', 'PD-M1.2.T'}:
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
@@ -1193,7 +1275,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         }
         grafiki.update(_build_techdir_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m))
     if _is_prod_deputy_department(dept):
-        grafiki.update(_build_prod_deputy_charts(entries_by_id))
+        grafiki.update(_build_prod_deputy_charts(entries_by_id, ref_y, ref_m))
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -1596,10 +1678,13 @@ def _build_kpi_entry(
             entry['kpi_period'] = data.get('kpi_period')
             return entry
 
-    if kpi_id in {'PD-M1.1', 'PD-M1.2'}:
+    if kpi_id in {'PD-M1.1', 'PD-M1.2'} or kpi_id in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID:
         from . import calc_prod_deputy_output
 
-        shop = 'pc1' if kpi_id.endswith('.1') else 'pc2'
+        if kpi_id in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID:
+            shop, output_period = PROD_DEPUTY_OUTPUT_PERIOD_BY_ID[kpi_id]
+        else:
+            shop, output_period = ('pc1' if kpi_id.endswith('.1') else 'pc2'), 'month'
         if year and month:
             ref_y, ref_m = year, month
         else:
@@ -1607,14 +1692,15 @@ def _build_kpi_entry(
             ref_y, ref_m = today.year, today.month
         data = cache_manager.locked_call(
             f'pd_m1_output_{shop}_{ref_y}_{ref_m}',
-            calc_prod_deputy_output.get_prod_deputy_output_monthly,
+            calc_prod_deputy_output.get_prod_deputy_output_period,
             shop,
+            output_period,
             year=ref_y,
             month=ref_m,
         )
         if data is not None:
-            entry['data_granularity'] = 'monthly'
-            entry['monthly_data'] = data.get('months') or []
+            entry['data_granularity'] = 'fixed_period' if kpi_id in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID else 'monthly'
+            entry['monthly_data'] = data.get('monthly_data') if 'monthly_data' in data else data.get('months') or []
             entry['quarterly_data'] = data.get('quarterly_data') or []
             entry['yearly_data'] = data.get('yearly_data') or []
             entry['last_full_month_row'] = data.get('last_full_month_row')
