@@ -501,7 +501,13 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     pct = ytd.get('kpi_pct')
     if pct is not None:
         pct = float(pct)
-    if _is_turnover_style_tile(kpi):
+    if kid in {'PD-M1.1', 'PD-M1.2'}:
+        ref_row = entry.get('last_full_month_row') or {}
+        pct = ref_row.get('kpi_pct')
+        if pct is not None:
+            pct = float(pct)
+        color = _rag_higher_better(pct)
+    elif _is_turnover_style_tile(kpi):
         md = entry.get('monthly_data') or []
         last_row = md[-1] if md else {}
         turnover = last_row.get('fact') if md else None
