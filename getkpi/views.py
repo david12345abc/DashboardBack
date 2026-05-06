@@ -602,6 +602,13 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         if pct is not None:
             pct = float(pct)
         color = _rag_logistics_price_deviation(pct)
+    elif kid == 'LOG-Q1':
+        qrows = entry.get('quarterly_data') or []
+        ref_row = qrows[-1] if qrows else {}
+        pct = ref_row.get('kpi_pct')
+        if pct is not None:
+            pct = float(pct)
+        color = _rag_higher_better(pct)
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
     elif kid == 'RD-M2-1':
@@ -789,7 +796,7 @@ def _plan_fact_period_label_from_kpi_period(period: dict | None) -> str | None:
         if month_name and year is not None:
             name = str(month_name)
             return f"{name[:1].upper()}{name[1:]} {year}"
-    if ptype == 'last_full_quarter':
+    if ptype in {'last_full_quarter', 'selected_quarter'}:
         quarter = period.get('quarter')
         if quarter is not None and year is not None:
             return f"Q{quarter} {year}"
@@ -1069,6 +1076,50 @@ def _build_techdir_charts(
     return charts
 
 
+def _build_logistics_charts(tiles_meta: list[dict], entries_by_id: dict[str, dict], ref_y: int, ref_m: int) -> dict:
+    by_id = {k['kpi_id']: k for k in tiles_meta}
+    line_kpis = ['LOG-M1', 'LOG-M2']
+    display_names = {
+        'LOG-M1': 'Поставки ТМЦ в срок',
+        'LOG-M2': 'Отклонение цены',
+    }
+    series: list[dict] = []
+
+    for kid in line_kpis:
+        entry = entries_by_id.get(kid) or {}
+        points = [
+            point for point in _build_monthly_points_from_entry(entry)
+            if int(point.get('year') or 0) < ref_y
+            or (int(point.get('year') or 0) == ref_y and int(point.get('month') or 0) <= ref_m)
+        ]
+        if not points:
+            continue
+        if not any((p.get('plan') is not None or p.get('fact') is not None) for p in points):
+            continue
+        meta = by_id.get(kid, {})
+        series.append({
+            'kpi_id': kid,
+            'name': display_names.get(kid, meta.get('name', kid)),
+            'chart_type': 'line_plan_fact_monthly',
+            'chart_type_label': 'План/факт по месяцам',
+            'points': points,
+        })
+
+    if not series:
+        return {}
+
+    return {
+        'LOG-C1': {
+            'kpi_id': 'LOG-C1',
+            'name': 'Логистика: помесячная динамика KPI',
+            'periodicity': 'ежемесячно',
+            'chart_type': 'multi_line_plan_fact_monthly',
+            'chart_type_label': 'Линейный тренд по месяцам',
+            'series': series,
+        }
+    }
+
+
 def _line_values_from_points(points: list[dict], key: str) -> list[float | None]:
     values: list[float | None] = []
     for point in points:
@@ -1245,6 +1296,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         or str(dept).strip().lower() == 'операционный директор'
         or _is_prod_deputy_department(dept)
         or _is_qualdir_department(dept)
+        or _is_logistics_head_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -1304,6 +1356,9 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
             tile['unit'] = 'чел.'
+        elif kpi.get('kpi_id') == 'LOG-Q1':
+            tile['unit'] = 'поставщиков'
+            tile['units'] = 'поставщиков'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1'}:
@@ -1342,6 +1397,8 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             if item.get('kpi_id') in {'TD-M3', 'TD-M4', 'TD-M5'}
         }
         grafiki.update(_build_techdir_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m))
+    if _is_logistics_head_department(dept):
+        grafiki.update(_build_logistics_charts(tiles_meta, entries_by_id, ref_y, ref_m))
     if _is_prod_deputy_department(dept):
         grafiki.update(_build_prod_deputy_charts(entries_by_id, ref_y, ref_m))
     month_names = {
@@ -1606,6 +1663,36 @@ def _build_kpi_entry(
         entry['last_full_month_row'] = data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
+        return entry
+
+    if kpi_id == 'LOG-Q1':
+        from . import calc_logistics_supplier_share
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'log_q1_supplier_share_{ref_y}_{ref_m}',
+            calc_logistics_supplier_share.get_logistics_supplier_share_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        q_year, q_num = int(ref_y), (int(ref_m) - 1) // 3 + 1
+        qrows = data.get('quarterly_data') or []
+        selected_qrow = next(
+            (
+                row for row in qrows
+                if int(row.get('year') or 0) == q_year and int(row.get('quarter') or 0) == q_num
+            ),
+            qrows[-1] if qrows else None,
+        )
+        entry['data_granularity'] = 'quarterly'
+        entry['quarterly_data'] = [selected_qrow] if selected_qrow else []
+        entry['yearly_data'] = data.get('yearly_data') or []
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = {'type': 'selected_quarter', 'year': q_year, 'quarter': q_num}
         return entry
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):

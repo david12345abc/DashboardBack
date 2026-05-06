@@ -68,7 +68,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     """Список (key, cache_path, compute_fn) для всех источников данных."""
     from . import (
         calc_debitorka, calc_dengi_fact, calc_dogovory_fact,
-        calc_logistics_price_deviation, calc_logistics_tmc_on_time,
+        calc_logistics_price_deviation, calc_logistics_supplier_share, calc_logistics_tmc_on_time,
         calc_dz_limits, calc_fot, calc_komdir_active_dealers, calc_kp_price,
         calc_otgruzki_fact, calc_otif_vypusk_zam_proizvodstva, calc_plan,
         calc_prod_deputy_output, calc_prod_deputy_pc, calc_prod_deputy_projects,
@@ -217,6 +217,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'log_m2_price_deviation_{y}_{m}',
          calc_logistics_price_deviation.cache_path(y, m),
          lambda: calc_logistics_price_deviation.get_logistics_price_deviation_monthly(year=y, month=m)),
+
+        (f'log_q1_supplier_share_{y}_{m}',
+         calc_logistics_supplier_share.cache_path(y, m),
+         lambda: calc_logistics_supplier_share.get_logistics_supplier_share_monthly(year=y, month=m)),
     ]
     td_as_of = date.today()
     tasks.append((
