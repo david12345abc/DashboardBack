@@ -68,6 +68,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     """Список (key, cache_path, compute_fn) для всех источников данных."""
     from . import (
         calc_debitorka, calc_dengi_fact, calc_dogovory_fact,
+        calc_logistics_price_deviation, calc_logistics_tmc_on_time,
         calc_dz_limits, calc_fot, calc_komdir_active_dealers, calc_kp_price,
         calc_otgruzki_fact, calc_otif_vypusk_zam_proizvodstva, calc_plan,
         calc_prod_deputy_output, calc_prod_deputy_pc, calc_prod_deputy_projects,
@@ -208,6 +209,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'pd_q2_turnover_pc2_{y}_{m}',
          calc_prod_deputy_turnover.cache_path('pc2', y, m),
          lambda: calc_prod_deputy_turnover.get_prod_deputy_turnover_monthly('pc2', year=y, month=m)),
+
+        (f'log_m1_tmc_on_time_{y}_{m}',
+         calc_logistics_tmc_on_time.cache_path(y, m),
+         lambda: calc_logistics_tmc_on_time.get_logistics_tmc_on_time_monthly(year=y, month=m)),
+
+        (f'log_m2_price_deviation_{y}_{m}',
+         calc_logistics_price_deviation.cache_path(y, m),
+         lambda: calc_logistics_price_deviation.get_logistics_price_deviation_monthly(year=y, month=m)),
     ]
     td_as_of = date.today()
     tasks.append((

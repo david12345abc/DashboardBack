@@ -383,6 +383,16 @@ def _rag_lower_turnover(fact_pct: float | None) -> str:
     return 'red'
 
 
+def _rag_logistics_price_deviation(fact_pct: float | None) -> str:
+    if fact_pct is None:
+        return 'unknown'
+    if fact_pct <= 5:
+        return 'green'
+    if fact_pct <= 10:
+        return 'yellow'
+    return 'red'
+
+
 def _normalize_dashboard_kpi_id(raw: object) -> str:
     """Код KPI для веток views: ASCII-дефис, без ZWSP/BOM, латиница вместо «похожей» кириллицы.
 
@@ -586,6 +596,12 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     elif kid == 'OD-M3.1':
         pct = _budget_fact_div_plan_pct(entry)
         color = _rag_budget_fact_div_plan(pct)
+    elif kid == 'LOG-M2':
+        ref_row = entry.get('last_full_month_row') or {}
+        pct = ref_row.get('kpi_pct')
+        if pct is not None:
+            pct = float(pct)
+        color = _rag_logistics_price_deviation(pct)
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
     elif kid == 'RD-M2-1':
@@ -1273,6 +1289,9 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             # Подсказка фронту: kpi_pct = факт/план×100, зелёный при малых значениях порога, не при ≥100.
             tile['pct_lower_is_better'] = True
 
+        if kpi.get('kpi_id') == 'LOG-M2':
+            tile['pct_lower_is_better'] = True
+
         if kpi.get('kpi_id') in {
             'OD-M1', 'OD-M3.1', 'OD-M3.2',
             'PD-M1.1', 'PD-M1.1.M', 'PD-M1.1.W', 'PD-M1.1.T',
@@ -1542,6 +1561,52 @@ def _build_kpi_entry(
     # Нормализация кода KPI: см. _normalize_dashboard_kpi_id (иначе уходит в синтетику).
     kpi_id = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
     dg = _dept_guid_for_universal(dept_key)
+
+    if kpi_id == 'LOG-M1':
+        from . import calc_logistics_tmc_on_time
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'log_m1_tmc_on_time_{ref_y}_{ref_m}',
+            calc_logistics_tmc_on_time.get_logistics_tmc_on_time_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = data.get('months') or []
+        entry['quarterly_data'] = data.get('quarterly_data') or []
+        entry['yearly_data'] = data.get('yearly_data') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        return entry
+
+    if kpi_id == 'LOG-M2':
+        from . import calc_logistics_price_deviation
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'log_m2_price_deviation_{ref_y}_{ref_m}',
+            calc_logistics_price_deviation.get_logistics_price_deviation_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = data.get('months') or []
+        entry['quarterly_data'] = data.get('quarterly_data') or []
+        entry['yearly_data'] = data.get('yearly_data') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        return entry
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
         dz = dept_dz.get_dept_dz_ytd(dept_key)
