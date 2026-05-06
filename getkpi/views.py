@@ -23,6 +23,7 @@ from . import (
     dept_budget_m3,
     dept_dz,
     dept_turnover_q5,
+    logistics_views,
     komdir_dashboard,
     komdir_quarterly,
     techdir_m3,
@@ -82,12 +83,8 @@ def _get_departments() -> list[str]:
 def _get_kpi_dicts(department: str) -> list[dict]:
     """Все KPI подразделения из БД в формате dict (как был kpi_data.json)."""
     rows = [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
-    if _is_logistics_head_department(department) and not rows:
-        try:
-            from .management.commands.import_logistics_kpi import LOGISTICS_KPI_DEFINITIONS
-        except Exception:
-            return rows
-        return [{**dict(item), 'department': department} for item in LOGISTICS_KPI_DEFINITIONS]
+    if logistics_views.is_logistics_head_department(department) and not rows:
+        return logistics_views.kpi_definition_fallback(department) or rows
     if _is_prod_deputy_department(department):
         split_ids = {
             *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
@@ -116,12 +113,8 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
     if not qs.exists():
         qs = KpiDefinition.objects.filter(department__iexact=department)
     if not qs.exists():
-        if _is_logistics_head_department(department):
-            try:
-                from .management.commands.import_logistics_kpi import LOGISTICS_KPI_DEFINITIONS
-            except Exception:
-                return None
-            return [{**dict(item), 'department': department} for item in LOGISTICS_KPI_DEFINITIONS]
+        if logistics_views.is_logistics_head_department(department):
+            return logistics_views.kpi_definition_fallback(department)
         if _is_prod_deputy_department(department):
             try:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
@@ -338,12 +331,6 @@ def _is_prod_deputy_department(dept: str | None) -> bool:
     return normalized == 'заместитель операционного директора-директор по производству'
 
 
-def _is_logistics_head_department(dept: str | None) -> bool:
-    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
-    return normalized == 'начальник службы логистики'
-
-
-
 def _thresholds_block(kpi: dict) -> dict:
     return {
         'green': kpi.get('green_threshold'),
@@ -379,16 +366,6 @@ def _rag_lower_turnover(fact_pct: float | None) -> str:
     if fact_pct <= 5:
         return 'green'
     if fact_pct <= 7:
-        return 'yellow'
-    return 'red'
-
-
-def _rag_logistics_price_deviation(fact_pct: float | None) -> str:
-    if fact_pct is None:
-        return 'unknown'
-    if fact_pct <= 5:
-        return 'green'
-    if fact_pct <= 10:
         return 'yellow'
     return 'red'
 
@@ -596,19 +573,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     elif kid == 'OD-M3.1':
         pct = _budget_fact_div_plan_pct(entry)
         color = _rag_budget_fact_div_plan(pct)
-    elif kid == 'LOG-M2':
-        ref_row = entry.get('last_full_month_row') or {}
-        pct = ref_row.get('kpi_pct')
-        if pct is not None:
-            pct = float(pct)
-        color = _rag_logistics_price_deviation(pct)
-    elif kid == 'LOG-Q1':
-        qrows = entry.get('quarterly_data') or []
-        ref_row = qrows[-1] if qrows else {}
-        pct = ref_row.get('kpi_pct')
-        if pct is not None:
-            pct = float(pct)
-        color = _rag_higher_better(pct)
+    elif (logistics_color := logistics_views.tile_color(kid, entry)) is not None:
+        pct, color = logistics_color
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
     elif kid == 'RD-M2-1':
@@ -1076,50 +1042,6 @@ def _build_techdir_charts(
     return charts
 
 
-def _build_logistics_charts(tiles_meta: list[dict], entries_by_id: dict[str, dict], ref_y: int, ref_m: int) -> dict:
-    by_id = {k['kpi_id']: k for k in tiles_meta}
-    line_kpis = ['LOG-M1', 'LOG-M2']
-    display_names = {
-        'LOG-M1': 'Поставки ТМЦ в срок',
-        'LOG-M2': 'Отклонение цены',
-    }
-    series: list[dict] = []
-
-    for kid in line_kpis:
-        entry = entries_by_id.get(kid) or {}
-        points = [
-            point for point in _build_monthly_points_from_entry(entry)
-            if int(point.get('year') or 0) < ref_y
-            or (int(point.get('year') or 0) == ref_y and int(point.get('month') or 0) <= ref_m)
-        ]
-        if not points:
-            continue
-        if not any((p.get('plan') is not None or p.get('fact') is not None) for p in points):
-            continue
-        meta = by_id.get(kid, {})
-        series.append({
-            'kpi_id': kid,
-            'name': display_names.get(kid, meta.get('name', kid)),
-            'chart_type': 'line_plan_fact_monthly',
-            'chart_type_label': 'План/факт по месяцам',
-            'points': points,
-        })
-
-    if not series:
-        return {}
-
-    return {
-        'LOG-C1': {
-            'kpi_id': 'LOG-C1',
-            'name': 'Логистика: помесячная динамика KPI',
-            'periodicity': 'ежемесячно',
-            'chart_type': 'multi_line_plan_fact_monthly',
-            'chart_type_label': 'Линейный тренд по месяцам',
-            'series': series,
-        }
-    }
-
-
 def _line_values_from_points(points: list[dict], key: str) -> list[float | None]:
     values: list[float | None] = []
     for point in points:
@@ -1296,7 +1218,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         or str(dept).strip().lower() == 'операционный директор'
         or _is_prod_deputy_department(dept)
         or _is_qualdir_department(dept)
-        or _is_logistics_head_department(dept)
+        or logistics_views.is_logistics_head_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -1341,8 +1263,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             # Подсказка фронту: kpi_pct = факт/план×100, зелёный при малых значениях порога, не при ≥100.
             tile['pct_lower_is_better'] = True
 
-        if kpi.get('kpi_id') == 'LOG-M2':
-            tile['pct_lower_is_better'] = True
+        logistics_views.apply_tile_overrides(kpi, tile)
 
         if kpi.get('kpi_id') in {
             'OD-M1', 'OD-M3.1', 'OD-M3.2',
@@ -1356,9 +1277,6 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
             tile['unit'] = 'чел.'
-        elif kpi.get('kpi_id') == 'LOG-Q1':
-            tile['unit'] = 'поставщиков'
-            tile['units'] = 'поставщиков'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1'}:
@@ -1397,8 +1315,8 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             if item.get('kpi_id') in {'TD-M3', 'TD-M4', 'TD-M5'}
         }
         grafiki.update(_build_techdir_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m))
-    if _is_logistics_head_department(dept):
-        grafiki.update(_build_logistics_charts(tiles_meta, entries_by_id, ref_y, ref_m))
+    if logistics_views.is_logistics_head_department(dept):
+        grafiki.update(logistics_views.build_charts(tiles_meta, entries_by_id, ref_y, ref_m))
     if _is_prod_deputy_department(dept):
         grafiki.update(_build_prod_deputy_charts(entries_by_id, ref_y, ref_m))
     month_names = {
@@ -1619,81 +1537,9 @@ def _build_kpi_entry(
     kpi_id = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
     dg = _dept_guid_for_universal(dept_key)
 
-    if kpi_id == 'LOG-M1':
-        from . import calc_logistics_tmc_on_time
-
-        if year and month:
-            ref_y, ref_m = year, month
-        else:
-            today = date.today()
-            ref_y, ref_m = today.year, today.month
-        data = cache_manager.locked_call(
-            f'log_m1_tmc_on_time_{ref_y}_{ref_m}',
-            calc_logistics_tmc_on_time.get_logistics_tmc_on_time_monthly,
-            year=ref_y,
-            month=ref_m,
-        )
-        entry['data_granularity'] = 'monthly'
-        entry['monthly_data'] = data.get('months') or []
-        entry['quarterly_data'] = data.get('quarterly_data') or []
-        entry['yearly_data'] = data.get('yearly_data') or []
-        entry['last_full_month_row'] = data.get('last_full_month_row')
-        entry['ytd'] = data.get('ytd') or {}
-        entry['kpi_period'] = data.get('kpi_period')
-        return entry
-
-    if kpi_id == 'LOG-M2':
-        from . import calc_logistics_price_deviation
-
-        if year and month:
-            ref_y, ref_m = year, month
-        else:
-            today = date.today()
-            ref_y, ref_m = today.year, today.month
-        data = cache_manager.locked_call(
-            f'log_m2_price_deviation_{ref_y}_{ref_m}',
-            calc_logistics_price_deviation.get_logistics_price_deviation_monthly,
-            year=ref_y,
-            month=ref_m,
-        )
-        entry['data_granularity'] = 'monthly'
-        entry['monthly_data'] = data.get('months') or []
-        entry['quarterly_data'] = data.get('quarterly_data') or []
-        entry['yearly_data'] = data.get('yearly_data') or []
-        entry['last_full_month_row'] = data.get('last_full_month_row')
-        entry['ytd'] = data.get('ytd') or {}
-        entry['kpi_period'] = data.get('kpi_period')
-        return entry
-
-    if kpi_id == 'LOG-Q1':
-        from . import calc_logistics_supplier_share
-
-        if year and month:
-            ref_y, ref_m = year, month
-        else:
-            today = date.today()
-            ref_y, ref_m = today.year, today.month
-        data = cache_manager.locked_call(
-            f'log_q1_supplier_share_{ref_y}_{ref_m}',
-            calc_logistics_supplier_share.get_logistics_supplier_share_monthly,
-            year=ref_y,
-            month=ref_m,
-        )
-        q_year, q_num = int(ref_y), (int(ref_m) - 1) // 3 + 1
-        qrows = data.get('quarterly_data') or []
-        selected_qrow = next(
-            (
-                row for row in qrows
-                if int(row.get('year') or 0) == q_year and int(row.get('quarter') or 0) == q_num
-            ),
-            qrows[-1] if qrows else None,
-        )
-        entry['data_granularity'] = 'quarterly'
-        entry['quarterly_data'] = [selected_qrow] if selected_qrow else []
-        entry['yearly_data'] = data.get('yearly_data') or []
-        entry['ytd'] = data.get('ytd') or {}
-        entry['kpi_period'] = {'type': 'selected_quarter', 'year': q_year, 'quarter': q_num}
-        return entry
+    logistics_entry = logistics_views.build_kpi_entry(kpi_id, entry, year=year, month=month)
+    if logistics_entry is not None:
+        return logistics_entry
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
         dz = dept_dz.get_dept_dz_ytd(dept_key)
