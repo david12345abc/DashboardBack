@@ -70,7 +70,8 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_debitorka, calc_dengi_fact, calc_dogovory_fact,
         calc_dz_limits, calc_fot, calc_komdir_active_dealers, calc_kp_price,
         calc_otgruzki_fact, calc_otif_vypusk_zam_proizvodstva, calc_plan,
-        calc_prod_deputy_pc, calc_prod_deputy_projects, calc_rashody,
+        calc_prod_deputy_output, calc_prod_deputy_pc, calc_prod_deputy_projects,
+        calc_prod_deputy_turnover, calc_rashody,
         calc_reclamations,
         calc_svoevremennaya_otgruzka,
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
@@ -172,6 +173,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          cd / f'otif_vypusk_prod_monthly_{y}_{m:02d}.json',
          lambda: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(year=y, month=m)),
 
+        (f'pd_m1_output_pc1_{y}_{m}',
+         calc_prod_deputy_output.cache_path('pc1', y, m),
+         lambda: calc_prod_deputy_output.get_prod_deputy_output_monthly('pc1', year=y, month=m)),
+
+        (f'pd_m1_output_pc2_{y}_{m}',
+         calc_prod_deputy_output.cache_path('pc2', y, m),
+         lambda: calc_prod_deputy_output.get_prod_deputy_output_monthly('pc2', year=y, month=m)),
+
         (f'pd_pc_budget_pc1_{y}_{m}',
          prod_deputy_pc_cache_path('budget', 'pc1', y, m),
          lambda: calc_prod_deputy_pc.get_pc_budget_monthly('pc1', y, m)),
@@ -191,6 +200,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         ('prod_deputy_projects',
          calc_prod_deputy_projects.CACHE_PATH,
          lambda: calc_prod_deputy_projects.get_pd_q1_monthly(year=y, month=m)),
+
+        (f'pd_q2_turnover_pc1_{y}_{m}',
+         calc_prod_deputy_turnover.cache_path('pc1', y, m),
+         lambda: calc_prod_deputy_turnover.get_prod_deputy_turnover_monthly('pc1', year=y, month=m)),
+
+        (f'pd_q2_turnover_pc2_{y}_{m}',
+         calc_prod_deputy_turnover.cache_path('pc2', y, m),
+         lambda: calc_prod_deputy_turnover.get_prod_deputy_turnover_monthly('pc2', year=y, month=m)),
     ]
     td_as_of = date.today()
     tasks.append((

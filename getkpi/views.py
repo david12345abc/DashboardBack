@@ -71,7 +71,11 @@ def _get_kpi_dicts(department: str) -> list[dict]:
     """Все KPI подразделения из БД в формате dict (как был kpi_data.json)."""
     rows = [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
     if _is_prod_deputy_department(department):
-        split_ids = {'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2'}
+        split_ids = {
+            'PD-M1.1', 'PD-M1.2',
+            'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
+            'PD-Q2.1', 'PD-Q2.2',
+        }
         has_split_pd = split_ids.issubset({str(row.get('kpi_id') or '') for row in rows})
         if not has_split_pd:
             try:
@@ -103,7 +107,11 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
         return None
     rows = [obj.to_dict() for obj in qs]
     if _is_prod_deputy_department(department):
-        split_ids = {'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2'}
+        split_ids = {
+            'PD-M1.1', 'PD-M1.2',
+            'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
+            'PD-Q2.1', 'PD-Q2.2',
+        }
         has_split_pd = split_ids.issubset({str(row.get('kpi_id') or '') for row in rows})
         if not has_split_pd:
             try:
@@ -952,6 +960,113 @@ def _build_techdir_charts(
     return charts
 
 
+def _line_values_from_points(points: list[dict], key: str) -> list[float | None]:
+    values: list[float | None] = []
+    for point in points:
+        value = point.get(key)
+        try:
+            values.append(float(value) if value is not None else None)
+        except (TypeError, ValueError):
+            values.append(None)
+    return values
+
+
+def _build_prod_deputy_charts(entries_by_id: dict[str, dict]) -> dict:
+    shops = [
+        ("pc1", "ПЦ1", "PD-M3.B1", "PD-M3.F1"),
+        ("pc2", "ПЦ2", "PD-M3.B2", "PD-M3.F2"),
+    ]
+    series: list[dict] = []
+
+    for shop, label, budget_id, fot_id in shops:
+        budget_points = _build_monthly_points_from_entry(entries_by_id.get(budget_id) or {})
+        fot_points = _build_monthly_points_from_entry(entries_by_id.get(fot_id) or {})
+        points_by_month: dict[tuple[int | None, int | None], dict] = {}
+
+        for point in budget_points:
+            key = (point.get("year"), point.get("month"))
+            row = points_by_month.setdefault(key, {
+                "year": point.get("year"),
+                "month": point.get("month"),
+                "month_name": point.get("month_name"),
+            })
+            row["budget_plan"] = point.get("plan")
+            row["budget_fact"] = point.get("fact")
+
+        for point in fot_points:
+            key = (point.get("year"), point.get("month"))
+            row = points_by_month.setdefault(key, {
+                "year": point.get("year"),
+                "month": point.get("month"),
+                "month_name": point.get("month_name"),
+            })
+            row["fot_plan"] = point.get("plan")
+            row["fot_fact"] = point.get("fact")
+
+        points = sorted(
+            points_by_month.values(),
+            key=lambda row: (int(row.get("year") or 0), int(row.get("month") or 0)),
+        )
+        if not points:
+            continue
+
+        series.append({
+            "kpi_id": f"PD-C1-{shop.upper()}",
+            "name": label,
+            "option_label": label,
+            "chart_type": "line_plan_fact_monthly",
+            "chart_type_label": "Бюджет и ФОТ: план/факт по месяцам",
+            "points": points,
+            "line_series": [
+                {
+                    "name": "Бюджет факт",
+                    "data": _line_values_from_points(points, "budget_fact"),
+                    "color": "#2563eb",
+                    "value_role": "fact",
+                    "metric": "budget",
+                },
+                {
+                    "name": "Бюджет план",
+                    "data": _line_values_from_points(points, "budget_plan"),
+                    "color": "#2563eb",
+                    "dashStyle": "Dash",
+                    "value_role": "plan",
+                    "metric": "budget",
+                },
+                {
+                    "name": "ФОТ факт",
+                    "data": _line_values_from_points(points, "fot_fact"),
+                    "color": "#16a34a",
+                    "value_role": "fact",
+                    "metric": "fot",
+                },
+                {
+                    "name": "ФОТ план",
+                    "data": _line_values_from_points(points, "fot_plan"),
+                    "color": "#16a34a",
+                    "dashStyle": "Dash",
+                    "value_role": "plan",
+                    "metric": "fot",
+                },
+            ],
+            "disable_all_option": True,
+        })
+
+    if not series:
+        return {}
+
+    return {
+        "PD-C1": {
+            "kpi_id": "PD-C1",
+            "name": "Производство 1/2: ФОТ и бюджет",
+            "periodicity": "ежемесячно",
+            "chart_type": "multi_line_plan_fact_monthly",
+            "chart_type_label": "План пунктиром, факт сплошной линией",
+            "series": series,
+        }
+    }
+
+
 def _build_universal_payload(dept: str, all_kpis: list[dict],
                              *, month: int | None = None,
                              year: int | None = None) -> dict:
@@ -1024,12 +1139,14 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
 
         if kpi.get('kpi_id') in {
             'OD-M1', 'OD-M3.1', 'OD-M3.2',
-            'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
+            'PD-M1.1', 'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
         }:
             tile['unit'] = 'руб.'
+        elif kpi.get('kpi_id') == 'PD-M1.2':
+            tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
-        elif kpi.get('kpi_id') == 'OD-Q2':
+        elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
@@ -1069,6 +1186,8 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             if item.get('kpi_id') in {'TD-M3', 'TD-M4', 'TD-M5'}
         }
         grafiki.update(_build_techdir_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m))
+    if _is_prod_deputy_department(dept):
+        grafiki.update(_build_prod_deputy_charts(entries_by_id))
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -1469,6 +1588,57 @@ def _build_kpi_entry(
             entry['last_full_month_row'] = data.get('last_full_month_row')
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
+            return entry
+
+    if kpi_id in {'PD-M1.1', 'PD-M1.2'}:
+        from . import calc_prod_deputy_output
+
+        shop = 'pc1' if kpi_id.endswith('.1') else 'pc2'
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'pd_m1_output_{shop}_{ref_y}_{ref_m}',
+            calc_prod_deputy_output.get_prod_deputy_output_monthly,
+            shop,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = 'monthly'
+            entry['monthly_data'] = data.get('months') or []
+            entry['quarterly_data'] = data.get('quarterly_data') or []
+            entry['yearly_data'] = data.get('yearly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            return entry
+
+    if kpi_id in {'PD-Q2.1', 'PD-Q2.2'}:
+        from . import calc_prod_deputy_turnover
+
+        shop = 'pc1' if kpi_id.endswith('.1') else 'pc2'
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'pd_q2_turnover_{shop}_{ref_y}_{ref_m}',
+            calc_prod_deputy_turnover.get_prod_deputy_turnover_monthly,
+            shop,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = 'monthly'
+            entry['monthly_data'] = data.get('months') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            entry['debug'] = data.get('debug')
             return entry
 
     if kpi_id == 'OD-Q2':
