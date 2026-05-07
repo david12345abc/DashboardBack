@@ -8,8 +8,9 @@
 Отбор:
   • связь с документом ``ЗаявкаНаРасходованиеДенежныхСредств`` (поле
     ``ЗаявкаНаРасходованиеДенежныхСредств_Key``);
-  • у заявки в реквизите ``ТД_ЦФО`` / ``ТД_ЦФО_Key`` — ЦФО «Технический директор»
-    (сопоставление с ``Catalog_СтруктураПредприятия`` по наименованию);
+  • у заявки в реквизите ``ТД_ЦФО`` / ``ТД_ЦФО_Key`` — ЦФО **контура директора по качеству**
+    (или ``Подразделение`` / ``Подразделение_Key`` совпадает с одним из подразделений
+    QD-M4 из ``QD_FOT_SPEC``, когда ЦФО в шапке не заполнен);
   • статья ДДС (``СтатьяДвиженияДенежныхСредств_Key``) — одна из перечисленных
     в ``QD_M3_DDS_ARTICLE_DESCRIPTIONS`` (сравнение по ``normalize_name``).
 
@@ -20,6 +21,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any
 from urllib.parse import quote
 
@@ -34,11 +36,38 @@ from getkpi.calc_budget_limit import (
 )
 from getkpi.calc_budget_techdir_m3 import REQUEST_DOC_ENTITY_CANDIDATES
 from getkpi.fot_techdir_fact import AUTH, BASE, EMPTY, load_structure, normalize_name
+from qualdir.qd_m4_fact import QD_FOT_SPEC
 
 logger = logging.getLogger(__name__)
 
-QD_M3_TD_CFO_LABEL = "Технический директор"
-QD_M3_TD_CFO_LABEL_NORM = normalize_name(QD_M3_TD_CFO_LABEL)
+# ЦФО в заявке — контур качества (не «Технический директор» целиком).
+QD_M3_CFO_LABELS: tuple[str, ...] = (
+    "Директор по качеству",
+    "Зам. технического директора по качеству",
+    "ЗАМЕСТИТЕЛЬ ДИРЕКТОРА ПО КАЧЕСТВУ",
+    "Заместитель директора по качеству",
+    "Контур качества (зам по кач.)",
+)
+QD_M3_CFO_LABEL_NORMS: frozenset[str] = frozenset(
+    normalize_name(s) for s in QD_M3_CFO_LABELS
+)
+
+# Старое имя константы (удалённые ссылки / устаревший .pyc → NameError).
+QD_M3_TD_CFO_LABEL: str = "; ".join(QD_M3_CFO_LABELS)
+
+# Подразделения контура качества — как в QD-M4 (если в заявке пустой ТД_ЦФО, но указано подразделение ОТК и т.д.).
+def _qd_quality_department_norms() -> frozenset[str]:
+    acc: set[str] = set()
+    for title, aliases in QD_FOT_SPEC:
+        acc.add(normalize_name(title))
+        for a in aliases:
+            t = normalize_name(a)
+            if t:
+                acc.add(t)
+    return frozenset(acc)
+
+
+QD_M3_QUALITY_DEPT_NORMS: frozenset[str] = _qd_quality_department_norms()
 
 # Статьи ДДС (наименования из 1С); дубликаты в ТЗ сведены к уникальному набору.
 QD_M3_DDS_ARTICLE_DESCRIPTIONS: tuple[str, ...] = (
@@ -188,7 +217,7 @@ def _fetch_znrds_by_refs(
     for i in range(0, len(ref_keys), batch_size):
         batch = ref_keys[i : i + batch_size]
         flt = " or ".join(f"Ref_Key eq guid'{k}'" for k in batch)
-        sel = "Ref_Key,ТД_ЦФО,ТД_ЦФО_Key"
+        sel = "Ref_Key,ТД_ЦФО,ТД_ЦФО_Key,Подразделение,Подразделение_Key"
         url = (
             f"{BASE}/{quote(doc_entity)}?$format=json"
             f"&$filter={quote(flt, safe='')}"
@@ -214,25 +243,72 @@ def _fetch_znrds_by_refs(
     return out
 
 
-def _td_cfo_matches(doc: dict[str, Any], structure_by_key: dict[str, Any]) -> bool:
+def _label_matches_qd_m3_cfo(norm: str) -> bool:
+    if not norm:
+        return False
+    for needle in QD_M3_CFO_LABEL_NORMS:
+        if norm == needle or needle in norm:
+            return True
+    return False
+
+
+def _doc_podrazdelenie_norm(
+    doc: dict[str, Any], structure_by_key: dict[str, Any]
+) -> str:
+    raw = doc.get("Подразделение")
+    if raw is not None and str(raw).strip():
+        if isinstance(raw, dict):
+            return _normalize_presentation(raw)
+        return normalize_name(str(raw))
+    pk = doc.get("Подразделение_Key")
+    if not pk or str(pk).lower() == EMPTY.lower():
+        return ""
+    row = _structure_row_by_key(structure_by_key, str(pk))
+    if not row:
+        return ""
+    return normalize_name(str(row.get("Description", "") or ""))
+
+
+def _department_in_qd_quality_contour(desc_norm: str) -> bool:
+    if not desc_norm:
+        return False
+    for needle in QD_M3_QUALITY_DEPT_NORMS:
+        if len(needle) < 4:
+            continue
+        if desc_norm == needle or needle in desc_norm or desc_norm in needle:
+            return True
+    return False
+
+
+def _qd_m3_cfo_matches(doc: dict[str, Any], structure_by_key: dict[str, Any]) -> bool:
     raw = doc.get("ТД_ЦФО")
     if raw is not None and str(raw).strip():
-        if _normalize_presentation(raw) == QD_M3_TD_CFO_LABEL_NORM:
-            return True
-        if QD_M3_TD_CFO_LABEL_NORM in _normalize_presentation(raw):
+        pres = _normalize_presentation(raw)
+        if _label_matches_qd_m3_cfo(pres):
             return True
     k = doc.get("ТД_ЦФО_Key")
-    if not k or str(k).lower() == EMPTY.lower():
-        return False
-    row = _structure_row_by_key(structure_by_key, str(k))
-    if not row:
-        return False
-    desc_n = normalize_name(row.get("Description", ""))
-    return desc_n == QD_M3_TD_CFO_LABEL_NORM or QD_M3_TD_CFO_LABEL_NORM in desc_n
+    if k and str(k).lower() != EMPTY.lower():
+        row = _structure_row_by_key(structure_by_key, str(k))
+        if row:
+            desc_n = normalize_name(row.get("Description", ""))
+            if _label_matches_qd_m3_cfo(desc_n):
+                return True
+    dept = _doc_podrazdelenie_norm(doc, structure_by_key)
+    if dept and _department_in_qd_quality_contour(dept):
+        return True
+    return False
 
 
-def compute_qd_m3_fact_monthly(year: int, month: int) -> dict[str, Any]:
+def compute_qd_m3_fact_monthly(
+    year: int,
+    month: int,
+    session: requests.Session | None = None,
+) -> dict[str, Any]:
     """Сумма фактических оплат по правилам QD-M3 за календарный месяц (руб.)."""
+    owns_session = session is None
+    if owns_session:
+        session = requests.Session()
+        session.auth = AUTH
     counts = {
         "register_rows": 0,
         "fact_like_rows": 0,
@@ -246,8 +322,6 @@ def compute_qd_m3_fact_monthly(year: int, month: int) -> dict[str, Any]:
         "allowed_requests_td": 0,
     }
     try:
-        session = requests.Session()
-        session.auth = AUTH
         p_start, p_end = period_bounds(year, month)
         rows = load_records(session, p_start, p_end)
         counts["register_rows"] = len(rows)
@@ -291,9 +365,50 @@ def compute_qd_m3_fact_monthly(year: int, month: int) -> dict[str, Any]:
 
         allowed_req: set[str] = set()
         for rk, doc in headers.items():
-            if _td_cfo_matches(doc, structure_by_key):
+            if _qd_m3_cfo_matches(doc, structure_by_key):
                 allowed_req.add(rk)
         counts["allowed_requests_td"] = len(allowed_req)
+
+        # Примеры строк, отфильтрованных по ДДС / ЦФО (для отладки «факт везде 0»).
+        dds_no_match_samples: list[dict[str, str]] = []
+        seen_dds: set[str] = set()
+        for r in fact_rows:
+            art = r.get("СтатьяДвиженияДенежныхСредств_Key") or EMPTY
+            aks = str(art)
+            if _dds_article_matches(dds, aks):
+                continue
+            label = normalize_name(dds.label(aks))
+            if not label or label in seen_dds or len(dds_no_match_samples) >= 10:
+                continue
+            seen_dds.add(label)
+            dds_no_match_samples.append({"art_key": aks[:40], "dds_label_norm": label[:240]})
+
+        rejected_cfo_samples: list[str] = []
+        seen_cfo: set[str] = set()
+        for rk, doc in headers.items():
+            if rk in allowed_req:
+                continue
+            raw = doc.get("ТД_ЦФО")
+            s = ""
+            if raw is not None and str(raw).strip():
+                s = _normalize_presentation(raw)
+            else:
+                ck = doc.get("ТД_ЦФО_Key")
+                row = _structure_row_by_key(structure_by_key, str(ck)) if ck else None
+                s = normalize_name(row.get("Description", "")) if row else ""
+            dept_s = _doc_podrazdelenie_norm(doc, structure_by_key)
+            combo = f"td_cfo={s or '-'} | podr={dept_s or '-'}"
+            if combo in seen_cfo or len(rejected_cfo_samples) >= 10:
+                continue
+            if not s and not dept_s:
+                continue
+            seen_cfo.add(combo)
+            rejected_cfo_samples.append(combo[:240])
+
+        rec_type_hist = Counter(
+            (r.get("Recorder_Type") or "") for r in fact_rows
+        )
+        recorder_types_in_fact_rows = dict(rec_type_hist.most_common(20))
 
         total = 0.0
         for r in fact_rows:
@@ -329,8 +444,20 @@ def compute_qd_m3_fact_monthly(year: int, month: int) -> dict[str, Any]:
                 "register": "AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент",
                 "period_start": p_start[:19],
                 "period_end": p_end[:19],
+                "cfo_labels": [*QD_M3_CFO_LABELS],
                 "td_cfo": QD_M3_TD_CFO_LABEL,
                 "dds_articles": list(QD_M3_DDS_ARTICLE_DESCRIPTIONS),
+                "recorder_types_in_fact_rows": recorder_types_in_fact_rows,
+                "dds_no_match_samples": dds_no_match_samples,
+                "rejected_cfo_samples_norm": rejected_cfo_samples,
+                "_counts_hints": (
+                    "register_rows: строк регистра за месяц; "
+                    "fact_like_rows: с привязкой к заявке; "
+                    "skipped_no_article_match: статья ДДС не из списка QD-M3; "
+                    "skipped_no_request_header: нет шапки заявки в OData; "
+                    "skipped_td_cfo: заявка не подошла под ЦФО контура качества; "
+                    "rows_counted: учтено в сумме."
+                ),
             },
         }
     except Exception as exc:
