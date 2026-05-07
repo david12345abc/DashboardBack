@@ -1,8 +1,8 @@
 """
 QD-M3 — бюджет (директор по качеству / qualdir).
 
-План по месяцам: сумма семи числовых строк в колонке месяца (таблица бюджета 2026).
-Факт при появлении правила расчёта можно подключить отдельно.
+План по месяцам: константы ``QD_M3_PLAN_BY_MONTH_2026``.
+Факт: оплаты по заявкам на расход ДС — см. ``qualdir.qd_m3_fact``.
 """
 
 from __future__ import annotations
@@ -13,9 +13,12 @@ from typing import Any
 
 from getkpi.cache_manager import locked_call
 
+from qualdir.qd_m3_fact import compute_qd_m3_fact_monthly
+from qualdir.turnover import _qd_q2_kpi_pct
+
 logger = logging.getLogger(__name__)
 
-SOURCE_TAG = "qualdir_qd_m3_v1"
+SOURCE_TAG = "qualdir_qd_m3_v2"
 
 # Плановый бюджет, 2026, руб./мес. (сумма 7 строк по столбцу месяца).
 QD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
@@ -65,7 +68,7 @@ def _plan_for_month(year: int, month: int) -> float | None:
 
 
 def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
-    """QD-M3: план из констант (сумма по колонке месяца). Факт — позже."""
+    """QD-M3: план из констант; факт из 1С (регистр ДДС + заявки, см. qd_m3_fact)."""
 
     def _runner() -> dict[str, Any]:
         try:
@@ -73,21 +76,32 @@ def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str
             pairs = _tile_month_pairs(ref_y, ref_m)
             monthly_rows: list[dict[str, Any]] = []
             ref_row: dict[str, Any] | None = None
+            last_fact_debug: dict[str, Any] = {}
 
             for y, m in pairs:
                 plan = _plan_for_month(y, m)
-                fact: float | None = None
-                has_data = False
+                fact_payload = compute_qd_m3_fact_monthly(y, m)
+                last_fact_debug = {
+                    **(fact_payload.get("debug") or {}),
+                    "counts": fact_payload.get("counts") or {},
+                }
+                fact = fact_payload.get("total_fact")
+                if isinstance(fact, (int, float)):
+                    fact = float(fact)
+                else:
+                    fact = None
+                has_data = plan is not None and fact is not None
+                kpi_pct = _qd_q2_kpi_pct(plan, fact) if has_data else None
                 row: dict[str, Any] = {
                     "month": m,
                     "year": y,
                     "month_name": MONTH_NAMES[m],
                     "plan": plan,
                     "fact": fact,
-                    "kpi_pct": None,
+                    "kpi_pct": kpi_pct,
                     "has_data": has_data,
                 }
-                if plan is not None:
+                if plan is not None or fact is not None:
                     row["values_unit"] = "руб."
                 monthly_rows.append(row)
                 if (y, m) == (ref_y, ref_m):
@@ -96,7 +110,10 @@ def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str
             return {
                 "data_granularity": "monthly",
                 "monthly_data": monthly_rows,
-                "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("plan") is not None else None,
+                "last_full_month_row": dict(ref_row)
+                if ref_row
+                and (ref_row.get("plan") is not None or ref_row.get("fact") is not None)
+                else None,
                 "kpi_period": {
                     "type": "last_full_month",
                     "year": ref_y,
@@ -109,7 +126,14 @@ def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
                     "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
                     "months_total": len(monthly_rows),
-                    **({"values_unit": "руб."} if ref_row and ref_row.get("plan") is not None else {}),
+                    **(
+                        {"values_unit": "руб."}
+                        if ref_row
+                        and (
+                            ref_row.get("plan") is not None or ref_row.get("fact") is not None
+                        )
+                        else {}
+                    ),
                 },
                 "debug": {
                     "status": "ok"
@@ -118,6 +142,8 @@ def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "kpi_id": "QD-M3",
                     "source": SOURCE_TAG,
                     "plan_source": "qualdir.qd_m3.QD_M3_PLAN_BY_MONTH_2026 (7 строк × месяц)",
+                    "fact_source": "qualdir.qd_m3_fact (ДДС по заявкам, ТД_ЦФО, статьи ДДС)",
+                    "fact_last_month": last_fact_debug,
                 },
             }
         except Exception as exc:

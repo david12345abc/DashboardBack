@@ -41,6 +41,7 @@ from .devdir import projects as devdir_projects
 from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp
 from qualdir.qd_m3 import get_qd_m3_ytd
 from qualdir.qd_m4 import get_qd_m4_ytd
+from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
 from qualdir.turnover import _qd_q2_kpi_pct, get_qd_q2_ytd, turnover_month_cache_path
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
@@ -625,20 +626,34 @@ def _public_unit_row(row: dict) -> dict:
     return out
 
 
+def _qd_q1_stamp_paths(ref_y: int | None, ref_m: int | None) -> list:
+    paths = []
+    p = qd_q1_mpp_path_for_stamp()
+    if p is not None:
+        paths.append(p)
+    if ref_y is not None and ref_m is not None:
+        paths.append(qd_q1_tile_cache_path(ref_y, ref_m))
+    return paths
+
+
 def _techdir_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) -> str | None:
     if ref_y is None or ref_m is None:
         return None
 
-    cache_files = {
-        'TD-M1': [techdir_projects.CACHE_PATH],
-        'TD-Q1': [techdir_projects.CACHE_PATH],
-        'TD-M5': [techdir_projects.CACHE_PATH],
-        'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
-        'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
-        'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
-        'QD-Q2': [turnover_month_cache_path(ref_y, ref_m)],
-        'QD-M1': qd_m1_excel_paths_for_cache_stamp(),
-    }.get(kpi_id, [])
+    if kpi_id == 'QD-Q1':
+        cache_files = _qd_q1_stamp_paths(ref_y, ref_m)
+    elif kpi_id == 'QD-M1':
+        cache_files = qd_m1_excel_paths_for_cache_stamp(ref_y, ref_m)
+    else:
+        cache_files = {
+            'TD-M1': [techdir_projects.CACHE_PATH],
+            'TD-Q1': [techdir_projects.CACHE_PATH],
+            'TD-M5': [techdir_projects.CACHE_PATH],
+            'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
+            'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
+            'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
+            'QD-Q2': [turnover_month_cache_path(ref_y, ref_m)],
+        }.get(kpi_id, [])
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -676,7 +691,7 @@ def _build_tile_item(
     tile.update(_extract_tile_plan_fact(entry))
     if entry.get('data_granularity'):
         tile['data_granularity'] = entry.get('data_granularity')
-    if kpi.get('kpi_id') in {'OD-Q1', 'OD-Q2'} and entry.get('data_granularity') == 'monthly':
+    if kpi.get('kpi_id') in {'OD-Q1', 'OD-Q2', 'QD-Q1'} and entry.get('data_granularity') == 'monthly':
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
     if entry.get('kpi_period'):
@@ -687,6 +702,11 @@ def _build_tile_item(
     if entry.get('last_full_month_row'):
         lfr = entry['last_full_month_row']
         if kpi.get('kpi_id') == 'QD-Q2' and isinstance(lfr, dict):
+            lfr = {
+                **lfr,
+                'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
+            }
+        if kpi.get('kpi_id') == 'QD-Q1' and isinstance(lfr, dict):
             lfr = {
                 **lfr,
                 'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
@@ -704,13 +724,23 @@ def _build_tile_item(
                 else row
                 for row in raw_rows
             ]
+        if kpi.get('kpi_id') == 'QD-Q1':
+            raw_rows = [
+                {
+                    **row,
+                    'kpi_pct': _qd_q2_kpi_pct(row.get('plan'), row.get('fact')),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
         tile['monthly_data'] = [_public_unit_row(row) for row in raw_rows]
     if entry.get('quarterly_data') is not None:
         tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
     if entry.get('yearly_data') is not None:
         tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
-    if kpi.get('kpi_id') == 'QD-M1' and entry.get('articles') is not None:
-        tile['articles'] = entry.get('articles') or []
+    if kpi.get('kpi_id') == 'QD-M1':
+        tile['articles'] = entry.get('articles')
     return tile
 
 
@@ -747,6 +777,8 @@ def _pick_monthly_row_for_period(
                 continue
             if row.get('year') == year and row.get('month') == month:
                 return row
+        # Явный период задан, но строки нет — не подставлять последний месяц ряда
+        return {}
     last_row = rows[-1]
     return last_row if isinstance(last_row, dict) else {}
 
@@ -992,9 +1024,20 @@ def _build_techdir_charts(
     return charts
 
 
-def _build_universal_payload(dept: str, all_kpis: list[dict],
-                             *, month: int | None = None,
-                             year: int | None = None) -> dict:
+def _wants_tile_debug(request) -> bool:
+    """Параметр ``?include_debug=1`` — добавить в элементы плиток поле ``debug`` (диагностика)."""
+    v = (request.GET.get('include_debug') or '').strip().lower()
+    return v in ('1', 'true', 'yes', 'on')
+
+
+def _build_universal_payload(
+    dept: str,
+    all_kpis: list[dict],
+    *,
+    month: int | None = None,
+    year: int | None = None,
+    include_debug: bool = False,
+) -> dict:
     """
     Универсальный билдер: Плитки, Графики, Таблицы.
     Таблицы — претензии из 1С (Catalog_Претензии) за выбранный месяц.
@@ -1062,6 +1105,14 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             # Подсказка фронту: kpi_pct = факт/план×100, зелёный при малых значениях порога, не при ≥100.
             tile['pct_lower_is_better'] = True
 
+        if kpi.get('kpi_id') == 'QD-Q1':
+            p_fin = tile.get('plan')
+            f_fin = tile.get('fact')
+            tpct = _qd_q2_kpi_pct(p_fin, f_fin)
+            if tpct is not None:
+                tile['kpi_pct'] = tpct
+            tile['color'] = _rag_higher_better(float(tpct) if tpct is not None else None)
+
         if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2', 'PD-M3.1', 'PD-M3.2'}:
             tile['unit'] = 'руб.'
         elif kpi.get('kpi_id') == 'KD-M11':
@@ -1070,7 +1121,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
-        elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1'}:
+        elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1', 'QD-Q1'}:
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M5', 'QD-M3', 'QD-M4'}:
             tile['unit'] = 'руб.'
@@ -1078,6 +1129,9 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
         if period_label:
             tile['plan_fact_period_label'] = period_label
+
+        if include_debug and entry.get('debug') is not None:
+            tile['debug'] = entry['debug']
 
         plitki_items.append(tile)
 
@@ -1595,6 +1649,16 @@ def _build_kpi_entry(
             entry['debug'] = qd.get('debug')
             return entry
 
+    if kpi_id == 'QD-Q1':
+        qd = get_qd_q1_ytd(year=year, month=month)
+        entry['data_granularity'] = qd['data_granularity']
+        entry['monthly_data'] = qd['monthly_data']
+        entry['last_full_month_row'] = qd.get('last_full_month_row')
+        entry['ytd'] = qd['ytd']
+        entry['kpi_period'] = qd['kpi_period']
+        entry['debug'] = qd.get('debug')
+        return entry
+
     if kpi_id == 'QD-M1':
         qd = get_qd_m1_ytd(year=year, month=month)
         if qd is not None:
@@ -1603,7 +1667,7 @@ def _build_kpi_entry(
             entry['last_full_month_row'] = qd.get('last_full_month_row')
             entry['ytd'] = qd['ytd']
             entry['kpi_period'] = qd['kpi_period']
-            entry['articles'] = qd.get('articles') or []
+            entry['articles'] = qd.get('articles')
             entry['debug'] = qd.get('debug')
             return entry
 
@@ -1920,7 +1984,13 @@ def get_kpi(request):
             json_dumps_params={'ensure_ascii': False},
         )
 
-    payload = _build_universal_payload(requested_dept, kpis, month=req_month, year=req_year)
+    payload = _build_universal_payload(
+        requested_dept,
+        kpis,
+        month=req_month,
+        year=req_year,
+        include_debug=_wants_tile_debug(request),
+    )
     return JsonResponse(
         {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
         json_dumps_params={'ensure_ascii': False},
@@ -2069,7 +2139,13 @@ def get_all_departments(request):
         year_param = request.GET.get('year')
         req_month_all = int(month_param) if month_param else None
         req_year_all = int(year_param) if year_param else None
-        payload = _build_universal_payload(requested_dept, kpis, month=req_month_all, year=req_year_all)
+        payload = _build_universal_payload(
+            requested_dept,
+            kpis,
+            month=req_month_all,
+            year=req_year_all,
+            include_debug=_wants_tile_debug(request),
+        )
         return JsonResponse(
             {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
             json_dumps_params={'ensure_ascii': False},
@@ -2081,6 +2157,7 @@ def get_all_departments(request):
     req_year_all = int(year_param) if year_param else None
     chairman_for_raw = request.GET.get('for')
     chairman_for_norm = chairman_data.normalize_chairman_for_param(chairman_for_raw)
+    include_debug_all = _wants_tile_debug(request)
 
     db_depts_lower = {d.lower(): d for d in _get_departments()}
 
@@ -2153,7 +2230,13 @@ def get_all_departments(request):
             dg = dept_guid_for_kpi_key(ck)
             payload = _build_komdir_style_payload(ck, ck_kpis, request, dept_guid=dg)
             return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
-        payload = _build_universal_payload(dept, kpis, month=req_month_all, year=req_year_all)
+        payload = _build_universal_payload(
+            dept,
+            kpis,
+            month=req_month_all,
+            year=req_year_all,
+            include_debug=include_debug_all,
+        )
         return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
 
     def _empty_entry(dept: str) -> dict:
