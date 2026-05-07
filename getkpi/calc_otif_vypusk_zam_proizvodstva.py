@@ -68,7 +68,7 @@ EXCLUDE_PARTNER_NAMES = {
 
 PARTNERS_CACHE = os.path.join(os.path.dirname(__file__), "partners_exclude_cache.json")
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "otif_vypusk_prod_monthly_v1"
+SOURCE_TAG = "otif_vypusk_prod_monthly_v3"
 PAGE = 5000
 BATCH = 15
 TIMEOUT = 120
@@ -488,18 +488,21 @@ def get_otif_vypusk_prod_monthly(year: int | None = None, month: int | None = No
     ref_row: dict | None = None
     for mm in range(1, ref_month + 1):
         row = calc_month(session, ctx, ref_year, mm)
+        plan_qty = round(float(row.get("plan_qty") or 0), 6)
+        rejected_qty = round(float(row.get("fact_shipped_qty_in_month") or 0), 6)
+        fact_qty = round(max(plan_qty - rejected_qty, 0.0), 6)
+        execution_month_pct = round(100.0 * fact_qty / plan_qty, 2) if plan_qty > 0 else None
         month_row = {
             "year": ref_year,
             "month": mm,
             "month_name": MONTH_RU[mm].lower(),
-            "plan": round(float(row.get("plan_qty") or 0), 6),
-            "fact": round(float(row.get("fact_shipped_qty_in_month") or 0), 6),
-            "kpi_pct": row.get("otif_by_qty_pct")
-            if row.get("otif_by_qty_pct") is not None
-            else row.get("execution_month_pct"),
-            "has_data": abs(float(row.get("plan_qty") or 0)) > 0 or abs(float(row.get("fact_shipped_qty_in_month") or 0)) > 0,
+            "plan": plan_qty,
+            "fact": fact_qty,
+            "kpi_pct": execution_month_pct,
+            "has_data": abs(plan_qty) > 0 or abs(rejected_qty) > 0,
             "values_unit": "шт.",
-            "execution_month_pct": row.get("execution_month_pct"),
+            "execution_month_pct": execution_month_pct,
+            "rejected_qty": rejected_qty,
             "otif_by_qty_pct": row.get("otif_by_qty_pct"),
             "otif_lines_pct": row.get("otif_lines_pct"),
             "plan_lines": row.get("plan_lines"),

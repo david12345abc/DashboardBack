@@ -605,6 +605,66 @@ def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> di
     }
 
 
+def _fnd_t9_row_value(row: dict, label: str, key: str):
+    for item in row.get("plan_fact_rows") or []:
+        if item.get("label") == label:
+            return item.get(key)
+    return None
+
+
+def _build_fnd_t9_split_tile(meta: dict, td: dict, *, label: str, suffix: str, name: str, unit: str, ref_y: int, ref_m: int) -> dict:
+    monthly_data = []
+    for row in td.get("monthly_data") or []:
+        plan = _fnd_t9_row_value(row, label, "plan")
+        fact = _fnd_t9_row_value(row, label, "fact")
+        kpi_pct = _fnd_t9_row_value(row, label, "kpi_pct")
+        monthly_data.append({
+            "month": row.get("month"),
+            "year": row.get("year"),
+            "month_name": row.get("month_name"),
+            "plan": plan,
+            "fact": fact,
+            "kpi_pct": kpi_pct,
+            "has_data": plan is not None or fact is not None,
+        })
+
+    lm = next(
+        (
+            row for row in monthly_data
+            if int(row.get("year") or 0) == int(ref_y) and int(row.get("month") or 0) == int(ref_m)
+        ),
+        monthly_data[-1] if monthly_data else {},
+    )
+    kpis = [row.get("kpi_pct") for row in monthly_data if row.get("kpi_pct") is not None]
+    month_pct = lm.get("kpi_pct") if lm else None
+    ytd_pct = round(sum(kpis) / len(kpis), 2) if kpis else None
+    pct_for_rag = month_pct if month_pct is not None else ytd_pct
+
+    return {
+        "kpi_id": suffix,
+        "name": name,
+        "kpi_pct": month_pct,
+        "ytd_pct": ytd_pct,
+        "color": _rag_higher_better(pct_for_rag),
+        "period": _period_label(meta),
+        "thresholds": dict(_T9_THRESHOLDS),
+        "green_threshold": _T9_THRESHOLDS["green"],
+        "yellow_threshold": _T9_THRESHOLDS["yellow"],
+        "red_threshold": _T9_THRESHOLDS["red"],
+        "formula": meta.get("formula"),
+        "unit": unit,
+        "units": unit,
+        "source": meta.get("source"),
+        "frequency": meta.get("frequency"),
+        "plan": lm.get("plan") if lm else None,
+        "fact": lm.get("fact") if lm else None,
+        "has_data": lm.get("has_data", True) if lm else False,
+        "plan_fact_period_label": f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}",
+        "monthly_data": monthly_data,
+        "parent_kpi_id": "FND-T9",
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Графики
 # ═══════════════════════════════════════════════════════════════
@@ -1825,20 +1885,27 @@ def build_chairman_payload(
                 if extra_key in lm:
                     tile[extra_key] = lm[extra_key]
         if kid == "FND-T9":
-            tile["unit"] = ""
-            tile["thresholds"] = dict(_T9_THRESHOLDS)
-            tile["green_threshold"] = _T9_THRESHOLDS["green"]
-            tile["yellow_threshold"] = _T9_THRESHOLDS["yellow"]
-            tile["red_threshold"] = _T9_THRESHOLDS["red"]
-            if lm:
-                for extra_key in (
-                    "plan_fact_rows",
-                    "plan_rub_total", "fact_rub_total",
-                    "plan_qty_total", "fact_qty_total",
-                    "fact_rub_all_orgs", "fact_qty_all_orgs",
-                ):
-                    if extra_key in lm:
-                        tile[extra_key] = lm[extra_key]
+            plitki_items.append(_build_fnd_t9_split_tile(
+                meta,
+                td,
+                label="АЛМАЗ",
+                suffix="FND-T9.A",
+                name="Выпуск (Алмаз)",
+                unit="шт.",
+                ref_y=ref_y,
+                ref_m=ref_m,
+            ))
+            plitki_items.append(_build_fnd_t9_split_tile(
+                meta,
+                td,
+                label="НПО Турбулентность-Дон",
+                suffix="FND-T9.T",
+                name="Выпуск (Турбулентность)",
+                unit="руб.",
+                ref_y=ref_y,
+                ref_m=ref_m,
+            ))
+            continue
 
         plitki_items.append(tile)
 
