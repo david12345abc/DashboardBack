@@ -1095,8 +1095,8 @@ def _line_values_from_points(points: list[dict], key: str) -> list[float | None]
 
 def _build_prod_deputy_charts(entries_by_id: dict[str, dict], ref_y: int, ref_m: int) -> dict:
     shops = [
-        ("pc1", "ПЦ1", "PD-M3.B1", "PD-M3.F1"),
-        ("pc2", "ПЦ2", "PD-M3.B2", "PD-M3.F2"),
+        ("pc1", "Турбулентность", "PD-M3.B1", "PD-M3.F1"),
+        ("pc2", "Алмаз", "PD-M3.B2", "PD-M3.F2"),
     ]
     series: list[dict] = []
     bar_series: list[dict] = []

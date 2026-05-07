@@ -78,6 +78,16 @@ def _rag_limit_pct(pct: float | None) -> str:
     return "red"
 
 
+def _rag_fot_limit_pct(pct: float | None) -> str:
+    if pct is None:
+        return "unknown"
+    if pct > 100:
+        return "red"
+    if pct >= 90:
+        return "yellow"
+    return "green"
+
+
 def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
     if kpi_id == "LOG-M2":
         ref_row = entry.get("last_full_month_row") or {}
@@ -91,6 +101,8 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
         pct = ref_row.get("kpi_pct")
         if pct is not None:
             pct = float(pct)
+        if kpi_id == "LOG-M3.F":
+            return pct, _rag_fot_limit_pct(pct)
         return pct, _rag_limit_pct(pct)
 
     if kpi_id == "LOG-Q1":
@@ -227,12 +239,13 @@ def _monthly_points_from_entry(entry: dict) -> list[dict]:
 def build_charts(tiles_meta: list[dict], entries_by_id: dict[str, dict], ref_y: int, ref_m: int) -> dict:
     by_id = {k["kpi_id"]: k for k in tiles_meta}
     display_names = {
-        "LOG-M1": "Поставки ТМЦ в срок",
-        "LOG-M2": "Отклонение цены",
+        "LOG-M1": "Обеспечение ТМЦ в срок",
+        "LOG-M3.B": "Бюджет",
+        "LOG-M3.F": "ФОТ",
     }
     series: list[dict] = []
 
-    for kid in ("LOG-M1", "LOG-M2"):
+    for kid in ("LOG-M1", "LOG-M3.B", "LOG-M3.F"):
         entry = entries_by_id.get(kid) or {}
         points = [
             point for point in _monthly_points_from_entry(entry)
@@ -258,7 +271,7 @@ def build_charts(tiles_meta: list[dict], entries_by_id: dict[str, dict], ref_y: 
     return {
         "LOG-C1": {
             "kpi_id": "LOG-C1",
-            "name": "Логистика: помесячная динамика KPI",
+            "name": "Логистика: ФОТ, бюджет и ТМЦ в срок",
             "periodicity": "ежемесячно",
             "chart_type": "multi_line_plan_fact_monthly",
             "chart_type_label": "Линейный тренд по месяцам",
