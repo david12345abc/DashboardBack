@@ -86,6 +86,7 @@ def _get_kpi_dicts(department: str) -> list[dict]:
     if logistics_views.is_logistics_head_department(department) and not rows:
         return logistics_views.kpi_definition_fallback(department) or rows
     if _is_prod_deputy_department(department):
+        rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         split_ids = {
             *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
             'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
@@ -124,6 +125,7 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
         return None
     rows = [obj.to_dict() for obj in qs]
     if _is_prod_deputy_department(department):
+        rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         split_ids = {
             *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
             'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',

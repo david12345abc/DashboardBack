@@ -39,6 +39,7 @@ from . import (
     calc_dz_limits,
     calc_fot,
     calc_kp_price,
+    calc_odp_ufgh_shipments,
     calc_otgruzki_fact,
     calc_plan,
     calc_rashody,
@@ -66,6 +67,19 @@ HIGHER_IS_BETTER_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-M6', 'KD-M10'})
 KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
+}
+
+ODP_UFG_H_TILE_META = {
+    "kpi_id": "UFG-H",
+    "name": "Отгрузки UFG-H",
+    "goal": "Контролировать план/факт отгрузок по номенклатуре UFG-H",
+    "frequency": "Ежемесячно",
+    "formula": "Факт отгрузок UFG-H / План отгрузок UFG-H × 100%",
+    "unit": "руб.",
+    "source": "1С / продажи по номенклатурам UFG-H; заказы клиента",
+    "green_threshold": "≥100%",
+    "yellow_threshold": "90–99,9%",
+    "red_threshold": "<90%",
 }
 
 PIE_CHART_CATEGORIES = [
@@ -767,6 +781,43 @@ def _build_bar_chart(by_id: dict, tiles_data: dict,
     }
 
 
+def _build_odp_ufg_h_tile(ref_y: int, ref_m: int) -> dict | None:
+    data = cache_manager.locked_call(
+        f"odp_ufg_h_shipments_{ref_y}_{ref_m}",
+        calc_odp_ufgh_shipments.get_ufg_h_shipments_monthly,
+        year=ref_y,
+        month=ref_m,
+        dept_guid=DEALER_SALES_DEPT,
+    )
+    if data is None:
+        return None
+
+    lm = data.get("last_full_month_row") or {}
+    pct = lm.get("kpi_pct")
+    if pct is not None:
+        pct = float(pct)
+
+    return {
+        "kpi_id": ODP_UFG_H_TILE_META["kpi_id"],
+        "name": ODP_UFG_H_TILE_META["name"],
+        "goal": ODP_UFG_H_TILE_META.get("goal"),
+        "kpi_pct": pct,
+        "color": _tile_rag("UFG-H", pct),
+        "period": "ежемесячно",
+        "thresholds": _thresholds_block(ODP_UFG_H_TILE_META),
+        "formula": ODP_UFG_H_TILE_META.get("formula"),
+        "unit": ODP_UFG_H_TILE_META.get("unit"),
+        "source": ODP_UFG_H_TILE_META.get("source"),
+        "frequency": ODP_UFG_H_TILE_META.get("frequency"),
+        "plan": lm.get("plan"),
+        "fact": lm.get("fact"),
+        "has_data": lm.get("has_data", True) if lm else False,
+        "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
+        "cache_updated_at": None,
+        "monthly_data": data.get("monthly_data") or data.get("months") or [],
+    }
+
+
 def _build_claims_table(ref_y: int, ref_m: int,
                         dept_guid: str | None = None) -> dict:
     """Таблица претензий за выбранный месяц.
@@ -1084,6 +1135,11 @@ def build_komdir_payload(kpi_list: list[dict],
             "monthly_data": td.get("monthly_data") or [],
         }
         plitki_items.append(tile_item)
+
+    if dept_guid == DEALER_SALES_DEPT:
+        odp_ufg_h_tile = _build_odp_ufg_h_tile(ref_y, ref_m)
+        if odp_ufg_h_tile is not None:
+            plitki_items.append(odp_ufg_h_tile)
 
     active_dealers_report: dict | None = None
     try:
