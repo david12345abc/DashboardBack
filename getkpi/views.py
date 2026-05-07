@@ -335,7 +335,10 @@ def _is_qualdir_department(dept: str | None) -> bool:
 def _is_prod_deputy_department(dept: str | None) -> bool:
     normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
     normalized = re.sub(r'\s*-\s*', '-', normalized)
-    return normalized == 'заместитель операционного директора-директор по производству'
+    return normalized in {
+        'заместитель операционного директора-директор по производству',
+        'заместитель директора по производству',
+    }
 
 
 def _thresholds_block(kpi: dict) -> dict:
@@ -1095,7 +1098,7 @@ def _line_values_from_points(points: list[dict], key: str) -> list[float | None]
 
 def _build_prod_deputy_charts(entries_by_id: dict[str, dict], ref_y: int, ref_m: int) -> dict:
     shops = [
-        ("pc1", "Турбулентность", "PD-M3.B1", "PD-M3.F1"),
+        ("pc1", "Турбулентность-Дон", "PD-M3.B1", "PD-M3.F1"),
         ("pc2", "Алмаз", "PD-M3.B2", "PD-M3.F2"),
     ]
     series: list[dict] = []
@@ -1235,7 +1238,7 @@ def _build_prod_deputy_charts(entries_by_id: dict[str, dict], ref_y: int, ref_m:
     if series:
         charts["PD-C1"] = {
             "kpi_id": "PD-C1",
-            "name": "Производство 1/2: ФОТ и бюджет",
+            "name": "Турбулентность-Дон / Алмаз: ФОТ и бюджет",
             "periodicity": "ежемесячно",
             "chart_type": "multi_line_plan_fact_monthly",
             "chart_type_label": "План пунктиром, факт сплошной линией",
