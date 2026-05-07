@@ -90,22 +90,15 @@ def _get_kpi_dicts(department: str) -> list[dict]:
         rows = logistics_views.normalize_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
-        split_ids = {
-            *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
-            'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
-            'PD-Q2.1', 'PD-Q2.2',
-        }
+        rows = _filter_prod_deputy_rows_for_department(department, rows)
+        split_ids = _required_prod_deputy_kpi_ids(department)
         has_split_pd = split_ids.issubset({str(row.get('kpi_id') or '') for row in rows})
         if not has_split_pd:
             try:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
             except Exception:
                 return rows
-            fallback = []
-            for item in PD_KPI_DEFINITIONS:
-                row = dict(item)
-                row['department'] = department
-                fallback.append(row)
+            fallback = _prod_deputy_fallback_rows_for_department(department, PD_KPI_DEFINITIONS)
             if fallback:
                 return fallback
     return rows
@@ -124,25 +117,22 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
             except Exception:
                 return None
-            return [{**dict(item), 'department': department} for item in PD_KPI_DEFINITIONS]
+            return _prod_deputy_fallback_rows_for_department(department, PD_KPI_DEFINITIONS)
         return None
     rows = [obj.to_dict() for obj in qs]
     if logistics_views.is_logistics_head_department(department):
         rows = logistics_views.normalize_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
-        split_ids = {
-            *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
-            'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
-            'PD-Q2.1', 'PD-Q2.2',
-        }
+        rows = _filter_prod_deputy_rows_for_department(department, rows)
+        split_ids = _required_prod_deputy_kpi_ids(department)
         has_split_pd = split_ids.issubset({str(row.get('kpi_id') or '') for row in rows})
         if not has_split_pd:
             try:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
             except Exception:
                 return rows
-            return [{**dict(item), 'department': department} for item in PD_KPI_DEFINITIONS]
+            return _prod_deputy_fallback_rows_for_department(department, PD_KPI_DEFINITIONS)
     return rows
 
 
@@ -339,6 +329,51 @@ def _is_prod_deputy_department(dept: str | None) -> bool:
         'заместитель операционного директора-директор по производству',
         'заместитель директора по производству',
     }
+
+
+def _is_production_director_department(dept: str | None) -> bool:
+    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
+    normalized = re.sub(r'\s*-\s*', '-', normalized)
+    return normalized == 'заместитель директора по производству'
+
+
+def _required_prod_deputy_kpi_ids(department: str | None) -> set[str]:
+    if _is_production_director_department(department):
+        return {
+            'PD-M3.B1', 'PD-M3.B2',
+            'PD-M3.F1', 'PD-M3.F2',
+            'PD-Q1',
+            'PD-Q3',
+            'PD-Q2.1', 'PD-Q2.2',
+        }
+    return {
+        *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
+        'PD-M3.B1', 'PD-M3.B2',
+        'PD-M3.F1', 'PD-M3.F2',
+        'PD-Q2.1', 'PD-Q2.2',
+    }
+
+
+def _filter_prod_deputy_rows_for_department(department: str | None, rows: list[dict]) -> list[dict]:
+    if not _is_production_director_department(department):
+        return rows
+    allowed = _required_prod_deputy_kpi_ids(department)
+    return [row for row in rows if str(row.get('kpi_id') or '') in allowed]
+
+
+def _prod_deputy_fallback_rows_for_department(
+    department: str,
+    definitions: list[dict],
+) -> list[dict]:
+    allowed = _required_prod_deputy_kpi_ids(department)
+    fallback = []
+    for item in definitions:
+        if str(item.get('kpi_id') or '') not in allowed:
+            continue
+        row = dict(item)
+        row['department'] = department
+        fallback.append(row)
+    return fallback
 
 
 def _thresholds_block(kpi: dict) -> dict:
@@ -1178,58 +1213,59 @@ def _build_prod_deputy_charts(entries_by_id: dict[str, dict], ref_y: int, ref_m:
             "disable_all_option": True,
         })
 
-    try:
-        from . import calc_prod_deputy_output
-        for shop, label, _budget_id, _fot_id in shops:
-            chart_data = cache_manager.locked_call(
-                f'pd_m1_output_{shop}_{ref_y}_{ref_m}',
-                calc_prod_deputy_output.get_prod_deputy_output_monthly,
-                shop,
-                year=ref_y,
-                month=ref_m,
-            )
-            points = [
-                point for point in chart_data.get("months") or []
-                if (
-                    int(point.get("year") or 0) == int(ref_y)
-                    and point.get("fact") is not None
-                    and abs(float(point.get("fact") or 0)) > 0
+    if any(kpi_id in entries_by_id for kpi_id in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID):
+        try:
+            from . import calc_prod_deputy_output
+            for shop, label, _budget_id, _fot_id in shops:
+                chart_data = cache_manager.locked_call(
+                    f'pd_m1_output_{shop}_{ref_y}_{ref_m}',
+                    calc_prod_deputy_output.get_prod_deputy_output_monthly,
+                    shop,
+                    year=ref_y,
+                    month=ref_m,
                 )
-            ]
-            points = sorted(points, key=lambda point: int(point.get("month") or 0))
-            if not points:
                 points = [
                     point for point in chart_data.get("months") or []
-                    if int(point.get("year") or 0) == int(ref_y) and point.get("fact") is not None
+                    if (
+                        int(point.get("year") or 0) == int(ref_y)
+                        and point.get("fact") is not None
+                        and abs(float(point.get("fact") or 0)) > 0
+                    )
                 ]
                 points = sorted(points, key=lambda point: int(point.get("month") or 0))
-            unit = (
-                chart_data.get("ytd", {}).get("values_unit")
-                or calc_prod_deputy_output.VALUES_UNIT.get(shop)
-            )
-            if not points:
-                continue
-            bar_series.append({
-                "kpi_id": f"PD-C2-{shop.upper()}",
-                "name": label,
-                "option_label": label,
-                "chart_type": "column_plan_fact_monthly",
-                "chart_type_label": "План/факт выпуска по месяцам",
-                "categories": [
-                    str(p.get("month_name") or p.get("month") or "").capitalize()
-                    for p in points
-                ],
-                "plan": [p.get("plan") for p in points],
-                "fact": [p.get("fact") for p in points],
-                "points": points,
-                "unit": unit,
-                "x_axis_title": "Месяцы",
-                "y_axis_title": unit or "Значение",
-                "single_indicator": True,
-                "disable_all_option": True,
-            })
-    except Exception:
-        logger.exception("Не удалось собрать помесячный график выполнения производственного плана")
+                if not points:
+                    points = [
+                        point for point in chart_data.get("months") or []
+                        if int(point.get("year") or 0) == int(ref_y) and point.get("fact") is not None
+                    ]
+                    points = sorted(points, key=lambda point: int(point.get("month") or 0))
+                unit = (
+                    chart_data.get("ytd", {}).get("values_unit")
+                    or calc_prod_deputy_output.VALUES_UNIT.get(shop)
+                )
+                if not points:
+                    continue
+                bar_series.append({
+                    "kpi_id": f"PD-C2-{shop.upper()}",
+                    "name": label,
+                    "option_label": label,
+                    "chart_type": "column_plan_fact_monthly",
+                    "chart_type_label": "План/факт выпуска по месяцам",
+                    "categories": [
+                        str(p.get("month_name") or p.get("month") or "").capitalize()
+                        for p in points
+                    ],
+                    "plan": [p.get("plan") for p in points],
+                    "fact": [p.get("fact") for p in points],
+                    "points": points,
+                    "unit": unit,
+                    "x_axis_title": "Месяцы",
+                    "y_axis_title": unit or "Значение",
+                    "single_indicator": True,
+                    "disable_all_option": True,
+                })
+        except Exception:
+            logger.exception("Не удалось собрать помесячный график выполнения производственного плана")
 
     if not series and not bar_series:
         return {}
@@ -1954,6 +1990,28 @@ def _build_kpi_entry(
         data = cache_manager.locked_call(
             f'pd_q1_projects_{ref_y}_{ref_m}',
             calc_prod_deputy_projects.get_pd_q1_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            return entry
+
+    if kpi_id == 'PD-Q3':
+        from . import calc_prod_deputy_projects
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'pd_q3_improvement_projects_{ref_y}_{ref_m}',
+            calc_prod_deputy_projects.get_pd_q3_improvement_monthly,
             year=ref_y,
             month=ref_m,
         )

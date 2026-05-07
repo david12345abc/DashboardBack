@@ -244,6 +244,25 @@ PD_KPI_DEFINITIONS: list[dict] = [
         "position": 11,
     },
     {
+        "kpi_id": "PD-Q3",
+        "name": "Выполнение проектов улучшений / сокращение потерь",
+        "block": "плитка",
+        "frequency": "ежемесячно",
+        "perspective": "Развитие",
+        "goal": "Контролировать выполнение проектов развития и улучшений",
+        "formula": "Проекты в работе / (проекты в работе + планируются + без статуса) × 100%",
+        "unit": "%",
+        "source": "TurboProject / проекты типа РазвитияИУлучшений, где Целищев или Ермаков — куратор или РП",
+        "monthly_target": "≥90%",
+        "quarterly_target": "≥90%",
+        "yearly_target": "≥90%",
+        "green_threshold": "≥90%",
+        "yellow_threshold": "80–89,9%",
+        "red_threshold": "<80%",
+        "weight_pct": 10.0,
+        "position": 12,
+    },
+    {
         "kpi_id": "PD-Q2.1",
         "name": "Текучесть персонала (Турбулентность-Дон)",
         "block": "плитка",
@@ -260,7 +279,7 @@ PD_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "100,1–110%",
         "red_threshold": ">110%",
         "weight_pct": 7.5,
-        "position": 12,
+        "position": 13,
     },
     {
         "kpi_id": "PD-Q2.2",
@@ -279,7 +298,7 @@ PD_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "100,1–110%",
         "red_threshold": ">110%",
         "weight_pct": 7.5,
-        "position": 13,
+        "position": 14,
     },
 ]
 

@@ -1,9 +1,8 @@
 """
 Проекты улучшений / сокращения потерь для заместителя операционного директора.
 
-Роль не связана с техническим директором: модуль отдельно ходит в TurboProject,
-берёт все проекты и оставляет только те, где в executors / kurator / rukovoditel
-указан Целищев Павел Сергеевич.
+Роль не связана с техническим директором: модуль отдельно ходит в TurboProject
+и строит проектные KPI производственного контура.
 """
 from __future__ import annotations
 
@@ -23,9 +22,13 @@ from .turboproject_config import API_BASE, EMAIL, PASSWORD, TIMEOUT
 logger = logging.getLogger(__name__)
 
 TARGET_PERSON = "Целищев Павел Сергеевич"
+IMPROVEMENT_PROJECT_PEOPLE = ("Целищев Павел Сергеевич", "Ермаков")
+IMPROVEMENT_PROJECT_TYPE = "РазвитияИУлучшений"
+IMPROVEMENT_FACT_STATUS = "ВРаботе"
+IMPROVEMENT_PLAN_STATUSES = {"", "ВРаботе", "Планируется"}
 CACHE_DIR = cache_manager.CACHE_DIR
 CACHE_PATH = CACHE_DIR / "prod_deputy_projects_snapshot.json"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -227,6 +230,30 @@ def _is_target_person_project(data_1c: dict[str, Any]) -> bool:
     )
 
 
+def _project_has_any_target_owner(data_1c: dict[str, Any], people: tuple[str, ...]) -> bool:
+    targets = tuple(_normalize_person(person) for person in people)
+    return any(
+        _contains_person(data_1c.get("kurator"), target)
+        or _contains_person(data_1c.get("rukovoditel"), target)
+        for target in targets
+    )
+
+
+def _normalize_project_type(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _normalize_project_status(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _is_improvement_project(data_1c: dict[str, Any]) -> bool:
+    return (
+        _normalize_project_type(data_1c.get("tip_proekta")) == IMPROVEMENT_PROJECT_TYPE
+        and _project_has_any_target_owner(data_1c, IMPROVEMENT_PROJECT_PEOPLE)
+    )
+
+
 def _login(session: requests.Session) -> str:
     resp = session.post(
         f"{API_BASE}/api/auth/login",
@@ -309,23 +336,30 @@ def _compute_projects_snapshot() -> dict:
     items = summary.get("items") or []
 
     target_projects: list[dict[str, Any]] = []
+    improvement_projects: list[dict[str, Any]] = []
     for item in items:
         file_id = item.get("id")
         if not file_id:
             continue
         details = _api_get(session, f"/api/projects/files/{file_id}", token)
         data_1c = details.get("data_1c") or {}
-        if not _is_target_person_project(data_1c):
-            continue
-        target_projects.append(_project_summary(item, details))
+        project = _project_summary(item, details)
+        if _is_target_person_project(data_1c):
+            target_projects.append(project)
+        if _is_improvement_project(data_1c):
+            improvement_projects.append(project)
 
     payload = {
         "projects": target_projects,
+        "improvement_projects": improvement_projects,
         "debug": {
             "source": "prod_deputy_projects",
             "target_person": TARGET_PERSON,
+            "improvement_project_people": list(IMPROVEMENT_PROJECT_PEOPLE),
+            "improvement_project_type": IMPROVEMENT_PROJECT_TYPE,
             "all_projects_count": len(items),
             "target_projects_count": len(target_projects),
+            "improvement_projects_count": len(improvement_projects),
         },
     }
     _save_cache(payload)
@@ -436,6 +470,79 @@ def get_pd_q1_monthly(year: int | None = None, month: int | None = None) -> dict
         }
     except Exception:
         logger.exception("Ошибка при расчёте PD-Q1 заместителя операционного директора")
+        return None
+
+
+def get_pd_q3_improvement_monthly(year: int | None = None, month: int | None = None) -> dict | None:
+    """Выполнение проектов улучшений / сокращение потерь.
+
+    План: проекты месяца со статусом ВРаботе, Планируется или без статуса.
+    Факт: проекты месяца со статусом ВРаботе.
+    """
+    try:
+        snapshot = _compute_projects_snapshot()
+        projects = list(snapshot.get("improvement_projects") or [])
+        ref_y, ref_m = _normalize_ref_period(year, month)
+        rows: list[dict[str, Any]] = []
+        ref_row: dict[str, Any] | None = None
+
+        for y, m in _month_pairs_until(ref_y, ref_m):
+            month_projects = [project for project in projects if _project_is_alive_in_month(project, y, m)]
+            plan_projects = [
+                project for project in month_projects
+                if _normalize_project_status(project.get("status_proekta")) in IMPROVEMENT_PLAN_STATUSES
+            ]
+            fact_projects = [
+                project for project in month_projects
+                if _normalize_project_status(project.get("status_proekta")) == IMPROVEMENT_FACT_STATUS
+            ]
+            plan_count = len(plan_projects)
+            fact_count = len(fact_projects)
+            row = {
+                "month": m,
+                "year": y,
+                "month_name": MONTH_NAMES[m],
+                "plan": plan_count,
+                "fact": fact_count,
+                "kpi_pct": round(fact_count / plan_count * 100, 1) if plan_count else None,
+                "has_data": plan_count > 0 or fact_count > 0,
+                "values_unit": "шт.",
+                "fact_status": IMPROVEMENT_FACT_STATUS,
+                "plan_statuses": sorted(IMPROVEMENT_PLAN_STATUSES),
+            }
+            rows.append(row)
+            if (y, m) == (ref_y, ref_m):
+                ref_row = row
+
+        return {
+            "data_granularity": "monthly",
+            "monthly_data": rows,
+            "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+            "kpi_period": {
+                "type": "last_full_month",
+                "year": ref_y,
+                "month": ref_m,
+                "month_name": MONTH_NAMES[ref_m],
+            },
+            "ytd": {
+                "total_plan": ref_row.get("plan") if ref_row else None,
+                "total_fact": ref_row.get("fact") if ref_row else None,
+                "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+                "months_with_data": sum(1 for row in rows if row.get("has_data")),
+                "months_total": len(rows),
+                "values_unit": "шт.",
+            },
+            "debug": {
+                **(snapshot.get("debug") or {}),
+                "target_projects": projects,
+                "filter": (
+                    f"tip_proekta={IMPROVEMENT_PROJECT_TYPE!r}; "
+                    "kurator/rukovoditel in Целищев/Ермаков"
+                ),
+            },
+        }
+    except Exception:
+        logger.exception("Ошибка при расчёте PD-Q3 проектов улучшений")
         return None
 
 
