@@ -22,7 +22,7 @@ from qualdir.qd_m4_fact import compute_qd_m4_fact_monthly
 
 logger = logging.getLogger(__name__)
 
-SOURCE_TAG = "qualdir_qd_m4_v2"
+SOURCE_TAG = "qualdir_qd_m4_v3"
 
 # Плановый ФОТ контура качества, 2026, руб./мес. (сумма трёх строк по столбцу месяца).
 QD_M4_PLAN_BY_MONTH_2026: dict[int, int] = {
@@ -52,17 +52,18 @@ def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
     ref_year = int(year or today.year)
     ref_month = int(month or (today.month if ref_year == today.year else 12))
     ref_month = max(1, min(12, ref_month))
-    if ref_year == today.year:
-        ref_month = min(ref_month, today.month)
+    try:
+        if date(ref_year, ref_month, 1) > date(today.year, today.month, 1):
+            ref_year, ref_month = today.year, today.month
+    except ValueError:
+        pass
     return ref_year, ref_month
 
 
 def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
-    if year == 2026 and QD_M4_PLAN_BY_MONTH_2026:
-        upper_month = max(max(QD_M4_PLAN_BY_MONTH_2026), ref_month)
-    else:
-        upper_month = ref_month
-    return [(year, mm) for mm in range(1, upper_month + 1)]
+    """См. qualdir.qd_m3._tile_month_pairs — только январь..опорный месяц."""
+    rm = max(1, min(12, int(ref_month)))
+    return [(year, mm) for mm in range(1, rm + 1)]
 
 
 def _plan_for_month(year: int, month: int) -> float | None:
@@ -203,4 +204,4 @@ def get_qd_m4_ytd(year: int | None = None, month: int | None = None) -> dict[str
     lock_y, lock_m = year, month
     if lock_y is None or lock_m is None:
         lock_y, lock_m = _normalize_period(None, None)
-    return locked_call(f"qualdir_qd_m4_{lock_y}_{lock_m:02d}", _runner)
+    return locked_call(f"qualdir_qd_m4_v3_{lock_y}_{lock_m:02d}", _runner)
