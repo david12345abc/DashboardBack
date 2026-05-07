@@ -83,8 +83,10 @@ def _get_departments() -> list[str]:
 def _get_kpi_dicts(department: str) -> list[dict]:
     """Все KPI подразделения из БД в формате dict (как был kpi_data.json)."""
     rows = [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
-    if logistics_views.is_logistics_head_department(department) and not rows:
-        return logistics_views.kpi_definition_fallback(department) or rows
+    if logistics_views.is_logistics_head_department(department):
+        if not rows:
+            return logistics_views.kpi_definition_fallback(department) or rows
+        rows = logistics_views.normalize_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         split_ids = {
@@ -124,6 +126,8 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
             return [{**dict(item), 'department': department} for item in PD_KPI_DEFINITIONS]
         return None
     rows = [obj.to_dict() for obj in qs]
+    if logistics_views.is_logistics_head_department(department):
+        rows = logistics_views.normalize_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         split_ids = {
@@ -409,6 +413,8 @@ def _normalize_dashboard_kpi_id(raw: object) -> str:
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     """Плитки «в пределах лимита»: M3 плюс разрез ПЦ1/ПЦ2 для зам. операционного."""
     normalized = (kpi_id or '').upper()
+    if normalized in {'LOG-M3.B', 'LOG-M3.F'}:
+        return True
     if normalized.startswith('PD-M3.B') or normalized.startswith('PD-M3.F'):
         return True
     return normalized.endswith(('-M3-1', '-M3-2', 'M3.1', 'M3.2'))
@@ -1287,6 +1293,7 @@ def _build_universal_payload(dept: str, all_kpis: list[dict],
             tile['pct_lower_is_better'] = True
 
         logistics_views.apply_tile_overrides(kpi, tile)
+        logistics_views.apply_tile_value_overrides(kpi, tile, entry)
 
         if kpi.get('kpi_id') in {
             'OD-M1', 'OD-M3.1', 'OD-M3.2',

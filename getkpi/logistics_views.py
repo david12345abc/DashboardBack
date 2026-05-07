@@ -5,12 +5,15 @@ from datetime import date
 
 from . import (
     cache_manager,
+    calc_logistics_budget,
+    calc_logistics_fot,
     calc_logistics_price_deviation,
     calc_logistics_supplier_share,
     calc_logistics_tmc_on_time,
 )
 
-LOGISTICS_KPI_IDS = {"LOG-M1", "LOG-M2", "LOG-Q1"}
+LOGISTICS_KPI_IDS = {"LOG-M1", "LOG-M2", "LOG-M3.B", "LOG-M3.F", "LOG-Q1"}
+LOGISTICS_BUDGET_FOT_SPLIT_IDS = {"LOG-M3.B", "LOG-M3.F"}
 
 
 def is_logistics_head_department(dept: str | None) -> bool:
@@ -30,6 +33,19 @@ def kpi_definition_fallback(department: str) -> list[dict] | None:
     except Exception:
         return None
     return [{**dict(item), "department": department} for item in LOGISTICS_KPI_DEFINITIONS]
+
+
+def normalize_kpi_definitions(department: str, rows: list[dict]) -> list[dict]:
+    if not is_logistics_head_department(department):
+        return rows
+
+    ids = {str(row.get("kpi_id") or "") for row in rows}
+    if "LOG-M3" in ids or not LOGISTICS_BUDGET_FOT_SPLIT_IDS.issubset(ids):
+        fallback = kpi_definition_fallback(department)
+        if fallback:
+            return fallback
+
+    return [row for row in rows if str(row.get("kpi_id") or "") != "LOG-M3"]
 
 
 def rag_price_deviation(fact_pct: float | None) -> str:
@@ -52,6 +68,16 @@ def _rag_higher_better(pct: float | None) -> str:
     return "red"
 
 
+def _rag_limit_pct(pct: float | None) -> str:
+    if pct is None:
+        return "unknown"
+    if pct <= 100:
+        return "green"
+    if pct <= 110:
+        return "yellow"
+    return "red"
+
+
 def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
     if kpi_id == "LOG-M2":
         ref_row = entry.get("last_full_month_row") or {}
@@ -59,6 +85,13 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
         if pct is not None:
             pct = float(pct)
         return pct, rag_price_deviation(pct)
+
+    if kpi_id in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
+        ref_row = entry.get("ytd") or entry.get("last_full_month_row") or {}
+        pct = ref_row.get("kpi_pct")
+        if pct is not None:
+            pct = float(pct)
+        return pct, _rag_limit_pct(pct)
 
     if kpi_id == "LOG-Q1":
         qrows = entry.get("quarterly_data") or []
@@ -79,6 +112,40 @@ def _ref_period(year: int | None, month: int | None) -> tuple[int, int]:
 
 
 def build_kpi_entry(kpi_id: str, entry: dict, *, year: int | None = None, month: int | None = None) -> dict | None:
+    if kpi_id == "LOG-M3.B":
+        ref_y, ref_m = _ref_period(year, month)
+        data = cache_manager.locked_call(
+            f"log_m3_budget_{ref_y}_{ref_m}",
+            calc_logistics_budget.get_logistics_budget_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry["data_granularity"] = "monthly"
+        entry["monthly_data"] = data.get("months") or []
+        entry["quarterly_data"] = data.get("quarterly_data") or []
+        entry["yearly_data"] = data.get("yearly_data") or []
+        entry["last_full_month_row"] = data.get("last_full_month_row")
+        entry["ytd"] = data.get("ytd") or {}
+        entry["kpi_period"] = data.get("kpi_period")
+        return entry
+
+    if kpi_id == "LOG-M3.F":
+        ref_y, ref_m = _ref_period(year, month)
+        data = cache_manager.locked_call(
+            f"log_m3_fot_{ref_y}_{ref_m}",
+            calc_logistics_fot.get_logistics_fot_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry["data_granularity"] = "monthly"
+        entry["monthly_data"] = data.get("months") or []
+        entry["quarterly_data"] = data.get("quarterly_data") or []
+        entry["yearly_data"] = data.get("yearly_data") or []
+        entry["last_full_month_row"] = data.get("last_full_month_row")
+        entry["ytd"] = data.get("ytd") or {}
+        entry["kpi_period"] = data.get("kpi_period")
+        return entry
+
     if kpi_id == "LOG-M1":
         ref_y, ref_m = _ref_period(year, month)
         data = cache_manager.locked_call(
@@ -204,6 +271,21 @@ def apply_tile_overrides(kpi: dict, tile: dict) -> None:
     kpi_id = kpi.get("kpi_id")
     if kpi_id == "LOG-M2":
         tile["pct_lower_is_better"] = True
+    elif kpi_id in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
+        tile["pct_lower_is_better"] = True
+        tile["unit"] = "руб."
     elif kpi_id == "LOG-Q1":
         tile["unit"] = "поставщиков"
         tile["units"] = "поставщиков"
+
+
+def apply_tile_value_overrides(kpi: dict, tile: dict, entry: dict) -> None:
+    if kpi.get("kpi_id") not in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
+        return
+    ytd = entry.get("ytd") or {}
+    tile["plan"] = ytd.get("total_plan")
+    tile["fact"] = ytd.get("total_fact")
+    tile["has_data"] = ytd.get("total_plan") is not None
+    year = (entry.get("kpi_period") or {}).get("year")
+    if year:
+        tile["plan_fact_period_label"] = f"{year} год"
