@@ -38,7 +38,7 @@ from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter
 from .models import KpiDefinition
 from .devdir import projects as devdir_projects
-from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp
+from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp, qd_m1_tile_cache_path
 from qualdir.qd_m3 import get_qd_m3_ytd
 from qualdir.qd_m4 import get_qd_m4_ytd
 from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
@@ -643,7 +643,10 @@ def _techdir_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None)
     if kpi_id == 'QD-Q1':
         cache_files = _qd_q1_stamp_paths(ref_y, ref_m)
     elif kpi_id == 'QD-M1':
-        cache_files = qd_m1_excel_paths_for_cache_stamp(ref_y, ref_m)
+        cache_files = [
+            *qd_m1_excel_paths_for_cache_stamp(ref_y, ref_m),
+            qd_m1_tile_cache_path(ref_y, ref_m),
+        ]
     else:
         cache_files = {
             'TD-M1': [techdir_projects.CACHE_PATH],
@@ -741,6 +744,8 @@ def _build_tile_item(
         tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
     if kpi.get('kpi_id') == 'QD-M1':
         tile['articles'] = entry.get('articles')
+        if entry.get('classifier') is not None:
+            tile['classifier'] = entry.get('classifier')
     return tile
 
 
@@ -1022,6 +1027,65 @@ def _build_techdir_charts(
         }
 
     return charts
+
+
+def _strip_external_orders_budget_from_grafiki(grafiki: dict[str, dict]) -> None:
+    """Убрать из «Графиков» линию/столбцы бюджета внешних заказов (TD-M5 / техдира).
+
+    Для qualdir в БД иногда копируют чарты техдира — в payload может попасть TD-M5
+    или подпись с «внешним… заказ…»; бюджет контура качества (QD-M3) не трогаем.
+    """
+    markers = (
+        'внешние заказы',
+        'внешних заказов',
+        'внешним заказам',
+        'по внешним заказ',
+        'бюджет проектов по внешним',
+    )
+
+    def _is_external_orders_budget_series(s: dict) -> bool:
+        kid = str(s.get('kpi_id') or '').strip().upper()
+        if kid == 'TD-M5':
+            return True
+        n = str(s.get('name') or '').lower()
+        return any(m in n for m in markers)
+
+    for chart in grafiki.values():
+        if not isinstance(chart, dict):
+            continue
+        ser = chart.get('series')
+        if not isinstance(ser, list):
+            continue
+        new_series: list[dict] = []
+        for block in ser:
+            if not isinstance(block, dict):
+                continue
+            # Столбчатый блок: один объект с categories / plan / fact / points
+            pts = block.get('points')
+            cats = block.get('categories')
+            if isinstance(pts, list) and isinstance(cats, list) and (
+                'categories' in block or block.get('chart_type') == 'column_plan_fact_monthly'
+            ):
+                keep: list[int] = []
+                for i, p in enumerate(pts):
+                    if isinstance(p, dict) and not _is_external_orders_budget_series(p):
+                        keep.append(i)
+                if len(keep) == len(pts):
+                    new_series.append(block)
+                    continue
+                nb = dict(block)
+                nb['points'] = [pts[i] for i in keep]
+                nb['categories'] = [cats[i] for i in keep if i < len(cats)]
+                for key in ('plan', 'fact'):
+                    arr = nb.get(key)
+                    if isinstance(arr, list) and len(arr) == len(pts):
+                        nb[key] = [arr[i] for i in keep]
+                new_series.append(nb)
+                continue
+            # Линия (в т.ч. элемент multi_line)
+            if not _is_external_orders_budget_series(block):
+                new_series.append(block)
+        chart['series'] = new_series
 
 
 def _build_qualdir_charts(
@@ -1311,6 +1375,7 @@ def _build_universal_payload(
         grafiki.update(
             _build_qualdir_charts(tiles_meta, entries_by_id, qualdir_tile_values, ref_y, ref_m),
         )
+        _strip_external_orders_budget_from_grafiki(grafiki)
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -1819,6 +1884,7 @@ def _build_kpi_entry(
             entry['ytd'] = qd['ytd']
             entry['kpi_period'] = qd['kpi_period']
             entry['articles'] = qd.get('articles')
+            entry['classifier'] = qd.get('classifier')
             entry['debug'] = qd.get('debug')
             return entry
 
