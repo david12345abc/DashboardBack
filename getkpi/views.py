@@ -1145,27 +1145,48 @@ def _build_prod_deputy_charts(entries_by_id: dict[str, dict], ref_y: int, ref_m:
                 year=ref_y,
                 month=ref_m,
             )
-            points = chart_data.get("weekly_cumulative") or []
+            points = [
+                point for point in chart_data.get("months") or []
+                if (
+                    int(point.get("year") or 0) == int(ref_y)
+                    and point.get("fact") is not None
+                    and abs(float(point.get("fact") or 0)) > 0
+                )
+            ]
+            points = sorted(points, key=lambda point: int(point.get("month") or 0))
+            if not points:
+                points = [
+                    point for point in chart_data.get("months") or []
+                    if int(point.get("year") or 0) == int(ref_y) and point.get("fact") is not None
+                ]
+                points = sorted(points, key=lambda point: int(point.get("month") or 0))
+            unit = (
+                chart_data.get("ytd", {}).get("values_unit")
+                or calc_prod_deputy_output.VALUES_UNIT.get(shop)
+            )
             if not points:
                 continue
             bar_series.append({
                 "kpi_id": f"PD-C2-{shop.upper()}",
                 "name": label,
                 "option_label": label,
-                "chart_type": "column_plan_fact_weekly_cumulative",
-                "chart_type_label": "Накопительный план/факт по неделям месяца",
-                "categories": [p.get("label") for p in points],
+                "chart_type": "column_plan_fact_monthly",
+                "chart_type_label": "План/факт выпуска по месяцам",
+                "categories": [
+                    str(p.get("month_name") or p.get("month") or "").capitalize()
+                    for p in points
+                ],
                 "plan": [p.get("plan") for p in points],
                 "fact": [p.get("fact") for p in points],
                 "points": points,
-                "unit": chart_data.get("ytd", {}).get("values_unit"),
-                "x_axis_title": "Недели месяца",
-                "y_axis_title": chart_data.get("ytd", {}).get("values_unit") or "Значение",
+                "unit": unit,
+                "x_axis_title": "Месяцы",
+                "y_axis_title": unit or "Значение",
                 "single_indicator": True,
                 "disable_all_option": True,
             })
     except Exception:
-        logger.exception("Не удалось собрать недельный график выполнения производственного плана")
+        logger.exception("Не удалось собрать помесячный график выполнения производственного плана")
 
     if not series and not bar_series:
         return {}
@@ -1184,9 +1205,9 @@ def _build_prod_deputy_charts(entries_by_id: dict[str, dict], ref_y: int, ref_m:
         charts["PD-C2"] = {
             "kpi_id": "PD-C2",
             "name": "Выполнение производственного плана",
-            "periodicity": "еженедельно",
-            "chart_type": "column_plan_fact_weekly_cumulative",
-            "chart_type_label": "Накопительный эффект по неделям выбранного месяца",
+            "periodicity": "ежемесячно",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "План/факт по месяцам за год",
             "series": bar_series,
         }
     return charts
