@@ -2,6 +2,7 @@ import json
 import logging
 import random
 import re
+import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 
@@ -26,22 +27,18 @@ from . import (
     logistics_views,
     komdir_dashboard,
     komdir_quarterly,
-    techdir_m3,
-    techdir_m4,
-    techdir_m2,
+    techdir_dashboard,
     techdir_projects,
-    techdir_tekuchet,
-    techdir_y1,
     valovaya_pribyl,
 )
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
 from .calc_sudy_by_dept import get_sudy_by_department
-from .kpi_periods import last_full_month, last_full_quarter
+from .kpi_periods import last_full_month, last_full_quarter, pick_monthly_row_for_period
 from .models import KpiDefinition
-from .devdir import projects as devdir_projects
-from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp
-from qualdir.qd_m3 import get_qd_m3_ytd
-from qualdir.qd_m4 import get_qd_m4_ytd
+import devdir.views as _devdir_kpi_views
+import qualdir.views as _qualdir_kpi_views
+from . import techdir_kpi_entry
+from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp, qd_m1_tile_cache_path
 from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
 from qualdir.turnover import _qd_q2_kpi_pct, get_qd_q2_ytd, turnover_month_cache_path
 
@@ -298,10 +295,6 @@ def _is_komdir_department(dept: str) -> bool:
     return 'коммерческий' in d and 'директор' in d
 
 
-def _is_techdir_department(dept: str | None) -> bool:
-    return (dept or '').strip().lower() == 'технический директор'
-
-
 def _is_devdir_department(dept: str | None) -> bool:
     normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
     return normalized in {
@@ -488,8 +481,10 @@ def _normalize_dashboard_kpi_id(raw: object) -> str:
     """Код KPI для веток views: ASCII-дефис, без ZWSP/BOM, латиница вместо «похожей» кириллицы.
 
     Иначе «QD-М3» (кириллическая М) не попадает в if kpi_id == 'QD-M3' и уходит в синтетику plan=100.
+    NFKC снимает полноширинные латинские буквы/цифры (напр. «ＲＤ－Ｍ４» → RD-M4), если код в источнике
+    уже правильный, но скопирован из Excel с полноширинными символами.
     """
-    s = str(raw or '').strip()
+    s = unicodedata.normalize('NFKC', str(raw or '')).strip()
     for z in ('\u200b', '\u200c', '\u200d', '\ufeff'):
         s = s.replace(z, '')
     for d in (
@@ -693,17 +688,13 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         pct, color = logistics_color
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
-    elif kid == 'RD-M2-1':
+    elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
         color = _rag_td_m4_limit(pct)
     elif _is_budget_limit_m3_kpi(kid):
         color = _rag_dz_lower_better(pct)
-    elif kid == 'TD-M3':
+    elif kid in techdir_kpi_entry.TILE_COLOR_DZ_LOWER_IDS:
         color = _rag_dz_lower_better(pct)
-    elif kid == 'TD-M4':
-        color = _rag_td_m4_limit(pct)
-    elif kid in {'QD-M3', 'QD-M4'}:
-        color = _rag_td_m4_limit(pct)
-    elif kid == 'TD-M5':
+    elif kid in techdir_kpi_entry.TILE_COLOR_TD_M4_LIMIT_IDS | _qualdir_kpi_views.TILE_COLOR_TD_M4_LIMIT_IDS:
         color = _rag_td_m4_limit(pct)
     else:
         color = _rag_higher_better(pct)
@@ -789,24 +780,21 @@ def _qd_q1_stamp_paths(ref_y: int | None, ref_m: int | None) -> list:
     return paths
 
 
-def _techdir_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) -> str | None:
+def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) -> str | None:
     if ref_y is None or ref_m is None:
         return None
 
     if kpi_id == 'QD-Q1':
         cache_files = _qd_q1_stamp_paths(ref_y, ref_m)
     elif kpi_id == 'QD-M1':
-        cache_files = qd_m1_excel_paths_for_cache_stamp(ref_y, ref_m)
+        cache_files = [
+            *qd_m1_excel_paths_for_cache_stamp(ref_y, ref_m),
+            qd_m1_tile_cache_path(ref_y, ref_m),
+        ]
     else:
-        cache_files = {
-            'TD-M1': [techdir_projects.CACHE_PATH],
-            'TD-Q1': [techdir_projects.CACHE_PATH],
-            'TD-M5': [techdir_projects.CACHE_PATH],
-            'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
-            'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
-            'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
-            'QD-Q2': [turnover_month_cache_path(ref_y, ref_m)],
-        }.get(kpi_id, [])
+        cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
+        if not cache_files and kpi_id == 'QD-Q2':
+            cache_files = [turnover_month_cache_path(ref_y, ref_m)]
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -851,7 +839,7 @@ def _build_tile_item(
         tile['kpi_period'] = entry.get('kpi_period')
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
         tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
-    tile['cache_updated_at'] = _techdir_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
+    tile['cache_updated_at'] = _tile_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
     if entry.get('last_full_month_row'):
         lfr = entry['last_full_month_row']
         if kpi.get('kpi_id') == 'QD-Q2' and isinstance(lfr, dict):
@@ -894,6 +882,8 @@ def _build_tile_item(
         tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
     if kpi.get('kpi_id') == 'QD-M1':
         tile['articles'] = entry.get('articles')
+        if entry.get('classifier') is not None:
+            tile['classifier'] = entry.get('classifier')
     return tile
 
 
@@ -926,26 +916,6 @@ def _plan_fact_period_label_from_kpi_period(period: dict | None) -> str | None:
                 return f"С начала {year} г."
         return f"С начала {year} г."
     return None
-
-
-def _pick_monthly_row_for_period(
-    monthly_rows: list[dict] | None,
-    year: int | None = None,
-    month: int | None = None,
-) -> dict:
-    rows = monthly_rows or []
-    if not rows:
-        return {}
-    if year is not None and month is not None:
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            if row.get('year') == year and row.get('month') == month:
-                return row
-        # Явный период задан, но строки нет — не подставлять последний месяц ряда
-        return {}
-    last_row = rows[-1]
-    return last_row if isinstance(last_row, dict) else {}
 
 
 def _build_monthly_points_from_entry(entry: dict) -> list[dict]:
@@ -1036,7 +1006,7 @@ def _build_opdir_charts(
     fact_values: list[float | None] = []
     bar_points: list[dict] = []
     for kid, name, points in monthly_meta:
-        point = _pick_monthly_row_for_period(points, ref_y, ref_m)
+        point = pick_monthly_row_for_period(points, ref_y, ref_m)
         categories.append(name)
         plan_values.append(point.get('plan') if point else None)
         fact_values.append(point.get('fact') if point else None)
@@ -1078,114 +1048,6 @@ def _build_opdir_charts(
             'points': bar_points,
         }],
     }
-    return charts
-
-
-def _build_techdir_charts(
-    tiles_meta: list[dict],
-    entries_by_id: dict[str, dict],
-    tile_values_by_id: dict[str, dict],
-    ref_y: int,
-    ref_m: int,
-) -> dict:
-    by_id = {k['kpi_id']: k for k in tiles_meta}
-    line_kpis = ['TD-M3', 'TD-M4', 'TD-M5']
-    display_names = {
-        'TD-M3': 'Бюджет',
-        'TD-M4': 'ФОТ',
-        'TD-M5': 'Внешние заказы',
-    }
-    series: list[dict] = []
-
-    for kid in line_kpis:
-        kpi_meta = by_id.get(kid, {})
-        entry = entries_by_id.get(kid) or {}
-        monthly = entry.get('monthly_data') or []
-        points = [
-            {
-                'month': row.get('month'),
-                'month_name': row.get('month_name'),
-                'year': row.get('year'),
-                'plan': row.get('plan'),
-                'fact': row.get('fact'),
-            }
-            for row in monthly
-        ]
-        if not points:
-            continue
-        if not any((p.get('plan') is not None or p.get('fact') is not None) for p in points):
-            continue
-
-        series.append({
-            'kpi_id': kid,
-            'name': display_names.get(kid, kpi_meta.get('name', kid)),
-            'chart_type': 'line_plan_fact_monthly',
-            'chart_type_label': f"План/Факт по месяцам: {display_names.get(kid, kpi_meta.get('name', kid))}",
-            'points': points,
-        })
-
-    if not series:
-        return {}
-
-    bar_categories: list[str] = []
-    bar_plan_values: list[float | None] = []
-    bar_fact_values: list[float | None] = []
-    bar_points: list[dict] = []
-    for kid in ['TD-M3', 'TD-M4', 'TD-M5']:
-        kpi_meta = by_id.get(kid, {})
-        entry = entries_by_id.get(kid) or {}
-        tile_vals = tile_values_by_id.get(kid) or {}
-        point = {
-            'plan': tile_vals.get('plan'),
-            'fact': tile_vals.get('fact'),
-            'kpi_pct': tile_vals.get('kpi_pct'),
-        }
-        if point['plan'] is None and point['fact'] is None:
-            point = entry.get('last_full_month_row') or _pick_monthly_row_for_period(entry.get('monthly_data') or [], ref_y, ref_m) or {}
-        display_name = display_names.get(kid, kpi_meta.get('name', kid))
-        bar_categories.append(display_name)
-        bar_plan_values.append(point.get('plan'))
-        bar_fact_values.append(point.get('fact'))
-        bar_points.append({
-            'kpi_id': kid,
-            'name': display_name,
-            'month': ref_m,
-            'year': ref_y,
-            'plan': point.get('plan'),
-            'fact': point.get('fact'),
-            'kpi_pct': point.get('kpi_pct'),
-        })
-
-    charts = {
-        'TD-C1': {
-            'kpi_id': 'TD-C1',
-            'name': 'Динамика: бюджет, ФОТ и другие помесячные KPI',
-            'periodicity': 'ежемесячно',
-            'chart_type': 'multi_line_plan_fact_monthly',
-            'chart_type_label': 'Линейный тренд по месяцам (план/факт)',
-            'series': series,
-        }
-    }
-
-    if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
-        charts['TD-C2'] = {
-            'kpi_id': 'TD-C2',
-            'name': 'KPI за месяц: бюджет, ФОТ и др.',
-            'periodicity': 'ежемесячно',
-            'chart_type': 'column_plan_fact_monthly',
-            'chart_type_label': 'Столбцы: план/факт за месяц',
-            'series': [{
-                'kpi_id': 'TD-C2',
-                'name': 'План/факт за месяц',
-                'chart_type': 'column_plan_fact_monthly',
-                'chart_type_label': 'Столбцы',
-                'categories': bar_categories,
-                'plan': bar_plan_values,
-                'fact': bar_fact_values,
-                'points': bar_points,
-            }],
-        }
-
     return charts
 
 
@@ -1433,7 +1295,7 @@ def _build_qualdir_charts(
         if point['plan'] is None and point['fact'] is None:
             point = (
                 entry.get('last_full_month_row')
-                or _pick_monthly_row_for_period(entry.get('monthly_data') or [], ref_y, ref_m)
+                or pick_monthly_row_for_period(entry.get('monthly_data') or [], ref_y, ref_m)
                 or {}
             )
         display_name = kpi_meta.get('name', kid)
@@ -1505,12 +1367,13 @@ def _build_universal_payload(
     if year is not None and month is not None:
         ref_y, ref_m = int(year), max(1, min(12, int(month)))
     elif (
-        _is_techdir_department(dept)
+        techdir_dashboard.is_techdir_department(dept)
         or str(dept).strip().lower() == 'операционный директор'
         or _is_prod_deputy_department(dept)
         or _is_qualdir_department(dept)
         or _is_chief_constructor_department(dept)
         or logistics_views.is_logistics_head_department(dept)
+        or _is_devdir_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -1534,10 +1397,11 @@ def _build_universal_payload(
         entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
         entries_by_id[kpi['kpi_id']] = entry
         pct, color = _tile_color(kpi, entry)
-        # QD-M3 / QD-M4: месяц в расчёте нормализуется внутри get_qd_*_ytd —
+        # QD-M3 / QD-M4 и devdir RD-*: месяц в расчёте нормализуется внутри get_*_ytd —
         # строка плитки должна браться из kpi_period иначе план/факт за «чужой» месяц.
         tile_lm_y, tile_lm_m = ref_y, ref_m
-        if kpi.get('kpi_id') in {'QD-M3', 'QD-M4'}:
+        _kid_tile = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+        if _kid_tile in _qualdir_kpi_views.KPI_IDS_USE_BUILDER_KP_PERIOD | _devdir_kpi_views.DEVDIR_KPI_IDS:
             kper = entry.get('kpi_period')
             if (
                 isinstance(kper, dict)
@@ -1553,7 +1417,7 @@ def _build_universal_payload(
 
         monthly_data = entry.get('monthly_data')
         lm = (
-            _pick_monthly_row_for_period(monthly_data, tile_lm_y, tile_lm_m)
+            pick_monthly_row_for_period(monthly_data, tile_lm_y, tile_lm_m)
             if monthly_data
             else {}
         )
@@ -1612,7 +1476,9 @@ def _build_universal_payload(
             tile['unit'] = '%'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1', 'QD-Q1'}:
             tile['unit'] = 'шт.'
-        elif kpi.get('kpi_id') in {'TD-M5', 'QD-M3', 'QD-M4'}:
+        elif _kid_tile == 'RD-M1':
+            tile['unit'] = 'шт.'
+        elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
             tile['unit'] = 'руб.'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
@@ -1638,7 +1504,7 @@ def _build_universal_payload(
 
     if str(dept).strip().lower() == 'операционный директор':
         grafiki.update(_build_opdir_charts(tiles_meta, entries_by_id, ref_y, ref_m))
-    if _is_techdir_department(dept):
+    if techdir_dashboard.is_techdir_department(dept):
         techdir_tile_values = {
             item['kpi_id']: {
                 'plan': item.get('plan'),
@@ -1646,9 +1512,11 @@ def _build_universal_payload(
                 'kpi_pct': item.get('kpi_pct'),
             }
             for item in plitki_items
-            if item.get('kpi_id') in {'TD-M3', 'TD-M4', 'TD-M5'}
+            if item.get('kpi_id') in techdir_dashboard.TECHDIR_CHART_TILE_IDS
         }
-        grafiki.update(_build_techdir_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m))
+        grafiki.update(
+            techdir_dashboard.build_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m),
+        )
     if logistics_views.is_logistics_head_department(dept):
         grafiki.update(logistics_views.build_charts(tiles_meta, entries_by_id, ref_y, ref_m))
     if _is_prod_deputy_department(dept):
@@ -1666,6 +1534,7 @@ def _build_universal_payload(
         grafiki.update(
             _build_qualdir_charts(tiles_meta, entries_by_id, qualdir_tile_values, ref_y, ref_m),
         )
+        techdir_dashboard.strip_external_orders_budget_from_grafiki(grafiki)
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -1675,7 +1544,7 @@ def _build_universal_payload(
     tablitsy = {}
 
     include_generic_tables = (
-        not _is_techdir_department(dept)
+        not techdir_dashboard.is_techdir_department(dept)
         and not _is_prod_deputy_department(dept)
         and not _is_chief_constructor_department(dept)
     )
@@ -1725,13 +1594,8 @@ def _build_universal_payload(
             },
         })
 
-    if _is_techdir_department(dept):
-        try:
-            techdir_tables = techdir_projects.get_td_deviation_tables(month=ref_m, year=ref_y)
-        except Exception:
-            techdir_tables = None
-        if techdir_tables:
-            tablitsy.update(techdir_tables)
+    if techdir_dashboard.is_techdir_department(dept):
+        techdir_dashboard.merge_deviation_tables(tablitsy, ref_y, ref_m)
 
     if str(dept).strip().lower() == 'операционный директор':
         try:
@@ -2283,168 +2147,13 @@ def _build_kpi_entry(
             entry['kpi_period'] = data.get('kpi_period')
             return entry
 
-    if kpi_id == 'TD-M1':
-        td = techdir_projects.get_td_m1_ytd()
-        if td is not None:
-            entry['data_granularity'] = td['data_granularity']
-            entry['monthly_data'] = td['monthly_data']
-            entry['last_full_month_row'] = td.get('last_full_month_row')
-            entry['ytd'] = td['ytd']
-            entry['kpi_period'] = td['kpi_period']
-            return entry
-
-    if kpi_id == 'TD-M2':
-        td = techdir_m2.get_td_m2_ytd()
-        entry['data_granularity'] = td['data_granularity']
-        entry['monthly_data'] = td['monthly_data']
-        entry['last_full_month_row'] = td.get('last_full_month_row')
-        entry['ytd'] = td['ytd']
-        entry['kpi_period'] = td['kpi_period']
+    if techdir_kpi_entry.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
-    if kpi_id == 'TD-Q1':
-        td = techdir_projects.get_td_q1_ytd()
-        if td is not None:
-            entry['data_granularity'] = td['data_granularity']
-            entry['monthly_data'] = td.get('monthly_data') or td.get('quarterly_data') or []
-            entry['last_full_month_row'] = td.get('last_full_month_row')
-            entry['ytd'] = td['ytd']
-            entry['kpi_period'] = td['kpi_period']
-            return entry
-
-    if kpi_id == 'TD-M3':
-        td = techdir_m3.get_td_m3_ytd(year=year, month=month)
-        if td is not None:
-            entry['data_granularity'] = td['data_granularity']
-            entry['monthly_data'] = td['monthly_data']
-            entry['last_full_month_row'] = td.get('last_full_month_row')
-            entry['ytd'] = td['ytd']
-            entry['kpi_period'] = td['kpi_period']
-            return entry
-
-    if kpi_id == 'TD-M4':
-        td = techdir_m4.get_td_m4_ytd(year=year, month=month)
-        if td is not None:
-            entry['data_granularity'] = td['data_granularity']
-            entry['monthly_data'] = td['monthly_data']
-            entry['last_full_month_row'] = td.get('last_full_month_row')
-            entry['ytd'] = td['ytd']
-            entry['kpi_period'] = td['kpi_period']
-            return entry
-
-    if kpi_id == 'TD-M5':
-        td = techdir_projects.get_td_m5_ytd(year=year, month=month)
-        if td is not None:
-            entry['data_granularity'] = td['data_granularity']
-            entry['monthly_data'] = td['monthly_data']
-            entry['last_full_month_row'] = td.get('last_full_month_row')
-            entry['ytd'] = td['ytd']
-            entry['kpi_period'] = td['kpi_period']
-            entry['debug'] = td.get('debug')
-            return entry
-
-    if kpi_id == 'RD-M2-1':
-        dev = devdir_projects.get_rd_m2_1_ytd(year=year, month=month)
-        if dev is not None:
-            entry['data_granularity'] = dev.get('data_granularity', 'monthly')
-            entry['monthly_data'] = dev.get('monthly_data') or []
-            entry['last_full_month_row'] = dev.get('last_full_month_row')
-            entry['ytd'] = dev.get('ytd') or {}
-            entry['kpi_period'] = dev.get('kpi_period')
-            entry['debug'] = dev.get('debug')
-            return entry
-        today = date.today()
-        ref_y = int(year) if year is not None else today.year
-        ref_m = int(month) if month is not None else today.month
-        ref_m = max(1, min(12, ref_m))
-        entry['data_granularity'] = 'monthly'
-        entry['monthly_data'] = []
-        entry['last_full_month_row'] = None
-        entry['ytd'] = {
-            'total_plan': None,
-            'total_fact': None,
-            'kpi_pct': None,
-            'months_with_data': 0,
-            'months_total': 0,
-            'values_unit': 'шт.',
-        }
-        entry['kpi_period'] = {
-            'type': 'last_full_month',
-            'year': ref_y,
-            'month': ref_m,
-            'month_name': MONTH_NAMES[ref_m],
-        }
+    if _devdir_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
-    if kpi_id == 'TD-Q2':
-        td = techdir_tekuchet.get_td_q2_ytd(year=year, month=month)
-        if td is not None:
-            entry['data_granularity'] = td['data_granularity']
-            entry['monthly_data'] = td['monthly_data']
-            entry['last_full_month_row'] = td.get('last_full_month_row')
-            entry['ytd'] = td['ytd']
-            entry['kpi_period'] = td['kpi_period']
-            return entry
-
-    if kpi_id == 'QD-Q2':
-        qd = get_qd_q2_ytd(year=year, month=month)
-        if qd is not None:
-            entry['data_granularity'] = qd['data_granularity']
-            entry['monthly_data'] = qd['monthly_data']
-            entry['last_full_month_row'] = qd.get('last_full_month_row')
-            entry['ytd'] = qd['ytd']
-            entry['kpi_period'] = qd['kpi_period']
-            entry['debug'] = qd.get('debug')
-            return entry
-
-    if kpi_id == 'QD-Q1':
-        qd = get_qd_q1_ytd(year=year, month=month)
-        entry['data_granularity'] = qd['data_granularity']
-        entry['monthly_data'] = qd['monthly_data']
-        entry['last_full_month_row'] = qd.get('last_full_month_row')
-        entry['ytd'] = qd['ytd']
-        entry['kpi_period'] = qd['kpi_period']
-        entry['debug'] = qd.get('debug')
-        return entry
-
-    if kpi_id == 'QD-M1':
-        qd = get_qd_m1_ytd(year=year, month=month)
-        if qd is not None:
-            entry['data_granularity'] = qd['data_granularity']
-            entry['monthly_data'] = qd['monthly_data']
-            entry['last_full_month_row'] = qd.get('last_full_month_row')
-            entry['ytd'] = qd['ytd']
-            entry['kpi_period'] = qd['kpi_period']
-            entry['articles'] = qd.get('articles')
-            entry['debug'] = qd.get('debug')
-            return entry
-
-    if kpi_id == 'QD-M4':
-        qd = get_qd_m4_ytd(year=year, month=month)
-        entry['data_granularity'] = qd['data_granularity']
-        entry['monthly_data'] = qd['monthly_data']
-        entry['last_full_month_row'] = qd.get('last_full_month_row')
-        entry['ytd'] = qd['ytd']
-        entry['kpi_period'] = qd['kpi_period']
-        entry['debug'] = qd.get('debug')
-        return entry
-
-    if kpi_id == 'QD-M3':
-        qd = get_qd_m3_ytd(year=year, month=month)
-        entry['data_granularity'] = qd['data_granularity']
-        entry['monthly_data'] = qd['monthly_data']
-        entry['last_full_month_row'] = qd.get('last_full_month_row')
-        entry['ytd'] = qd['ytd']
-        entry['kpi_period'] = qd['kpi_period']
-        entry['debug'] = qd.get('debug')
-        return entry
-
-    if kpi_id == 'TD-Y1':
-        td = techdir_y1.get_td_y1_ytd()
-        entry['data_granularity'] = td['data_granularity']
-        entry['yearly_data'] = td['yearly_data']
-        entry['ytd'] = td['ytd']
-        entry['kpi_period'] = td['kpi_period']
+    if _qualdir_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
     if kpi_id == 'KD-M1':

@@ -4,15 +4,12 @@ import json
 import logging
 from calendar import monthrange
 from datetime import date, datetime
-from contextlib import redirect_stdout
-import io
 from pathlib import Path
 from typing import Any
 
 import requests
 
-from ..cache_manager import locked_call
-from ..techdir_projects import _api_get, _get_credentials, _login
+from ..techdir_projects import _api_get, _login
 
 logger = logging.getLogger(__name__)
 
@@ -20,32 +17,9 @@ TARGET_ORGANIZATION = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
 TARGET_PROJECT_TYPE = "ОПЭ"
 TARGET_PROJECT_STATUSES = {"ВРаботе", "Приостановлен"}
 
-RD_M2_1_PLAN_BY_MONTH = {
-    1: 1_474_715,
-    2: 1_589_363,
-    3: 1_557_220,
-    4: 1_618_194,
-    5: 1_561_051,
-    6: 1_584_279,
-    7: 1_555_304,
-    8: 1_505_029,
-    9: 1_648_114,
-    10: 1_557_221,
-    11: 1_564_826,
-    12: 1_571_386,
-}
-
 CACHE_DIR = Path(__file__).resolve().parents[1] / "dashboard"
 CACHE_PATH = CACHE_DIR / "devdir_projects_snapshot.json"
 CACHE_VERSION = 1
-
-MONTH_NAMES = {
-    1: "январь", 2: "февраль", 3: "март", 4: "апрель",
-    5: "май", 6: "июнь", 7: "июль", 8: "август",
-    9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
-}
-
-SERVICE_DEVELOPMENT_DEPARTMENT = "Служба развития"
 
 
 def _normalize_text(value: Any) -> str:
@@ -329,66 +303,6 @@ def _save_cache(payload: dict) -> None:
         logger.exception("Не удалось сохранить кэш проектов devdir в %s", CACHE_PATH)
 
 
-def _load_fot_management_cache(year: int, month: int) -> dict | None:
-    path = Path(__file__).resolve().parents[1] / "dashboard" / f"fot_management_monthly_{year}_{month:02d}.json"
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if data.get("cache_date") != date.today().isoformat():
-        return None
-    return data
-
-
-def _service_development_fact_from_cache(year: int, month: int) -> float | None:
-    data = _load_fot_management_cache(year, month)
-    if not data:
-        data = None
-    if data:
-        months = data.get("months") or []
-        for row in months:
-            if not isinstance(row, dict):
-                continue
-            if row.get("year") != year or row.get("month") != month:
-                continue
-            fact_matrix = row.get("fact_matrix") or []
-            for dept_row in fact_matrix:
-                if not isinstance(dept_row, dict):
-                    continue
-                if dept_row.get("department") == SERVICE_DEVELOPMENT_DEPARTMENT:
-                    try:
-                        return float(dept_row.get("total") or 0)
-                    except (TypeError, ValueError):
-                        return None
-
-    try:
-        from .. import calc_fot_management
-        with redirect_stdout(io.StringIO()):
-            payload = calc_fot_management.get_fot_management_monthly(year=year, month=month)
-    except Exception:
-        logger.exception("Не удалось получить факт ФОТ для %s/%s", year, month)
-        return None
-
-    months = payload.get("months") or []
-    for row in months:
-        if not isinstance(row, dict):
-            continue
-        if row.get("year") != year or row.get("month") != month:
-            continue
-        fact_matrix = row.get("fact_matrix") or []
-        for dept_row in fact_matrix:
-            if not isinstance(dept_row, dict):
-                continue
-            if dept_row.get("department") == SERVICE_DEVELOPMENT_DEPARTMENT:
-                try:
-                    return float(dept_row.get("total") or 0)
-                except (TypeError, ValueError):
-                    return None
-    return None
-
-
 def _compute_projects_snapshot() -> dict:
     cached = _load_cache()
     if cached is not None:
@@ -437,86 +351,3 @@ def _compute_projects_snapshot() -> dict:
 
 def get_devdir_projects_snapshot() -> dict:
     return _compute_projects_snapshot()
-
-
-def _normalize_period(year: int | None = None, month: int | None = None) -> tuple[int, int]:
-    today = date.today()
-    ref_year = int(year or today.year)
-    ref_month = int(month or (today.month if ref_year == today.year else 12))
-    ref_month = max(1, min(12, ref_month))
-    if ref_year == today.year:
-        ref_month = min(ref_month, today.month)
-    return ref_year, ref_month
-
-
-def _build_monthly_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
-    ref_y, ref_m = _normalize_period(year, month)
-    pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
-
-    monthly_rows: list[dict[str, Any]] = []
-    ref_row: dict[str, Any] | None = None
-
-    for y, m in pairs:
-        plan_value = RD_M2_1_PLAN_BY_MONTH.get(m)
-        fact_value = _service_development_fact_from_cache(y, m)
-        has_data = plan_value is not None or fact_value is not None
-        kpi_pct = round(fact_value / plan_value * 100, 1) if plan_value and fact_value is not None else None
-
-        row = {
-            "month": m,
-            "year": y,
-            "month_name": MONTH_NAMES[m],
-            "plan": plan_value,
-            "fact": fact_value,
-            "kpi_pct": kpi_pct,
-            "has_data": has_data,
-            "values_unit": "руб.",
-        }
-        monthly_rows.append(row)
-        if (y, m) == (ref_y, ref_m):
-            ref_row = row
-
-    return {
-        "data_granularity": "monthly",
-        "monthly_data": monthly_rows,
-        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
-        "kpi_period": {
-            "type": "last_full_month",
-            "year": ref_y,
-            "month": ref_m,
-            "month_name": MONTH_NAMES[ref_m],
-        },
-        "ytd": {
-            "total_plan": round(sum(float(row.get("plan") or 0) for row in monthly_rows if row.get("plan") is not None), 2) if monthly_rows else None,
-            "total_fact": round(sum(float(row.get("fact") or 0) for row in monthly_rows if row.get("fact") is not None), 2) if monthly_rows else None,
-            "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
-            "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
-            "months_total": len(monthly_rows),
-            "values_unit": "руб.",
-        },
-        "debug": {
-            "target_plan_source": "devdir.xlsx",
-            "target_fact_source": "dashboard/fot_management_monthly_YYYY_MM.json",
-            "target_department": SERVICE_DEVELOPMENT_DEPARTMENT,
-            "rows_by_month": [
-                {
-                    "year": row["year"],
-                    "month": row["month"],
-                    "plan": row["plan"],
-                    "fact": row["fact"],
-                }
-                for row in monthly_rows
-            ],
-        },
-    }
-
-
-def get_rd_m2_1_ytd(year: int | None = None, month: int | None = None) -> dict | None:
-    def _runner() -> dict | None:
-        try:
-            return _build_monthly_payload(year=year, month=month)
-        except Exception:
-            logger.exception("Ошибка при расчёте RD-M2-1 из devdir")
-            return None
-
-    return locked_call("devdir_rd_m2_1", _runner)

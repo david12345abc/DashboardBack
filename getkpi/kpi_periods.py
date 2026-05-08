@@ -64,3 +64,23 @@ def vp_months_for_api(today: date | None = None) -> tuple[list[tuple[int, int]],
         monthly_span = {(ref_y, ref_m)}
     merged = sorted(q_months | monthly_span)
     return merged, (ref_y, ref_m), (lq_y, lq_q)
+
+
+def pick_monthly_row_for_period(
+    monthly_rows: list[dict] | None,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict:
+    """Строка monthly_data за (year, month); при отсутствии пары периодов — последняя строка списка."""
+    rows = monthly_rows or []
+    if not rows:
+        return {}
+    if year is not None and month is not None:
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get('year') == year and row.get('month') == month:
+                return row
+        return {}
+    last_row = rows[-1]
+    return last_row if isinstance(last_row, dict) else {}
