@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from . import techdir_m2, techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet, techdir_y1
+from . import techdir_m2, techdir_m3, techdir_m4, techdir_m6_bdds, techdir_projects, techdir_tekuchet, techdir_y1
 
 TECHDIR_TILE_KPI_IDS: frozenset[str] = frozenset({
-    'TD-M1', 'TD-M2', 'TD-Q1', 'TD-M3', 'TD-M4', 'TD-M5', 'TD-Q2', 'TD-Y1',
+    'TD-M1', 'TD-M2', 'TD-Q1', 'TD-M3', 'TD-M4', 'TD-M5', 'TD-M6', 'TD-Q2', 'TD-Y1',
 })
 
 TILE_COLOR_DZ_LOWER_IDS: frozenset[str] = frozenset({'TD-M3'})
-TILE_COLOR_TD_M4_LIMIT_IDS: frozenset[str] = frozenset({'TD-M4', 'TD-M5'})
+TILE_COLOR_TD_M4_LIMIT_IDS: frozenset[str] = frozenset({'TD-M4', 'TD-M5', 'TD-M6'})
 
 
 def _apply_monthly(entry: dict[str, Any], td: dict[str, Any]) -> None:
@@ -72,6 +72,15 @@ def _merge_td_m5(entry: dict[str, Any], year: int | None, month: int | None) -> 
     return True
 
 
+def _merge_td_m6(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
+    td = techdir_m6_bdds.get_td_m6_ytd(year=year, month=month)
+    if td is None:
+        ry, rm = techdir_projects._normalize_ref_period(year, month)
+        td = techdir_m6_bdds._zero_payload_for_period(ry, rm)
+    _apply_monthly(entry, td)
+    return True
+
+
 def _merge_td_q2(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
     td = techdir_tekuchet.get_td_q2_ytd(year=year, month=month)
     if td is None:
@@ -96,6 +105,7 @@ _MERGE_BY_ID: dict[str, Callable[[dict[str, Any], int | None, int | None], bool]
     'TD-M3': _merge_td_m3,
     'TD-M4': _merge_td_m4,
     'TD-M5': _merge_td_m5,
+    'TD-M6': _merge_td_m6,
     'TD-Q2': _merge_td_q2,
     'TD-Y1': _merge_td_y1,
 }

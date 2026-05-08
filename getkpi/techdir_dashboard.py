@@ -7,9 +7,9 @@ from . import techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet
 from .kpi_periods import pick_monthly_row_for_period
 
 # Плитки с единицами «руб.» в универсальном билдере (часть KPI техдира в БД может дублироваться у QD).
-TECHDIR_RUB_UNIT_KPI_IDS = frozenset({'TD-M5'})
-# TD-C1 / TD-C2: только бюджет контура и ФОТ; TD-M5 в графики не отдаём.
-TECHDIR_CHART_TILE_IDS = frozenset({'TD-M3', 'TD-M4'})
+TECHDIR_RUB_UNIT_KPI_IDS = frozenset({'TD-M5', 'TD-M6'})
+# TD-C1 / TD-C2: бюджет контура, ФОТ и план ФОТ внешних заказов (БДДС, TD-M6); TD-M5 в графики не отдаём.
+TECHDIR_CHART_TILE_IDS = frozenset({'TD-M3', 'TD-M4', 'TD-M6'})
 
 
 def is_techdir_department(dept: str | None) -> bool:
@@ -22,6 +22,7 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
         'TD-M1': [techdir_projects.CACHE_PATH],
         'TD-Q1': [techdir_projects.CACHE_PATH],
         'TD-M5': [techdir_projects.CACHE_PATH],
+        'TD-M6': [techdir_projects.CACHE_PATH],
         'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
         'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
         'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
@@ -37,11 +38,12 @@ def build_charts(
     ref_m: int,
 ) -> dict:
     by_id = {k['kpi_id']: k for k in tiles_meta}
-    techdir_chart_kpis = ('TD-M3', 'TD-M4')
+    techdir_chart_kpis = ('TD-M3', 'TD-M4', 'TD-M6')
     line_kpis = bar_kpis = techdir_chart_kpis
     display_names = {
         'TD-M3': 'Бюджет',
         'TD-M4': 'ФОТ',
+        'TD-M6': 'План БДДС (внешние заказы)',
     }
     series: list[dict] = []
 
@@ -111,7 +113,7 @@ def build_charts(
     charts = {
         'TD-C1': {
             'kpi_id': 'TD-C1',
-            'name': 'Динамика: бюджет и ФОТ',
+            'name': 'Динамика: бюджет, ФОТ и план по БДДС (внешние заказы)',
             'periodicity': 'ежемесячно',
             'chart_type': 'multi_line_plan_fact_monthly',
             'chart_type_label': 'Линейный тренд по месяцам (план/факт)',
@@ -122,7 +124,7 @@ def build_charts(
     if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
         charts['TD-C2'] = {
             'kpi_id': 'TD-C2',
-            'name': 'KPI за месяц: бюджет и ФОТ',
+            'name': 'KPI за месяц: бюджет, ФОТ и план БДДС (внешние заказы)',
             'periodicity': 'ежемесячно',
             'chart_type': 'column_plan_fact_monthly',
             'chart_type_label': 'Столбцы: план/факт за месяц',
