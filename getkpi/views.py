@@ -88,6 +88,8 @@ def _get_kpi_dicts(department: str) -> list[dict]:
         if not rows:
             return logistics_views.kpi_definition_fallback(department) or rows
         rows = logistics_views.normalize_kpi_definitions(department, rows)
+    if _is_chief_constructor_department(department):
+        rows = _normalize_chief_constructor_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         rows = _filter_prod_deputy_rows_for_department(department, rows)
@@ -122,6 +124,8 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
     rows = [obj.to_dict() for obj in qs]
     if logistics_views.is_logistics_head_department(department):
         rows = logistics_views.normalize_kpi_definitions(department, rows)
+    if _is_chief_constructor_department(department):
+        rows = _normalize_chief_constructor_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         rows = _filter_prod_deputy_rows_for_department(department, rows)
@@ -337,6 +341,11 @@ def _is_production_director_department(dept: str | None) -> bool:
     return normalized == 'заместитель директора по производству'
 
 
+def _is_chief_constructor_department(dept: str | None) -> bool:
+    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
+    return normalized == 'главный конструктор'
+
+
 def _required_prod_deputy_kpi_ids(department: str | None) -> set[str]:
     if _is_production_director_department(department):
         return {
@@ -374,6 +383,66 @@ def _prod_deputy_fallback_rows_for_department(
         row['department'] = department
         fallback.append(row)
     return fallback
+
+
+def _chief_constructor_split_m3_rows(department: str, source: dict) -> list[dict]:
+    base_position = source.get('position')
+    try:
+        base_position = int(base_position)
+    except (TypeError, ValueError):
+        base_position = 2
+    base_weight = source.get('weight_pct')
+    try:
+        split_weight = round(float(base_weight) / 2, 2)
+    except (TypeError, ValueError):
+        split_weight = 10.0
+
+    budget = {
+        **dict(source),
+        'department': department,
+        'kpi_id': 'GK-M3.B',
+        'name': 'Бюджет блока в пределах лимита',
+        'goal': 'Контролировать бюджет блока главного конструктора',
+        'formula': 'Факт затрат / План затрат × 100%',
+        'unit': '%',
+        'source': 'БДР / 1С',
+        'weight_pct': split_weight,
+        'position': base_position,
+    }
+    fot = {
+        **dict(source),
+        'department': department,
+        'kpi_id': 'GK-M3.F',
+        'name': 'ФОТ блока в пределах лимита',
+        'goal': 'Контролировать ФОТ блока главного конструктора',
+        'formula': 'Факт ФОТ / План ФОТ × 100%',
+        'unit': '%',
+        'source': '1С / ЗУП / HRIS',
+        'weight_pct': split_weight,
+        'position': base_position + 1,
+    }
+    return [budget, fot]
+
+
+def _normalize_chief_constructor_kpi_definitions(department: str, rows: list[dict]) -> list[dict]:
+    """Split GK-M3 «Бюджет и ФОТ» into separate budget and FOT tiles."""
+    if not rows:
+        return rows
+    existing_ids = {str(row.get('kpi_id') or '') for row in rows}
+    normalized: list[dict] = []
+    source_m3 = next((row for row in rows if str(row.get('kpi_id') or '') == 'GK-M3'), None)
+    for row in rows:
+        kid = str(row.get('kpi_id') or '')
+        if kid == 'GK-M3':
+            if 'GK-M3.B' not in existing_ids and 'GK-M3.F' not in existing_ids:
+                normalized.extend(_chief_constructor_split_m3_rows(department, row))
+            continue
+        normalized.append(row)
+    if source_m3 and not {'GK-M3.B', 'GK-M3.F'}.issubset({str(row.get('kpi_id') or '') for row in normalized}):
+        current_ids = {str(row.get('kpi_id') or '') for row in normalized}
+        split_rows = _chief_constructor_split_m3_rows(department, source_m3)
+        normalized.extend(row for row in split_rows if str(row.get('kpi_id') or '') not in current_ids)
+    return normalized
 
 
 def _thresholds_block(kpi: dict) -> dict:
@@ -1440,6 +1509,7 @@ def _build_universal_payload(
         or str(dept).strip().lower() == 'операционный директор'
         or _is_prod_deputy_department(dept)
         or _is_qualdir_department(dept)
+        or _is_chief_constructor_department(dept)
         or logistics_views.is_logistics_head_department(dept)
     ):
         if year is not None and month is None:
@@ -1536,8 +1606,10 @@ def _build_universal_payload(
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
             tile['unit'] = 'чел.'
-        elif kpi.get('kpi_id') == 'PD-M2':
+        elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'}:
             tile['unit'] = 'шт.'
+        elif kpi.get('kpi_id') in {'GK-M3.B', 'GK-M3.F'}:
+            tile['unit'] = '%'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1', 'QD-Q1'}:
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M5', 'QD-M3', 'QD-M4'}:
@@ -1605,6 +1677,7 @@ def _build_universal_payload(
     include_generic_tables = (
         not _is_techdir_department(dept)
         and not _is_prod_deputy_department(dept)
+        and not _is_chief_constructor_department(dept)
     )
 
     if include_generic_tables:
@@ -1687,6 +1760,16 @@ def _build_universal_payload(
             pd_q3_table = None
         if pd_q3_table:
             tablitsy['PD-T-Q3-IMPROVEMENTS'] = pd_q3_table
+
+    if _is_chief_constructor_department(dept) or 'GK-M1' in entries_by_id:
+        try:
+            from . import calc_chief_constructor_projects
+
+            gk_m1_table = calc_chief_constructor_projects.get_gk_m1_deviation_table(month=ref_m, year=ref_y)
+        except Exception:
+            gk_m1_table = None
+        if gk_m1_table:
+            tablitsy['GK-T-M1-DEVIATIONS'] = gk_m1_table
 
     return {
         'month': ref_m,
@@ -1874,6 +1957,78 @@ def _build_kpi_entry(
         entry['last_full_month_row'] = data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
+        return entry
+
+    if kpi_id == 'GK-M1':
+        from . import calc_chief_constructor_projects
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'gk_m1_projects_{ref_y}_{ref_m}',
+            calc_chief_constructor_projects.get_gk_m1_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            entry['debug'] = data.get('debug')
+            return entry
+
+    if kpi_id == 'GK-Q1':
+        from . import calc_chief_constructor_projects
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'gk_q1_rnd_projects_{ref_y}_{ref_m}',
+            calc_chief_constructor_projects.get_gk_q1_rnd_quarterly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'quarterly')
+            entry['quarterly_data'] = data.get('quarterly_data') or []
+            entry['last_full_quarter_row'] = data.get('last_full_quarter_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            entry['debug'] = data.get('debug')
+            return entry
+
+    if kpi_id in {'GK-M3.B', 'GK-M3.F'}:
+        plan = 100.0
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = _generate_monthly_data(
+            plan,
+            ref_year=year,
+            ref_month=month,
+        )
+        entry['last_full_month_row'] = entry['monthly_data'][-1] if entry['monthly_data'] else None
+        if entry['last_full_month_row']:
+            lm = entry['last_full_month_row']
+            entry['ytd'] = {
+                'total_plan': lm.get('plan'),
+                'total_fact': lm.get('fact'),
+                'kpi_pct': lm.get('kpi_pct'),
+                'months_with_data': len(entry['monthly_data']),
+                'months_total': len(entry['monthly_data']),
+            }
+            entry['kpi_period'] = {
+                'type': 'last_full_month',
+                'year': lm.get('year'),
+                'month': lm.get('month'),
+                'month_name': lm.get('month_name'),
+            }
         return entry
 
     if kpi_id == 'OD-M3.1':

@@ -2,7 +2,7 @@
   "na_datu": "2026-04-30",
   "dept_alias_source": "commercial_department_aliases_v2",
   "total_dz": 332579150.62,
-  "total_kz": 229955097.2,
+  "total_kz": 230130097.2,
   "total_overdue": 147402663.66,
   "kz_source": "predoplata_upr",
   "by_dept": {
@@ -19,7 +19,7 @@
     },
     "Отдел ВЭД": {
       "dz": 88036585.63,
-      "kz": 10240603.6,
+      "kz": 10415603.6,
       "overdue": 3255778.63,
       "aging": {
         "1-29 дн.": 0,
