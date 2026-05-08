@@ -65,6 +65,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
         techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet,
     )
+    from .devdir import rd_m1_zpr, rd_m3_budget, rd_m4_fot
     from .komdir_claims import fetch_claims_for_month
     from qualdir.turnover import get_qd_q2_ytd, turnover_month_cache_path
 
@@ -155,6 +156,18 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         ('qualdir_tekuchet',
          turnover_month_cache_path(y, m),
          lambda: get_qd_q2_ytd(year=y, month=m)),
+
+        (f'devdir_rd_m1_zpr_{y}_{m}',
+         rd_m1_zpr.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: rd_m1_zpr.get_rd_m1_zpr_ytd(year=yy, month=mm)),
+
+        (f'devdir_rd_m3_budget_{y}_{m}',
+         rd_m3_budget.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: rd_m3_budget.get_rd_m3_budget_ytd(year=yy, month=mm)),
+
+        (f'devdir_rd_m4_fot_{y}_{m}',
+         rd_m4_fot.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: rd_m4_fot.get_rd_m4_fot_ytd(year=yy, month=mm)),
     ]
     return tasks
 

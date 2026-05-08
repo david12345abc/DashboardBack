@@ -1034,6 +1034,7 @@ def _build_universal_payload(
         or str(dept).strip().lower() == 'операционный директор'
         or _is_prod_deputy_department(dept)
         or _is_qualdir_department(dept)
+        or _is_devdir_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -1123,6 +1124,8 @@ def _build_universal_payload(
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1', 'QD-Q1'}:
+            tile['unit'] = 'шт.'
+        elif _kid_tile == 'RD-M1':
             tile['unit'] = 'шт.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
             tile['unit'] = 'руб.'

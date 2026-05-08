@@ -1,15 +1,30 @@
-"""KPI RD-M4 (ФОТ): план из rd_m4_fot_plan, факт ФОТ «Служба развития»."""
+"""KPI RD-M4 (ФОТ) для devdir: план из rd_m4_fot_plan.
+
+Факт — ``service_development_fot_fact`` (пять п/п контура развития в том же модуле).
+
+Кэш: ``getkpi/dashboard/devdir_rd_m4_fot_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
+"""
+
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from ..cache_manager import locked_call
+from . import ytd_json_cache
 from .rd_m4_fot_plan import RD_M4_FOT_PLAN_BY_MONTH
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from .service_development_fot import SERVICE_DEVELOPMENT_DEPARTMENT, service_development_fot_fact
+from .service_development_fot import (
+    SERVICE_DEVELOPMENT_DEPARTMENTS,
+    service_development_fot_fact,
+)
 
 logger = logging.getLogger(__name__)
+
+CACHE_FILE_PREFIX = "devdir_rd_m4_fot"
+CACHE_SOURCE_TAG = "devdir_rd_m4_fot_ytd"
+CACHE_VERSION = 1
 
 
 def _build_rd_m4_fot_monthly_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
@@ -59,8 +74,12 @@ def _build_rd_m4_fot_monthly_payload(year: int | None = None, month: int | None 
         },
         "debug": {
             "target_plan_source": "getkpi/devdir/rd_m4_fot_plan.py",
-            "target_fact_source": "dashboard/fot_management_monthly_YYYY_MM.json",
-            "target_department": SERVICE_DEVELOPMENT_DEPARTMENT,
+            "target_fact_source": "getkpi/devdir/service_development_fot.py (service_development_fot_fact)",
+            "kpi_route": "devdir_rd_m4",
+            "fact_methodology": (
+                "счёт 26, две статьи НПО АУП; сумма Дт по пяти подразделениям контура развития"
+            ),
+            "departments_in_fact_sum": list(SERVICE_DEVELOPMENT_DEPARTMENTS),
             "rows_by_month": [
                 {
                     "year": row["year"],
@@ -74,12 +93,36 @@ def _build_rd_m4_fot_monthly_payload(year: int | None = None, month: int | None 
     }
 
 
+def cache_file_path_for_period(year: int | None = None, month: int | None = None) -> Path:
+    return ytd_json_cache.public_cache_path(CACHE_FILE_PREFIX, year, month)
+
+
 def get_rd_m4_fot_ytd(year: int | None = None, month: int | None = None) -> dict | None:
+    ref_y, ref_m = normalize_rd_tile_period(year, month)
+    c_path = ytd_json_cache.cache_path(CACHE_FILE_PREFIX, ref_y, ref_m)
+    perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
+
     def _runner() -> dict | None:
+        cached = ytd_json_cache.load_payload(
+            c_path,
+            source_tag=CACHE_SOURCE_TAG,
+            version=CACHE_VERSION,
+            perpetual=perpetual,
+        )
+        if cached is not None:
+            return cached
         try:
-            return _build_rd_m4_fot_monthly_payload(year=year, month=month)
+            payload = _build_rd_m4_fot_monthly_payload(year=year, month=month)
         except Exception:
             logger.exception("Ошибка при расчёте RD-M4 (ФОТ)")
             return None
+        if payload is not None:
+            ytd_json_cache.save_payload(
+                c_path,
+                payload,
+                source_tag=CACHE_SOURCE_TAG,
+                version=CACHE_VERSION,
+            )
+        return payload
 
-    return locked_call("devdir_rd_m4", _runner)
+    return locked_call(f"devdir_rd_m4_fot_{ref_y}_{ref_m:02d}", _runner)
