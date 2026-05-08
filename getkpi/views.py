@@ -1678,6 +1678,16 @@ def _build_universal_payload(
         if pd_q1_table:
             tablitsy['PD-T-Q1-DEVIATIONS'] = pd_q1_table
 
+    if _is_production_director_department(dept) or 'PD-Q3' in entries_by_id:
+        try:
+            from . import calc_prod_deputy_projects
+
+            pd_q3_table = calc_prod_deputy_projects.get_pd_q3_improvement_table(month=ref_m, year=ref_y)
+        except Exception:
+            pd_q3_table = None
+        if pd_q3_table:
+            tablitsy['PD-T-Q3-IMPROVEMENTS'] = pd_q3_table
+
     return {
         'month': ref_m,
         'year': ref_y,

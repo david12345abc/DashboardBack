@@ -654,3 +654,49 @@ def get_pd_q1_deviation_table(month: int | None = None, year: int | None = None)
     except Exception:
         logger.exception("Ошибка при построении таблицы PD-Q1 заместителя операционного директора")
         return None
+
+
+def get_pd_q3_improvement_table(month: int | None = None, year: int | None = None) -> dict[str, Any] | None:
+    try:
+        snapshot = _compute_projects_snapshot()
+        projects = list(snapshot.get("improvement_projects") or [])
+        ref_y, ref_m = _normalize_ref_period(year, month)
+        rows: list[dict[str, Any]] = []
+
+        for project in projects:
+            if not _project_is_alive_in_month(project, ref_y, ref_m):
+                continue
+            status = _normalize_project_status(project.get("status_proekta"))
+            rows.append({
+                "number": len(rows) + 1,
+                "project_code": project.get("project_code") or "",
+                "project_name": project.get("project_name") or "",
+                "project_manager": project.get("project_manager") or "",
+                "kurator": project.get("kurator") or "",
+                "timeline": _project_timeline_label(project),
+                "status": _project_status_label(project),
+                "status_raw": status,
+                "progress_pct": project.get("project_progress_pct"),
+                "tip_proekta": project.get("tip_proekta"),
+                "is_plan": status in IMPROVEMENT_PLAN_STATUSES,
+                "is_fact": status == IMPROVEMENT_FACT_STATUS,
+            })
+
+        rows.sort(key=lambda row: (str(row.get("project_name") or ""), str(row.get("project_code") or "")))
+        for index, row in enumerate(rows, start=1):
+            row["number"] = index
+
+        return {
+            "name": "Проекты улучшений / сокращения потерь",
+            "periodicity": "ежемесячно",
+            "description": (
+                "Все проекты типа РазвитияИУлучшений за выбранный месяц, где Целищев или Ермаков "
+                "указаны куратором или руководителем проекта."
+            ),
+            "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES[ref_m]},
+            "columns": ["№ 1С", "Название", "РП", "Куратор", "Сроки", "Статус", "Прогресс"],
+            "rows": rows,
+        }
+    except Exception:
+        logger.exception("Ошибка при построении таблицы PD-Q3 проектов улучшений")
+        return None
