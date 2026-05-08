@@ -34,6 +34,7 @@ from typing import Any, Iterable, Iterator
 import aspose.tasks as tasks
 
 from getkpi.cache_manager import locked_call
+from getkpi.devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
 from qualdir.turnover import _qd_q2_kpi_pct
@@ -614,8 +615,9 @@ def _load_qd_q1_tile_cache(ref_y: int, ref_m: int) -> dict[str, Any] | None:
         return None
     if data.get("cache_version") != QD_Q1_TILE_CACHE_VERSION:
         return None
-    if data.get("cache_date") != date.today().isoformat():
-        return None
+    if not ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m):
+        if data.get("cache_date") != date.today().isoformat():
+            return None
     if data.get("mpp_mtime") != _qd_q1_mpp_mtime_for_cache():
         return None
     tile = data.get("tile")

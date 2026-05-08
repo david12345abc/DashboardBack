@@ -1,4 +1,4 @@
-"""Файловый кэш JSON для YTD-payload плиток devdir (RD-M*).
+"""Файловый кэш JSON для YTD-payload плиток devdir (RD-M*) и qualdir (QD-M3/M4/Q2).
 
 Файлы: ``getkpi/dashboard/<prefix>_<год>_<месяц>.json``.
 

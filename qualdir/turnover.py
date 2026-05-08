@@ -4,6 +4,10 @@ QD-Q2 — текучесть персонала контура директор�
 Та же выборка из Document_ТД_ТекучестьПерсонала, что у TD-Q2 (max план/факт по строкам месяца
 на подразделение). Итог по плитке: сумма планов и сумма фактов по четырём подразделениям
 ОТК-1, ОТК-2, Лаборатория неразрушающего контроля, Отдел управления несоответствиями.
+
+Кэш: помесячно ``qualdir_tekuchet_<Y>_<MM>.json``; полный YTD —
+``qualdir_qd_q2_ytd_<Y>_<MM>.json`` (``ytd_json_cache``). Прошлые календарные месяцы
+в помесячном файле без ежедневного сброса.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from getkpi.cache_manager import locked_call
+from getkpi.devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU, build_turnover_month_payload
 
 # Кэш в каталоге getkpi/dashboard — как у остальных KPI-бэкендов.
@@ -42,6 +47,10 @@ QD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
 
 QD_Q2_GROUP_ORDER = list(QD_Q2_GROUP_ALIASES.keys())
 
+QD_Q2_YTD_CACHE_PREFIX = "qualdir_qd_q2_ytd"
+QD_Q2_YTD_DISK_TAG = "qualdir_qd_q2_ytd_payload_v1"
+QD_Q2_YTD_DISK_VERSION = 1
+
 
 def _qd_q2_kpi_pct(plan: Any, fact: Any) -> float | None:
     """KPI по формуле плитки: факт / план × 100 %."""
@@ -63,6 +72,11 @@ def turnover_month_cache_path(year: int, month: int) -> Path:
     return _CACHE_ROOT / f"qualdir_tekuchet_{year}_{month:02d}.json"
 
 
+def _month_row_cache_is_perpetual(year: int, month: int) -> bool:
+    today = date.today()
+    return (year, month) < (today.year, today.month)
+
+
 def _load_cache(year: int, month: int) -> dict | None:
     path = turnover_month_cache_path(year, month)
     if not path.exists():
@@ -76,8 +90,9 @@ def _load_cache(year: int, month: int) -> dict | None:
         return None
     if data.get("cache_version") != CACHE_VERSION:
         return None
-    if data.get("cache_date") != date.today().isoformat():
-        return None
+    if not _month_row_cache_is_perpetual(year, month):
+        if data.get("cache_date") != date.today().isoformat():
+            return None
     return data
 
 
@@ -125,17 +140,35 @@ def _last_full_month() -> tuple[int, int]:
     return today.year, today.month - 1
 
 
+def qd_q2_ytd_cache_path(year: int | None = None, month: int | None = None) -> Path:
+    """Путь к JSON-кэшу полного YTD-payload QD-Q2 (``ytd_json_cache``)."""
+    cy, cm = year, month
+    if cy is None or cm is None:
+        cy, cm = _last_full_month()
+    return ytd_json_cache.cache_path(QD_Q2_YTD_CACHE_PREFIX, cy, cm)
+
+
 def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     """QD-Q2: текучесть персонала службы по качеству (помесячно, как TD-Q2)."""
 
-    def _runner() -> dict[str, Any]:
-        try:
-            nonlocal year, month
-            if year is None or month is None:
-                year, month = _last_full_month()
+    cy, cm = year, month
+    if cy is None or cm is None:
+        cy, cm = _last_full_month()
+    _disk_path = ytd_json_cache.cache_path(QD_Q2_YTD_CACHE_PREFIX, cy, cm)
+    _perpetual = ytd_json_cache.is_ref_period_fully_past(cy, cm)
 
+    def _runner() -> dict[str, Any]:
+        _cached = ytd_json_cache.load_payload(
+            _disk_path,
+            source_tag=QD_Q2_YTD_DISK_TAG,
+            version=QD_Q2_YTD_DISK_VERSION,
+            perpetual=_perpetual,
+        )
+        if _cached is not None:
+            return _cached
+        try:
             month_rows: list[dict[str, Any]] = []
-            for row_year, row_month in _tile_month_pairs(year, month):
+            for row_year, row_month in _tile_month_pairs(cy, cm):
                 snapshot = compute_qd_q2_turnover_month(row_year, row_month)
                 plan = snapshot["total_plan"]
                 fact = snapshot["total_fact"]
@@ -154,13 +187,13 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
             with_data = [row for row in month_rows if row["has_data"]]
             months_with_data = len(with_data)
             ref_row = next(
-                (row for row in month_rows if row["month"] == month and row["year"] == year),
+                (row for row in month_rows if row["month"] == cm and row["year"] == cy),
                 None,
             )
             if ref_row is None and month_rows:
                 ref_row = month_rows[-1]
 
-            return {
+            _out: dict[str, Any] = {
                 "data_granularity": "monthly",
                 "monthly_data": month_rows,
                 "last_full_month_row": dict(ref_row) if ref_row else None,
@@ -174,9 +207,9 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                 },
                 "kpi_period": {
                     "type": "last_full_month",
-                    "year": year,
-                    "month": month,
-                    "month_name": MONTH_RU[month],
+                    "year": cy,
+                    "month": cm,
+                    "month_name": MONTH_RU[cm],
                     "data_complete": ref_row is not None,
                 },
                 "debug": {
@@ -187,10 +220,7 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                 },
             }
         except Exception as exc:
-            y, m = year, month
-            if y is None or m is None:
-                y, m = _last_full_month()
-            return {
+            _out = {
                 "data_granularity": "monthly",
                 "monthly_data": [],
                 "last_full_month_row": None,
@@ -204,9 +234,9 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                 },
                 "kpi_period": {
                     "type": "last_full_month",
-                    "year": y,
-                    "month": m,
-                    "month_name": MONTH_RU[m],
+                    "year": cy,
+                    "month": cm,
+                    "month_name": MONTH_RU[cm],
                     "data_complete": False,
                 },
                 "debug": {
@@ -216,8 +246,13 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "error": str(exc),
                 },
             }
+        if (_out.get("debug") or {}).get("status") != "error":
+            ytd_json_cache.save_payload(
+                _disk_path,
+                _out,
+                source_tag=QD_Q2_YTD_DISK_TAG,
+                version=QD_Q2_YTD_DISK_VERSION,
+            )
+        return _out
 
-    lock_y, lock_m = year, month
-    if lock_y is None or lock_m is None:
-        lock_y, lock_m = _last_full_month()
-    return locked_call(f"qualdir_qd_q2_{lock_y}_{lock_m:02d}", _runner)
+    return locked_call(f"qualdir_qd_q2_{cy}_{cm:02d}", _runner)

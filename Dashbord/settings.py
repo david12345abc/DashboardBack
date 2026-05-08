@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'searchengine',
     'devdir',
     'qualdir',
+    'gspp',
 ]
 
 MIDDLEWARE = [

@@ -1,0 +1,86 @@
+"""Склейка KPI дашборда ГСП для общего ``getkpi.views``."""
+from __future__ import annotations
+
+from typing import Any
+
+from getkpi.gspp_q4 import get_gspp_q4_deviation_tables, get_gspp_q4_ytd, gspp_q4_kpi_id_matches
+
+GSPP_TILE_KPI_IDS: frozenset[str] = frozenset({"ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4"})
+
+GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({"ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4"})
+
+
+def _merge_monthly(entry: dict[str, Any], payload: dict[str, Any]) -> None:
+    entry["data_granularity"] = payload.get("data_granularity", "monthly")
+    entry["monthly_data"] = payload.get("monthly_data") or []
+    entry["last_full_month_row"] = payload.get("last_full_month_row")
+    entry["ytd"] = payload.get("ytd") or {}
+    entry["kpi_period"] = payload.get("kpi_period")
+    if payload.get("debug") is not None:
+        entry["debug"] = payload["debug"]
+
+
+def merge_kpi_entry_if_applicable(
+    kpi_id: str,
+    entry: dict[str, Any],
+    *,
+    year: int | None,
+    month: int | None,
+) -> bool:
+    if not gspp_q4_kpi_id_matches(kpi_id):
+        return False
+    payload = get_gspp_q4_ytd(year=year, month=month)
+    if payload is None:
+        # Иначе в ``getkpi.views`` сработает синтетика по полю «Ежеквартально» из БД:
+        # неверные план/факт и снова «ежеквартально» на плитке.
+        from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+
+        ref_y, ref_m = normalize_rd_tile_period(year, month)
+        mn = MONTH_NAMES[ref_m]
+        row: dict[str, Any] = {
+            "month": ref_m,
+            "year": ref_y,
+            "month_name": mn,
+            "plan": 0.0,
+            "fact": 0.0,
+            "kpi_pct": None,
+            "has_data": False,
+            "values_unit": "шт.",
+        }
+        payload = {
+            "data_granularity": "monthly",
+            "monthly_data": [dict(row)],
+            "last_full_month_row": dict(row),
+            "kpi_period": {
+                "type": "last_full_month",
+                "year": ref_y,
+                "month": ref_m,
+                "month_name": mn,
+            },
+            "ytd": {
+                "total_plan": 0.0,
+                "total_fact": 0.0,
+                "kpi_pct": None,
+                "months_with_data": 0,
+                "months_total": 1,
+                "values_unit": "шт.",
+            },
+            "debug": {
+                "kpi_id": "ГСП-Q4",
+                "status": "no_payload",
+                "hint": "get_gspp_q4_ytd вернул None (кэш/блокировка/исключение при сборке)",
+            },
+        }
+    _merge_monthly(entry, payload)
+    return True
+
+
+def merge_gspp_tables_into_universal_payload(
+    tablitsy: dict[str, Any],
+    ref_y: int,
+    ref_m: int,
+) -> None:
+    """Добавить в ``Таблицы`` универсального ответа таблицу отклонений по вехам ГСП-Q4 (как TD-T-*-DEVIATIONS)."""
+    extra = get_gspp_q4_deviation_tables(year=ref_y, month=ref_m)
+    if isinstance(extra, dict):
+        tablitsy.update(extra)

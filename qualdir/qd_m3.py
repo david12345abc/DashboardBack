@@ -3,17 +3,21 @@ QD-M3 — бюджет (директор по качеству / qualdir).
 
 План по месяцам: константы ``QD_M3_PLAN_BY_MONTH_2026``.
 Факт: оплаты по заявкам на расход ДС — см. ``qualdir.qd_m3_fact``.
+
+YTD JSON: ``getkpi/dashboard/qualdir_qd_m3_ytd_<год>_<месяц>.json`` (см. ``ytd_json_cache``).
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import requests
 
 from getkpi.cache_manager import locked_call
+from getkpi.devdir import ytd_json_cache
 from getkpi.fot_techdir_fact import AUTH
 
 from qualdir.qd_m3_fact import compute_qd_m3_fact_monthly
@@ -22,6 +26,10 @@ from qualdir.turnover import _qd_q2_kpi_pct
 logger = logging.getLogger(__name__)
 
 SOURCE_TAG = "qualdir_qd_m3_v6"
+
+QD_M3_YTD_CACHE_PREFIX = "qualdir_qd_m3_ytd"
+QD_M3_YTD_DISK_TAG = "qualdir_qd_m3_ytd_payload_v1"
+QD_M3_YTD_DISK_VERSION = 1
 
 # Плановый бюджет, 2026, руб./мес. (сумма 7 строк по столбцу месяца).
 QD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
@@ -77,10 +85,27 @@ def _plan_for_month(year: int, month: int) -> float | None:
     return None
 
 
+def qd_m3_ytd_cache_path(year: int | None = None, month: int | None = None) -> Path:
+    ry, rm = _normalize_period(year, month)
+    return ytd_json_cache.cache_path(QD_M3_YTD_CACHE_PREFIX, ry, rm)
+
+
 def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     """QD-M3: план из констант; факт из 1С (регистр ДДС + заявки, см. qd_m3_fact)."""
 
+    lock_y, lock_m = _normalize_period(year, month)
+    _disk_path = ytd_json_cache.cache_path(QD_M3_YTD_CACHE_PREFIX, lock_y, lock_m)
+    _perpetual = ytd_json_cache.is_ref_period_fully_past(lock_y, lock_m)
+
     def _runner() -> dict[str, Any]:
+        _cached = ytd_json_cache.load_payload(
+            _disk_path,
+            source_tag=QD_M3_YTD_DISK_TAG,
+            version=QD_M3_YTD_DISK_VERSION,
+            perpetual=_perpetual,
+        )
+        if _cached is not None:
+            return _cached
         try:
             ref_y, ref_m = _normalize_period(year, month)
             pairs = _tile_month_pairs(ref_y, ref_m)
@@ -154,7 +179,7 @@ def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str
                         ),
                     }
 
-            return {
+            _out: dict[str, Any] = {
                 "data_granularity": "monthly",
                 "monthly_data": monthly_rows,
                 "last_full_month_row": dict(ref_row)
@@ -224,7 +249,7 @@ def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "has_data": False,
                     "values_unit": "руб.",
                 }
-            return {
+            _out = {
                 "data_granularity": "monthly",
                 "monthly_data": [fallback_row] if fallback_row else [],
                 "last_full_month_row": dict(fallback_row) if fallback_row else None,
@@ -250,8 +275,13 @@ def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "plan_fallback_row": bool(fallback_row),
                 },
             }
+        if (_out.get("debug") or {}).get("status") != "error":
+            ytd_json_cache.save_payload(
+                _disk_path,
+                _out,
+                source_tag=QD_M3_YTD_DISK_TAG,
+                version=QD_M3_YTD_DISK_VERSION,
+            )
+        return _out
 
-    lock_y, lock_m = year, month
-    if lock_y is None or lock_m is None:
-        lock_y, lock_m = _normalize_period(None, None)
     return locked_call(f"qualdir_qd_m3_v6_{lock_y}_{lock_m:02d}", _runner)
