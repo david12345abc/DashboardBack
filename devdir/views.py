@@ -66,8 +66,8 @@ def _fill_rd_m1_zpr_monthly_tile(
     entry['monthly_data'] = []
     entry['last_full_month_row'] = None
     entry['ytd'] = {
-        'total_plan': 0.0,
-        'total_fact': 0.0,
+        'total_plan': None,
+        'total_fact': None,
         'kpi_pct': None,
         'months_with_data': 0,
         'months_total': 0,
