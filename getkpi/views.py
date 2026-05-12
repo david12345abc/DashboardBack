@@ -93,6 +93,8 @@ def _get_kpi_dicts(department: str) -> list[dict]:
         rows = logistics_views.normalize_kpi_definitions(department, rows)
     if _is_chief_constructor_department(department):
         rows = _normalize_chief_constructor_kpi_definitions(department, rows)
+    if _is_chief_metrolog_department(department):
+        rows = _normalize_chief_metrolog_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         rows = _filter_prod_deputy_rows_for_department(department, rows)
@@ -129,6 +131,8 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
         rows = logistics_views.normalize_kpi_definitions(department, rows)
     if _is_chief_constructor_department(department):
         rows = _normalize_chief_constructor_kpi_definitions(department, rows)
+    if _is_chief_metrolog_department(department):
+        rows = _normalize_chief_metrolog_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         rows = _filter_prod_deputy_rows_for_department(department, rows)
@@ -350,6 +354,18 @@ def _is_chief_metrolog_department(dept: str | None) -> bool:
     return normalized == 'главный метролог'
 
 
+CHIEF_METROLOG_TILE_ORDER = (
+    'METD-M1',
+    'METD-M2',
+    'METD-M3.B',
+    'METD-M3.F',
+    'METD-Q1',
+    'METD-Q3',
+    'METD-Q4',
+    'METD-Q2',
+)
+
+
 def _required_prod_deputy_kpi_ids(department: str | None) -> set[str]:
     if _is_production_director_department(department):
         return {
@@ -447,6 +463,103 @@ def _normalize_chief_constructor_kpi_definitions(department: str, rows: list[dic
         split_rows = _chief_constructor_split_m3_rows(department, source_m3)
         normalized.extend(row for row in split_rows if str(row.get('kpi_id') or '') not in current_ids)
     return normalized
+
+
+def _metrolog_row_template(rows: list[dict], *ids: str) -> dict:
+    by_id = {str(row.get('kpi_id') or ''): row for row in rows}
+    for kpi_id in ids:
+        if kpi_id in by_id:
+            return dict(by_id[kpi_id])
+    return {
+        'department': 'Главный метролог',
+        'block': 'плитка',
+        'frequency': 'Ежемесячно',
+        'perspective': 'Финансы',
+        'goal': '',
+        'formula': '',
+        'unit': '%',
+        'source': '',
+        'monthly_target': None,
+        'quarterly_target': None,
+        'yearly_target': None,
+        'green_threshold': '≥90%',
+        'yellow_threshold': '80–89,9%',
+        'red_threshold': '<80%',
+        'weight_pct': 0.0,
+    }
+
+
+def _normalize_chief_metrolog_kpi_definitions(department: str, rows: list[dict]) -> list[dict]:
+    """Keep only approved Chief Metrologist tiles and split budget/FOT."""
+    if not _is_chief_metrolog_department(department):
+        return rows
+
+    combined_m3 = _metrolog_row_template(rows, 'METD-M3', 'МЕТ-M3-2')
+    budget = {
+        **combined_m3,
+        'department': department,
+        'kpi_id': 'METD-M3.B',
+        'name': 'Бюджет метрологической службы в пределах лимита',
+        'goal': 'Контролировать бюджет метрологической службы в пределах лимита',
+        'formula': 'Факт бюджета / План бюджета × 100%',
+        'unit': '%',
+    }
+    fot = {
+        **combined_m3,
+        'department': department,
+        'kpi_id': 'METD-M3.F',
+        'name': 'ФОТ метрологической службы в пределах лимита',
+        'goal': 'Контролировать ФОТ метрологической службы в пределах лимита',
+        'formula': 'Факт ФОТ / План ФОТ × 100%',
+        'unit': '%',
+    }
+
+    q1_source = _metrolog_row_template(rows, 'METD-Q1', 'МЕТ-Q4-1')
+    q1 = {
+        **q1_source,
+        'department': department,
+        'kpi_id': 'METD-Q1',
+        'name': 'Доля проектов МС без отклонения >10 р.д.',
+        'goal': 'Контролировать проекты МС без отклонений по вехам более 10 рабочих дней',
+        'formula': 'Проекты МС без отклонения >10 р.д. / Все активные проекты МС × 100%',
+        'unit': '%',
+    }
+
+    q4_source = _metrolog_row_template(rows, 'METD-Q4', 'МЕТ-Q4-2')
+    q4 = {
+        **q4_source,
+        'department': department,
+        'kpi_id': 'METD-Q4',
+        'name': 'Доля проектов МС без отклонения бюджета <10%',
+        'goal': 'Контролировать проекты МС без отклонения бюджета более 10%',
+        'formula': 'Проекты МС без отклонения бюджета <10% / Все активные проекты МС × 100%',
+        'unit': '%',
+        'source': q4_source.get('source') or 'Turbo Project',
+    }
+
+    by_id = {str(row.get('kpi_id') or ''): dict(row) for row in rows}
+    normalized_by_id = {
+        'METD-M1': by_id.get('METD-M1') or _metrolog_row_template(rows, 'МЕТ-M1'),
+        'METD-M2': by_id.get('METD-M2') or _metrolog_row_template(rows, 'МЕТ-M2'),
+        'METD-M3.B': budget,
+        'METD-M3.F': fot,
+        'METD-Q1': q1,
+        'METD-Q2': by_id.get('METD-Q2') or _metrolog_row_template(rows, 'МЕТ-Q5'),
+        'METD-Q3': by_id.get('METD-Q3') or _metrolog_row_template(rows),
+        'METD-Q4': q4,
+    }
+
+    result = []
+    for pos, kpi_id in enumerate(CHIEF_METROLOG_TILE_ORDER):
+        row = dict(normalized_by_id[kpi_id])
+        row['department'] = department
+        row['kpi_id'] = kpi_id
+        row['block'] = 'плитка'
+        row['position'] = pos
+        result.append(row)
+    return result
+
+
 def _is_gspp_department(dept: str | None) -> bool:
     normalized = re.sub(
         r'\s+', ' ', unicodedata.normalize('NFKC', (dept or '').strip()).lower(),
@@ -532,7 +645,7 @@ def _normalize_dashboard_kpi_id(raw: object) -> str:
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     """Плитки «в пределах лимита»: M3 плюс разрез ПЦ1/ПЦ2 для зам. операционного."""
     normalized = (kpi_id or '').upper()
-    if normalized in {'LOG-M3.B', 'LOG-M3.F'}:
+    if normalized in {'LOG-M3.B', 'LOG-M3.F', 'METD-M3.B', 'METD-M3.F'}:
         return True
     if normalized.startswith('PD-M3.B') or normalized.startswith('PD-M3.F'):
         return True
@@ -597,7 +710,7 @@ def _budget_fact_div_plan_pct(entry: dict) -> float | None:
 
 
 def _rag_budget_fact_div_plan(pct: float | None) -> str:
-    """Бюджет OD-M3.1: до 90% — зелёный, 90–100% — жёлтый, иначе — красный."""
+    """Лимитные бюджет/ФОТ KPI: до 90% — зелёный, 90–100% — жёлтый, иначе — красный."""
     if pct is None:
         return 'unknown'
     if pct <= 90:
@@ -697,7 +810,7 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         turnover = last_row.get('fact') if md else None
         color_src = pct if pct is not None else turnover
         color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
-    elif kid == 'OD-M3.1':
+    elif kid in {'OD-M3.1', 'OD-M3.2'}:
         pct = _budget_fact_div_plan_pct(entry)
         color = _rag_budget_fact_div_plan(pct)
     elif (logistics_color := logistics_views.tile_color(kid, entry)) is not None:
@@ -1483,6 +1596,13 @@ def _build_universal_payload(
                 tile['kpi_pct'] = tpct
             tile['color'] = _rag_higher_better(float(tpct) if tpct is not None else None)
 
+        if kpi.get('kpi_id') in {'OD-M3.1', 'OD-M3.2'}:
+            tpct = _budget_fact_div_plan_pct({'last_full_month_row': tile})
+            if tpct is not None:
+                tile['kpi_pct'] = tpct
+            tile['color'] = _rag_budget_fact_div_plan(float(tpct) if tpct is not None else None)
+            tile['pct_lower_is_better'] = True
+
         logistics_views.apply_tile_overrides(kpi, tile)
         logistics_views.apply_tile_value_overrides(kpi, tile, entry)
 
@@ -1941,27 +2061,66 @@ def _build_kpi_entry(
             return entry
 
     if kpi_id == 'METD-Q3':
-        from . import calc_metrolog_projects
-
         if year and month:
             ref_y, ref_m = year, month
         else:
             today = date.today()
             ref_y, ref_m = today.year, today.month
-        data = cache_manager.locked_call(
-            f'metrolog_cert_projects_{ref_y}_{ref_m}',
-            calc_metrolog_projects.get_certification_projects_without_major_deviation_monthly,
-            year=ref_y,
-            month=ref_m,
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = []
+        entry['last_full_month_row'] = {
+            'month': ref_m,
+            'year': ref_y,
+            'month_name': MONTH_NAMES.get(ref_m, str(ref_m)),
+            'plan': None,
+            'fact': None,
+            'kpi_pct': None,
+            'has_data': False,
+        }
+        entry['ytd'] = {
+            'total_plan': None,
+            'total_fact': None,
+            'kpi_pct': None,
+            'months_with_data': 0,
+            'months_total': 0,
+        }
+        entry['kpi_period'] = {
+            'type': 'last_full_month',
+            'year': ref_y,
+            'month': ref_m,
+            'month_name': MONTH_NAMES.get(ref_m, str(ref_m)),
+        }
+        entry['debug'] = {
+            'status': 'methodology_pending',
+            'reason': 'Не задана методика получения проектов отдела сертификации',
+        }
+        return entry
+
+    if kpi_id == 'METD-Q4':
+        plan = 100.0
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = _generate_monthly_data(
+            plan,
+            ref_year=year,
+            ref_month=month,
         )
-        if data is not None:
-            entry['data_granularity'] = data.get('data_granularity', 'monthly')
-            entry['monthly_data'] = data.get('monthly_data') or []
-            entry['last_full_month_row'] = data.get('last_full_month_row')
-            entry['ytd'] = data.get('ytd') or {}
-            entry['kpi_period'] = data.get('kpi_period')
-            entry['debug'] = data.get('debug')
-            return entry
+        entry['last_full_month_row'] = entry['monthly_data'][-1] if entry['monthly_data'] else None
+        if entry['last_full_month_row']:
+            lm = entry['last_full_month_row']
+            entry['ytd'] = {
+                'total_plan': lm.get('plan'),
+                'total_fact': lm.get('fact'),
+                'kpi_pct': lm.get('kpi_pct'),
+                'months_with_data': len(entry['monthly_data']),
+                'months_total': len(entry['monthly_data']),
+            }
+            entry['kpi_period'] = {
+                'type': 'last_full_month',
+                'year': lm.get('year'),
+                'month': lm.get('month'),
+                'month_name': lm.get('month_name'),
+            }
+        return entry
 
     if kpi_id in {'GK-M3.B', 'GK-M3.F'}:
         plan = 100.0
