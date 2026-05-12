@@ -345,6 +345,11 @@ def _is_chief_constructor_department(dept: str | None) -> bool:
     return normalized == 'главный конструктор'
 
 
+def _is_chief_metrolog_department(dept: str | None) -> bool:
+    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
+    return normalized == 'главный метролог'
+
+
 def _required_prod_deputy_kpi_ids(department: str | None) -> set[str]:
     if _is_production_director_department(department):
         return {
@@ -1494,7 +1499,7 @@ def _build_universal_payload(
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
             tile['unit'] = 'чел.'
-        elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'} or _kid_tile in {'MET-Q4-1', 'METD-Q1'}:
+        elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'} or _kid_tile in {'MET-Q4-1', 'METD-Q1', 'METD-Q3'}:
             tile['unit'] = 'шт.'
 
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1'}:
@@ -1574,6 +1579,7 @@ def _build_universal_payload(
         not techdir_dashboard.is_techdir_department(dept)
         and not _is_prod_deputy_department(dept)
         and not _is_chief_constructor_department(dept)
+        and not _is_chief_metrolog_department(dept)
     )
 
     if include_generic_tables:
@@ -1664,6 +1670,18 @@ def _build_universal_payload(
             gk_m1_table = None
         if gk_m1_table:
             tablitsy['GK-T-M1-DEVIATIONS'] = gk_m1_table
+
+    if _is_chief_metrolog_department(dept) or 'METD-Q1' in entries_by_id or 'МЕТ-Q4-1' in entries_by_id:
+        try:
+            from . import calc_metrolog_projects
+
+            metrolog_table = calc_metrolog_projects.get_metrolog_project_deviation_table(month=ref_m, year=ref_y)
+        except Exception:
+            metrolog_table = None
+        if metrolog_table:
+            # Reuse the already supported project-deviation table key so older loaded frontend code
+            # renders metrologist project rows without waiting for a static JS refresh.
+            tablitsy['GK-T-M1-DEVIATIONS'] = metrolog_table
 
     return {
         'month': ref_m,
@@ -1910,6 +1928,29 @@ def _build_kpi_entry(
         data = cache_manager.locked_call(
             f'metrolog_projects_hozyan_{ref_y}_{ref_m}',
             calc_metrolog_projects.get_metrolog_projects_without_major_deviation_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            entry['debug'] = data.get('debug')
+            return entry
+
+    if kpi_id == 'METD-Q3':
+        from . import calc_metrolog_projects
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'metrolog_cert_projects_{ref_y}_{ref_m}',
+            calc_metrolog_projects.get_certification_projects_without_major_deviation_monthly,
             year=ref_y,
             month=ref_m,
         )

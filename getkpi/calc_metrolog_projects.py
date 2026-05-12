@@ -18,6 +18,8 @@ from .calc_chief_constructor_projects import (
     _normalize_ref_period,
     _project_date_bounds,
     _project_delay_details,
+    _project_status_label,
+    _project_timeline_label,
 )
 from .calc_prod_deputy_projects import (
     _api_get,
@@ -31,8 +33,9 @@ from .turboproject_config import TIMEOUT
 logger = logging.getLogger(__name__)
 
 CACHE_PATH = cache_manager.CACHE_DIR / "metrolog_projects_snapshot.json"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 TARGET_OWNER = "Хозуян"
+CERTIFICATION_DEPARTMENT_MARKERS = ("сертификац", "омис")
 
 
 def _load_cache() -> dict | None:
@@ -87,6 +90,22 @@ def _is_target_owner_project(data_1c: dict[str, Any]) -> bool:
     )
 
 
+def _normalize_project_marker(value: Any) -> str:
+    raw = str(value or "").strip().lower().replace("ё", "е")
+    raw = re.sub(r"[^0-9a-zа-я]+", " ", raw)
+    return " ".join(raw.split())
+
+
+def _is_certification_department_project(data_1c: dict[str, Any]) -> bool:
+    values = (
+        data_1c.get("podrazdelenie"),
+        data_1c.get("nomer_proekta"),
+        data_1c.get("tip_proekta"),
+    )
+    haystack = " ".join(_normalize_project_marker(value) for value in values)
+    return any(marker in haystack for marker in CERTIFICATION_DEPARTMENT_MARKERS)
+
+
 def _project_summary(summary_item: dict[str, Any], details: dict[str, Any]) -> dict[str, Any]:
     data_1c = details.get("data_1c") or {}
     project_meta = details.get("project") or {}
@@ -125,6 +144,7 @@ def _compute_projects_snapshot() -> dict:
     summary = _api_get(session, "/api/projects/files", token)
     items = summary.get("items") or []
     projects: list[dict[str, Any]] = []
+    certification_projects: list[dict[str, Any]] = []
 
     for item in items:
         file_id = item.get("id")
@@ -132,18 +152,27 @@ def _compute_projects_snapshot() -> dict:
             continue
         details = _api_get(session, f"/api/projects/files/{file_id}", token)
         data_1c = details.get("data_1c") or {}
-        if not _is_target_owner_project(data_1c):
+        is_owner_project = _is_target_owner_project(data_1c)
+        is_certification_project = _is_certification_department_project(data_1c)
+        if not is_owner_project and not is_certification_project:
             continue
-        projects.append(_project_summary(item, details))
+        summary_row = _project_summary(item, details)
+        if is_owner_project:
+            projects.append(summary_row)
+        if is_certification_project:
+            certification_projects.append(summary_row)
 
     payload = {
         "projects": projects,
+        "certification_projects": certification_projects,
         "debug": {
             "source": "metrolog_projects",
             "target_owner": TARGET_OWNER,
             "owner_fields": ["kurator", "rukovoditel"],
+            "certification_markers": list(CERTIFICATION_DEPARTMENT_MARKERS),
             "all_projects_count": len(items),
             "target_projects_count": len(projects),
+            "certification_projects_count": len(certification_projects),
             "timeout": TIMEOUT,
         },
     }
@@ -222,4 +251,153 @@ def get_metrolog_projects_without_major_deviation_monthly(
         }
     except Exception:
         logger.exception("Ошибка при расчёте проектов главного метролога")
+        return None
+
+
+def _build_projects_without_major_deviation_monthly(
+    projects: list[dict[str, Any]],
+    *,
+    year: int | None,
+    month: int | None,
+    debug: dict[str, Any] | None = None,
+) -> dict:
+    ref_y, ref_m = _normalize_ref_period(year, month)
+    rows: list[dict[str, Any]] = []
+    ref_row: dict[str, Any] | None = None
+
+    for y, m in _month_pairs_until(ref_y, ref_m):
+        _month_start, month_end = _month_start_end(y, m)
+        as_of_date = min(month_end, date.today())
+        month_projects = [project for project in projects if _project_is_alive_in_month(project, y, m)]
+        ok_projects = []
+        for project in month_projects:
+            max_delay, _details = _project_delay_details(project, as_of_date)
+            if max_delay < MAX_ALLOWED_DELAY_WORKDAYS:
+                ok_projects.append(project)
+        plan_count = len(month_projects)
+        fact_count = len(ok_projects)
+        row = {
+            "month": m,
+            "year": y,
+            "month_name": MONTH_NAMES[m],
+            "plan": plan_count,
+            "fact": fact_count,
+            "kpi_pct": round(fact_count / plan_count * 100, 1) if plan_count else None,
+            "has_data": plan_count > 0,
+            "values_unit": "шт.",
+            "max_allowed_delay_workdays": MAX_ALLOWED_DELAY_WORKDAYS,
+        }
+        rows.append(row)
+        if (y, m) == (ref_y, ref_m):
+            ref_row = row
+
+    return {
+        "data_granularity": "monthly",
+        "monthly_data": rows,
+        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+        "kpi_period": {
+            "type": "last_full_month",
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "ytd": {
+            "total_plan": ref_row.get("plan") if ref_row else None,
+            "total_fact": ref_row.get("fact") if ref_row else None,
+            "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+            "months_with_data": sum(1 for row in rows if row.get("has_data")),
+            "months_total": len(rows),
+            "values_unit": "шт.",
+        },
+        "debug": debug or {},
+    }
+
+
+def get_certification_projects_without_major_deviation_monthly(
+    year: int | None = None,
+    month: int | None = None,
+) -> dict | None:
+    """Plan/fact for certification department projects without >10 workday milestone deviations."""
+    try:
+        snapshot = _compute_projects_snapshot()
+        projects = list(snapshot.get("certification_projects") or [])
+        return _build_projects_without_major_deviation_monthly(
+            projects,
+            year=year,
+            month=month,
+            debug={
+                **(snapshot.get("debug") or {}),
+                "filter": "certification department markers",
+            },
+        )
+    except Exception:
+        logger.exception("Ошибка при расчёте проектов отдела сертификации главного метролога")
+        return None
+
+
+def _public_milestone_details(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in details:
+        delay = int(item.get("delay_workdays") or 0)
+        rows.append({
+            **item,
+            "delay_days": delay,
+        })
+    return rows
+
+
+def get_metrolog_project_deviation_table(month: int | None = None, year: int | None = None) -> dict[str, Any] | None:
+    """Projects where Hozuyan is owner and milestone deviation is over 10 working days."""
+    try:
+        snapshot = _compute_projects_snapshot()
+        projects = list(snapshot.get("projects") or [])
+        ref_y, ref_m = _normalize_ref_period(year, month)
+        _month_start, month_end = _month_start_end(ref_y, ref_m)
+        as_of_date = min(month_end, date.today())
+        rows: list[dict[str, Any]] = []
+
+        for project in projects:
+            if not _project_is_alive_in_month(project, ref_y, ref_m):
+                continue
+            max_delay, milestone_details = _project_delay_details(project, as_of_date)
+            if max_delay <= MAX_ALLOWED_DELAY_WORKDAYS:
+                continue
+            public_details = _public_milestone_details(milestone_details)
+            rows.append({
+                "number": len(rows) + 1,
+                "project_code": project.get("project_code") or "",
+                "project_name": project.get("project_name") or "",
+                "project_manager": project.get("project_manager") or "",
+                "timeline": _project_timeline_label(project),
+                "deviation": f"{len(public_details)} вех., {max_delay} р.д.",
+                "delay_days": max_delay,
+                "delay_workdays": max_delay,
+                "status": _project_status_label(project),
+                "progress_pct": project.get("project_progress_pct"),
+                "kurator": project.get("kurator") or "",
+                "milestone_deviations": public_details,
+            })
+
+        rows.sort(
+            key=lambda row: (
+                -(int(row.get("delay_workdays") or 0)),
+                str(row.get("project_name") or ""),
+            )
+        )
+        for index, row in enumerate(rows, start=1):
+            row["number"] = index
+
+        return {
+            "name": "Проекты метрологической службы с отклонениями >10 р.д.",
+            "periodicity": "ежемесячно",
+            "description": (
+                "Проекты TurboProject, где Хозуян указан куратором или руководителем проекта, "
+                "и отклонение по вехам больше 10 рабочих дней."
+            ),
+            "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES[ref_m]},
+            "columns": ["№ 1С", "Название", "РП", "Сроки", "Отклонение", "Статус", "Прогресс"],
+            "rows": rows,
+        }
+    except Exception:
+        logger.exception("Ошибка при построении таблицы проектов главного метролога")
         return None
