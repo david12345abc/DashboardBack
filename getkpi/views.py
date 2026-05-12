@@ -30,6 +30,7 @@ from . import (
     techdir_projects,
     valovaya_pribyl,
 )
+from getkpi.devdir import turboproject_projects_by_resources as _devdir_turboproject_projects
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
 from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter, pick_monthly_row_for_period
@@ -389,6 +390,11 @@ def _normalize_dashboard_kpi_id(raw: object) -> str:
     return s
 
 
+def _is_gspp_m5_tile(kpi: dict) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    return kid in {'GSP-M5', 'GSPP-M5', 'ГСП-M5', 'ГСПП-M5'}
+
+
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     """Плитки «в пределах лимита»: поддерживаем суффиксы *-M3-1/*-M3-2 и *.1/*.2."""
     normalized = (kpi_id or '').upper()
@@ -547,6 +553,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_budget_fact_div_plan(pct)
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
+    elif kid == 'RD-M3-1':
+        color = _rag_higher_better(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
         color = _rag_td_m4_limit(pct)
     elif _is_budget_limit_m3_kpi(kid):
@@ -1154,6 +1162,8 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-M1':
             tile['unit'] = 'шт.'
+        elif _kid_tile == 'RD-M3-1':
+            tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-Q2':
             tile['unit'] = 'чел.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
@@ -1217,7 +1227,7 @@ def _build_universal_payload(
 
     tablitsy = {}
 
-    if not techdir_dashboard.is_techdir_department(dept):
+    if not techdir_dashboard.is_techdir_department(dept) and not _is_devdir_department(dept):
         try:
             rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
         except Exception:
@@ -1264,6 +1274,17 @@ def _build_universal_payload(
 
     if techdir_dashboard.is_techdir_department(dept):
         techdir_dashboard.merge_deviation_tables(tablitsy, ref_y, ref_m)
+
+    if _is_devdir_department(dept):
+        try:
+            devdir_table = _devdir_turboproject_projects.get_projects_deviation_table(
+                year=ref_y,
+                month=ref_m,
+            )
+        except Exception:
+            devdir_table = None
+        if devdir_table and (devdir_table.get('rows') or []):
+            tablitsy['DEVDIR-T-PROJECTS-DEVIATIONS'] = devdir_table
 
     if _is_gspp_department(dept):
         _gspp_kpi_views.merge_gspp_tables_into_universal_payload(tablitsy, ref_y, ref_m)
@@ -1754,6 +1775,39 @@ def _build_kpi_entry(
                     'months_with_data': 0,
                     'months_total': 0,
                 }
+
+    if _is_gspp_m5_tile(kpi):
+        today = date.today()
+        ref_y = int(year) if year is not None else today.year
+        ref_m = int(month) if month is not None else today.month
+        ref_m = max(1, min(12, ref_m))
+        fixed_plan = 122341.4
+        fixed_fact = 0.0
+        fixed_row = {
+            'month': ref_m,
+            'year': ref_y,
+            'month_name': MONTH_NAMES[ref_m],
+            'plan': fixed_plan,
+            'fact': fixed_fact,
+            'kpi_pct': 0.0,
+            'has_data': True,
+        }
+        entry['data_granularity'] = 'monthly'
+        entry['monthly_data'] = [dict(fixed_row)]
+        entry['last_full_month_row'] = dict(fixed_row)
+        entry['ytd'] = {
+            'total_plan': fixed_plan,
+            'total_fact': fixed_fact,
+            'kpi_pct': 0.0,
+            'months_with_data': 1,
+            'months_total': 1,
+        }
+        entry['kpi_period'] = {
+            'type': 'last_full_month',
+            'year': ref_y,
+            'month': ref_m,
+            'month_name': MONTH_NAMES[ref_m],
+        }
 
     return entry
 
