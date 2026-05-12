@@ -119,7 +119,7 @@
       "planovaya_data_nachala": "2025-09-24",
       "planovaya_data_okonchaniya": "2026-08-30",
       "data_okonchaniya": "2026-08-30",
-      "overdue_milestones_count": 23,
+      "overdue_milestones_count": 28,
       "project_progress_pct": 53.7,
       "milestone_months": [
         "2025-09",
@@ -281,6 +281,36 @@
           "start_date": "2026-05-07T09:00:00",
           "finish_date": "2026-05-07T09:00:00",
           "percent_complete": 0.0
+        },
+        {
+          "name": "Каркас изготовлен",
+          "start_date": "2026-05-08T09:00:00",
+          "finish_date": "2026-05-08T09:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Образцы направлены на испытания",
+          "start_date": "2026-05-08T12:00:00",
+          "finish_date": "2026-05-08T12:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "совет по качеству ",
+          "start_date": "2026-05-08T12:00:00",
+          "finish_date": "2026-05-08T12:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Совет по качеству",
+          "start_date": "2026-05-08T14:00:00",
+          "finish_date": "2026-05-08T14:11:24",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Сопровождение получения экспертизы май выполнена ",
+          "start_date": "2026-05-08T14:11:24",
+          "finish_date": "2026-05-08T14:11:24",
+          "percent_complete": 0.0
         }
       ],
       "byudzhet_plan": 31072877.21,
@@ -362,8 +392,8 @@
       "planovaya_data_nachala": "2026-04-15",
       "planovaya_data_okonchaniya": "2026-11-10",
       "data_okonchaniya": null,
-      "overdue_milestones_count": 6,
-      "project_progress_pct": 2.6,
+      "overdue_milestones_count": 3,
+      "project_progress_pct": 4.4,
       "milestone_months": [
         "2026-04",
         "2026-05",
@@ -389,24 +419,6 @@
           "name": "Поставка товара ",
           "start_date": "2026-05-06T14:43:48",
           "finish_date": "2026-05-06T14:43:48",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "окна двери  для блокбокса на складе",
-          "start_date": "2026-05-06T15:55:12",
-          "finish_date": "2026-05-06T15:55:12",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Утеплитель  для блокбокса на складе",
-          "start_date": "2026-05-06T16:09:00",
-          "finish_date": "2026-05-06T16:09:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Сэндвичпанели   для блокбокса на складе",
-          "start_date": "2026-05-07T11:09:00",
-          "finish_date": "2026-05-07T11:09:00",
           "percent_complete": 0.0
         },
         {
@@ -534,8 +546,8 @@
       "planovaya_data_nachala": "2026-03-03",
       "planovaya_data_okonchaniya": "2026-10-01",
       "data_okonchaniya": "2026-10-01",
-      "overdue_milestones_count": 3,
-      "project_progress_pct": 34.6,
+      "overdue_milestones_count": 4,
+      "project_progress_pct": 34.2,
       "milestone_months": [
         "2025-11",
         "2026-03",
@@ -568,6 +580,12 @@
           "name": "Пожарная сигнализация разработана",
           "start_date": "2026-05-05T14:00:00",
           "finish_date": "2026-05-05T14:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Каркас сварен",
+          "start_date": "2026-05-08T09:00:00",
+          "finish_date": "2026-05-08T09:00:00",
           "percent_complete": 0.0
         }
       ],
@@ -916,16 +934,16 @@
       "tip_proekta": "ВнешнийЗаказ",
       "podrazdelenie": "Цех БМИ",
       "status_proekta": "ВРаботе",
-      "start_date": "2009-11-16T08:00:00",
-      "finish_date": "2026-06-30T09:00:00",
+      "start_date": "2024-07-26T08:00:00",
+      "finish_date": "2026-07-01T16:00:00",
       "baseline_start": "2009-11-16T08:00:00",
       "baseline_finish": "2026-06-30T12:00:00",
       "data_nachala": "2024-09-06",
       "planovaya_data_nachala": "2024-09-06",
       "planovaya_data_okonchaniya": "2025-04-18",
       "data_okonchaniya": "2026-06-30",
-      "overdue_milestones_count": 23,
-      "project_progress_pct": 74.8,
+      "overdue_milestones_count": 25,
+      "project_progress_pct": 74.5,
       "milestone_months": [
         "2009-11",
         "2024-07",
@@ -946,7 +964,8 @@
         "2026-03",
         "2026-04",
         "2026-05",
-        "2026-06"
+        "2026-06",
+        "2026-07"
       ],
       "overdue_milestone_months": [
         "2025-02",
@@ -1093,6 +1112,18 @@
           "name": "Совет по качеству ",
           "start_date": "2026-05-05T09:30:00",
           "finish_date": "2026-05-05T09:30:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Перемещение   комплектующих КМЧ  выполнены",
+          "start_date": "2026-05-08T10:00:00",
+          "finish_date": "2026-05-08T10:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Совет по качеству ",
+          "start_date": "2026-05-08T10:00:00",
+          "finish_date": "2026-05-08T10:00:00",
           "percent_complete": 0.0
         }
       ],
@@ -1289,7 +1320,7 @@
         "planovaya_data_nachala": "2025-09-24",
         "planovaya_data_okonchaniya": "2026-08-30",
         "data_okonchaniya": "2026-08-30",
-        "overdue_milestones_count": 23,
+        "overdue_milestones_count": 28,
         "project_progress_pct": 53.7,
         "milestone_months": [
           "2025-09",
@@ -1451,6 +1482,36 @@
             "start_date": "2026-05-07T09:00:00",
             "finish_date": "2026-05-07T09:00:00",
             "percent_complete": 0.0
+          },
+          {
+            "name": "Каркас изготовлен",
+            "start_date": "2026-05-08T09:00:00",
+            "finish_date": "2026-05-08T09:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Образцы направлены на испытания",
+            "start_date": "2026-05-08T12:00:00",
+            "finish_date": "2026-05-08T12:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "совет по качеству ",
+            "start_date": "2026-05-08T12:00:00",
+            "finish_date": "2026-05-08T12:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Совет по качеству",
+            "start_date": "2026-05-08T14:00:00",
+            "finish_date": "2026-05-08T14:11:24",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Сопровождение получения экспертизы май выполнена ",
+            "start_date": "2026-05-08T14:11:24",
+            "finish_date": "2026-05-08T14:11:24",
+            "percent_complete": 0.0
           }
         ],
         "byudzhet_plan": 31072877.21,
@@ -1532,8 +1593,8 @@
         "planovaya_data_nachala": "2026-04-15",
         "planovaya_data_okonchaniya": "2026-11-10",
         "data_okonchaniya": null,
-        "overdue_milestones_count": 6,
-        "project_progress_pct": 2.6,
+        "overdue_milestones_count": 3,
+        "project_progress_pct": 4.4,
         "milestone_months": [
           "2026-04",
           "2026-05",
@@ -1559,24 +1620,6 @@
             "name": "Поставка товара ",
             "start_date": "2026-05-06T14:43:48",
             "finish_date": "2026-05-06T14:43:48",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "окна двери  для блокбокса на складе",
-            "start_date": "2026-05-06T15:55:12",
-            "finish_date": "2026-05-06T15:55:12",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Утеплитель  для блокбокса на складе",
-            "start_date": "2026-05-06T16:09:00",
-            "finish_date": "2026-05-06T16:09:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Сэндвичпанели   для блокбокса на складе",
-            "start_date": "2026-05-07T11:09:00",
-            "finish_date": "2026-05-07T11:09:00",
             "percent_complete": 0.0
           },
           {
@@ -1704,8 +1747,8 @@
         "planovaya_data_nachala": "2026-03-03",
         "planovaya_data_okonchaniya": "2026-10-01",
         "data_okonchaniya": "2026-10-01",
-        "overdue_milestones_count": 3,
-        "project_progress_pct": 34.6,
+        "overdue_milestones_count": 4,
+        "project_progress_pct": 34.2,
         "milestone_months": [
           "2025-11",
           "2026-03",
@@ -1738,6 +1781,12 @@
             "name": "Пожарная сигнализация разработана",
             "start_date": "2026-05-05T14:00:00",
             "finish_date": "2026-05-05T14:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Каркас сварен",
+            "start_date": "2026-05-08T09:00:00",
+            "finish_date": "2026-05-08T09:00:00",
             "percent_complete": 0.0
           }
         ],
@@ -2086,16 +2135,16 @@
         "tip_proekta": "ВнешнийЗаказ",
         "podrazdelenie": "Цех БМИ",
         "status_proekta": "ВРаботе",
-        "start_date": "2009-11-16T08:00:00",
-        "finish_date": "2026-06-30T09:00:00",
+        "start_date": "2024-07-26T08:00:00",
+        "finish_date": "2026-07-01T16:00:00",
         "baseline_start": "2009-11-16T08:00:00",
         "baseline_finish": "2026-06-30T12:00:00",
         "data_nachala": "2024-09-06",
         "planovaya_data_nachala": "2024-09-06",
         "planovaya_data_okonchaniya": "2025-04-18",
         "data_okonchaniya": "2026-06-30",
-        "overdue_milestones_count": 23,
-        "project_progress_pct": 74.8,
+        "overdue_milestones_count": 25,
+        "project_progress_pct": 74.5,
         "milestone_months": [
           "2009-11",
           "2024-07",
@@ -2116,7 +2165,8 @@
           "2026-03",
           "2026-04",
           "2026-05",
-          "2026-06"
+          "2026-06",
+          "2026-07"
         ],
         "overdue_milestone_months": [
           "2025-02",
@@ -2264,6 +2314,18 @@
             "start_date": "2026-05-05T09:30:00",
             "finish_date": "2026-05-05T09:30:00",
             "percent_complete": 0.0
+          },
+          {
+            "name": "Перемещение   комплектующих КМЧ  выполнены",
+            "start_date": "2026-05-08T10:00:00",
+            "finish_date": "2026-05-08T10:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Совет по качеству ",
+            "start_date": "2026-05-08T10:00:00",
+            "finish_date": "2026-05-08T10:00:00",
+            "percent_complete": 0.0
           }
         ],
         "byudzhet_plan": 123747424.11,
@@ -2335,7 +2397,7 @@
       }
     ]
   },
-  "cache_date": "2026-05-08",
+  "cache_date": "2026-05-12",
   "cache_version": 12,
   "od_overdue_milestones_schema": "zero_duration_milestones_v1"
 }
