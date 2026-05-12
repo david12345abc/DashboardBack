@@ -14,9 +14,8 @@ def get_td_m2_ytd() -> dict:
     Заглушка для TD-M2:
     «Отсутствие критичных нарушений по ИБ/ПБ/экологии».
 
-    Пока нет утверждённой методики и подтверждённого источника данных,
-    поэтому модуль возвращает пустой payload совместимого формата.
-    Это позволяет не подмешивать синтетические значения в плитку.
+    Пока нет утверждённой методики и источника данных — план и факт по месяцам и в YTD
+    явно **0** (числа), чтобы плитка и API показывали нули, а не пустые поля.
     """
     today = date.today()
     ref_y, ref_m = today.year, today.month
@@ -27,30 +26,33 @@ def get_td_m2_ytd() -> dict:
             "month": m,
             "year": y,
             "month_name": MONTH_NAMES[m],
-            "plan": None,
-            "fact": None,
+            "plan": 0.0,
+            "fact": 0.0,
             "kpi_pct": None,
-            "has_data": False,
+            "has_data": True,
+            "values_unit": "шт.",
         }
         for y, m in pairs
     ]
+    ref_row = monthly_rows[-1] if monthly_rows else None
 
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
-        "last_full_month_row": None,
+        "last_full_month_row": dict(ref_row) if ref_row else None,
         "kpi_period": {
-            "type": "placeholder",
+            "type": "last_full_month",
             "year": ref_y,
             "month": ref_m,
             "month_name": MONTH_NAMES[ref_m],
         },
         "ytd": {
-            "total_plan": None,
-            "total_fact": None,
+            "total_plan": 0.0,
+            "total_fact": 0.0,
             "kpi_pct": None,
-            "months_with_data": 0,
+            "months_with_data": len(monthly_rows),
             "months_total": len(monthly_rows),
+            "values_unit": "шт.",
         },
         "debug": {
             "status": "placeholder",

@@ -80,8 +80,11 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     )
     from .calc_prod_deputy_pc_common import cache_path as prod_deputy_pc_cache_path
     from .devdir import rd_m1_zpr, rd_m3_budget, rd_m4_fot
+    from . import gspp_q4
+    from .devdir import rd_m1_zpr, rd_m3_budget, rd_m4_fot, rd_q2_tekuchest
     from .komdir_claims import fetch_claims_for_month
-    from qualdir.turnover import get_qd_q2_ytd, turnover_month_cache_path
+    from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4
+    from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
 
     y, m = ref_y, ref_m
     cd = CACHE_DIR
@@ -167,9 +170,25 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          techdir_tekuchet._cache_path(y, m),
          lambda: techdir_tekuchet.get_td_q2_ytd(year=y, month=m)),
 
-        ('qualdir_tekuchet',
-         turnover_month_cache_path(y, m),
-         lambda: get_qd_q2_ytd(year=y, month=m)),
+        ('qualdir_qd_q2_ytd',
+         qd_q2_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: get_qd_q2_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m3_ytd_{y}_{m}',
+         qd_m3.qd_m3_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m3.get_qd_m3_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m4_ytd_{y}_{m}',
+         qd_m4.qd_m4_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m4.get_qd_m4_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m1_tile_{y}_{m}',
+         qd_m1.qd_m1_tile_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m1.get_qd_m1_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_q1_tile_{y}_{m}',
+         mpp_tasks_report.qd_q1_tile_cache_path(y, m),
+         lambda yy=y, mm=m: mpp_tasks_report.get_qd_q1_ytd(year=yy, month=mm)),
 
         (f'pd_m2_otif_{y}_{m}',
          cd / f'otif_vypusk_prod_monthly_{y}_{m:02d}.json',
@@ -234,6 +253,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'devdir_rd_m4_fot_{y}_{m}',
          rd_m4_fot.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: rd_m4_fot.get_rd_m4_fot_ytd(year=yy, month=mm)),
+
+        (f'devdir_rd_q2_tekuchest_{y}_{m}',
+         rd_q2_tekuchest.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: rd_q2_tekuchest.get_rd_q2_tekuchest_ytd(year=yy, month=mm)),
+
+        (f'gspp_q4_ytd_{y}_{m}',
+         gspp_q4.gspp_q4_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: gspp_q4.get_gspp_q4_ytd(year=yy, month=mm)),
     ]
     td_as_of = date.today()
     tasks.append((

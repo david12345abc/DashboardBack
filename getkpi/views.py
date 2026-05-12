@@ -36,11 +36,17 @@ from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter, pick_monthly_row_for_period
 from .models import KpiDefinition
 import devdir.views as _devdir_kpi_views
+import gspp.views as _gspp_kpi_views
 import qualdir.views as _qualdir_kpi_views
 from . import techdir_kpi_entry
 from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp, qd_m1_tile_cache_path
 from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
-from qualdir.turnover import _qd_q2_kpi_pct, get_qd_q2_ytd, turnover_month_cache_path
+from qualdir.turnover import (
+    _qd_q2_kpi_pct,
+    get_qd_q2_ytd,
+    qd_q2_ytd_cache_path,
+    turnover_month_cache_path,
+)
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
 _structure_cache: dict | None = None
@@ -436,6 +442,11 @@ def _normalize_chief_constructor_kpi_definitions(department: str, rows: list[dic
         split_rows = _chief_constructor_split_m3_rows(department, source_m3)
         normalized.extend(row for row in split_rows if str(row.get('kpi_id') or '') not in current_ids)
     return normalized
+def _is_gspp_department(dept: str | None) -> bool:
+    normalized = re.sub(
+        r'\s+', ' ', unicodedata.normalize('NFKC', (dept or '').strip()).lower(),
+    )
+    return normalized in {'гспп', 'gspp'}
 
 
 def _thresholds_block(kpi: dict) -> dict:
@@ -533,7 +544,7 @@ def _is_turnover_style_tile(kpi: dict) -> bool:
     nm = (kpi.get('name') or '').lower()
     if 'текучесть' in nm:
         return True
-    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2', 'QD-Q2'}:
+    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2', 'QD-Q2', 'RD-Q2'}:
         return True
     return False
 
@@ -794,7 +805,10 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
         if not cache_files and kpi_id == 'QD-Q2':
-            cache_files = [turnover_month_cache_path(ref_y, ref_m)]
+            cache_files = [
+                qd_q2_ytd_cache_path(ref_y, ref_m),
+                turnover_month_cache_path(ref_y, ref_m),
+            ]
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -835,6 +849,11 @@ def _build_tile_item(
     if kpi.get('kpi_id') in {'OD-Q1', 'OD-Q2', 'QD-Q1'} and entry.get('data_granularity') == 'monthly':
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
+    _kid_gspp = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    if _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_gspp):
+        tile['period'] = 'ежемесячно'
+        tile['frequency'] = 'ежемесячно'
+        tile['periodicity'] = 'ежемесячно'
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
@@ -1374,6 +1393,7 @@ def _build_universal_payload(
         or _is_chief_constructor_department(dept)
         or logistics_views.is_logistics_head_department(dept)
         or _is_devdir_department(dept)
+        or _is_gspp_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -1401,7 +1421,11 @@ def _build_universal_payload(
         # строка плитки должна браться из kpi_period иначе план/факт за «чужой» месяц.
         tile_lm_y, tile_lm_m = ref_y, ref_m
         _kid_tile = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
-        if _kid_tile in _qualdir_kpi_views.KPI_IDS_USE_BUILDER_KP_PERIOD | _devdir_kpi_views.DEVDIR_KPI_IDS:
+        if _kid_tile in (
+            _qualdir_kpi_views.KPI_IDS_USE_BUILDER_KP_PERIOD
+            | _devdir_kpi_views.DEVDIR_KPI_IDS
+            | _gspp_kpi_views.GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD
+        ):
             kper = entry.get('kpi_period')
             if (
                 isinstance(kper, dict)
@@ -1472,12 +1496,15 @@ def _build_universal_payload(
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'}:
             tile['unit'] = 'шт.'
-        elif kpi.get('kpi_id') in {'GK-M3.B', 'GK-M3.F'}:
-            tile['unit'] = '%'
-        elif kpi.get('kpi_id') in {'TD-M1', 'TD-Q1', 'QD-Q1'}:
+
+        elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1'}:
+            tile['unit'] = 'шт.'
+        elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-M1':
             tile['unit'] = 'шт.'
+        elif _kid_tile == 'RD-Q2':
+            tile['unit'] = 'чел.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
             tile['unit'] = 'руб.'
 
@@ -1596,6 +1623,9 @@ def _build_universal_payload(
 
     if techdir_dashboard.is_techdir_department(dept):
         techdir_dashboard.merge_deviation_tables(tablitsy, ref_y, ref_m)
+
+    if _is_gspp_department(dept):
+        _gspp_kpi_views.merge_gspp_tables_into_universal_payload(tablitsy, ref_y, ref_m)
 
     if str(dept).strip().lower() == 'операционный директор':
         try:
@@ -2154,6 +2184,9 @@ def _build_kpi_entry(
         return entry
 
     if _qualdir_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+        return entry
+
+    if _gspp_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
     if kpi_id == 'KD-M1':

@@ -8,21 +8,29 @@ QD-M4 — ФОТ подразделения в пределах лимита (д
 ``RecordsWithExtDimensions``, дебетовый оборот счёта 26 по паре
 «подразделение + статья затрат»; только две статьи п. 4.2 и семь подразделений
 из ТЗ — см. ``qualdir.qd_m4_fact``.
+
+YTD JSON: ``getkpi/dashboard/qualdir_qd_m4_ytd_<год>_<месяц>.json`` (см. ``ytd_json_cache``).
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from getkpi.cache_manager import locked_call
+from getkpi.devdir import ytd_json_cache
 
 from qualdir.qd_m4_fact import compute_qd_m4_fact_monthly
 
 logger = logging.getLogger(__name__)
 
 SOURCE_TAG = "qualdir_qd_m4_v3"
+
+QD_M4_YTD_CACHE_PREFIX = "qualdir_qd_m4_ytd"
+QD_M4_YTD_DISK_TAG = "qualdir_qd_m4_ytd_payload_v1"
+QD_M4_YTD_DISK_VERSION = 1
 
 # Плановый ФОТ контура качества, 2026, руб./мес. (сумма трёх строк по столбцу месяца).
 QD_M4_PLAN_BY_MONTH_2026: dict[int, int] = {
@@ -96,10 +104,27 @@ def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
     return round(fact / plan * 100, 2)
 
 
+def qd_m4_ytd_cache_path(year: int | None = None, month: int | None = None) -> Path:
+    ry, rm = _normalize_period(year, month)
+    return ytd_json_cache.cache_path(QD_M4_YTD_CACHE_PREFIX, ry, rm)
+
+
 def get_qd_m4_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     """QD-M4: план из констант qualdir, факт — сумма по контуру качества (1С)."""
 
+    lock_y, lock_m = _normalize_period(year, month)
+    _disk_path = ytd_json_cache.cache_path(QD_M4_YTD_CACHE_PREFIX, lock_y, lock_m)
+    _perpetual = ytd_json_cache.is_ref_period_fully_past(lock_y, lock_m)
+
     def _runner() -> dict[str, Any]:
+        _cached = ytd_json_cache.load_payload(
+            _disk_path,
+            source_tag=QD_M4_YTD_DISK_TAG,
+            version=QD_M4_YTD_DISK_VERSION,
+            perpetual=_perpetual,
+        )
+        if _cached is not None:
+            return _cached
         try:
             ref_y, ref_m = _normalize_period(year, month)
             pairs = _tile_month_pairs(ref_y, ref_m)
@@ -130,7 +155,7 @@ def get_qd_m4_ytd(year: int | None = None, month: int | None = None) -> dict[str
                 if (y, m) == (ref_y, ref_m):
                     ref_row = row
 
-            return {
+            _out: dict[str, Any] = {
                 "data_granularity": "monthly",
                 "monthly_data": monthly_rows,
                 # Плитка и API берут plan/fact из last_full_month_row: план из констант
@@ -174,7 +199,7 @@ def get_qd_m4_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "has_data": False,
                     "values_unit": "руб.",
                 }
-            return {
+            _out = {
                 "data_granularity": "monthly",
                 "monthly_data": [fallback_row] if fallback_row else [],
                 "last_full_month_row": dict(fallback_row) if fallback_row else None,
@@ -200,8 +225,13 @@ def get_qd_m4_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "plan_fallback_row": bool(fallback_row),
                 },
             }
+        if (_out.get("debug") or {}).get("status") != "error":
+            ytd_json_cache.save_payload(
+                _disk_path,
+                _out,
+                source_tag=QD_M4_YTD_DISK_TAG,
+                version=QD_M4_YTD_DISK_VERSION,
+            )
+        return _out
 
-    lock_y, lock_m = year, month
-    if lock_y is None or lock_m is None:
-        lock_y, lock_m = _normalize_period(None, None)
     return locked_call(f"qualdir_qd_m4_v3_{lock_y}_{lock_m:02d}", _runner)

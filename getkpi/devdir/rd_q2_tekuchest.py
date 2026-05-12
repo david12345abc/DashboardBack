@@ -1,6 +1,6 @@
-"""KPI RD-M1 (ЗПР): план и факт по месяцам из ``calc_zpr_plan`` / ``calc_zpr_fact``.
+"""KPI RD-Q2: текучесть «Служба развития» по месяцам из ``calc_tekuchest_dev_service``.
 
-Кэш: ``getkpi/dashboard/devdir_rd_m1_zpr_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
+Кэш: ``getkpi/dashboard/devdir_rd_q2_tekuchest_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
 """
 
 from __future__ import annotations
@@ -12,31 +12,33 @@ from typing import Any
 import requests
 
 from ..cache_manager import locked_call
-from . import calc_zpr_fact, calc_zpr_plan, ytd_json_cache
+from . import calc_tekuchest_dev_service, ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
 logger = logging.getLogger(__name__)
 
-CACHE_FILE_PREFIX = "devdir_rd_m1_zpr"
-CACHE_SOURCE_TAG = "devdir_rd_m1_zpr_ytd"
+CACHE_FILE_PREFIX = "devdir_rd_q2_tekuchest"
+CACHE_SOURCE_TAG = "devdir_rd_q2_tekuchest_ytd"
 CACHE_VERSION = 2
 
 
-def _build_rd_m1_zpr_monthly_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
+def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
 
     session = requests.Session()
-    session.auth = calc_zpr_plan.AUTH
+    session.auth = calc_tekuchest_dev_service.AUTH
+    by_month = calc_tekuchest_dev_service.fetch_yearly_monthly_totals(session, ref_y)
 
     monthly_rows: list[dict[str, Any]] = []
     ref_row: dict[str, Any] | None = None
 
     for y, m in pairs:
-        plan_v = float(calc_zpr_plan.count_zpr(session, y, m))
-        fact_v = float(calc_zpr_fact.count_zpr_fact(session, y, m))
+        cell = by_month.get(m) or {"plan": 0.0, "fact": 0.0}
+        plan_v = float(cell["plan"])
+        fact_v = float(cell["fact"])
         has_data = plan_v > 0 or fact_v > 0
-        kpi_pct = round(fact_v / plan_v * 100, 1) if plan_v > 0 else None
+        kpi_pct = round(fact_v, 2)
 
         row: dict[str, Any] = {
             "month": m,
@@ -46,7 +48,7 @@ def _build_rd_m1_zpr_monthly_payload(year: int | None = None, month: int | None 
             "fact": fact_v,
             "kpi_pct": kpi_pct,
             "has_data": has_data,
-            "values_unit": "шт.",
+            "values_unit": "чел.",
         }
         monthly_rows.append(row)
         if (y, m) == (ref_y, ref_m):
@@ -71,12 +73,11 @@ def _build_rd_m1_zpr_monthly_payload(year: int | None = None, month: int | None 
             "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
-            "values_unit": "шт.",
+            "values_unit": "чел.",
         },
         "debug": {
-            "plan_source": "getkpi/devdir/calc_zpr_plan.py",
-            "fact_source": "getkpi/devdir/calc_zpr_fact.py",
-            "kpi_route": "devdir_rd_m1_zpr",
+            "source": "getkpi/devdir/calc_tekuchest_dev_service.py",
+            "kpi_route": "devdir_rd_q2_tekuchest",
         },
     }
 
@@ -85,7 +86,7 @@ def cache_file_path_for_period(year: int | None = None, month: int | None = None
     return ytd_json_cache.public_cache_path(CACHE_FILE_PREFIX, year, month)
 
 
-def get_rd_m1_zpr_ytd(year: int | None = None, month: int | None = None) -> dict | None:
+def get_rd_q2_tekuchest_ytd(year: int | None = None, month: int | None = None) -> dict | None:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     c_path = ytd_json_cache.cache_path(CACHE_FILE_PREFIX, ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
@@ -100,9 +101,9 @@ def get_rd_m1_zpr_ytd(year: int | None = None, month: int | None = None) -> dict
         if cached is not None:
             return cached
         try:
-            payload = _build_rd_m1_zpr_monthly_payload(year=year, month=month)
+            payload = _build_rd_q2_monthly_payload(year=year, month=month)
         except Exception:
-            logger.exception("Ошибка при расчёте RD-M1 (ЗПР)")
+            logger.exception("Ошибка при расчёте RD-Q2 (текучесть)")
             return None
         if payload is not None:
             ytd_json_cache.save_payload(
@@ -113,4 +114,4 @@ def get_rd_m1_zpr_ytd(year: int | None = None, month: int | None = None) -> dict
             )
         return payload
 
-    return locked_call(f"devdir_rd_m1_zpr_{ref_y}_{ref_m:02d}", _runner)
+    return locked_call(f"devdir_rd_q2_tekuchest_{ref_y}_{ref_m:02d}", _runner)

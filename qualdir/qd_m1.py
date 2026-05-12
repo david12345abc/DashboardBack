@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from getkpi.cache_manager import locked_call
+from getkpi.devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
 from qualdir import external_defect_report_total as edr
@@ -196,8 +197,9 @@ def _load_qd_m1_tile_cache(ref_y: int, ref_m: int) -> dict[str, Any] | None:
         return None
     if data.get("cache_version") != QD_M1_TILE_CACHE_VERSION:
         return None
-    if data.get("cache_date") != date.today().isoformat():
-        return None
+    if not ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m):
+        if data.get("cache_date") != date.today().isoformat():
+            return None
     cur_sig = _qd_m1_excel_signature_for_cache(ref_y, ref_m)
     if not _qd_m1_signatures_match(data.get("excel_signature"), cur_sig):
         return None
