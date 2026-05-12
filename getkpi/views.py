@@ -1494,7 +1494,7 @@ def _build_universal_payload(
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
             tile['unit'] = 'чел.'
-        elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'}:
+        elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'} or _kid_tile in {'MET-Q4-1', 'METD-Q1'}:
             tile['unit'] = 'шт.'
 
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1'}:
@@ -1894,6 +1894,29 @@ def _build_kpi_entry(
             entry['data_granularity'] = data.get('data_granularity', 'quarterly')
             entry['quarterly_data'] = data.get('quarterly_data') or []
             entry['last_full_quarter_row'] = data.get('last_full_quarter_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            entry['debug'] = data.get('debug')
+            return entry
+
+    if kpi_id in {'MET-Q4-1', 'METD-Q1'}:
+        from . import calc_metrolog_projects
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'metrolog_projects_hozyan_{ref_y}_{ref_m}',
+            calc_metrolog_projects.get_metrolog_projects_without_major_deviation_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             entry['debug'] = data.get('debug')
