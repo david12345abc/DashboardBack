@@ -66,7 +66,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet,
     )
     from . import gspp_q4
-    from .devdir import rd_m1_zpr, rd_m3_budget, rd_m4_fot
+    from .devdir import rd_m1_zpr, rd_m3_budget, rd_m4_fot, rd_q2_tekuchest
     from .komdir_claims import fetch_claims_for_month
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
@@ -186,6 +186,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'devdir_rd_m4_fot_{y}_{m}',
          rd_m4_fot.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: rd_m4_fot.get_rd_m4_fot_ytd(year=yy, month=mm)),
+
+        (f'devdir_rd_q2_tekuchest_{y}_{m}',
+         rd_q2_tekuchest.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: rd_q2_tekuchest.get_rd_q2_tekuchest_ytd(year=yy, month=mm)),
 
         (f'gspp_q4_ytd_{y}_{m}',
          gspp_q4.gspp_q4_ytd_cache_path(y, m),
