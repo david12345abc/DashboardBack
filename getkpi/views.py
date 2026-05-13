@@ -1703,8 +1703,24 @@ def _build_universal_payload(
     )
 
     if include_generic_tables:
+        claims_table_key = "KD-T-CLAIMS"
+        claims_table_name = "Активные претензии"
+        claims_table_description = "Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле"
         try:
-            rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
+            if logistics_views.is_logistics_head_department(dept):
+                from .logistics_claims import fetch_logistics_claims_for_month
+
+                rows = fetch_logistics_claims_for_month(ref_y, ref_m)
+                claims_table_key = "LOG-T-CLAIMS"
+                claims_table_name = "Претензии поставщиков"
+                claims_table_description = (
+                    "Строки табличной части Несоответствия из "
+                    "Document_ТД_АктОНесоответствиеПриборовИКомплектующих: "
+                    "КатегорияПоПричинеВозникновения = Поставщик, "
+                    "ВозможностьУстраненияНесоответствия = Окончательный"
+                )
+            else:
+                rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
         except Exception:
             rows = []
 
@@ -1714,10 +1730,10 @@ def _build_universal_payload(
             lawsuit_rows = []
 
         tablitsy.update({
-            "KD-T-CLAIMS": {
-                "name": "Активные претензии",
+            claims_table_key: {
+                "name": claims_table_name,
                 "periodicity": "ежемесячно",
-                "description": "Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле",
+                "description": claims_table_description,
                 "period": {
                     "year": ref_y,
                     "month": ref_m,

@@ -392,7 +392,7 @@
       "planovaya_data_nachala": "2026-04-15",
       "planovaya_data_okonchaniya": "2026-11-10",
       "data_okonchaniya": null,
-      "overdue_milestones_count": 3,
+      "overdue_milestones_count": 6,
       "project_progress_pct": 4.4,
       "milestone_months": [
         "2026-04",
@@ -425,6 +425,24 @@
           "name": "краны на складе ",
           "start_date": "2026-05-07T13:57:36",
           "finish_date": "2026-05-07T13:57:36",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "КД по кондиционированию готово",
+          "start_date": "2026-05-12T09:00:00",
+          "finish_date": "2026-05-12T09:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Схемы разработаны",
+          "start_date": "2026-05-12T09:00:00",
+          "finish_date": "2026-05-12T09:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Изготовление образцов выполнена ",
+          "start_date": "2026-05-12T13:41:24",
+          "finish_date": "2026-05-12T13:41:24",
           "percent_complete": 0.0
         }
       ],
@@ -594,7 +612,7 @@
     },
     {
       "file_id": 244,
-      "project_name": "Выполнение условий договора №МПГ00010434 от 06.03.2025 г. для м/р Западный Тузколь",
+      "project_name": "Выполнение условий договора №МПГ00010434 от 06.03.2025 для мр Западный Тузколь»,",
       "project_manager": "Гутин Константин Игоревич",
       "kurator": "Улановский Константин Владимирович",
       "project_code": "НПО/БМИ/2025/202",
@@ -611,7 +629,7 @@
       "planovaya_data_okonchaniya": "2026-03-06",
       "data_okonchaniya": "2026-06-30",
       "overdue_milestones_count": 0,
-      "project_progress_pct": 92.9,
+      "project_progress_pct": 91.3,
       "milestone_months": [
         "2025-03",
         "2025-04",
@@ -657,7 +675,7 @@
       "planovaya_data_okonchaniya": "2025-11-17",
       "data_okonchaniya": "2026-07-31",
       "overdue_milestones_count": 0,
-      "project_progress_pct": 91.1,
+      "project_progress_pct": 91.9,
       "milestone_months": [
         "2025-01",
         "2025-02",
@@ -943,7 +961,7 @@
       "planovaya_data_okonchaniya": "2025-04-18",
       "data_okonchaniya": "2026-06-30",
       "overdue_milestones_count": 25,
-      "project_progress_pct": 74.5,
+      "project_progress_pct": 74.6,
       "milestone_months": [
         "2009-11",
         "2024-07",
@@ -1181,7 +1199,7 @@
       "planovaya_data_okonchaniya": "2026-06-30",
       "data_okonchaniya": "2026-06-30",
       "overdue_milestones_count": 0,
-      "project_progress_pct": 48.4,
+      "project_progress_pct": 51.6,
       "milestone_months": [
         "2026-01",
         "2026-02",
@@ -1593,7 +1611,7 @@
         "planovaya_data_nachala": "2026-04-15",
         "planovaya_data_okonchaniya": "2026-11-10",
         "data_okonchaniya": null,
-        "overdue_milestones_count": 3,
+        "overdue_milestones_count": 6,
         "project_progress_pct": 4.4,
         "milestone_months": [
           "2026-04",
@@ -1626,6 +1644,24 @@
             "name": "краны на складе ",
             "start_date": "2026-05-07T13:57:36",
             "finish_date": "2026-05-07T13:57:36",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "КД по кондиционированию готово",
+            "start_date": "2026-05-12T09:00:00",
+            "finish_date": "2026-05-12T09:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Схемы разработаны",
+            "start_date": "2026-05-12T09:00:00",
+            "finish_date": "2026-05-12T09:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Изготовление образцов выполнена ",
+            "start_date": "2026-05-12T13:41:24",
+            "finish_date": "2026-05-12T13:41:24",
             "percent_complete": 0.0
           }
         ],
@@ -1795,7 +1831,7 @@
       },
       {
         "file_id": 244,
-        "project_name": "Выполнение условий договора №МПГ00010434 от 06.03.2025 г. для м/р Западный Тузколь",
+        "project_name": "Выполнение условий договора №МПГ00010434 от 06.03.2025 для мр Западный Тузколь»,",
         "project_manager": "Гутин Константин Игоревич",
         "kurator": "Улановский Константин Владимирович",
         "project_code": "НПО/БМИ/2025/202",
@@ -1812,7 +1848,7 @@
         "planovaya_data_okonchaniya": "2026-03-06",
         "data_okonchaniya": "2026-06-30",
         "overdue_milestones_count": 0,
-        "project_progress_pct": 92.9,
+        "project_progress_pct": 91.3,
         "milestone_months": [
           "2025-03",
           "2025-04",
@@ -1858,7 +1894,7 @@
         "planovaya_data_okonchaniya": "2025-11-17",
         "data_okonchaniya": "2026-07-31",
         "overdue_milestones_count": 0,
-        "project_progress_pct": 91.1,
+        "project_progress_pct": 91.9,
         "milestone_months": [
           "2025-01",
           "2025-02",
@@ -2144,7 +2180,7 @@
         "planovaya_data_okonchaniya": "2025-04-18",
         "data_okonchaniya": "2026-06-30",
         "overdue_milestones_count": 25,
-        "project_progress_pct": 74.5,
+        "project_progress_pct": 74.6,
         "milestone_months": [
           "2009-11",
           "2024-07",
@@ -2382,7 +2418,7 @@
         "planovaya_data_okonchaniya": "2026-06-30",
         "data_okonchaniya": "2026-06-30",
         "overdue_milestones_count": 0,
-        "project_progress_pct": 48.4,
+        "project_progress_pct": 51.6,
         "milestone_months": [
           "2026-01",
           "2026-02",
@@ -2397,7 +2433,7 @@
       }
     ]
   },
-  "cache_date": "2026-05-12",
+  "cache_date": "2026-05-13",
   "cache_version": 12,
   "od_overdue_milestones_schema": "zero_duration_milestones_v1"
 }

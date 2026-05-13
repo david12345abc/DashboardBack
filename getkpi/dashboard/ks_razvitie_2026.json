@@ -146,7 +146,7 @@
       },
       "Закладки в проекты@@unit:шт.": {
         "plan": 0.0,
-        "fact": 0.0,
+        "fact": 1.0,
         "unit": "шт."
       },
       "Новые дилеры@@unit:руб.": {
@@ -1562,7 +1562,7 @@
         "3": {
           "Закладки в проекты@@unit:шт.": {
             "plan": 0.0,
-            "fact": 0.0,
+            "fact": 1.0,
             "unit": "шт."
           }
         },
@@ -1653,7 +1653,7 @@
               "month": 3,
               "month_name": "март",
               "plan": 0.0,
-              "fact": 0.0,
+              "fact": 1.0,
               "unit": "шт."
             },
             {
@@ -3944,7 +3944,7 @@
         "3": {
           "Закладки в проекты@@unit:шт.": {
             "plan": 0.0,
-            "fact": 0.0,
+            "fact": 1.0,
             "unit": "шт."
           }
         },
@@ -4035,7 +4035,7 @@
               "month": 3,
               "month_name": "март",
               "plan": 0.0,
-              "fact": 0.0,
+              "fact": 1.0,
               "unit": "шт."
             },
             {
@@ -5794,7 +5794,7 @@
           "month": 3,
           "month_name": "март",
           "plan": 0.0,
-          "fact": 0.0,
+          "fact": 1.0,
           "unit": "шт."
         },
         {
@@ -6603,23 +6603,23 @@
   ],
   "fact_debug": {
     "new_service_customers": {
-      "partners_total": 114,
-      "current_shipment_rows": 250,
-      "current_service_events": 238,
-      "candidate_partners": 114,
-      "history_shipment_rows": 3859,
-      "history_service_events": 3761
+      "partners_total": 115,
+      "current_shipment_rows": 253,
+      "current_service_events": 241,
+      "candidate_partners": 115,
+      "history_shipment_rows": 3864,
+      "history_service_events": 3766
     },
     "project_bookmarks": {
-      "docs_total": 3,
-      "managers_loaded": 2,
+      "docs_total": 4,
+      "managers_loaded": 3,
       "docs_by_dept": {
-        "bd7b5184-9f9c-11e4-80da-001e67112509": 2,
+        "bd7b5184-9f9c-11e4-80da-001e67112509": 3,
         "9edaa7d4-37a5-11ee-93d3-6cb31113810e": 1
       },
       "skipped_no_manager_dept": 0
     }
   },
-  "cached_at": "2026-05-12",
+  "cached_at": "2026-05-13",
   "source_tag": "ks_razvitie_units_v4_project_bookmarks_fact"
 }

@@ -1,31 +1,85 @@
 {
   "year": 2026,
   "ref_month": 3,
-  "source": "psd_vipusk_fact_rub_v2",
+  "source": "psd_vipusk_fact_movement_products_v4",
   "months": [
     {
       "year": 2026,
       "month": 1,
       "period_from": "2026-01-01",
       "period_to": "2026-01-31",
-      "fact_rub_total": 432191118.29,
-      "fact_qty_total": 6572.0
+      "fact_rub_total": 49277005.51,
+      "fact_qty_total": 4323.0,
+      "by_org": {
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 28.0,
+        "Турбулентность-Дон ООО": 0.0,
+        "АЛМАЗ ООО": 4295.0
+      },
+      "by_org_rub": {
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 45232562.42,
+        "Турбулентность-Дон ООО": 0.0,
+        "АЛМАЗ ООО": 4044443.09
+      },
+      "npo_reject_stats": {
+        "no_stage": 0,
+        "stage_not_found": 0,
+        "no_production_order": 0,
+        "production_order_not_found": 0,
+        "no_customer_order": 0,
+        "customer_line_not_found": 0
+      }
     },
     {
       "year": 2026,
       "month": 2,
       "period_from": "2026-02-01",
       "period_to": "2026-02-28",
-      "fact_rub_total": 158751485.14,
-      "fact_qty_total": 32736.0
+      "fact_rub_total": 165871947.55,
+      "fact_qty_total": 7538.0,
+      "by_org": {
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 57.0,
+        "Турбулентность-Дон ООО": 0.0,
+        "АЛМАЗ ООО": 7481.0
+      },
+      "by_org_rub": {
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 155453916.34,
+        "Турбулентность-Дон ООО": 0.0,
+        "АЛМАЗ ООО": 10418031.21
+      },
+      "npo_reject_stats": {
+        "no_stage": 0,
+        "stage_not_found": 0,
+        "no_production_order": 0,
+        "production_order_not_found": 0,
+        "no_customer_order": 0,
+        "customer_line_not_found": 0
+      }
     },
     {
       "year": 2026,
       "month": 3,
       "period_from": "2026-03-01",
       "period_to": "2026-03-31",
-      "fact_rub_total": 151101955.35,
-      "fact_qty_total": 55341.0
+      "fact_rub_total": 88152966.24,
+      "fact_qty_total": 5307.0,
+      "by_org": {
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 48.0,
+        "Турбулентность-Дон ООО": 0.0,
+        "АЛМАЗ ООО": 5259.0
+      },
+      "by_org_rub": {
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 80926865.26,
+        "Турбулентность-Дон ООО": 0.0,
+        "АЛМАЗ ООО": 7226100.98
+      },
+      "npo_reject_stats": {
+        "no_stage": 0,
+        "stage_not_found": 0,
+        "no_production_order": 0,
+        "production_order_not_found": 0,
+        "no_customer_order": 0,
+        "customer_line_not_found": 0
+      }
     }
   ]
 }

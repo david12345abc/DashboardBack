@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -12,9 +12,15 @@ from . import calc_budget_limit
 from .cache_manager import CACHE_DIR
 from .calc_budget_limit import AUTH, EMPTY, period_bounds
 
-SOURCE_TAG = "logistics_budget_v5_month_plan_cumulative_fact"
+SOURCE_TAG = "logistics_budget_v9_request_month_paid_fact_budget_plan"
 REQUEST_DOC_ENTITY = "Document_ЗаявкаНаРасходованиеДенежныхСредств"
+DDS_ARTICLE_ENTITY = "Catalog_СтатьиДвиженияДенежныхСредств"
 LOGISTICS_CFO_NAME = "Директор по логистике"
+REQUEST_PAID_STATUS = "КОплате"
+REQUEST_DIRECT_PAID_ARTICLE_MARKERS = (
+    "выдача под авансовый отчет",
+    "выплата заработной платы",
+)
 
 MONTH_NAMES = {
     1: "январь",
@@ -31,14 +37,19 @@ MONTH_NAMES = {
     12: "декабрь",
 }
 
-LOGISTICS_BUDGET_PLAN_ROWS = (
-    (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 196_676),
-    (69_972, 80_810, 98_654, 97_001, 91_626, 96_214, 106_302, 96_598, 115_877, 105_510, 83_624, 88_054),
-    (20_000, 20_000, 20_000, 20_000, 20_000, 20_000, 20_000, 20_000, 20_000, 20_000, 20_000, 20_000),
-    (3_500, 0, 0, 0, 0, 0, 0, 0, 10_500, 0, 0, 0),
-    (82_913, 82_913, 82_913, 63_293, 63_293, 63_293, 63_293, 82_913, 82_913, 82_913, 82_913, 82_913),
-    (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-    (4_806, 4_806, 4_806, 4_806, 4_806, 4_806, 4_806, 4_806, 4_806, 4_806, 4_806, 4_806),
+LOGISTICS_BUDGET_MONTH_PLAN = (
+    2_034_852,
+    2_626_289,
+    3_629_058,
+    4_010_452,
+    3_661_151,
+    4_317_340,
+    4_435_468,
+    4_248_676,
+    4_800_447,
+    4_167_641,
+    4_546_449,
+    5_448_100,
 )
 
 
@@ -83,7 +94,7 @@ def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
 
 
 def _plan_by_month() -> list[int]:
-    return [sum(row[idx] for row in LOGISTICS_BUDGET_PLAN_ROWS) for idx in range(12)]
+    return list(LOGISTICS_BUDGET_MONTH_PLAN)
 
 
 def _fetch_all(session: requests.Session, url: str, page: int = 5000) -> list[dict[str, Any]]:
@@ -103,7 +114,10 @@ def _fetch_all(session: requests.Session, url: str, page: int = 5000) -> list[di
 def _load_request_docs(session: requests.Session, refs: set[str]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     ref_list = sorted(ref for ref in refs if ref and ref != EMPTY)
-    select = "Ref_Key,ТД_ЦФО_Key,ТД_ЦФО,Posted,DeletionMark"
+    select = (
+        "Ref_Key,Number,Date,ТД_ЦФО_Key,ТД_ЦФО,Posted,DeletionMark,"
+        "Статус,СуммаДокумента,СтатьяДвиженияДенежныхСредств_Key"
+    )
     for idx in range(0, len(ref_list), 20):
         batch = ref_list[idx:idx + 20]
         flt = " or ".join(f"Ref_Key eq guid'{ref}'" for ref in batch)
@@ -116,6 +130,49 @@ def _load_request_docs(session: requests.Session, refs: set[str]) -> dict[str, d
             ref = row.get("Ref_Key")
             if ref:
                 out[ref] = row
+    return out
+
+
+def _load_request_docs_for_month(session: requests.Session, year: int, month: int) -> dict[str, dict[str, Any]]:
+    p_start, p_end = period_bounds(year, month)
+    select = (
+        "Ref_Key,Number,Date,ТД_ЦФО_Key,ТД_ЦФО,Posted,DeletionMark,"
+        "Статус,СуммаДокумента,СтатьяДвиженияДенежныхСредств_Key"
+    )
+    flt = (
+        "DeletionMark eq false"
+        f" and Date ge datetime'{p_start}'"
+        f" and Date lt datetime'{p_end}'"
+    )
+    url = (
+        f"{calc_budget_limit.BASE}/{quote(REQUEST_DOC_ENTITY)}"
+        f"?$format=json&$filter={quote(flt, safe='')}"
+        f"&$select={quote(select, safe=',_')}"
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for row in _fetch_all(session, url):
+        ref = row.get("Ref_Key")
+        if ref:
+            out[str(ref)] = row
+    return out
+
+
+def _load_dds_article_names(session: requests.Session, keys: set[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    ref_list = sorted(key for key in keys if key and key != EMPTY)
+    select = "Ref_Key,Description,Code,DeletionMark"
+    for idx in range(0, len(ref_list), 20):
+        batch = ref_list[idx:idx + 20]
+        flt = " or ".join(f"Ref_Key eq guid'{ref}'" for ref in batch)
+        url = (
+            f"{calc_budget_limit.BASE}/{quote(DDS_ARTICLE_ENTITY)}"
+            f"?$format=json&$filter={quote(flt, safe='')}"
+            f"&$select={quote(select, safe=',_')}"
+        )
+        for row in _fetch_all(session, url, page=100):
+            ref = row.get("Ref_Key")
+            if ref:
+                out[str(ref)] = str(row.get("Description") or row.get("Code") or "").strip()
     return out
 
 
@@ -173,15 +230,22 @@ def _is_logistics_request(
     return False
 
 
-def _budget_fact_paid_requests(
+def _paid_records_end(year: int) -> str:
+    today = date.today()
+    if int(year) == today.year:
+        end = today + timedelta(days=1)
+        return f"{end.year}-{end.month:02d}-{end.day:02d}T00:00:00"
+    return f"{int(year) + 1}-01-01T00:00:00"
+
+
+def _load_paid_amounts_for_requests(
     session: requests.Session,
     year: int,
-    month: int,
-    cfo_by_key: dict[str, dict],
-    cfo_keys: set[str],
-) -> float:
-    p_start, p_end = period_bounds(year, month)
-    rows = calc_budget_limit.load_records(session, p_start, p_end)
+    request_refs: set[str],
+) -> dict[str, float]:
+    if not request_refs:
+        return {}
+    rows = calc_budget_limit.load_records(session, f"{year}-01-01T00:00:00", _paid_records_end(year))
     paid_by_request: dict[str, float] = {}
 
     for row in rows:
@@ -192,17 +256,52 @@ def _budget_fact_paid_requests(
         request_key = row.get("ЗаявкаНаРасходованиеДенежныхСредств_Key")
         if not request_key or request_key == EMPTY:
             continue
+        if str(request_key) not in request_refs:
+            continue
         paid_by_request[request_key] = paid_by_request.get(request_key, 0.0) + paid
+    return paid_by_request
 
-    if not paid_by_request:
+
+def _is_direct_paid_request(doc: dict[str, Any], article_names: dict[str, str]) -> bool:
+    if str(doc.get("Статус") or "").strip() != REQUEST_PAID_STATUS:
+        return False
+    article_key = str(doc.get("СтатьяДвиженияДенежныхСредств_Key") or "").strip()
+    article_name = _normalize_name(article_names.get(article_key, ""))
+    return any(marker in article_name for marker in REQUEST_DIRECT_PAID_ARTICLE_MARKERS)
+
+
+def _budget_fact_paid_requests(
+    session: requests.Session,
+    year: int,
+    month: int,
+    cfo_by_key: dict[str, dict],
+    cfo_keys: set[str],
+) -> float:
+    docs = _load_request_docs_for_month(session, year, month)
+    docs = {
+        ref: doc
+        for ref, doc in docs.items()
+        if _is_logistics_request(doc, cfo_by_key, cfo_keys)
+    }
+    if not docs:
         return 0.0
 
-    docs = _load_request_docs(session, set(paid_by_request))
+    paid_by_request = _load_paid_amounts_for_requests(session, year, set(docs))
+    article_names = _load_dds_article_names(
+        session,
+        {
+            str(doc.get("СтатьяДвиженияДенежныхСредств_Key") or "").strip()
+            for doc in docs.values()
+        },
+    )
+
     total = 0.0
-    for ref, paid in paid_by_request.items():
-        doc = docs.get(ref)
-        if doc and _is_logistics_request(doc, cfo_by_key, cfo_keys):
+    for ref, doc in docs.items():
+        paid = paid_by_request.get(ref, 0.0)
+        if paid > 0:
             total += paid
+        elif _is_direct_paid_request(doc, article_names):
+            total += float(doc.get("СуммаДокумента") or 0)
     return round(total, 2)
 
 
@@ -219,10 +318,11 @@ def _month_row(
         "month": month,
         "month_name": MONTH_NAMES[month],
         "plan": round(float(period_plan), 2),
-        "fact": round(float(cumulative_fact), 2) if cumulative_fact is not None else None,
+        "fact": round(float(period_fact), 2) if period_fact is not None else None,
         "period_plan": round(float(period_plan), 2),
         "period_fact": round(float(period_fact), 2) if period_fact is not None else None,
-        "kpi_pct": _kpi_pct(float(total_plan), float(cumulative_fact)) if cumulative_fact is not None else None,
+        "cumulative_fact": round(float(cumulative_fact), 2) if cumulative_fact is not None else None,
+        "kpi_pct": _kpi_pct(float(period_plan), float(period_fact)) if period_fact is not None else None,
         "has_data": True,
         "values_unit": "руб.",
     }
