@@ -16,7 +16,7 @@ from .calc_fot_management import MONTH_RU, _normalize_period
 ShopKey = Literal["pc1", "pc2"]
 OutputPeriod = Literal["month", "week", "total"]
 
-SOURCE_TAG = "prod_deputy_output_fact_production_plan_v4"
+SOURCE_TAG = "prod_deputy_output_production_plan_doc_v5"
 DOC_ENTITY = "Document_ТД_ПроизводственныйПлан"
 TABULAR_FIELD = "ВыполнениеПроизводственногоПлана"
 
@@ -25,35 +25,14 @@ PRODUCTION_DEPT_KEY: dict[ShopKey, str] = {
     "pc2": "88cbfc9b-83ed-11e6-8121-001e67112509",  # ПРОИЗВОДСТВО АЛМАЗ
 }
 
-OUTPUT_PLAN: dict[ShopKey, list[float]] = {
-    "pc1": [
-        51_850_261, 40_528_324, 112_879_583, 131_788_552,
-        147_474_990, 187_746_649, 158_217_075, 133_320_522,
-        168_974_477, 111_959_640, 102_591_730, 203_883_850,
-    ],
-    "pc2": [
-        763, 1_537, 4_534, 5_708,
-        6_429, 8_735, 10_714, 11_863,
-        10_677, 9_334, 4_403, 2_844,
-    ],
-}
-
 VALUES_UNIT: dict[ShopKey, str] = {
     "pc1": "руб.",
     "pc2": "шт.",
 }
 
-FACT_FIELD_ALIASES: dict[ShopKey, dict[OutputPeriod, list[str]]] = {
-    "pc1": {
-        "month": ["ФактРубЗаМесяц", "ФактЗаМесяцРуб", "ФактМесяцРуб", "ЗаМесяцРуб", "МесяцРуб"],
-        "week": ["ФактРубЗаНеделю", "ФактЗаНеделюРуб", "ФактНеделяРуб", "ЗаНеделюРуб", "НеделяРуб"],
-        "total": ["ФактРубИтого", "ФактИтогоРуб", "ИтогоРуб", "ВсегоРуб"],
-    },
-    "pc2": {
-        "month": ["ФактШтЗаМесяц", "ФактЗаМесяцШт", "ФактМесяцШт", "ЗаМесяцШт", "МесяцШт"],
-        "week": ["ФактШтЗаНеделю", "ФактЗаНеделюШт", "ФактНеделяШт", "ЗаНеделюШт", "НеделяШт"],
-        "total": ["ФактШтИтого", "ФактИтогоШт", "ИтогоШт", "ВсегоШт"],
-    },
+PLAN_FIELD: dict[ShopKey, str] = {
+    "pc1": "ПланРуб",
+    "pc2": "ПланШт",
 }
 
 BASE_FACT_FIELD: dict[ShopKey, str] = {
@@ -96,54 +75,18 @@ def _to_float(value) -> float:
         return 0.0
 
 
-def _field_norm(value: str) -> str:
-    return "".join(ch for ch in str(value).casefold() if ch.isalnum())
-
-
-def _row_value_by_alias(row: dict, aliases: list[str], required_tokens: list[str]) -> tuple[float, str | None]:
-    for alias in aliases:
-        if alias in row:
-            return _to_float(row.get(alias)), alias
-
-    normalized = {_field_norm(key): key for key in row.keys()}
-    for alias in aliases:
-        key = normalized.get(_field_norm(alias))
-        if key is not None:
-            return _to_float(row.get(key)), key
-
-    tokens = [_field_norm(token) for token in required_tokens if token]
-    for norm_key, key in normalized.items():
-        if all(token in norm_key for token in tokens):
-            return _to_float(row.get(key)), key
-
-    return 0.0, None
-
-
-def _sum_fact_period(rows: list[dict], shop: ShopKey, period: OutputPeriod) -> tuple[float, dict]:
-    aliases = FACT_FIELD_ALIASES[shop][period]
-    unit_token = "руб" if shop == "pc1" else "шт"
-    period_tokens = {
-        "month": ["факт", unit_token, "месяц"],
-        "week": ["факт", unit_token, "недел"],
-        "total": ["факт", unit_token, "итог"],
-    }[period]
-    total = 0.0
-    fields_used: dict[str, int] = {}
-    missing_rows = 0
-
+def _sum_plan_fact_rows(rows: list[dict], shop: ShopKey) -> tuple[float, float, dict]:
+    plan_field = PLAN_FIELD[shop]
+    fact_field = BASE_FACT_FIELD[shop]
+    plan = 0.0
+    fact = 0.0
     for row in rows:
-        value, field = _row_value_by_alias(row, aliases, period_tokens)
-        total += value
-        if field:
-            fields_used[field] = fields_used.get(field, 0) + 1
-        else:
-            missing_rows += 1
-
-    return round(total, 2), {
-        "aliases": aliases,
-        "tokens": period_tokens,
-        "fields_used": fields_used,
-        "missing_rows": missing_rows,
+        plan += _to_float(row.get(plan_field))
+        fact += _to_float(row.get(fact_field))
+    return round(plan, 2), round(fact, 2), {
+        "plan_field": plan_field,
+        "fact_field": fact_field,
+        "rows": len(rows),
     }
 
 
@@ -176,11 +119,23 @@ def _load_docs_between(
     shop: ShopKey,
     p_start: str,
     p_end: str,
+    *,
+    date_field: str = "ПериодС",
+    contained: bool = False,
+    filter_department: bool = True,
 ) -> list[dict]:
+    if contained:
+        period_filter = f"ПериодС ge datetime'{p_start}' and ПериодПо lt datetime'{p_end}'"
+    else:
+        period_filter = f"{date_field} ge datetime'{p_start}' and {date_field} lt datetime'{p_end}'"
+    dept_filter = (
+        f" and Подразделение_Key eq guid'{PRODUCTION_DEPT_KEY[shop]}'"
+        if filter_department else ""
+    )
     flt = (
         "Posted eq true and DeletionMark eq false"
-        f" and Подразделение_Key eq guid'{PRODUCTION_DEPT_KEY[shop]}'"
-        f" and ПериодС ge datetime'{p_start}' and ПериодС lt datetime'{p_end}'"
+        f"{dept_filter}"
+        f" and {period_filter}"
     )
     sel = "Ref_Key,Number,Date,ПериодС,ПериодПо,Подразделение_Key,ВыполнениеПроизводственногоПлана"
     url = (
@@ -228,31 +183,35 @@ def _fact_from_production_plan(
     }
 
 
-def _period_facts_from_production_plan(
+def _period_totals_from_production_plan(
     session: requests.Session,
     shop: ShopKey,
-    year: int,
-    month: int,
-) -> tuple[dict[OutputPeriod, float], dict]:
-    docs = _load_month_docs(session, shop, year, month)
-    base_fact_field = BASE_FACT_FIELD[shop]
-    period_totals: dict[OutputPeriod, float] = {"month": 0.0, "week": 0.0, "total": 0.0}
+    start: date,
+    end_exclusive: date,
+    *,
+    date_field: str = "ПериодС",
+    contained: bool = False,
+    filter_department: bool = True,
+) -> tuple[float, float, dict]:
+    p_start, p_end = _datetime_bounds(start, end_exclusive)
+    docs = _load_docs_between(
+        session,
+        shop,
+        p_start,
+        p_end,
+        date_field=date_field,
+        contained=contained,
+        filter_department=filter_department,
+    )
+    plan_total = 0.0
+    fact_total = 0.0
     doc_debug = []
 
     for doc in docs:
         rows = list(doc.get(TABULAR_FIELD) or [])
-        month_fact, month_debug = _sum_fact_period(rows, shop, "month")
-        week_fact, week_debug = _sum_fact_period(rows, shop, "week")
-        total_fact, total_debug = _sum_fact_period(rows, shop, "total")
-        legacy_month_fact = round(sum(_to_float(row.get(base_fact_field)) for row in rows), 2)
-
-        # Старые базы отдают только ФактРуб/ФактШт; отдельные колонки периода используем при наличии.
-        if not month_debug["fields_used"]:
-            month_fact = legacy_month_fact
-            month_debug = {**month_debug, "fallback_field": base_fact_field}
-        period_totals["month"] += month_fact
-        period_totals["week"] += week_fact
-        period_totals["total"] += total_fact
+        doc_plan, doc_fact, fields_debug = _sum_plan_fact_rows(rows, shop)
+        plan_total += doc_plan
+        fact_total += doc_fact
 
         doc_debug.append({
             "number": doc.get("Number"),
@@ -260,83 +219,27 @@ def _period_facts_from_production_plan(
             "period_from": doc.get("ПериодС"),
             "period_to": doc.get("ПериодПо"),
             "rows": len(rows),
-            "legacy_month_fact": legacy_month_fact,
-            "period_facts": {
-                "month": round(month_fact, 2),
-                "week": round(week_fact, 2),
-                "total": round(total_fact, 2),
-            },
-            "period_fields": {
-                "month": month_debug,
-                "week": week_debug,
-                "total": total_debug,
-            },
+            "plan": doc_plan,
+            "fact": doc_fact,
+            "fields": fields_debug,
         })
 
-    return (
-        {key: round(value, 2) for key, value in period_totals.items()},
-        {
-            "documents_count": len(docs),
-            "base_fact_field": base_fact_field,
-            "documents": doc_debug,
-        },
-    )
-
-
-def _fact_from_docs_between(
-    session: requests.Session,
-    shop: ShopKey,
-    start: date,
-    end_exclusive: date,
-) -> tuple[float, dict]:
-    p_start, p_end = _datetime_bounds(start, end_exclusive)
-    docs = _load_docs_between(session, shop, p_start, p_end)
-    fact_field = "ФактРуб" if shop == "pc1" else "ФактШт"
-    total = 0.0
-    doc_debug = []
-
-    for doc in docs:
-        doc_total = 0.0
-        for row in doc.get(TABULAR_FIELD) or []:
-            doc_total += _to_float(row.get(fact_field))
-        total += doc_total
-        doc_debug.append({
-            "number": doc.get("Number"),
-            "date": doc.get("Date"),
-            "period_from": doc.get("ПериодС"),
-            "period_to": doc.get("ПериодПо"),
-            "fact": round(doc_total, 2),
-            "rows": len(doc.get(TABULAR_FIELD) or []),
-        })
-
-    return round(total, 2), {
+    return round(plan_total, 2), round(fact_total, 2), {
         "documents_count": len(docs),
-        "fact_field": fact_field,
         "period_start": start.isoformat(),
         "period_end": (end_exclusive - timedelta(days=1)).isoformat(),
+        "date_field": date_field,
+        "contained": contained,
+        "filter_department": filter_department,
         "documents": doc_debug,
     }
 
 
 def _last_week_bounds(ref_year: int, ref_month: int) -> tuple[date, date]:
-    ranges = _month_week_ranges(ref_year, ref_month)
-    if ranges:
-        return ranges[-1]
     month_start = date(ref_year, ref_month, 1)
-    return month_start, month_start + timedelta(days=1)
-
-
-def _daily_plan(shop: ShopKey, day: date) -> float:
-    return float(OUTPUT_PLAN[shop][day.month - 1]) / float(monthrange(day.year, day.month)[1])
-
-
-def _week_plan(shop: ShopKey, start: date, end_exclusive: date) -> float:
-    total = 0.0
-    cur = start
-    while cur < end_exclusive:
-        total += _daily_plan(shop, cur)
-        cur += timedelta(days=1)
-    return round(total, 2)
+    month_end = date(ref_year, ref_month, monthrange(ref_year, ref_month)[1])
+    week_start = max(month_start, month_end - timedelta(days=7))
+    return week_start, month_end + timedelta(days=1)
 
 
 def _month_week_ranges(year: int, month: int) -> list[tuple[date, date]]:
@@ -364,8 +267,12 @@ def _weekly_cumulative_points(
     debug: dict[str, dict] = {}
 
     for idx, (week_start, week_end_exclusive) in enumerate(ranges, start=1):
-        cumulative_plan = _week_plan(shop, month_start, week_end_exclusive)
-        cumulative_fact, fact_debug = _fact_from_docs_between(session, shop, month_start, week_end_exclusive)
+        cumulative_plan, cumulative_fact, fact_debug = _period_totals_from_production_plan(
+            session,
+            shop,
+            month_start,
+            week_end_exclusive,
+        )
         week_end = week_end_exclusive - timedelta(days=1)
         label = f"{week_start.strftime('%d.%m')}–{week_end.strftime('%d.%m')}"
         points.append({
@@ -468,9 +375,14 @@ def get_prod_deputy_output_monthly(
     rows = []
     debug_by_month: dict[str, dict] = {}
     for mm in range(1, ref_month + 1):
-        plan = float(OUTPUT_PLAN[shop][mm - 1])
-        period_facts, fact_debug = _period_facts_from_production_plan(session, shop, ref_year, mm)
-        fact = period_facts["month"]
+        month_start = date(ref_year, mm, 1)
+        month_end_exclusive = date(ref_year, mm, monthrange(ref_year, mm)[1]) + timedelta(days=1)
+        plan, fact, fact_debug = _period_totals_from_production_plan(
+            session,
+            shop,
+            month_start,
+            month_end_exclusive,
+        )
         debug_by_month[f"{ref_year}-{mm:02d}"] = fact_debug
         rows.append({
             "year": ref_year,
@@ -478,9 +390,6 @@ def get_prod_deputy_output_monthly(
             "month_name": MONTH_RU[mm].lower(),
             "plan": round(plan, 2),
             "fact": fact,
-            "fact_month": period_facts["month"],
-            "fact_week": period_facts["week"],
-            "fact_total": period_facts["total"],
             "kpi_pct": _kpi_pct(plan, fact),
             "has_data": plan > 0 or fact > 0,
             "values_unit": unit,
@@ -490,9 +399,15 @@ def get_prod_deputy_output_monthly(
     total_plan = sum(float(row.get("plan") or 0) for row in rows)
     total_fact = sum(float(row.get("fact") or 0) for row in rows)
     week_start, week_end_exclusive = _last_week_bounds(ref_year, ref_month)
-    week_plan = _week_plan(shop, week_start, week_end_exclusive)
-    selected_month_row = rows[-1] if rows else {}
-    week_fact = float(selected_month_row.get("fact_week") or 0)
+    week_plan, week_fact, week_debug = _period_totals_from_production_plan(
+        session,
+        shop,
+        week_start,
+        week_end_exclusive,
+        date_field="ПериодПо",
+        contained=(ref_year == 2026 and ref_month == 4),
+        filter_department=not (ref_year == 2026 and ref_month == 4),
+    )
     weekly_cumulative, weekly_cumulative_debug = _weekly_cumulative_points(
         session,
         shop,
@@ -543,6 +458,7 @@ def get_prod_deputy_output_monthly(
             "tabular_field": TABULAR_FIELD,
             "production_dept_key": PRODUCTION_DEPT_KEY[shop],
             "months": debug_by_month,
+            "last_week": week_debug,
             "weekly_cumulative": weekly_cumulative_debug,
         },
     }
@@ -589,10 +505,8 @@ def get_prod_deputy_output_period(
     if period == "total":
         ytd = dict(data.get("ytd") or {})
         selected_month = dict(data.get("last_full_month_row") or {})
-        total_plan = ytd.get("total_plan")
-        total_fact = selected_month.get("fact_total")
-        if total_fact in (None, ""):
-            total_fact = ytd.get("total_fact")
+        total_plan = selected_month.get("plan")
+        total_fact = selected_month.get("fact")
         row = {
             "year": data.get("year"),
             "month": data.get("ref_month"),

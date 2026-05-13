@@ -14,6 +14,8 @@ from . import (
 
 LOGISTICS_KPI_IDS = {"LOG-M1", "LOG-M2", "LOG-M3.B", "LOG-M3.F", "LOG-Q1"}
 LOGISTICS_BUDGET_FOT_SPLIT_IDS = {"LOG-M3.B", "LOG-M3.F"}
+LOG_Q1_NAME = "Доля квалифицированных поставщиков"
+LOG_Q1_FORMULA = "Поставщики с суммой баллов оценки > 45 / Все поставщики из оценки периода × 100%"
 
 
 def is_logistics_head_department(dept: str | None) -> bool:
@@ -45,7 +47,16 @@ def normalize_kpi_definitions(department: str, rows: list[dict]) -> list[dict]:
         if fallback:
             return fallback
 
-    return [row for row in rows if str(row.get("kpi_id") or "") != "LOG-M3"]
+    normalized_rows = [row for row in rows if str(row.get("kpi_id") or "") != "LOG-M3"]
+    for row in normalized_rows:
+        if str(row.get("kpi_id") or "") == "LOG-Q1":
+            row["name"] = LOG_Q1_NAME
+            row["frequency"] = "ежемесячно"
+            row["formula"] = LOG_Q1_FORMULA
+            row["source"] = "1С ERP / Регистр сведений ТД_ОценкаПоставщиков"
+            row["monthly_target"] = row.get("monthly_target") or row.get("quarterly_target") or "≥80%"
+            row["quarterly_target"] = None
+    return normalized_rows
 
 
 def rag_price_deviation(fact_pct: float | None) -> str:
@@ -106,8 +117,7 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
         return pct, _rag_limit_pct(pct)
 
     if kpi_id == "LOG-Q1":
-        qrows = entry.get("quarterly_data") or []
-        ref_row = qrows[-1] if qrows else {}
+        ref_row = entry.get("last_full_month_row") or {}
         pct = ref_row.get("kpi_pct")
         if pct is not None:
             pct = float(pct)
@@ -200,20 +210,26 @@ def build_kpi_entry(kpi_id: str, entry: dict, *, year: int | None = None, month:
             year=ref_y,
             month=ref_m,
         )
-        q_year, q_num = int(ref_y), (int(ref_m) - 1) // 3 + 1
-        qrows = data.get("quarterly_data") or []
-        selected_qrow = next(
+        month_rows = data.get("months") or []
+        selected_month_row = next(
             (
-                row for row in qrows
-                if int(row.get("year") or 0) == q_year and int(row.get("quarter") or 0) == q_num
+                row for row in month_rows
+                if int(row.get("year") or 0) == int(ref_y)
+                and int(row.get("month") or 0) == int(ref_m)
             ),
-            qrows[-1] if qrows else None,
+            month_rows[-1] if month_rows else None,
         )
-        entry["data_granularity"] = "quarterly"
-        entry["quarterly_data"] = [selected_qrow] if selected_qrow else []
+        entry["data_granularity"] = "monthly"
+        entry["monthly_data"] = month_rows
+        entry["quarterly_data"] = data.get("quarterly_data") or []
         entry["yearly_data"] = data.get("yearly_data") or []
+        entry["last_full_month_row"] = selected_month_row
         entry["ytd"] = data.get("ytd") or {}
-        entry["kpi_period"] = {"type": "selected_quarter", "year": q_year, "quarter": q_num}
+        entry["kpi_period"] = {
+            "type": "last_full_month",
+            "year": int(ref_y),
+            "month": int(ref_m),
+        }
         return entry
 
     return None
@@ -288,6 +304,7 @@ def apply_tile_overrides(kpi: dict, tile: dict) -> None:
         tile["pct_lower_is_better"] = True
         tile["unit"] = "руб."
     elif kpi_id == "LOG-Q1":
+        tile["name"] = LOG_Q1_NAME
         tile["unit"] = "поставщиков"
         tile["units"] = "поставщиков"
 

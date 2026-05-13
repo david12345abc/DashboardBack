@@ -26,10 +26,14 @@
 from __future__ import annotations
 
 import calendar
+import json
 import logging
 import random
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote
+
+import requests
 
 from . import (
     cache_manager,
@@ -49,7 +53,7 @@ from . import (
     odp_excel_breakdown,
     valovaya_pribyl,
 )
-from .commercial_department_aliases import DEALER_SALES_DEPT
+from .commercial_department_aliases import DEALER_SALES_DEPT, KEY_CLIENTS_DEPT, normalize_commercial_dept_guid
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
 
 logger = logging.getLogger(__name__)
@@ -89,6 +93,10 @@ PIE_CHART_CATEGORIES = [
     'Развитие холдингов',
     'Закладки БМИ',
 ]
+
+COMMERCIAL_PROPOSAL_ENTITY = "Document_КоммерческоеПредложениеКлиенту"
+REALIZATION_ENTITY = "Document_РеализацияТоваровУслуг"
+KEY_CLIENTS_CHART_CACHE_VERSION = 1
 
 
 def _rag_higher_better(pct: float | None) -> str:
@@ -688,12 +696,250 @@ def _build_line_chart(by_id: dict, tiles_data: dict) -> dict:
     }
 
 
+def _month_bounds(ref_y: int, ref_m: int) -> tuple[str, str]:
+    start = f"{ref_y}-{ref_m:02d}-01T00:00:00"
+    if ref_m == 12:
+        end = f"{ref_y + 1}-01-01T00:00:00"
+    else:
+        end = f"{ref_y}-{ref_m + 1:02d}-01T00:00:00"
+    return start, end
+
+
+def _fetch_odata_all(session: requests.Session, entity: str, query: str, *, page: int = 500) -> list[dict]:
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        sep = "&" if query else ""
+        url = f"{calc_plan.BASE}/{quote(entity)}?$format=json{sep}{query}&$top={page}&$skip={skip}"
+        r = session.get(url, timeout=120)
+        r.raise_for_status()
+        batch = r.json().get("value", []) or []
+        rows.extend(batch)
+        if len(batch) < page:
+            return rows
+        skip += len(batch)
+
+
+def _batch_fetch_users_departments(session: requests.Session, user_keys: set[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    keys = sorted(k for k in user_keys if k)
+    for i in range(0, len(keys), 25):
+        batch = keys[i:i + 25]
+        flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in batch)
+        query = (
+            f"$filter={quote(flt, safe='')}"
+            f"&$select={quote('Ref_Key,Подразделение_Key', safe=',_')}"
+        )
+        for row in _fetch_odata_all(session, "Catalog_Пользователи", query):
+            key = str(row.get("Ref_Key") or "")
+            if key:
+                result[key] = normalize_commercial_dept_guid(row.get("Подразделение_Key") or "")
+    return result
+
+
+def _key_clients_charts_cache_path(ref_y: int, ref_m: int) -> Path:
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return _CACHE_DIR / f"key_clients_charts_{ref_y}_{ref_m:02d}.json"
+
+
+def _load_key_clients_charts_cache(ref_y: int, ref_m: int) -> dict | None:
+    path = _key_clients_charts_cache_path(ref_y, ref_m)
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError, TypeError):
+        return None
+    if (
+        data.get("cache_date") == date.today().isoformat()
+        and data.get("cache_version") == KEY_CLIENTS_CHART_CACHE_VERSION
+    ):
+        return data
+    return None
+
+
+def _save_key_clients_charts_cache(ref_y: int, ref_m: int, payload: dict) -> None:
+    path = _key_clients_charts_cache_path(ref_y, ref_m)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                **payload,
+                "cache_date": date.today().isoformat(),
+                "cache_version": KEY_CLIENTS_CHART_CACHE_VERSION,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+
+def _proposal_customer_key(row: dict) -> str:
+    return str(
+        row.get("КонтрагентЗаказчик_Key")
+        or row.get("КонтрагентКонечныйЗаказчик_Key")
+        or row.get("Контрагент_Key")
+        or ""
+    )
+
+
+def _load_key_clients_proposals(session: requests.Session, ref_y: int, ref_m: int) -> tuple[list[dict], dict]:
+    start, end = _month_bounds(ref_y, ref_m)
+    flt = (
+        f"Date ge datetime'{start}' and Date lt datetime'{end}' "
+        f"and Posted eq true and DeletionMark eq false"
+    )
+    select = (
+        "Ref_Key,Date,Number,Менеджер_Key,ТД_ПроектнаяЗакладка,"
+        "КонтрагентКонечныйЗаказчик_Key,Контрагент_Key"
+    )
+    query = (
+        f"$filter={quote(flt, safe='')}"
+        f"&$select={quote(select, safe=',_')}"
+    )
+    docs = _fetch_odata_all(session, COMMERCIAL_PROPOSAL_ENTITY, query)
+    manager_keys = {
+        row.get("Менеджер_Key")
+        for row in docs
+        if row.get("Менеджер_Key") and row.get("Менеджер_Key") != calc_plan.EMPTY
+    }
+    manager_depts = _batch_fetch_users_departments(session, set(manager_keys))
+    filtered = [
+        row for row in docs
+        if manager_depts.get(str(row.get("Менеджер_Key") or "")) == KEY_CLIENTS_DEPT
+    ]
+    return filtered, {
+        "period_start": start,
+        "period_end": end,
+        "docs_loaded": len(docs),
+        "docs_for_key_clients": len(filtered),
+        "managers_loaded": len(manager_depts),
+    }
+
+
+def _customers_with_shipments_last_two_years(
+    session: requests.Session,
+    customer_keys: set[str],
+    ref_y: int,
+    ref_m: int,
+) -> tuple[set[str], dict]:
+    if not customer_keys:
+        return set(), {"shipments_loaded": 0, "period_start": None, "period_end": None}
+    period_start = date(ref_y - 2, ref_m, 1).isoformat() + "T00:00:00"
+    _month_start, period_end = _month_bounds(ref_y, ref_m)
+    shipped: set[str] = set()
+    loaded = 0
+    keys = sorted(k for k in customer_keys if k and k != calc_plan.EMPTY)
+    select = "Ref_Key,Date,Number,Контрагент_Key,Партнер_Key,Подразделение_Key"
+    for i in range(0, len(keys), 25):
+        batch = keys[i:i + 25]
+        customer_filter = " or ".join(f"Контрагент_Key eq guid'{key}'" for key in batch)
+        flt = (
+            f"Date ge datetime'{period_start}' and Date lt datetime'{period_end}' "
+            f"and Posted eq true and DeletionMark eq false "
+            f"and ({customer_filter})"
+        )
+        query = (
+            f"$filter={quote(flt, safe='')}"
+            f"&$select={quote(select, safe=',_')}"
+        )
+        rows = _fetch_odata_all(session, REALIZATION_ENTITY, query)
+        loaded += len(rows)
+        for row in rows:
+            customer = str(row.get("Контрагент_Key") or "")
+            if customer:
+                shipped.add(customer)
+    return shipped, {
+        "shipments_loaded": loaded,
+        "period_start": period_start,
+        "period_end": period_end,
+        "customers_checked": len(keys),
+    }
+
+
+def _build_key_clients_pie_charts(ref_y: int, ref_m: int) -> dict:
+    cached = _load_key_clients_charts_cache(ref_y, ref_m)
+    if cached is not None:
+        return cached
+
+    session = requests.Session()
+    session.auth = calc_plan.AUTH
+    proposals, proposal_debug = _load_key_clients_proposals(session, ref_y, ref_m)
+
+    bookmarks = [
+        row for row in proposals
+        if bool(row.get("ТД_ПроектнаяЗакладка"))
+    ]
+    customers = {
+        customer
+        for row in proposals
+        if (customer := _proposal_customer_key(row)) and customer != calc_plan.EMPTY
+    }
+    shipped_customers, shipment_debug = _customers_with_shipments_last_two_years(
+        session,
+        customers,
+        ref_y,
+        ref_m,
+    )
+    new_customers = customers - shipped_customers
+    new_count = len(new_customers)
+    total_customers = len(customers)
+    new_pct = round(new_count / total_customers * 100, 1) if total_customers else 0.0
+
+    pie_data = [
+        {
+            "name": "Закладки в проекты",
+            "value": len(bookmarks),
+            "pct": 100.0 if bookmarks else 0.0,
+            "has_data": True,
+            "unit": "шт.",
+        },
+        {
+            "name": "Развитие холдингов (шт.)",
+            "value": new_count,
+            "pct": 100.0 if new_count else 0.0,
+            "has_data": True,
+            "unit": "шт.",
+        },
+        {
+            "name": "Развитие холдингов (%)",
+            "value": new_pct,
+            "pct": new_pct,
+            "has_data": True,
+            "unit": "%",
+        },
+    ]
+    payload = {
+        "kpi_id": "KD-C2",
+        "name": "Ключевые клиенты: развитие и проектные закладки",
+        "periodicity": "ежемесячно",
+        "chart_type": "donut_multiple",
+        "chart_type_label": "Круговые диаграммы",
+        "pie_data": pie_data,
+        "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES_RU[ref_m]},
+        "debug": {
+            "proposals": proposal_debug,
+            "shipments": shipment_debug,
+            "customers_total": total_customers,
+            "customers_without_shipments_2y": new_count,
+            "bookmarks": len(bookmarks),
+        },
+    }
+    _save_key_clients_charts_cache(ref_y, ref_m, payload)
+    return payload
+
+
 def _build_pie_charts(
     ref_y: int,
     ref_m: int,
     active_dealers_report: dict | None = None,
+    dept_guid: str | None = None,
 ) -> dict:
     """KD-C2: круговые диаграммы — 5 направлений."""
+    if dept_guid == KEY_CLIENTS_DEPT:
+        return _build_key_clients_pie_charts(ref_y, ref_m)
+
     random.seed(hash(('KD-C2-pies', ref_y, ref_m)))
     pie_data = []
 
@@ -1155,7 +1401,7 @@ def build_komdir_payload(kpi_list: list[dict],
 
     grafiki = {
         "KD-C1": _build_line_chart(by_id, tiles_data),
-        "KD-C2": _build_pie_charts(ref_y, series_m, active_dealers_report),
+        "KD-C2": _build_pie_charts(ref_y, series_m, active_dealers_report, dept_guid=dept_guid),
         "KD-C3": _build_bar_chart(by_id, tiles_data, ref_y, ref_m),
     }
     try:

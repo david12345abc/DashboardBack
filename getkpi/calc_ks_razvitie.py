@@ -70,7 +70,7 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
-from .commercial_department_aliases import normalize_commercial_dept_guid
+from .commercial_department_aliases import KEY_CLIENTS_DEPT, normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -90,13 +90,21 @@ ALLOWED_DEPARTMENTS: dict[str, str] = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = "ks_razvitie_units_v4_project_bookmarks_fact"
+CACHE_VERSION = "ks_razvitie_units_v5_key_clients_fact"
 TARGET_SERVICE_CUSTOMERS_DEPT_KEY = "34497ef7-810f-11e4-80d6-001e67112509"
 TARGET_SERVICE_CUSTOMERS_DEPT_NAME = "Отдел продаж эталонного оборудования и услуг"
 TARGET_SERVICE_CUSTOMERS_INDICATOR = "Новые заказчики по услугам"
 PROJECT_BOOKMARKS_INDICATOR = "Закладки в проекты"
 PROJECT_BOOKMARKS_DOC = "Document_КоммерческоеПредложениеКлиенту"
+KEY_CLIENTS_DEPT_NAME = "Отдел по работе с ключевыми клиентами"
+KEY_CLIENTS_HOLDINGS_INDICATOR = "Развитие холдингов"
+KEY_CLIENTS_ALLOWED_CHARTS = {
+    (PROJECT_BOOKMARKS_INDICATOR, "шт."),
+    (KEY_CLIENTS_HOLDINGS_INDICATOR, "шт."),
+    (KEY_CLIENTS_HOLDINGS_INDICATOR, "%"),
+}
 PROJECT_BOOKMARK_DEPARTMENTS: dict[str, str] = {
+    KEY_CLIENTS_DEPT: KEY_CLIENTS_DEPT_NAME,
     "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО «Газпром»",
     "9edaa7d4-37a5-11ee-93d3-6cb31113810e": "Отдел продаж БМИ",
 }
@@ -555,6 +563,142 @@ def _load_manager_departments(session: requests.Session, manager_keys: set[str])
     }
 
 
+def _month_bounds(year: int, month: int) -> tuple[str, str]:
+    start = f"{int(year)}-{int(month):02d}-01T00:00:00"
+    if int(month) == 12:
+        end = f"{int(year) + 1}-01-01T00:00:00"
+    else:
+        end = f"{int(year)}-{int(month) + 1:02d}-01T00:00:00"
+    return start, end
+
+
+def _proposal_customer_key(row: dict) -> str:
+    return str(
+        row.get("КонтрагентЗаказчик_Key")
+        or row.get("КонтрагентКонечныйЗаказчик_Key")
+        or row.get("Контрагент_Key")
+        or ""
+    )
+
+
+def _load_key_clients_proposals_fact(session: requests.Session, year: int) -> dict:
+    """Факты для диаграмм отдела ключевых клиентов по КП и отгрузкам.
+
+    `КонтрагентЗаказчик_Key` в текущей OData-публикации КП отсутствует, поэтому
+    используем ближайшие опубликованные поля заказчика: конечный контрагент, затем контрагент КП.
+    """
+    year_start = f"{int(year)}-01-01T00:00:00"
+    year_end = f"{int(year) + 1}-01-01T00:00:00"
+    flt = (
+        f"Date ge datetime'{year_start}' and Date lt datetime'{year_end}' "
+        f"and Posted eq true and DeletionMark eq false"
+    )
+    select = (
+        "Ref_Key,Date,Number,Менеджер_Key,ТД_ПроектнаяЗакладка,"
+        "КонтрагентКонечныйЗаказчик_Key,Контрагент_Key"
+    )
+    url = (
+        f"{BASE}/{PROJECT_BOOKMARKS_DOC}?$format=json"
+        f"&$filter={quote(flt, safe='')}"
+        f"&$select={quote(select, safe=',_')}"
+    )
+    docs = _fetch_all_json(session, url, label="ks_razvitie/key_clients_proposals")
+    manager_keys = {
+        row.get("Менеджер_Key")
+        for row in docs
+        if row.get("Менеджер_Key") and row.get("Менеджер_Key") != EMPTY
+    }
+    manager_depts = _load_manager_departments(session, set(manager_keys))
+
+    bookmarks_by_month = {m: 0 for m in range(1, 13)}
+    customers_by_month: dict[int, set[str]] = {m: set() for m in range(1, 13)}
+    docs_for_dept = 0
+    for row in docs:
+        manager = str(row.get("Менеджер_Key") or "")
+        if manager_depts.get(manager) != KEY_CLIENTS_DEPT:
+            continue
+        period = str(row.get("Date") or "")
+        if len(period) < 7:
+            continue
+        try:
+            month = int(period[5:7])
+        except ValueError:
+            continue
+        if not (1 <= month <= 12):
+            continue
+        docs_for_dept += 1
+        if bool(row.get("ТД_ПроектнаяЗакладка")):
+            bookmarks_by_month[month] += 1
+        customer = _proposal_customer_key(row)
+        if customer and customer != EMPTY:
+            customers_by_month[month].add(customer)
+
+    all_customers = set().union(*customers_by_month.values()) if customers_by_month else set()
+    shipments_by_customer: dict[str, list[date]] = {key: [] for key in all_customers}
+    history_start = f"{int(year) - 2}-01-01T00:00:00"
+    history_end = f"{int(year) + 1}-01-01T00:00:00"
+    customer_keys = sorted(k for k in all_customers if k and k != EMPTY)
+    shipments_loaded = 0
+    select_shipments = "Ref_Key,Date,Number,Контрагент_Key"
+    for i in range(0, len(customer_keys), 25):
+        batch = customer_keys[i:i + 25]
+        customer_filter = " or ".join(f"Контрагент_Key eq guid'{key}'" for key in batch)
+        flt_shipments = (
+            f"Date ge datetime'{history_start}' and Date lt datetime'{history_end}' "
+            f"and Posted eq true and DeletionMark eq false "
+            f"and ({customer_filter})"
+        )
+        url_shipments = (
+            f"{BASE}/{REALIZATION_DOC}?$format=json"
+            f"&$filter={quote(flt_shipments, safe='')}"
+            f"&$select={quote(select_shipments, safe=',_')}"
+        )
+        for row in _fetch_all_json(session, url_shipments, label="ks_razvitie/key_clients_shipments"):
+            shipments_loaded += 1
+            customer = str(row.get("Контрагент_Key") or "")
+            period = str(row.get("Date") or "")
+            if not customer or len(period) < 10:
+                continue
+            try:
+                shipped_at = date(int(period[:4]), int(period[5:7]), int(period[8:10]))
+            except ValueError:
+                continue
+            shipments_by_customer.setdefault(customer, []).append(shipped_at)
+
+    holdings_count_by_month = {m: 0 for m in range(1, 13)}
+    holdings_pct_by_month = {m: 0.0 for m in range(1, 13)}
+    customers_total_by_month = {m: len(customers_by_month[m]) for m in range(1, 13)}
+    for month in range(1, 13):
+        customers = customers_by_month[month]
+        period_start = date(int(year) - 2, month, 1)
+        _start_s, end_s = _month_bounds(int(year), month)
+        period_end = date(int(end_s[:4]), int(end_s[5:7]), int(end_s[8:10]))
+        shipped_customers = {
+            customer for customer in customers
+            if any(period_start <= shipped_at < period_end for shipped_at in shipments_by_customer.get(customer, []))
+        }
+        new_customers = customers - shipped_customers
+        holdings_count_by_month[month] = len(new_customers)
+        holdings_pct_by_month[month] = round(
+            len(new_customers) / len(customers) * 100,
+            4,
+        ) if customers else 0.0
+
+    return {
+        "bookmarks_by_month": bookmarks_by_month,
+        "holdings_count_by_month": holdings_count_by_month,
+        "holdings_pct_by_month": holdings_pct_by_month,
+        "customers_total_by_month": customers_total_by_month,
+        "docs_loaded": len(docs),
+        "docs_for_dept": docs_for_dept,
+        "managers_loaded": len(manager_depts),
+        "customers_total": len(all_customers),
+        "shipments_loaded": shipments_loaded,
+        "history_start": history_start,
+        "history_end": history_end,
+    }
+
+
 def _load_project_bookmarks_fact(session: requests.Session, year: int) -> dict:
     """Факт для «Закладки в проекты».
 
@@ -634,6 +778,26 @@ def _find_or_create_indicator_key(
             continue
         dept_months = by_dept_agg.get(dept_name) or {}
         if any(ind_key in month_map for month_map in dept_months.values()):
+            return ind_key
+    ind_key = f"{indicator}@@unit:{unit}"
+    indicator_labels[ind_key] = indicator
+    unit_by_dept_indicator[(dept_name, ind_key)] = unit
+    return ind_key
+
+
+def _find_or_create_indicator_key_by_unit(
+    indicator_labels: dict[str, str],
+    unit_by_dept_indicator: dict[tuple[str, str], str],
+    *,
+    dept_name: str,
+    indicator: str,
+    unit: str,
+) -> str:
+    target_norm = _normalize_text(indicator)
+    for ind_key, label in indicator_labels.items():
+        if _normalize_text(label) != target_norm:
+            continue
+        if unit_by_dept_indicator.get((dept_name, ind_key)) == unit:
             return ind_key
     ind_key = f"{indicator}@@unit:{unit}"
     indicator_labels[ind_key] = indicator
@@ -874,6 +1038,74 @@ def _fetch_from_odata(year: int) -> dict:
     except Exception:
         logger.exception("ks_razvitie: failed to calculate new service customers fact")
 
+    key_clients_debug: dict = {}
+    try:
+        key_clients_fact = _load_key_clients_proposals_fact(session, int(year))
+        key_clients_debug = {
+            key: value
+            for key, value in key_clients_fact.items()
+            if not key.endswith("_by_month")
+        }
+        dept_name_by_key[KEY_CLIENTS_DEPT] = KEY_CLIENTS_DEPT_NAME
+        dept_bucket = by_dept_agg.setdefault(KEY_CLIENTS_DEPT_NAME, {})
+
+        # Для этого отдела по ТЗ должно остаться ровно 3 диаграммы:
+        # закладки в проекты, развитие холдингов (шт.) и развитие холдингов (%).
+        existing_plans: dict[tuple[str, str, int], float] = {}
+        target_labels = {
+            _normalize_text(PROJECT_BOOKMARKS_INDICATOR),
+            _normalize_text(KEY_CLIENTS_HOLDINGS_INDICATOR),
+        }
+        for m in range(1, 13):
+            month_bucket = dept_bucket.setdefault(str(m), {})
+            for ind_key, cell in list(month_bucket.items()):
+                label = indicator_labels.get(ind_key, ind_key)
+                if _normalize_text(label) not in target_labels:
+                    continue
+                unit = str((cell or {}).get("unit") or unit_by_dept_indicator.get((KEY_CLIENTS_DEPT_NAME, ind_key)) or "")
+                existing_plans[(label, unit, m)] = existing_plans.get((label, unit, m), 0.0) + float((cell or {}).get("plan") or 0.0)
+                del month_bucket[ind_key]
+
+        key_clients_series = [
+            (
+                PROJECT_BOOKMARKS_INDICATOR,
+                "шт.",
+                key_clients_fact.get("bookmarks_by_month") or {},
+            ),
+            (
+                KEY_CLIENTS_HOLDINGS_INDICATOR,
+                "шт.",
+                key_clients_fact.get("holdings_count_by_month") or {},
+            ),
+            (
+                KEY_CLIENTS_HOLDINGS_INDICATOR,
+                "%",
+                key_clients_fact.get("holdings_pct_by_month") or {},
+            ),
+        ]
+        for indicator, unit, facts_by_month in key_clients_series:
+            indicator_key = _find_or_create_indicator_key_by_unit(
+                indicator_labels,
+                unit_by_dept_indicator,
+                dept_name=KEY_CLIENTS_DEPT_NAME,
+                indicator=indicator,
+                unit=unit,
+            )
+            indicators_set.add(indicator_key)
+            unit_by_dept_indicator[(KEY_CLIENTS_DEPT_NAME, indicator_key)] = unit
+            for m in range(1, 13):
+                month_bucket = dept_bucket.setdefault(str(m), {})
+                plan = existing_plans.get((indicator, unit, m), 0.0)
+                if indicator == KEY_CLIENTS_HOLDINGS_INDICATOR and unit == "%":
+                    plan = plan or 100.0
+                month_bucket[indicator_key] = {
+                    "plan": round(float(plan or 0.0), 4),
+                    "fact": round(float((facts_by_month or {}).get(m) or 0.0), 4),
+                    "unit": unit,
+                }
+    except Exception:
+        logger.exception("ks_razvitie: failed to calculate key clients facts")
+
     project_bookmarks_debug: dict = {}
     try:
         project_fact = _load_project_bookmarks_fact(session, int(year))
@@ -1020,6 +1252,7 @@ def _fetch_from_odata(year: int) -> dict:
         "fact_debug": {
             "new_service_customers": service_customers_debug,
             "project_bookmarks": project_bookmarks_debug,
+            "key_clients": key_clients_debug,
         },
     }
 
