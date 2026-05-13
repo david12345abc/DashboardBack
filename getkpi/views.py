@@ -392,7 +392,7 @@ def _normalize_dashboard_kpi_id(raw: object) -> str:
 
 def _is_gspp_m5_tile(kpi: dict) -> bool:
     kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
-    return kid in {'GSP-M5', 'GSPP-M5', 'ГСП-M5', 'ГСПП-M5'}
+    return kid in {'GSP-M5', 'GSPP-M5', 'ГСП-M5', 'ГCП-M5', 'ГСПП-M5', 'ГCПП-M5'}
 
 
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
@@ -557,6 +557,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_higher_better(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
         color = _rag_td_m4_limit(pct)
+    elif _is_gspp_m5_tile(kpi):
+        color = _rag_td_m4_limit(pct)
     elif _is_budget_limit_m3_kpi(kid):
         color = _rag_dz_lower_better(pct)
     elif kid in techdir_kpi_entry.TILE_COLOR_DZ_LOWER_IDS:
@@ -710,6 +712,11 @@ def _build_tile_item(
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
         tile['periodicity'] = 'ежемесячно'
+    if _is_gspp_m5_tile(kpi):
+        tile['period'] = 'ежемесячно'
+        tile['frequency'] = 'ежемесячно'
+        tile['periodicity'] = 'ежемесячно'
+        tile['pct_lower_is_better'] = True
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
@@ -1786,37 +1793,8 @@ def _build_kpi_entry(
                 }
 
     if _is_gspp_m5_tile(kpi):
-        today = date.today()
-        ref_y = int(year) if year is not None else today.year
-        ref_m = int(month) if month is not None else today.month
-        ref_m = max(1, min(12, ref_m))
-        fixed_plan = 122341.4
-        fixed_fact = 0.0
-        fixed_row = {
-            'month': ref_m,
-            'year': ref_y,
-            'month_name': MONTH_NAMES[ref_m],
-            'plan': fixed_plan,
-            'fact': fixed_fact,
-            'kpi_pct': 0.0,
-            'has_data': True,
-        }
-        entry['data_granularity'] = 'monthly'
-        entry['monthly_data'] = [dict(fixed_row)]
-        entry['last_full_month_row'] = dict(fixed_row)
-        entry['ytd'] = {
-            'total_plan': fixed_plan,
-            'total_fact': fixed_fact,
-            'kpi_pct': 0.0,
-            'months_with_data': 1,
-            'months_total': 1,
-        }
-        entry['kpi_period'] = {
-            'type': 'last_full_month',
-            'year': ref_y,
-            'month': ref_m,
-            'month_name': MONTH_NAMES[ref_m],
-        }
+        if _gspp_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+            return entry
 
     return entry
 

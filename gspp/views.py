@@ -3,13 +3,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from getkpi.gspp_m5 import get_gspp_m5_ytd
 from getkpi.gspp_q4 import get_gspp_q4_deviation_tables, get_gspp_q4_ytd, gspp_q4_kpi_id_matches
 
-GSPP_TILE_KPI_IDS: frozenset[str] = frozenset({"ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4"})
+GSPP_TILE_KPI_IDS: frozenset[str] = frozenset({
+    "ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4",
+    "ГСП-M5", "ГCП-M5", "GSP-M5", "ГСПП-M5", "ГCПП-M5", "GSPP-M5",
+})
 
-GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({"ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4"})
+GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
+    "ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4",
+    "ГСП-M5", "ГCП-M5", "GSP-M5", "ГСПП-M5", "ГCПП-M5", "GSPP-M5",
+})
 
-GSPP_M5_TILE_IDS: frozenset[str] = frozenset({"ГСП-M5", "GSP-M5", "ГСПП-M5", "GSPP-M5"})
+GSPP_M5_TILE_IDS: frozenset[str] = frozenset({
+    "ГСП-M5", "ГCП-M5", "GSP-M5", "ГСПП-M5", "ГCПП-M5", "GSPP-M5",
+})
 
 
 def _normalize_kpi_id(raw: object) -> str:
@@ -42,42 +51,10 @@ def merge_kpi_entry_if_applicable(
     month: int | None,
 ) -> bool:
     if _normalize_kpi_id(kpi_id) in GSPP_M5_TILE_IDS:
-        from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-
-        ref_y, ref_m = normalize_rd_tile_period(year, month)
-        fixed_plan = 122341.4
-        fixed_fact = 0.0
-        row: dict[str, Any] = {
-            "month": ref_m,
-            "year": ref_y,
-            "month_name": MONTH_NAMES[ref_m],
-            "plan": fixed_plan,
-            "fact": fixed_fact,
-            "kpi_pct": 0.0,
-            "has_data": True,
-            "values_unit": "шт.",
-        }
-        entry["data_granularity"] = "monthly"
-        entry["monthly_data"] = [dict(row)]
-        entry["last_full_month_row"] = dict(row)
-        entry["ytd"] = {
-            "total_plan": fixed_plan,
-            "total_fact": fixed_fact,
-            "kpi_pct": 0.0,
-            "months_with_data": 1,
-            "months_total": 1,
-            "values_unit": "шт.",
-        }
-        entry["kpi_period"] = {
-            "type": "last_full_month",
-            "year": ref_y,
-            "month": ref_m,
-            "month_name": MONTH_NAMES[ref_m],
-        }
-        entry["debug"] = {
-            "kpi_id": kpi_id,
-            "status": "fixed_payload",
-        }
+        payload = get_gspp_m5_ytd(year=year, month=month)
+        if payload is None:
+            return False
+        _merge_monthly(entry, payload)
         return True
 
     if not gspp_q4_kpi_id_matches(kpi_id):
