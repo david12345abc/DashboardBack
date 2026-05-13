@@ -24,8 +24,8 @@ from getkpi.fot_techdir_fact import (
 logger = logging.getLogger(__name__)
 
 GSPP_M3_CACHE_PREFIX = "gspp_m3_ytd"
-GSPP_M3_DISK_TAG = "gspp_m3_fot_payload_v2"
-GSPP_M3_DISK_VERSION = 2
+GSPP_M3_DISK_TAG = "gspp_m3_fot_payload_v3"
+GSPP_M3_DISK_VERSION = 3
 
 GSPP_M3_PLAN_TARGET_2026: dict[int, int] = {
     1: 3_935_148,

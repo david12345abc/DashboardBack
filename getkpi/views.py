@@ -395,6 +395,16 @@ def _is_gspp_m5_tile(kpi: dict) -> bool:
     return kid in {'GSP-M5', 'GSPP-M5', 'ГСП-M5', 'ГCП-M5', 'ГСПП-M5', 'ГCПП-M5'}
 
 
+def _is_gspp_m3_tile(kpi: dict) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    return kid in {'GSP-M3', 'GSPP-M3', 'ГСП-M3', 'ГCП-M3', 'ГСПП-M3', 'ГCПП-M3'}
+
+
+def _is_gspp_m1_tile(kpi: dict) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    return kid in {'GSP-M1', 'GSPP-M1', 'ГСП-M1', 'ГCП-M1', 'ГСПП-M1', 'ГCПП-M1'}
+
+
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     """Плитки «в пределах лимита»: поддерживаем суффиксы *-M3-1/*-M3-2 и *.1/*.2."""
     normalized = (kpi_id or '').upper()
@@ -557,7 +567,7 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_higher_better(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
         color = _rag_td_m4_limit(pct)
-    elif _is_gspp_m5_tile(kpi):
+    elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
         color = _rag_td_m4_limit(pct)
     elif _is_budget_limit_m3_kpi(kid):
         color = _rag_dz_lower_better(pct)
@@ -712,11 +722,12 @@ def _build_tile_item(
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
         tile['periodicity'] = 'ежемесячно'
-    if _is_gspp_m5_tile(kpi):
+    if _is_gspp_m1_tile(kpi) or _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
         tile['periodicity'] = 'ежемесячно'
-        tile['pct_lower_is_better'] = True
+        if not _is_gspp_m1_tile(kpi):
+            tile['pct_lower_is_better'] = True
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
@@ -1167,6 +1178,10 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'
+        elif _is_gspp_m1_tile(kpi):
+            tile['unit'] = 'шт.'
+        elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+            tile['unit'] = 'руб.'
         elif _kid_tile == 'RD-M1':
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-M3-1':
