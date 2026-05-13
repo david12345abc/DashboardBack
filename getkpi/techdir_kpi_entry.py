@@ -1,6 +1,7 @@
 """Сборка записи KPI дашборда «технический директор» (TD-*) — вызывается из ``getkpi.views``."""
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Callable
 
 from . import techdir_m2, techdir_m3, techdir_m4, techdir_m6_bdds, techdir_projects, techdir_tekuchet, techdir_y1
@@ -73,9 +74,11 @@ def _merge_td_m5(entry: dict[str, Any], year: int | None, month: int | None) -> 
 
 
 def _merge_td_m6(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
-    td = techdir_m6_bdds.get_td_m6_ytd(year=year, month=month)
+    today = date.today()
+    # TD-M6 ведём по текущему календарному месяцу, а не по общему last_full_month периода дашборда.
+    td = techdir_m6_bdds.get_td_m6_ytd(year=today.year, month=today.month)
     if td is None:
-        ry, rm = techdir_projects._normalize_ref_period(year, month)
+        ry, rm = today.year, today.month
         td = techdir_m6_bdds._zero_payload_for_period(ry, rm)
     _apply_monthly(entry, td)
     return True

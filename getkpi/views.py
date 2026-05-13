@@ -767,7 +767,7 @@ def _plan_fact_period_label_from_kpi_period(period: dict | None) -> str | None:
         return None
     ptype = period.get('type')
     year = period.get('year')
-    if ptype == 'last_full_month':
+    if ptype in {'last_full_month', 'current_month'}:
         month_name = period.get('month_name')
         if month_name and year is not None:
             name = str(month_name)
@@ -1095,11 +1095,11 @@ def _build_universal_payload(
             _qualdir_kpi_views.KPI_IDS_USE_BUILDER_KP_PERIOD
             | _devdir_kpi_views.DEVDIR_KPI_IDS
             | _gspp_kpi_views.GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD
-        ):
+        ) or _kid_tile == 'TD-M6':
             kper = entry.get('kpi_period')
             if (
                 isinstance(kper, dict)
-                and kper.get('type') == 'last_full_month'
+                and kper.get('type') in {'last_full_month', 'current_month'}
                 and kper.get('year') is not None
                 and kper.get('month') is not None
             ):
