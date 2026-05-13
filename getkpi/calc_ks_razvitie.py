@@ -70,7 +70,7 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
-from .commercial_department_aliases import KEY_CLIENTS_DEPT, normalize_commercial_dept_guid
+from .commercial_department_aliases import DEALER_SALES_DEPT, KEY_CLIENTS_DEPT, normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -90,12 +90,26 @@ ALLOWED_DEPARTMENTS: dict[str, str] = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = "ks_razvitie_units_v5_key_clients_fact"
+CACHE_VERSION = "ks_razvitie_units_v13_service_dept_charts"
 TARGET_SERVICE_CUSTOMERS_DEPT_KEY = "34497ef7-810f-11e4-80d6-001e67112509"
 TARGET_SERVICE_CUSTOMERS_DEPT_NAME = "Отдел продаж эталонного оборудования и услуг"
 TARGET_SERVICE_CUSTOMERS_INDICATOR = "Новые заказчики по услугам"
 PROJECT_BOOKMARKS_INDICATOR = "Закладки в проекты"
 PROJECT_BOOKMARKS_DOC = "Document_КоммерческоеПредложениеКлиенту"
+DEALER_SALES_DEPT_NAME = "Отдел дилерских продаж"
+DEALER_EXISTING_INDICATOR = "Развитие имеющихся дилеров"
+DEALER_NEW_INDICATOR = "Новые дилеры"
+DEALER_UFGH_INDICATOR = "Выручка UFG-H через дилерский канал"
+DEALER_ALLOWED_CHARTS = {
+    (DEALER_EXISTING_INDICATOR, "шт."),
+    (DEALER_NEW_INDICATOR, "шт."),
+    (DEALER_EXISTING_INDICATOR, "%"),
+    (DEALER_UFGH_INDICATOR, "руб."),
+}
+GAZPROM_DEPT = "bd7b5184-9f9c-11e4-80da-001e67112509"
+GAZPROM_DEPT_NAME = "Отдел по работе с ПАО «Газпром»"
+BMI_DEPT = "9edaa7d4-37a5-11ee-93d3-6cb31113810e"
+BMI_DEPT_NAME = "Отдел продаж БМИ"
 KEY_CLIENTS_DEPT_NAME = "Отдел по работе с ключевыми клиентами"
 KEY_CLIENTS_HOLDINGS_INDICATOR = "Развитие холдингов"
 KEY_CLIENTS_ALLOWED_CHARTS = {
@@ -104,9 +118,10 @@ KEY_CLIENTS_ALLOWED_CHARTS = {
     (KEY_CLIENTS_HOLDINGS_INDICATOR, "%"),
 }
 PROJECT_BOOKMARK_DEPARTMENTS: dict[str, str] = {
+    TARGET_SERVICE_CUSTOMERS_DEPT_KEY: TARGET_SERVICE_CUSTOMERS_DEPT_NAME,
     KEY_CLIENTS_DEPT: KEY_CLIENTS_DEPT_NAME,
-    "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО «Газпром»",
-    "9edaa7d4-37a5-11ee-93d3-6cb31113810e": "Отдел продаж БМИ",
+    GAZPROM_DEPT: GAZPROM_DEPT_NAME,
+    BMI_DEPT: BMI_DEPT_NAME,
 }
 SERVICE_WORK_TYPES = {"услуга", "работа"}
 ORDER_TYPE = "StandardODATA.Document_ЗаказКлиента"
@@ -130,6 +145,10 @@ _DISCOVERED_TAB: str | None = None
 
 def _cache_path(year: int) -> Path:
     return CACHE_DIR / f"ks_razvitie_{year}.json"
+
+
+def cache_path(year: int | None = None) -> Path:
+    return _cache_path(int(year or date.today().year))
 
 
 def _load_cache(year: int) -> dict | None:
@@ -412,6 +431,37 @@ def _load_service_work_order_keys(session: requests.Session, order_keys: set[str
     return service_orders
 
 
+def _load_service_work_realization_keys(session: requests.Session, realization_keys: set[str]) -> set[str]:
+    lines = _fetch_table_by_refs(
+        session,
+        "Document_РеализацияТоваровУслуг_Товары",
+        realization_keys,
+        "Ref_Key,Номенклатура_Key,Количество,Сумма",
+        label="ks_razvitie/realization_lines",
+    )
+    nomenclature_keys = {
+        row.get("Номенклатура_Key")
+        for row in lines
+        if row.get("Номенклатура_Key") and (float(row.get("Количество") or 0) or float(row.get("Сумма") or 0))
+    }
+    nomenclature = _fetch_by_refs(
+        session,
+        "Catalog_Номенклатура",
+        set(nomenclature_keys),
+        "Ref_Key,ТипНоменклатуры",
+        label="ks_razvitie/realization_nomenclature",
+    )
+    service_nomenclature = {
+        key for key, row in nomenclature.items()
+        if _normalize_text(row.get("ТипНоменклатуры")) in SERVICE_WORK_TYPES
+    }
+    realization_with_services: set[str] = set()
+    for row in lines:
+        if row.get("Номенклатура_Key") in service_nomenclature:
+            realization_with_services.add(row.get("Ref_Key"))
+    return realization_with_services
+
+
 def _load_realizations(
     session: requests.Session,
     date_from: str,
@@ -477,9 +527,19 @@ def _service_realization_events(session: requests.Session, shipments: list[dict]
         )
     }
     service_orders = _load_service_work_order_keys(session, target_order_keys)
+    service_realizations = _load_service_work_realization_keys(
+        session,
+        {
+            row.get("Ref_Key")
+            for row in shipments
+            if row.get("Ref_Key") and row.get("ЗаказКлиента") in service_orders
+        },
+    )
 
     events: list[tuple[str, int, int]] = []
     for shipment in shipments:
+        if shipment.get("Ref_Key") not in service_realizations:
+            continue
         order_key = shipment.get("ЗаказКлиента")
         if order_key not in service_orders:
             continue
@@ -508,7 +568,7 @@ def _load_new_service_customers_fact(session: requests.Session, year: int) -> di
     Заказчик: Document_ЗаказКлиента.Партнер_Key.
     Отгрузка/реализация: проведённый Document_РеализацияТоваровУслуг
     по целевому подразделению. Период берём по Date документа реализации.
-    Услуга/Работа: Catalog_Номенклатура.ТипНоменклатуры в строках заказа.
+    Услуга/Работа: Catalog_Номенклатура.ТипНоменклатуры в строках реализации.
     """
     year_start = f"{int(year)}-01-01T00:00:00"
     year_end = f"{int(year) + 1}-01-01T00:00:00"
@@ -803,6 +863,219 @@ def _find_or_create_indicator_key_by_unit(
     indicator_labels[ind_key] = indicator
     unit_by_dept_indicator[(dept_name, ind_key)] = unit
     return ind_key
+
+
+def _apply_dealer_sales_chart_rules(
+    by_dept_agg: dict[str, dict[str, dict[str, float]]],
+    indicator_labels: dict[str, str],
+    unit_by_dept_indicator: dict[tuple[str, str], str],
+    indicators_set: set[str],
+    dept_name_by_key: dict[str, str],
+) -> None:
+    try:
+        from . import calc_komdir_active_dealers
+
+        active_dealers_report = calc_komdir_active_dealers.compute_active_dealers_report(date.today())
+        active_dealers_fact = float(active_dealers_report.get("active_dealers_count") or 0.0)
+        new_dealers_report = calc_komdir_active_dealers.compute_new_dealers_report(date.today())
+        new_dealers_fact = float(new_dealers_report.get("new_dealers_count") or 0.0)
+    except Exception:
+        logger.exception("ks_razvitie: failed to calculate dealer facts")
+        active_dealers_report = {}
+        new_dealers_report = {}
+        active_dealers_fact = 0.0
+        new_dealers_fact = 0.0
+
+    dept_name_by_key[DEALER_SALES_DEPT] = DEALER_SALES_DEPT_NAME
+    dept_bucket = by_dept_agg.setdefault(DEALER_SALES_DEPT_NAME, {})
+
+    allowed_norm = {
+        (_normalize_text(indicator), unit)
+        for indicator, unit in DEALER_ALLOWED_CHARTS
+    }
+    target_norms = {
+        _normalize_text(DEALER_EXISTING_INDICATOR),
+        _normalize_text(DEALER_NEW_INDICATOR),
+        _normalize_text(DEALER_UFGH_INDICATOR),
+    }
+
+    for m in range(1, 13):
+        month_bucket = dept_bucket.setdefault(str(m), {})
+        existing_units_by_label: dict[tuple[str, str], dict] = {}
+        existing_by_label: dict[str, dict] = {}
+
+        for ind_key, cell in list(month_bucket.items()):
+            label = indicator_labels.get(ind_key, ind_key)
+            label_norm = _normalize_text(label)
+            unit = str((cell or {}).get("unit") or unit_by_dept_indicator.get((DEALER_SALES_DEPT_NAME, ind_key)) or "")
+            if label_norm in target_norms:
+                prev = existing_by_label.get(label_norm) or {"plan": 0.0, "fact": 0.0, "unit": unit}
+                existing_by_label[label_norm] = {
+                    "plan": round(float(prev.get("plan") or 0.0) + float((cell or {}).get("plan") or 0.0), 4),
+                    "fact": round(float(prev.get("fact") or 0.0) + float((cell or {}).get("fact") or 0.0), 4),
+                    "unit": unit,
+                }
+            if label_norm in target_norms and (label_norm, unit) not in allowed_norm:
+                del month_bucket[ind_key]
+                continue
+            existing_units_by_label[(label_norm, unit)] = cell
+
+        existing_units = existing_units_by_label.get((_normalize_text(DEALER_EXISTING_INDICATOR), "шт.")) or {
+            "plan": 0.0,
+            "fact": 0.0,
+            "unit": "шт.",
+        }
+
+        for indicator, unit in [
+            (DEALER_EXISTING_INDICATOR, "шт."),
+            (DEALER_NEW_INDICATOR, "шт."),
+            (DEALER_EXISTING_INDICATOR, "%"),
+            (DEALER_UFGH_INDICATOR, "руб."),
+        ]:
+            ind_key = _find_or_create_indicator_key_by_unit(
+                indicator_labels,
+                unit_by_dept_indicator,
+                dept_name=DEALER_SALES_DEPT_NAME,
+                indicator=indicator,
+                unit=unit,
+            )
+            indicators_set.add(ind_key)
+            if indicator == DEALER_EXISTING_INDICATOR and unit == "%":
+                month_bucket[ind_key] = {
+                    "plan": round(float(existing_units.get("plan") or 0.0), 4),
+                    "fact": round(active_dealers_fact, 4),
+                    "unit": "%",
+                }
+            elif indicator == DEALER_EXISTING_INDICATOR and unit == "шт.":
+                prev = (
+                    month_bucket.get(ind_key)
+                    or existing_units_by_label.get((_normalize_text(indicator), unit))
+                    or existing_by_label.get(_normalize_text(indicator))
+                    or {"plan": 0.0, "fact": 0.0, "unit": unit}
+                )
+                month_bucket[ind_key] = {
+                    "plan": round(float(prev.get("plan") or 0.0), 4),
+                    "fact": round(active_dealers_fact, 4),
+                    "unit": unit,
+                    "fact_source": "active_dealers_12m_payments_or_shipments",
+                    "dealer_detection": (active_dealers_report or {}).get("dealer_detection") or {},
+                    "period_from": (active_dealers_report or {}).get("period_from"),
+                    "period_to": (active_dealers_report or {}).get("period_to"),
+                }
+            elif indicator == DEALER_NEW_INDICATOR and unit == "шт.":
+                prev = (
+                    month_bucket.get(ind_key)
+                    or existing_units_by_label.get((_normalize_text(indicator), unit))
+                    or existing_by_label.get(_normalize_text(indicator))
+                    or {"plan": 0.0, "fact": 0.0, "unit": unit}
+                )
+                month_bucket[ind_key] = {
+                    "plan": round(float(prev.get("plan") or 0.0), 4),
+                    "fact": round(new_dealers_fact, 4),
+                    "unit": unit,
+                    "fact_source": "new_dealers_first_payment_and_first_shipment_ytd",
+                    "dealer_detection": (new_dealers_report or {}).get("dealer_detection") or {},
+                    "period_from": (new_dealers_report or {}).get("period_from"),
+                    "period_to": (new_dealers_report or {}).get("period_to"),
+                }
+            else:
+                prev = (
+                    month_bucket.get(ind_key)
+                    or existing_units_by_label.get((_normalize_text(indicator), unit))
+                    or existing_by_label.get(_normalize_text(indicator))
+                    or {"plan": 0.0, "fact": 0.0, "unit": unit}
+                )
+                month_bucket[ind_key] = {
+                    "plan": round(float(prev.get("plan") or 0.0), 4),
+                    "fact": round(float(prev.get("fact") or 0.0), 4),
+                    "unit": unit,
+                }
+
+
+def _apply_single_project_bookmark_chart_rules(
+    by_dept_agg: dict[str, dict[str, dict[str, float]]],
+    indicator_labels: dict[str, str],
+    unit_by_dept_indicator: dict[tuple[str, str], str],
+    indicators_set: set[str],
+    dept_name_by_key: dict[str, str],
+    *,
+    dept_guid: str,
+    dept_name: str,
+) -> None:
+    dept_name_by_key[dept_guid] = dept_name
+    dept_bucket = by_dept_agg.setdefault(dept_name, {})
+    target_norm = _normalize_text(PROJECT_BOOKMARKS_INDICATOR)
+
+    for m in range(1, 13):
+        month_bucket = dept_bucket.setdefault(str(m), {})
+        bookmark_value = month_bucket.get(PROJECT_BOOKMARKS_INDICATOR) or {}
+        for ind_key, cell in list(month_bucket.items()):
+            label = indicator_labels.get(ind_key, ind_key)
+            label_norm = _normalize_text(label)
+            unit = str((cell or {}).get("unit") or unit_by_dept_indicator.get((dept_name, ind_key)) or "")
+            if label_norm == target_norm and unit == "шт.":
+                bookmark_value = cell or bookmark_value
+            del month_bucket[ind_key]
+
+        indicator_key = _find_or_create_indicator_key_by_unit(
+            indicator_labels,
+            unit_by_dept_indicator,
+            dept_name=dept_name,
+            indicator=PROJECT_BOOKMARKS_INDICATOR,
+            unit="шт.",
+        )
+        indicators_set.add(indicator_key)
+        month_bucket[indicator_key] = {
+            "plan": round(float((bookmark_value or {}).get("plan") or 0.0), 4),
+            "fact": round(float((bookmark_value or {}).get("fact") or 0.0), 4),
+            "unit": "шт.",
+        }
+
+
+def _apply_service_customers_chart_rules(
+    by_dept_agg: dict[str, dict[str, dict[str, float]]],
+    indicator_labels: dict[str, str],
+    unit_by_dept_indicator: dict[tuple[str, str], str],
+    indicators_set: set[str],
+    dept_name_by_key: dict[str, str],
+) -> None:
+    dept_name_by_key[TARGET_SERVICE_CUSTOMERS_DEPT_KEY] = TARGET_SERVICE_CUSTOMERS_DEPT_NAME
+    dept_bucket = by_dept_agg.setdefault(TARGET_SERVICE_CUSTOMERS_DEPT_NAME, {})
+    allowed = {
+        _normalize_text(PROJECT_BOOKMARKS_INDICATOR),
+        _normalize_text(TARGET_SERVICE_CUSTOMERS_INDICATOR),
+    }
+
+    for m in range(1, 13):
+        month_bucket = dept_bucket.setdefault(str(m), {})
+        values_by_label: dict[str, dict] = {}
+        for ind_key, cell in list(month_bucket.items()):
+            label = indicator_labels.get(ind_key, ind_key)
+            label_norm = _normalize_text(label)
+            if label_norm in allowed:
+                prev = values_by_label.get(label_norm) or {"plan": 0.0, "fact": 0.0, "unit": "шт."}
+                values_by_label[label_norm] = {
+                    "plan": round(float(prev.get("plan") or 0.0) + float((cell or {}).get("plan") or 0.0), 4),
+                    "fact": round(float(prev.get("fact") or 0.0) + float((cell or {}).get("fact") or 0.0), 4),
+                    "unit": "шт.",
+                }
+            del month_bucket[ind_key]
+
+        for indicator in (PROJECT_BOOKMARKS_INDICATOR, TARGET_SERVICE_CUSTOMERS_INDICATOR):
+            indicator_key = _find_or_create_indicator_key_by_unit(
+                indicator_labels,
+                unit_by_dept_indicator,
+                dept_name=TARGET_SERVICE_CUSTOMERS_DEPT_NAME,
+                indicator=indicator,
+                unit="шт.",
+            )
+            indicators_set.add(indicator_key)
+            value = values_by_label.get(_normalize_text(indicator)) or {"plan": 0.0, "fact": 0.0}
+            month_bucket[indicator_key] = {
+                "plan": round(float(value.get("plan") or 0.0), 4),
+                "fact": round(float(value.get("fact") or 0.0), 4),
+                "unit": "шт.",
+            }
 
 
 def _parse_month(value) -> int | None:
@@ -1138,6 +1411,42 @@ def _fetch_from_odata(year: int) -> dict:
                 }
     except Exception:
         logger.exception("ks_razvitie: failed to calculate project bookmarks fact")
+
+    _apply_single_project_bookmark_chart_rules(
+        by_dept_agg,
+        indicator_labels,
+        unit_by_dept_indicator,
+        indicators_set,
+        dept_name_by_key,
+        dept_guid=GAZPROM_DEPT,
+        dept_name=GAZPROM_DEPT_NAME,
+    )
+
+    _apply_single_project_bookmark_chart_rules(
+        by_dept_agg,
+        indicator_labels,
+        unit_by_dept_indicator,
+        indicators_set,
+        dept_name_by_key,
+        dept_guid=BMI_DEPT,
+        dept_name=BMI_DEPT_NAME,
+    )
+
+    _apply_service_customers_chart_rules(
+        by_dept_agg,
+        indicator_labels,
+        unit_by_dept_indicator,
+        indicators_set,
+        dept_name_by_key,
+    )
+
+    _apply_dealer_sales_chart_rules(
+        by_dept_agg,
+        indicator_labels,
+        unit_by_dept_indicator,
+        indicators_set,
+        dept_name_by_key,
+    )
 
     indicators = sorted(indicators_set)
 

@@ -67,7 +67,7 @@ BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 # In-process: один ключ на дату as_of (ISO), значение (monotonic_ts, payload).
 _mem_lock = threading.Lock()
@@ -419,14 +419,17 @@ def _aggregate_payments(
             if cat_partner in excl_full and not order.get("soprovozhd"):
                 continue
 
+        if row.get("ХозяйственнаяОперация") == "ВозвратОплатыКлиенту":
+            continue
         amt = float(row.get("СуммаОплатыРегл") or row.get("СуммаОплаты") or 0)
         if not amt:
             continue
-        if row.get("ХозяйственнаяОперация") == "ВозвратОплатыКлиенту":
-            amt = -amt
 
-        slot = agg.setdefault(dealer_pk, {"sum": 0.0, "last": None})
+        slot = agg.setdefault(dealer_pk, {"sum": 0.0, "first": None, "last": None})
         slot["sum"] += amt
+        first = slot["first"]
+        if first is None or pdt < first:
+            slot["first"] = pdt
         last = slot["last"]
         if last is None or pdt > last:
             slot["last"] = pdt
@@ -501,12 +504,17 @@ def _aggregate_shipments(
                 continue
 
         amount = float(row.get("Сумма") or 0)
+        if not amount:
+            continue
         cur_code = CURRENCY_KEYS.get(od["currency"], "RUB")
         rate = EXCHANGE_RATES.get(cur_code, 1.0)
         amt = abs(amount) * rate
 
-        slot = agg.setdefault(pk, {"sum": 0.0, "last": None})
+        slot = agg.setdefault(pk, {"sum": 0.0, "first": None, "last": None})
         slot["sum"] += amt
+        first = slot["first"]
+        if first is None or pdt < first:
+            slot["first"] = pdt
         last = slot["last"]
         if last is None or pdt > last:
             slot["last"] = pdt
@@ -519,9 +527,19 @@ def _cache_path(as_of: date) -> Path:
     return CACHE_DIR / f"komdir_active_dealers_{as_of.isoformat()}_{CACHE_VERSION}.json"
 
 
+def _new_dealers_cache_path(as_of: date) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / f"komdir_new_dealers_{as_of.isoformat()}_{CACHE_VERSION}.json"
+
+
 def active_dealers_cache_path(as_of: date | None = None) -> Path:
     """Путь к JSON-кэшу отчёта (для cache_manager.is_cache_fresh / прогрева)."""
     return _cache_path(as_of or date.today())
+
+
+def new_dealers_cache_path(as_of: date | None = None) -> Path:
+    """Путь к JSON-кэшу новых дилеров (для cache_manager.is_cache_fresh / прогрева)."""
+    return _new_dealers_cache_path(as_of or date.today())
 
 
 def _load_cache(as_of: date) -> dict[str, Any] | None:
@@ -660,3 +678,120 @@ def compute_active_dealers_report(as_of: date | None = None) -> dict[str, Any]:
 
 def get_active_dealers_count(as_of: date | None = None) -> int:
     return int(compute_active_dealers_report(as_of=as_of).get("active_dealers_count") or 0)
+
+
+def _load_new_dealers_cache(as_of: date) -> dict[str, Any] | None:
+    p = _new_dealers_cache_path(as_of)
+    if not p.exists():
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("cache_version") == CACHE_VERSION:
+        return data
+    return None
+
+
+def _save_new_dealers_cache(as_of: date, payload: dict[str, Any]) -> None:
+    try:
+        with open(_new_dealers_cache_path(as_of), "w", encoding="utf-8") as f:
+            json.dump(
+                {**payload, "cached_at": datetime.now().isoformat(timespec="seconds")},
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except OSError:
+        pass
+
+
+def compute_new_dealers_report(as_of: date | None = None) -> dict[str, Any]:
+    """Новые дилеры: первая оплата и первая отгрузка обе с начала текущего года.
+
+    Дилерский признак и фильтры заказов/исключений совпадают с отчётом
+    действующих дилеров.
+    """
+    as_of = as_of or date.today()
+    mem_key = f"new:{as_of.isoformat()}"
+    mem_hit = _mem_get(mem_key)
+    if mem_hit is not None:
+        return mem_hit
+
+    cached = _load_new_dealers_cache(as_of)
+    if cached is not None:
+        _mem_set(mem_key, cached)
+        return cached
+
+    session = requests.Session()
+    session.auth = AUTH
+
+    year_start = date(as_of.year, 1, 1)
+    d0 = datetime(2000, 1, 1)
+    d1 = datetime.combine(as_of, time.max)
+    dealer_keys, dealer_meta = build_dealer_partner_keys(session)
+
+    if not dealer_keys:
+        payload = {
+            "cache_version": CACHE_VERSION,
+            "as_of": as_of.isoformat(),
+            "period_from": year_start.isoformat(),
+            "period_to": as_of.isoformat(),
+            "history_from": d0.date().isoformat(),
+            "dealer_detection": dealer_meta,
+            "new_dealers_count": 0,
+            "rows": [],
+            "has_data": bool(dealer_meta.get("segments")),
+        }
+        _save_new_dealers_cache(as_of, payload)
+        _mem_set(mem_key, payload)
+        return payload
+
+    ds_rows = _load_ds_rows_range(session, d0, d1)
+    rashod_rows = _load_rashod_rows_range(session, d0, d1)
+    pay = _aggregate_payments(session, ds_rows, dealer_keys, d0, d1)
+    ship = _aggregate_shipments(session, rashod_rows, dealer_keys, d0, d1)
+
+    candidate_keys = sorted(set(pay.keys()) & set(ship.keys()))
+    meta_all = _batch_load_partner_meta(session, candidate_keys)
+    rows_out: list[dict[str, Any]] = []
+    for pk in candidate_keys:
+        first_payment = pay.get(pk, {}).get("first")
+        first_shipment = ship.get(pk, {}).get("first")
+        if first_payment is None or first_shipment is None:
+            continue
+        if not (year_start <= first_payment.date() <= as_of):
+            continue
+        if not (year_start <= first_shipment.date() <= as_of):
+            continue
+        pm = meta_all.get(pk) or {}
+        rows_out.append({
+            "dealer_name": (pm.get("name") or "").strip() or pk,
+            "dealer_ref": pk,
+            "dealer_code": pm.get("code", ""),
+            "first_payment_date": first_payment.date().isoformat(),
+            "first_shipment_date": first_shipment.date().isoformat(),
+            "payments_sum_history": round(float(pay.get(pk, {}).get("sum") or 0.0), 2),
+            "shipments_sum_history": round(float(ship.get(pk, {}).get("sum") or 0.0), 2),
+        })
+
+    rows_out.sort(key=lambda r: (r["first_payment_date"], r["first_shipment_date"], r["dealer_name"]))
+    payload = {
+        "cache_version": CACHE_VERSION,
+        "as_of": as_of.isoformat(),
+        "period_from": year_start.isoformat(),
+        "period_to": as_of.isoformat(),
+        "history_from": d0.date().isoformat(),
+        "dealer_detection": dealer_meta,
+        "new_dealers_count": len(rows_out),
+        "rows": rows_out,
+        "has_data": True,
+    }
+    _save_new_dealers_cache(as_of, payload)
+    _mem_set(mem_key, payload)
+    return payload
+
+
+def get_new_dealers_count(as_of: date | None = None) -> int:
+    return int(compute_new_dealers_report(as_of=as_of).get("new_dealers_count") or 0)

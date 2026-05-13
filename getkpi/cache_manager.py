@@ -69,7 +69,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from . import (
         calc_debitorka, calc_dengi_fact, calc_dogovory_fact,
         calc_logistics_price_deviation, calc_logistics_supplier_share, calc_logistics_tmc_on_time,
-        calc_dz_limits, calc_fot, calc_komdir_active_dealers, calc_kp_price,
+        calc_dz_limits, calc_fot, calc_komdir_active_dealers, calc_kp_price, calc_ks_razvitie,
         calc_otgruzki_fact, calc_otif_vypusk_zam_proizvodstva, calc_plan,
         calc_prod_deputy_output, calc_prod_deputy_pc, calc_prod_deputy_projects,
         calc_prod_deputy_turnover, calc_rashody,
@@ -242,6 +242,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          calc_logistics_supplier_share.cache_path(y, m),
          lambda: calc_logistics_supplier_share.get_logistics_supplier_share_monthly(year=y, month=m)),
 
+        (f'ks_razvitie_{y}',
+         calc_ks_razvitie.cache_path(y),
+         lambda yy=y: calc_ks_razvitie.get_ks_razvitie_plans(year=yy)),
+
         (f'devdir_rd_m1_zpr_{y}_{m}',
          rd_m1_zpr.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: rd_m1_zpr.get_rd_m1_zpr_ytd(year=yy, month=mm)),
@@ -267,6 +271,11 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         f'active_dealers_{td_as_of.isoformat()}',
         calc_komdir_active_dealers.active_dealers_cache_path(td_as_of),
         lambda d=td_as_of: calc_komdir_active_dealers.compute_active_dealers_report(d),
+    ))
+    tasks.append((
+        f'new_dealers_{td_as_of.isoformat()}',
+        calc_komdir_active_dealers.new_dealers_cache_path(td_as_of),
+        lambda d=td_as_of: calc_komdir_active_dealers.compute_new_dealers_report(d),
     ))
     return tasks
 
