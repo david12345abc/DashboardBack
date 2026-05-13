@@ -405,6 +405,11 @@ def _is_gspp_m1_tile(kpi: dict) -> bool:
     return kid in {'GSP-M1', 'GSPP-M1', 'ГСП-M1', 'ГCП-M1', 'ГСПП-M1', 'ГCПП-M1'}
 
 
+def _is_gspp_q5_tile(kpi: dict) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    return kid in {'GSP-Q5', 'GSPP-Q5', 'ГСП-Q5', 'ГCП-Q5', 'ГСПП-Q5', 'ГCПП-Q5'}
+
+
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     """Плитки «в пределах лимита»: поддерживаем суффиксы *-M3-1/*-M3-2 и *.1/*.2."""
     normalized = (kpi_id or '').upper()
@@ -1171,6 +1176,8 @@ def _build_universal_payload(
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'OD-Q2':
+            tile['unit'] = 'чел.'
+        elif _is_gspp_q5_tile(kpi):
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
