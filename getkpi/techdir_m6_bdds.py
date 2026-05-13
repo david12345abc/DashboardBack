@@ -1,8 +1,9 @@
 """
-TD-M6: план ФОТ по проектам внешних заказов техдира.
+TD-M6: план/факт ФОТ по проектам внешних заказов техдира.
 
-Для каждого живого внешнего проекта находим проект в 1С и берём помесячные суммы из **самого старого** БДДС
-(`Document_ТД_БДДС`, ТЧ «Ресурсы», строки с показателем «затраты»). Итоговый план месяца — сумма по всем живым проектам.
+План/факт по текущему срезу внешних заказов зашит в модуль. Для новых проектов, которых ещё нет
+во встроенной таблице, сохраняем прежний резервный алгоритм: находим проект в 1С и берём помесячные
+суммы из **самого старого** БДДС (`Document_ТД_БДДС`, ТЧ «Ресурсы», строки с показателем «затраты»).
 
 OData:
   <base_url>/odata/standard.odata/Document_ТД_БДДС
@@ -34,6 +35,32 @@ MONTH_NAMES = tp.MONTH_NAMES
 DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
 DOC_ENTITY = "Document_ТД_БДДС"
 PROJECT_ENTITY = "Catalog_Проекты"
+FOT_REFERENCE_MONTHLY: dict[str, dict[str, float]] = {
+    "2026-01": {"plan": 12089147.30, "fact": 15111854.70},
+    "2026-02": {"plan": 1510775.70, "fact": 6045567.83},
+    "2026-03": {"plan": 4135495.49, "fact": 128525495.48},
+    "2026-04": {"plan": 64339272.32, "fact": 19738752.20},
+    "2026-05": {"plan": 8735300.91, "fact": 671810.27},
+    "2026-06": {"plan": 54173710.59, "fact": 0.0},
+    "2026-07": {"plan": 1354518.44, "fact": 0.0},
+    "2026-08": {"plan": 1062479.41, "fact": 0.0},
+    "2026-09": {"plan": 9567093.39, "fact": 0.0},
+    "2026-10": {"plan": 19519167.77, "fact": 0.0},
+}
+FOT_REFERENCE_PROJECT_LABELS = [
+    "Выполнение пусконаладочных работ газоизмерительной системы СПУ ПГ-018 (ЦФО БМИ) 30.12.2025",
+    "Выполнение условий договора №МПГ00007318 от 15.01.2024 на поставку ПУРГС-500-01 (ЦФО БМИ) 29.05.2026",
+    "Выполнение условий договора №МПГ00007820 от 18.03.2024 (ЦФО БМИ) 31.10.2026",
+    "Выполнение условий договора №МПГ00009991 от 16.01.2025 (Западная прорва) (ЦФО БМИ) 31.07.2026",
+    "Выполнение условий договора №МПГ00010328 от 20.02.2025 ДНС-1 Северо-Хохряковского мр (ЦФО БМИ) 30.06.2026",
+    "Выполнение условий договора №МПГ00010434 от 06.03.2025 для м/р Западный Тузколь (ЦФО БМИ) 30.06.2026",
+    "Выполнение условий договора №МПГ00012110 от 25.11.2025г. (ФХП Вуктыл) (ЦФО БМИ) 01.10.2026",
+    "Выполнение условий договора МПГ00008851 от 01.08.2024 на поставку СИКГ (ЦФО БМИ) 31.12.2026",
+    "Выполнение условий договора поставки МПГ00008562 от 24.06.2024 на поставку УИРГ для Тас-Юряхского месторождения",
+    "Выполнение условия договора на поставку блоков резервирования импульсного газа для нужд ООО «Газпром трансгаз Санкт-Петербург» (ЦФО БМИ) 30.08.2026",
+    "Изготовление и поставка ПУРГ согласно условий договора для АО Уралэлектромедь (ЦФО БМИ) 01.07.2026",
+    "Разработка типовых тех проектов на оборудование \"ГИС однониточная и коллекторная для применения на объектах ПАО \"Газпром\" (ЦФО БМИ) 31.07.2026",
+]
 
 
 def normalize_odata_base(raw_base_url: str) -> str:
@@ -63,6 +90,18 @@ def normalize_name(value: str | None) -> str:
     text = re.sub(r"\s+", " ", (value or "").strip()).lower().replace("ё", "е")
     text = re.sub(r"[^0-9a-zа-я]+", " ", text)
     return " ".join(text.split())
+
+
+def compact_name(value: str | None) -> str:
+    return re.sub(r"[^0-9a-zа-я]+", "", (value or "").strip().lower().replace("ё", "е"))
+
+
+def contract_tokens(value: str | None) -> set[str]:
+    compact = compact_name(value)
+    tokens: set[str] = set()
+    for prefix, number in re.findall(r"(мпг)0*(\d{5,})", compact):
+        tokens.add(f"{prefix}{int(number)}")
+    return tokens
 
 
 def fetch_all(
@@ -387,6 +426,51 @@ def monthly_zatraty_totals_latest_bdds(
     return {k: float(v) for k, v in (d.get("monthly_zatraty_rub") or {}).items()}
 
 
+# --- Встроенный ручной план/факт ФОТ по внешним заказам -------------------------------
+
+
+def _load_fot_reference_table() -> dict[str, Any]:
+    """Вернуть срез из бывшего `fot_vneshnie_zakazy.xlsx`, зашитый в модуль."""
+    return {
+        "monthly": {
+            month_key: dict(values)
+            for month_key, values in FOT_REFERENCE_MONTHLY.items()
+        },
+        "project_labels": list(FOT_REFERENCE_PROJECT_LABELS),
+    }
+
+
+def _excel_label_matches_project(label: str, project: dict[str, Any]) -> bool:
+    label_norm = normalize_name(label)
+    label_compact = compact_name(label)
+    label_contracts = contract_tokens(label)
+    for field in ("project_name", "project_code"):
+        value = str(project.get(field) or "")
+        if label_contracts and label_contracts.intersection(contract_tokens(value)):
+            return True
+        value_norm = normalize_name(value)
+        value_compact = compact_name(value)
+        if value_norm and (value_norm in label_norm or label_norm in value_norm):
+            return True
+        if value_compact and (value_compact in label_compact or label_compact in value_compact):
+            return True
+    return False
+
+
+def _excel_covered_project_ids(
+    turbo_projects: list[dict[str, Any]],
+    project_labels: list[str],
+) -> set[str]:
+    covered: set[str] = set()
+    for project in turbo_projects:
+        fid = project.get("file_id")
+        if fid in (None, ""):
+            continue
+        if any(_excel_label_matches_project(label, project) for label in project_labels):
+            covered.add(str(fid))
+    return covered
+
+
 # --- Плитка TD-M6 ---------------------------------------------------------------------
 
 
@@ -395,11 +479,12 @@ def _month_row_td_m6(
     m: int,
     *,
     plan_sum: float,
+    fact_sum: float,
     alive_n: int,
     credited_n: int,
 ) -> dict[str, Any]:
     plan_val = round(float(plan_sum), 2)
-    fact_val = 0.0
+    fact_val = round(float(fact_sum), 2)
     kpi_pct_val = 0.0 if plan_val == 0 else round(fact_val / plan_val * 100, 2)
     has_alive = alive_n > 0
     return {
@@ -422,7 +507,7 @@ def _zero_payload_for_period(ref_y: int, ref_m: int) -> dict[str, Any]:
     monthly_rows: list[dict[str, Any]] = []
     ref_row: dict[str, Any] | None = None
     for y, m in pairs:
-        row = _month_row_td_m6(y, m, plan_sum=0.0, alive_n=0, credited_n=0)
+        row = _month_row_td_m6(y, m, plan_sum=0.0, fact_sum=0.0, alive_n=0, credited_n=0)
         monthly_rows.append(row)
         if (y, m) == (ref_y, ref_m):
             ref_row = row
@@ -440,7 +525,7 @@ def _zero_payload_for_period(ref_y: int, ref_m: int) -> dict[str, Any]:
         "monthly_data": monthly_rows,
         "last_full_month_row": dict(ref_row),
         "kpi_period": {
-            "type": "last_full_month",
+            "type": "current_month",
             "year": ref_y,
             "month": ref_m,
             "month_name": MONTH_NAMES[ref_m],
@@ -509,12 +594,28 @@ def _build_payload(year: int | None, month: int | None) -> dict[str, Any]:
 
     session = requests.Session()
     session.auth = AUTH
-    catalog_projects = load_projects(session)
-    bdds_map = _bdds_totals_cache(turbo_list, session, catalog_projects)
+    fot_reference = _load_fot_reference_table()
+    fot_monthly = fot_reference.get("monthly", {}) if fot_reference else {}
+    fot_project_labels = fot_reference.get("project_labels", []) if fot_reference else []
+    excel_covered_ids = _excel_covered_project_ids(turbo_list, fot_project_labels)
+    fallback_projects = [
+        project
+        for project in turbo_list
+        if str(project.get("file_id") or "") not in excel_covered_ids
+    ]
+    bdds_map: dict[str, dict[str, float]] = {}
+    if fallback_projects:
+        try:
+            catalog_projects = load_projects(session)
+            bdds_map = _bdds_totals_cache(fallback_projects, session, catalog_projects)
+        except Exception:
+            logger.exception("TD-M6: ошибка резервного расчёта БДДС для проектов вне Excel")
 
     for y, m in pairs:
         month_key = f"{y:04d}-{m:02d}"
-        plan_sum = 0.0
+        excel_values = fot_monthly.get(month_key, {}) if isinstance(fot_monthly, dict) else {}
+        plan_sum = float(excel_values.get("plan", 0.0) or 0.0)
+        fact_sum = float(excel_values.get("fact", 0.0) or 0.0)
         alive_n = 0
         credited_n = 0
         for project in turbo_list:
@@ -523,6 +624,8 @@ def _build_payload(year: int | None, month: int | None) -> dict[str, Any]:
             alive_n += 1
             pf = project.get("file_id")
             fid = str(pf) if pf not in (None, "") else ""
+            if fid in excel_covered_ids:
+                continue
             totals = bdds_map.get(fid, {}) if fid else {}
             amount = float(totals.get(month_key, 0.0))
             if amount:
@@ -530,7 +633,15 @@ def _build_payload(year: int | None, month: int | None) -> dict[str, Any]:
             plan_sum += amount
 
         plan_sum = round(plan_sum, 2)
-        row = _month_row_td_m6(y, m, plan_sum=plan_sum, alive_n=alive_n, credited_n=credited_n)
+        fact_sum = round(fact_sum, 2)
+        row = _month_row_td_m6(
+            y,
+            m,
+            plan_sum=plan_sum,
+            fact_sum=fact_sum,
+            alive_n=alive_n,
+            credited_n=credited_n,
+        )
         monthly_rows.append(row)
         if (y, m) == (ref_y, ref_m):
             ref_row = row
@@ -550,7 +661,7 @@ def _build_payload(year: int | None, month: int | None) -> dict[str, Any]:
         "monthly_data": monthly_rows,
         "last_full_month_row": dict(ref_row),
         "kpi_period": {
-            "type": "last_full_month",
+            "type": "current_month",
             "year": ref_y,
             "month": ref_m,
             "month_name": MONTH_NAMES[ref_m],
@@ -560,7 +671,7 @@ def _build_payload(year: int | None, month: int | None) -> dict[str, Any]:
 
 
 def get_td_m6_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
-    """Плитка TD-M6: план из БДДС по внешним заказам. При сбое или пустых данных — нули, не null."""
+    """Плитка TD-M6: план/факт ФОТ по внешним заказам. При сбое — нули, не null."""
 
     def _runner() -> dict[str, Any]:
         ry, rm = tp._normalize_ref_period(year, month)
@@ -571,7 +682,7 @@ def get_td_m6_ytd(year: int | None = None, month: int | None = None) -> dict[str
             return _zero_payload_for_period(ry, rm)
 
     ry, rm = tp._normalize_ref_period(year, month)
-    return cache_manager.locked_call(f"techdir_td_m6_bdds_{ry}_{rm:02d}_v8", _runner)
+    return cache_manager.locked_call(f"techdir_td_m6_bdds_{ry}_{rm:02d}_v11", _runner)
 
 
 # --- Опциональный CLI: один проект (как прежний calc_bdds_project_costs.main) -----------

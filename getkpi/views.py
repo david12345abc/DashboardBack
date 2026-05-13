@@ -31,6 +31,7 @@ from . import (
     techdir_projects,
     valovaya_pribyl,
 )
+from getkpi.devdir import turboproject_projects_by_resources as _devdir_turboproject_projects
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
 from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter, pick_monthly_row_for_period
@@ -642,6 +643,26 @@ def _normalize_dashboard_kpi_id(raw: object) -> str:
     return s
 
 
+def _is_gspp_m5_tile(kpi: dict) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    return kid in {'GSP-M5', 'GSPP-M5', 'ГСП-M5', 'ГCП-M5', 'ГСПП-M5', 'ГCПП-M5'}
+
+
+def _is_gspp_m3_tile(kpi: dict) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    return kid in {'GSP-M3', 'GSPP-M3', 'ГСП-M3', 'ГCП-M3', 'ГСПП-M3', 'ГCПП-M3'}
+
+
+def _is_gspp_m1_tile(kpi: dict) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    return kid in {'GSP-M1', 'GSPP-M1', 'ГСП-M1', 'ГCП-M1', 'ГСПП-M1', 'ГCПП-M1'}
+
+
+def _is_gspp_q5_tile(kpi: dict) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+    return kid in {'GSP-Q5', 'GSPP-Q5', 'ГСП-Q5', 'ГCП-Q5', 'ГСПП-Q5', 'ГCПП-Q5'}
+
+
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     """Плитки «в пределах лимита»: M3 плюс разрез ПЦ1/ПЦ2 для зам. операционного."""
     normalized = (kpi_id or '').upper()
@@ -817,7 +838,11 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         pct, color = logistics_color
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
+    elif kid == 'RD-M3-1':
+        color = _rag_higher_better(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
+        color = _rag_td_m4_limit(pct)
+    elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
         color = _rag_td_m4_limit(pct)
     elif _is_budget_limit_m3_kpi(kid):
         color = _rag_dz_lower_better(pct)
@@ -972,6 +997,12 @@ def _build_tile_item(
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
         tile['periodicity'] = 'ежемесячно'
+    if _is_gspp_m1_tile(kpi) or _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+        tile['period'] = 'ежемесячно'
+        tile['frequency'] = 'ежемесячно'
+        tile['periodicity'] = 'ежемесячно'
+        if not _is_gspp_m1_tile(kpi):
+            tile['pct_lower_is_better'] = True
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
@@ -1029,7 +1060,7 @@ def _plan_fact_period_label_from_kpi_period(period: dict | None) -> str | None:
         return None
     ptype = period.get('type')
     year = period.get('year')
-    if ptype == 'last_full_month':
+    if ptype in {'last_full_month', 'current_month'}:
         month_name = period.get('month_name')
         if month_name and year is not None:
             name = str(month_name)
@@ -1543,11 +1574,11 @@ def _build_universal_payload(
             _qualdir_kpi_views.KPI_IDS_USE_BUILDER_KP_PERIOD
             | _devdir_kpi_views.DEVDIR_KPI_IDS
             | _gspp_kpi_views.GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD
-        ):
+        ) or _kid_tile == 'TD-M6':
             kper = entry.get('kpi_period')
             if (
                 isinstance(kper, dict)
-                and kper.get('type') == 'last_full_month'
+                and kper.get('type') in {'last_full_month', 'current_month'}
                 and kper.get('year') is not None
                 and kper.get('month') is not None
             ):
@@ -1619,6 +1650,8 @@ def _build_universal_payload(
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
             tile['unit'] = 'чел.'
+        elif _is_gspp_q5_tile(kpi):
+            tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'} or _kid_tile in {'MET-Q4-1', 'METD-Q1', 'METD-Q3'}:
             tile['unit'] = 'шт.'
 
@@ -1626,7 +1659,13 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'
+        elif _is_gspp_m1_tile(kpi):
+            tile['unit'] = 'шт.'
+        elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+            tile['unit'] = 'руб.'
         elif _kid_tile == 'RD-M1':
+            tile['unit'] = 'шт.'
+        elif _kid_tile == 'RD-M3-1':
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-Q2':
             tile['unit'] = 'чел.'
@@ -1700,6 +1739,7 @@ def _build_universal_payload(
         and not _is_prod_deputy_department(dept)
         and not _is_chief_constructor_department(dept)
         and not _is_chief_metrolog_department(dept)
+        and not _is_gspp_department(dept)
     )
 
     if include_generic_tables:
@@ -1765,6 +1805,26 @@ def _build_universal_payload(
 
     if techdir_dashboard.is_techdir_department(dept):
         techdir_dashboard.merge_deviation_tables(tablitsy, ref_y, ref_m)
+
+    if _is_devdir_department(dept):
+        try:
+            rd_m3_1_period = (entries_by_id.get('RD-M3-1') or {}).get('kpi_period') or {}
+            table_y, table_m = ref_y, ref_m
+            if (
+                isinstance(rd_m3_1_period, dict)
+                and rd_m3_1_period.get('year') is not None
+                and rd_m3_1_period.get('month') is not None
+            ):
+                table_y = int(rd_m3_1_period['year'])
+                table_m = max(1, min(12, int(rd_m3_1_period['month'])))
+            devdir_table = _devdir_turboproject_projects.get_projects_deviation_table(
+                year=table_y,
+                month=table_m,
+            )
+        except Exception:
+            devdir_table = None
+        if devdir_table and (devdir_table.get('rows') or []):
+            tablitsy['DEVDIR-T-PROJECTS-DEVIATIONS'] = devdir_table
 
     if _is_gspp_department(dept):
         _gspp_kpi_views.merge_gspp_tables_into_universal_payload(tablitsy, ref_y, ref_m)
@@ -2588,6 +2648,10 @@ def _build_kpi_entry(
                     'months_with_data': 0,
                     'months_total': 0,
                 }
+
+    if _is_gspp_m5_tile(kpi):
+        if _gspp_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+            return entry
 
     return entry
 
