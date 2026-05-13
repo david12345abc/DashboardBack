@@ -1277,9 +1277,18 @@ def _build_universal_payload(
 
     if _is_devdir_department(dept):
         try:
+            rd_m3_1_period = (entries_by_id.get('RD-M3-1') or {}).get('kpi_period') or {}
+            table_y, table_m = ref_y, ref_m
+            if (
+                isinstance(rd_m3_1_period, dict)
+                and rd_m3_1_period.get('year') is not None
+                and rd_m3_1_period.get('month') is not None
+            ):
+                table_y = int(rd_m3_1_period['year'])
+                table_m = max(1, min(12, int(rd_m3_1_period['month'])))
             devdir_table = _devdir_turboproject_projects.get_projects_deviation_table(
-                year=ref_y,
-                month=ref_m,
+                year=table_y,
+                month=table_m,
             )
         except Exception:
             devdir_table = None

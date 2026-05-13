@@ -49,7 +49,7 @@ CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
 CACHE_PATH = CACHE_DIR / "devdir_turboproject_projects_by_resources_snapshot.json"
 CACHE_VERSION = 2
 TABLE_CACHE_PREFIX = "devdir_turboproject_projects_by_resources_deviations"
-TABLE_CACHE_VERSION = 4
+TABLE_CACHE_VERSION = 5
 TILE_CACHE_PREFIX = "devdir_rd_m3_1_turboproject_projects_by_resources"
 TILE_CACHE_SOURCE_TAG = "devdir_rd_m3_1_turboproject_projects_by_resources_ytd"
 TILE_CACHE_VERSION = 4
@@ -443,11 +443,14 @@ def _build_projects_deviation_table(
     projects = list(snapshot.get("projects") or [])
     month_end = _month_start_end(ref_y, ref_m)[1]
     as_of_date = min(month_end, date.today())
+    month_projects = [
+        project
+        for project in projects
+        if _project_is_alive_in_month(project, ref_y, ref_m)
+    ]
     rows: list[dict[str, Any]] = []
 
-    for project in projects:
-        if not _project_is_alive_in_month(project, ref_y, ref_m):
-            continue
+    for project in month_projects:
         milestone_rows = _project_overdue_milestones_in_month(
             project,
             ref_y,
@@ -499,8 +502,8 @@ def _build_projects_deviation_table(
         "columns": ["№ 1С", "Название", "РП", "Сроки", "Отклонение", "Статус", "Прогресс"],
         "rows": rows,
         "summary": {
-            "plan": len(projects),
-            "fact": len([p for p in projects if p.get("is_fact")]),
+            "plan": len(month_projects),
+            "fact": len(month_projects) - len(rows),
         },
     }
 
