@@ -862,6 +862,7 @@ _COMMERCE_RAG: dict[str, str] = {
 }
 
 _COMMERCE_PCT_IDS = frozenset({"MRK-04", "MRK-06", "MRK-07", "MRK-08", "MRK-09"})
+MRK04_DISPLAY_NAME = "Отношение отгрузок 2026/2025"
 
 
 def normalize_chairman_for_param(raw: str | None) -> str:
@@ -1437,7 +1438,7 @@ def build_chairman_commerce_payload(
             growth_pct, growth_detail = _mrk04_shipment_growth_yoy(ref_y, ref_m, series_m)
             plitki_items.append({
                 "kpi_id": kid,
-                "name": meta["name"],
+                "name": MRK04_DISPLAY_NAME,
                 "goal": meta.get("goal"),
                 "kpi_pct": growth_pct,
                 "color": _mrk04_rag(growth_pct),

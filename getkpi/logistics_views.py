@@ -12,7 +12,7 @@ from . import (
     calc_logistics_tmc_on_time,
 )
 
-LOGISTICS_KPI_IDS = {"LOG-M1", "LOG-M2", "LOG-M3.B", "LOG-M3.F", "LOG-Q1"}
+LOGISTICS_KPI_IDS = {"LOG-M1", "LOG-M2", "LOG-M3.B", "LOG-M3.F", "LOG-Q1", "LOG-Q2"}
 LOGISTICS_BUDGET_FOT_SPLIT_IDS = {"LOG-M3.B", "LOG-M3.F"}
 LOG_Q1_NAME = "Доля квалифицированных поставщиков"
 LOG_Q1_FORMULA = "Поставщики с суммой баллов оценки > 45 / Все поставщики из оценки периода × 100%"
@@ -99,6 +99,27 @@ def _rag_fot_limit_pct(pct: float | None) -> str:
     return "green"
 
 
+def _plan_fact_color(entry: dict) -> tuple[float | None, str] | None:
+    row = entry.get("last_full_month_row") or {}
+    plan = row.get("plan")
+    fact = row.get("fact")
+    if plan is None or fact is None:
+        ytd = entry.get("ytd") or {}
+        plan = ytd.get("total_plan")
+        fact = ytd.get("total_fact")
+    try:
+        plan_value = float(plan)
+        fact_value = float(fact)
+    except (TypeError, ValueError):
+        return None
+    pct = round(fact_value / plan_value * 100, 1) if plan_value else None
+    if fact_value < plan_value:
+        return pct, "green"
+    if abs(fact_value - plan_value) < 1e-9:
+        return pct, "yellow"
+    return pct, "red"
+
+
 def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
     if kpi_id == "LOG-M2":
         ref_row = entry.get("last_full_month_row") or {}
@@ -108,13 +129,20 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
         return pct, rag_price_deviation(pct)
 
     if kpi_id in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
+        if kpi_id == "LOG-M3.F":
+            color = _plan_fact_color(entry)
+            if color is not None:
+                return color
         ref_row = entry.get("ytd") or entry.get("last_full_month_row") or {}
         pct = ref_row.get("kpi_pct")
         if pct is not None:
             pct = float(pct)
-        if kpi_id == "LOG-M3.F":
-            return pct, _rag_fot_limit_pct(pct)
         return pct, _rag_limit_pct(pct)
+
+    if kpi_id == "LOG-Q2":
+        color = _plan_fact_color(entry)
+        if color is not None:
+            return color
 
     if kpi_id == "LOG-Q1":
         ref_row = entry.get("last_full_month_row") or {}

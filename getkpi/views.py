@@ -825,6 +825,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         if pct is not None:
             pct = float(pct)
         color = _rag_higher_better(pct)
+    elif (logistics_color := logistics_views.tile_color(kid, entry)) is not None:
+        pct, color = logistics_color
     elif _is_turnover_style_tile(kpi):
         md = entry.get('monthly_data') or []
         last_row = md[-1] if md else {}
@@ -834,8 +836,6 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     elif kid in {'OD-M3.1', 'OD-M3.2'}:
         pct = _budget_fact_div_plan_pct(entry)
         color = _rag_budget_fact_div_plan(pct)
-    elif (logistics_color := logistics_views.tile_color(kid, entry)) is not None:
-        pct, color = logistics_color
     elif dept_dz.is_dz_kpi(kid):
         color = _rag_dz_lower_better(pct)
     elif kid == 'RD-M3-1':
