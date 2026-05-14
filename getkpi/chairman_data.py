@@ -1215,8 +1215,8 @@ def _mrk_plan_fact_rag(kpi_pct: float | None) -> str:
 def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
     """
     Помесячный ряд для MRK-09: для каждого месяца m ∈ [1..12] считается
-    процент выигранных тендеров по коммерческим тендерным отделам накопительно
-    с начала года по конец месяца.
+    процент выигранных тендеров по коммерческим тендерным отделам только
+    за этот месяц.
 
     Для будущих месяцев текущего года — None (данных ещё нет).
 
@@ -1239,11 +1239,11 @@ def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
             })
             continue
         data = cache_manager.locked_call(
-            f"tenders_commercial_ytd_{ref_y}_{m:02d}",
+            f"tenders_commercial_monthly_{ref_y}_{m:02d}",
             calc_tenders_bmi.get_tenders_departments,
             year=ref_y,
             month=m,
-            cumulative=True,
+            cumulative=False,
         )
         plan = int(data.get("plan") or 0)
         fact = int(data.get("fact") or 0)
@@ -1626,13 +1626,13 @@ def build_chairman_commerce_payload(
             continue
 
         if kid == "MRK-09":
-            # Плитка считается накопительно с начала года по выбранный месяц.
+            # Плитка считается только за выбранный месяц.
             tenders = cache_manager.locked_call(
-                f"tenders_commercial_ytd_{ref_y}_{ref_m:02d}",
+                f"tenders_commercial_monthly_{ref_y}_{ref_m:02d}",
                 calc_tenders_bmi.get_tenders_departments,
                 year=ref_y,
                 month=ref_m,
-                cumulative=True,
+                cumulative=False,
             )
             plan_n = int(tenders.get("plan") or 0)
             fact_n = int(tenders.get("fact") or 0)
