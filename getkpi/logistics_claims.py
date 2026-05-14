@@ -21,13 +21,18 @@ NOMENCLATURE_ENTITY = "Catalog_Номенклатура"
 DEPARTMENT_ENTITY = "Catalog_СтруктураПредприятия"
 PARTNER_ENTITY = "Catalog_Партнеры"
 COUNTERPARTY_ENTITY = "Catalog_Контрагенты"
+CLAIMS_ENTITY = "Catalog_Претензии"
 EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 
 TARGET_REASON_CATEGORY = "Поставщик"
 TARGET_RESOLUTION = "Окончательный"
+PRODUCTION_CULPRIT_DEPARTMENTS: dict[str, str] = {
+    "f12f2fca-d5d2-11e7-8267-ac1f6b05524d": "Производственный цех №1",
+    "3a9ac2f2-214f-11e0-b91c-00248c26ee57": "Производственный цех №2",
+}
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 
 def _normalize_odata_base(raw_base_url: str) -> str:
@@ -48,8 +53,11 @@ def _cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"logistics_claims_{year}_{month:02d}.json"
 
 
-def _load_cache(year: int, month: int) -> list[dict] | None:
-    path = _cache_path(year, month)
+def _production_cache_path(year: int, month: int) -> Path:
+    return CACHE_DIR / f"prod_deputy_claims_{year}_{month:02d}.json"
+
+
+def _load_cache_from_path(path: Path) -> list[dict] | None:
     if not path.exists():
         return None
     try:
@@ -63,10 +71,18 @@ def _load_cache(year: int, month: int) -> list[dict] | None:
     return None
 
 
-def _save_cache(year: int, month: int, rows: list[dict]) -> None:
+def _load_cache(year: int, month: int) -> list[dict] | None:
+    return _load_cache_from_path(_cache_path(year, month))
+
+
+def _load_production_cache(year: int, month: int) -> list[dict] | None:
+    return _load_cache_from_path(_production_cache_path(year, month))
+
+
+def _save_cache_to_path(path: Path, rows: list[dict]) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        with open(_cache_path(year, month), "w", encoding="utf-8") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             json.dump(
                 {
                     "date": date.today().isoformat(),
@@ -77,7 +93,15 @@ def _save_cache(year: int, month: int, rows: list[dict]) -> None:
                 ensure_ascii=False,
             )
     except OSError:
-        logger.exception("LOG claims: failed to save cache for %s-%02d", year, month)
+        logger.exception("LOG claims: failed to save cache %s", path)
+
+
+def _save_cache(year: int, month: int, rows: list[dict]) -> None:
+    _save_cache_to_path(_cache_path(year, month), rows)
+
+
+def _save_production_cache(year: int, month: int, rows: list[dict]) -> None:
+    _save_cache_to_path(_production_cache_path(year, month), rows)
 
 
 def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
@@ -283,12 +307,43 @@ def _load_target_rows(session: requests.Session) -> list[dict]:
     return result
 
 
-def _fetch_from_odata(year: int, month: int) -> list[dict]:
-    period_start, period_end = _month_bounds(year, month)
-    session = requests.Session()
-    session.auth = AUTH
+def _load_production_target_rows(session: requests.Session) -> list[dict]:
+    select_fields = (
+        "Ref_Key,LineNumber,Поступило,Проверено,СоответствуетНТД,НеСоответствуетНТД,"
+        "РасчетноеКоличествоБракаВПартии,ФактическийБрак,"
+        "ВозможностьУстраненияНесоответствия,КатегорияПоПричинеВозникновения,"
+        "ПодразделениеВиновник_Key,СотрудникДопустившийБрак_Key"
+    )
+    culprit_filter = " or ".join(
+        f"ПодразделениеВиновник_Key eq guid'{key}'"
+        for key in PRODUCTION_CULPRIT_DEPARTMENTS
+    )
 
-    target_rows = _load_target_rows(session)
+    result: list[dict] = []
+    skip = 0
+    while True:
+        query = (
+            "$format=json"
+            f"&$top=5000&$skip={skip}"
+            f"&$select={quote(select_fields, safe=',_')}"
+            f"&$filter={quote(culprit_filter, safe='')}"
+        )
+        rows = _odata_get(session, ROWS_ENTITY, query)
+        if not rows:
+            break
+        result.extend(rows)
+        if len(rows) < 5000:
+            break
+        skip += len(rows)
+    return result
+
+
+def _build_rows_from_target_rows(
+    session: requests.Session,
+    target_rows: list[dict],
+    period_start: datetime,
+    period_end: datetime,
+) -> list[dict]:
     if not target_rows:
         return []
 
@@ -358,6 +413,7 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
             "supplier_order_number": supplier_order_number,
             "supplier": supplier,
             "order_dept": department_cache.get(dept_key, "" if dept_key in {"", EMPTY_GUID} else dept_key),
+            "culprit_dept_key": dept_key,
             "nomenclature": nomenclature_cache.get(
                 nomenclature_key,
                 "" if nomenclature_key in {"", EMPTY_GUID} else nomenclature_key,
@@ -380,6 +436,125 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
     return sorted(result, key=lambda item: (item.get("date_reg") or "", item.get("code") or ""))
 
 
+def _fetch_from_odata(year: int, month: int) -> list[dict]:
+    period_start, period_end = _month_bounds(year, month)
+    session = requests.Session()
+    session.auth = AUTH
+    return _build_rows_from_target_rows(session, _load_target_rows(session), period_start, period_end)
+
+
+def _fetch_production_from_odata(year: int, month: int) -> list[dict]:
+    period_start, period_end = _month_bounds(year, month)
+    session = requests.Session()
+    session.auth = AUTH
+    rows = _build_rows_from_target_rows(
+        session,
+        _load_production_target_rows(session),
+        period_start,
+        period_end,
+    )
+    return [
+        {
+            **row,
+            "production_claim": True,
+            "name": "Претензия на стороне производства",
+            "source": "Document_ТД_АктОНесоответствиеПриборовИКомплектующих",
+        }
+        for row in rows
+        if row.get("culprit_dept_key") in PRODUCTION_CULPRIT_DEPARTMENTS
+    ]
+
+
+def _fetch_production_catalog_claims_from_odata(year: int, month: int) -> list[dict]:
+    period_start, period_end = _month_bounds(year, month)
+    session = requests.Session()
+    session.auth = AUTH
+    select_fields = (
+        "Ref_Key,Code,Description,ДатаРегистрации,ДатаОкончания,ТД_ДатаОкончанияПлан,"
+        "Статус,ВиновноеПодразделение_Key,ТД_Номенклатура_Key,ОписаниеПретензии,"
+        "ПричинаВозникновения_Key,DeletionMark"
+    )
+    period_filter = (
+        f"ДатаРегистрации ge datetime'{period_start.strftime('%Y-%m-%dT%H:%M:%S')}' "
+        f"and ДатаРегистрации lt datetime'{period_end.strftime('%Y-%m-%dT%H:%M:%S')}'"
+    )
+
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        query = (
+            "$format=json"
+            f"&$top=5000&$skip={skip}"
+            f"&$select={quote(select_fields, safe=',_')}"
+            f"&$filter={quote(period_filter, safe='')}"
+        )
+        chunk = _odata_get(session, CLAIMS_ENTITY, query)
+        if not chunk:
+            break
+        rows.extend(chunk)
+        if len(chunk) < 5000:
+            break
+        skip += len(chunk)
+
+    rows = [row for row in rows if row.get("DeletionMark") is not True]
+    target_rows = [
+        row for row in rows
+        if str(row.get("ВиновноеПодразделение_Key") or "").strip() in PRODUCTION_CULPRIT_DEPARTMENTS
+    ]
+    has_any_culprit = any(
+        str(row.get("ВиновноеПодразделение_Key") or "").strip() not in {"", EMPTY_GUID}
+        for row in rows
+    )
+    # В апреле/мае 2026 реквизит "ВиновноеПодразделение" в 1С пустой у всех претензий.
+    # В таком случае не прячем таблицу полностью, а показываем претензии за период с явной пометкой.
+    selected = target_rows if target_rows or has_any_culprit else rows
+
+    nomenclature_cache: dict[str, str] = {}
+    department_cache: dict[str, str] = {}
+    result: list[dict] = []
+    for row in selected:
+        dept_key = str(row.get("ВиновноеПодразделение_Key") or "").strip()
+        if dept_key and dept_key != EMPTY_GUID and dept_key not in department_cache:
+            department_cache[dept_key] = _format_ref_name(
+                _fetch_single(session, DEPARTMENT_ENTITY, dept_key, "Ref_Key,Description"),
+                dept_key,
+            )
+
+        nomenclature_key = str(row.get("ТД_Номенклатура_Key") or "").strip()
+        if nomenclature_key and nomenclature_key != EMPTY_GUID and nomenclature_key not in nomenclature_cache:
+            nomenclature_cache[nomenclature_key] = _format_ref_name(
+                _fetch_single(session, NOMENCLATURE_ENTITY, nomenclature_key, "Ref_Key,Description,Code"),
+                nomenclature_key,
+            )
+
+        result.append({
+            "code": _clean_text(row.get("Code")),
+            "name": _clean_text(row.get("Description")) or "Претензия",
+            "date_reg": str(row.get("ДатаРегистрации") or "")[:10],
+            "date_plan": str(row.get("ТД_ДатаОкончанияПлан") or "")[:10],
+            "date_end": str(row.get("ДатаОкончания") or "")[:10],
+            "order_dept": (
+                department_cache.get(dept_key)
+                if dept_key and dept_key != EMPTY_GUID
+                else "Не заполнено в 1С"
+            ),
+            "culprit_dept_key": dept_key,
+            "nomenclature": nomenclature_cache.get(
+                nomenclature_key,
+                "" if nomenclature_key in {"", EMPTY_GUID} else nomenclature_key,
+            ),
+            "description": _clean_text(row.get("ОписаниеПретензии")),
+            "status": _clean_text(row.get("Статус")),
+            "reason_category": _clean_text(row.get("ПричинаВозникновения_Key")),
+            "calculated_defect_qty": None,
+            "production_claim": True,
+            "culprit_filter_fallback": not target_rows and not has_any_culprit,
+            "source": "Catalog_Претензии",
+        })
+
+    return sorted(result, key=lambda item: (item.get("date_reg") or "", item.get("code") or ""))
+
+
 def fetch_logistics_claims_for_month(year: int, month: int) -> list[dict]:
     cached = _load_cache(year, month)
     if cached is not None:
@@ -393,3 +568,27 @@ def fetch_logistics_claims_for_month(year: int, month: int) -> list[dict]:
 
     _save_cache(year, month, rows)
     return rows
+
+
+def fetch_production_claims_for_month(year: int, month: int) -> list[dict]:
+    cached = _load_production_cache(year, month)
+    if cached is not None:
+        return cached
+
+    try:
+        rows = _fetch_production_from_odata(year, month)
+        if not rows:
+            rows = _fetch_production_catalog_claims_from_odata(year, month)
+    except Exception:
+        logger.exception("Production claims: failed to fetch rows for %s-%02d", year, month)
+        rows = []
+
+    _save_production_cache(year, month, rows)
+    return rows
+
+
+def fetch_production_claims_for_period(year: int, months: list[int]) -> list[dict]:
+    out: list[dict] = []
+    for month in sorted({int(m) for m in months if 1 <= int(m) <= 12}):
+        out.extend(fetch_production_claims_for_month(year, month))
+    return sorted(out, key=lambda item: (item.get("date_reg") or "", item.get("code") or ""))

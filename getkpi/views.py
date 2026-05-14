@@ -1537,6 +1537,20 @@ def _wants_tile_debug(request) -> bool:
     return v in ('1', 'true', 'yes', 'on')
 
 
+def _request_aggregation_params(request) -> tuple[str | None, list[int]]:
+    mode = (request.GET.get('aggregation_mode') or '').strip().lower() or None
+    raw_quarters = request.GET.get('selected_quarters') or ''
+    quarters: list[int] = []
+    for part in str(raw_quarters).replace(';', ',').split(','):
+        try:
+            q = int(part.strip())
+        except (TypeError, ValueError):
+            continue
+        if 1 <= q <= 4:
+            quarters.append(q)
+    return mode, quarters
+
+
 def _build_universal_payload(
     dept: str,
     all_kpis: list[dict],
@@ -1544,6 +1558,8 @@ def _build_universal_payload(
     month: int | None = None,
     year: int | None = None,
     include_debug: bool = False,
+    aggregation_mode: str | None = None,
+    selected_quarters: list[int] | None = None,
 ) -> dict:
     """
     Универсальный билдер: Плитки, Графики, Таблицы.
@@ -1867,6 +1883,54 @@ def _build_universal_payload(
             tablitsy['OD-T-Q1-DEVIATIONS'] = od_q1_table
 
     if _is_prod_deputy_department(dept) or 'PD-Q1' in entries_by_id:
+        def _prod_claim_months() -> list[int]:
+            mode = (aggregation_mode or '').strip().lower()
+            if mode == 'ytd':
+                return list(range(1, ref_m + 1))
+            if mode == 'quarter':
+                quarters = [
+                    q for q in (selected_quarters or [])
+                    if isinstance(q, int) and 1 <= q <= 4
+                ]
+                if not quarters:
+                    quarters = [((ref_m - 1) // 3) + 1]
+                months: list[int] = []
+                for q in sorted(set(quarters)):
+                    start_m = (q - 1) * 3 + 1
+                    end_m = min(q * 3, ref_m)
+                    months.extend(range(start_m, end_m + 1))
+                return months
+            return [ref_m]
+
+        try:
+            from .logistics_claims import fetch_production_claims_for_period
+
+            claim_months = _prod_claim_months()
+            prod_claims = fetch_production_claims_for_period(ref_y, claim_months)
+        except Exception:
+            prod_claims = []
+            claim_months = [ref_m]
+        tablitsy['PD-T-PROD-CLAIMS'] = {
+            'name': 'Претензии на стороне производства',
+            'periodicity': 'ежемесячно',
+            'description': (
+                'Строки табличной части Несоответствия из '
+                'Document_ТД_АктОНесоответствиеПриборовИКомплектующих, где '
+                'ПодразделениеВиновник = Производственный цех №1 или Производственный цех №2'
+            ),
+            'period': {
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': month_names[ref_m],
+                'aggregation_mode': aggregation_mode or 'current',
+                'months': claim_months,
+            },
+            'columns': [
+                'Номер', 'Дата', 'Подразделение-виновник', 'Статус',
+                'Номенклатура', 'Описание', 'Категория', 'Расчетное кол-во брака',
+            ],
+            'rows': prod_claims,
+        }
         try:
             from . import calc_prod_deputy_projects
 
@@ -2703,6 +2767,7 @@ def get_kpi(request):
     year_param = request.GET.get('year')
     req_month = int(month_param) if month_param else None
     req_year = int(year_param) if year_param else None
+    aggregation_mode, selected_quarters = _request_aggregation_params(request)
 
     ck = commercial_kpi_key(requested_dept)
     if ck is None:
@@ -2812,6 +2877,8 @@ def get_kpi(request):
         month=req_month,
         year=req_year,
         include_debug=_wants_tile_debug(request),
+        aggregation_mode=aggregation_mode,
+        selected_quarters=selected_quarters,
     )
     return JsonResponse(
         {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
@@ -2961,12 +3028,15 @@ def get_all_departments(request):
         year_param = request.GET.get('year')
         req_month_all = int(month_param) if month_param else None
         req_year_all = int(year_param) if year_param else None
+        aggregation_mode, selected_quarters = _request_aggregation_params(request)
         payload = _build_universal_payload(
             requested_dept,
             kpis,
             month=req_month_all,
             year=req_year_all,
             include_debug=_wants_tile_debug(request),
+            aggregation_mode=aggregation_mode,
+            selected_quarters=selected_quarters,
         )
         return JsonResponse(
             {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
@@ -2977,6 +3047,7 @@ def get_all_departments(request):
     year_param = request.GET.get('year')
     req_month_all = int(month_param) if month_param else None
     req_year_all = int(year_param) if year_param else None
+    aggregation_mode_all, selected_quarters_all = _request_aggregation_params(request)
     chairman_for_raw = request.GET.get('for')
     chairman_for_norm = chairman_data.normalize_chairman_for_param(chairman_for_raw)
     include_debug_all = _wants_tile_debug(request)
@@ -3058,6 +3129,8 @@ def get_all_departments(request):
             month=req_month_all,
             year=req_year_all,
             include_debug=include_debug_all,
+            aggregation_mode=aggregation_mode_all,
+            selected_quarters=selected_quarters_all,
         )
         return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
 
