@@ -47,8 +47,8 @@ BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "techdir_q2_monthly_v1"
-CACHE_VERSION = 4
+SOURCE_TAG = "techdir_q2_monthly_v2"
+CACHE_VERSION = 5
 
 GROUP_ALIASES = {
     "Заместитель тех. директора по качеству": [
@@ -571,7 +571,7 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                     "fact": fact,
                     "kpi_pct": fact,
                     "has_data": has_data,
-                    "values_unit": "шт.",
+                    "values_unit": "чел.",
                 })
 
             with_data = [row for row in month_rows if row["has_data"]]
@@ -590,7 +590,7 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                     "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
                     "months_with_data": months_with_data,
                     "months_total": len(month_rows),
-                    "values_unit": "шт.",
+                    "values_unit": "чел.",
                 },
                 "kpi_period": {
                     "type": "last_full_month",
@@ -622,7 +622,7 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                     "kpi_pct": None,
                     "months_with_data": 0,
                     "months_total": 0,
-                    "values_unit": "шт.",
+                    "values_unit": "чел.",
                 },
                 "kpi_period": {
                     "type": "last_full_month",

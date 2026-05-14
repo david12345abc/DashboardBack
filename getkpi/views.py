@@ -38,6 +38,7 @@ from .models import KpiDefinition
 import devdir.views as _devdir_kpi_views
 import gspp.views as _gspp_kpi_views
 import qualdir.views as _qualdir_kpi_views
+import sup.views as _sup_kpi_views
 from . import techdir_kpi_entry
 from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp, qd_m1_tile_cache_path
 from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
@@ -313,6 +314,19 @@ def _is_gspp_department(dept: str | None) -> bool:
         r'\s+', ' ', unicodedata.normalize('NFKC', (dept or '').strip()).lower(),
     )
     return normalized in {'гспп', 'gspp'}
+
+
+def _is_sup_department(dept: str | None) -> bool:
+    normalized = re.sub(
+        r'\s+', ' ', unicodedata.normalize('NFKC', (dept or '').strip()).lower(),
+    )
+    return normalized in {
+        'sup',
+        'суп',
+        'служба управления персоналом',
+        'директор по персоналу',
+        'hrd',
+    }
 
 
 def _thresholds_block(kpi: dict) -> dict:
@@ -782,6 +796,8 @@ def _build_tile_item(
         tile['articles'] = entry.get('articles')
         if entry.get('classifier') is not None:
             tile['classifier'] = entry.get('classifier')
+    if entry.get('reference_analytics') is not None:
+        tile['reference_analytics'] = entry.get('reference_analytics')
     return tile
 
 
@@ -1155,6 +1171,107 @@ def _build_gspp_charts(
     return charts
 
 
+def _build_devdir_charts(
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    """Графики директора по развитию: линия и столбцы по ФОТ (RD-M4) и бюджету (RD-M3)."""
+    sources = [
+        ("RD-M4", "ФОТ", entries_by_id.get("RD-M4") or {}),
+        ("RD-M3", "Бюджет", entries_by_id.get("RD-M3") or {}),
+    ]
+
+    series: list[dict] = []
+    for kid, display_name, entry in sources:
+        monthly = entry.get("monthly_data") or []
+        points = [
+            {
+                "month": row.get("month"),
+                "month_name": row.get("month_name"),
+                "year": row.get("year"),
+                "plan": row.get("plan"),
+                "fact": row.get("fact"),
+                "kpi_pct": row.get("kpi_pct"),
+                "has_data": row.get("has_data"),
+                "values_unit": row.get("values_unit"),
+            }
+            for row in monthly
+            if isinstance(row, dict)
+        ]
+        if not any((p.get("plan") is not None or p.get("fact") is not None) for p in points):
+            continue
+        series.append({
+            "kpi_id": kid,
+            "name": display_name,
+            "chart_type": "line_plan_fact_monthly",
+            "chart_type_label": f"План/Факт по месяцам: {display_name}",
+            "points": points,
+        })
+
+    charts: dict = {}
+    if series:
+        charts["RD-C1"] = {
+            "kpi_id": "RD-C1",
+            "name": "Динамика ФОТ и бюджета",
+            "periodicity": "ежемесячно",
+            "chart_type": "multi_line_plan_fact_monthly",
+            "chart_type_label": "Линейный тренд по месяцам (план/факт)",
+            "series": series,
+        }
+
+    bar_categories: list[str] = []
+    bar_plan_values: list[float | None] = []
+    bar_fact_values: list[float | None] = []
+    bar_points: list[dict] = []
+    for kid, display_name, entry in sources:
+        kper = entry.get("kpi_period") or {}
+        point_y, point_m = ref_y, ref_m
+        if isinstance(kper, dict) and kper.get("year") is not None and kper.get("month") is not None:
+            point_y = int(kper["year"])
+            point_m = max(1, min(12, int(kper["month"])))
+        point = (
+            pick_monthly_row_for_period(entry.get("monthly_data") or [], point_y, point_m)
+            or entry.get("last_full_month_row")
+            or {}
+        )
+        bar_categories.append(display_name)
+        bar_plan_values.append(point.get("plan"))
+        bar_fact_values.append(point.get("fact"))
+        bar_points.append({
+            "kpi_id": kid,
+            "name": display_name,
+            "month": point.get("month", point_m),
+            "year": point.get("year", point_y),
+            "plan": point.get("plan"),
+            "fact": point.get("fact"),
+            "kpi_pct": point.get("kpi_pct"),
+            "has_data": point.get("has_data"),
+            "values_unit": point.get("values_unit"),
+        })
+
+    if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
+        charts["RD-C2"] = {
+            "kpi_id": "RD-C2",
+            "name": "ФОТ и бюджет за выбранный месяц",
+            "periodicity": "ежемесячно",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "Столбцы: план/факт за месяц",
+            "series": [{
+                "kpi_id": "RD-C2",
+                "name": "План/факт за месяц",
+                "chart_type": "column_plan_fact_monthly",
+                "chart_type_label": "Столбцы",
+                "categories": bar_categories,
+                "plan": bar_plan_values,
+                "fact": bar_fact_values,
+                "points": bar_points,
+            }],
+        }
+
+    return charts
+
+
 def _wants_tile_debug(request) -> bool:
     """Параметр ``?include_debug=1`` — добавить в элементы плиток поле ``debug`` (диагностика)."""
     v = (request.GET.get('include_debug') or '').strip().lower()
@@ -1194,6 +1311,7 @@ def _build_universal_payload(
         or _is_qualdir_department(dept)
         or _is_devdir_department(dept)
         or _is_gspp_department(dept)
+        or _is_sup_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -1225,6 +1343,7 @@ def _build_universal_payload(
             _qualdir_kpi_views.KPI_IDS_USE_BUILDER_KP_PERIOD
             | _devdir_kpi_views.DEVDIR_KPI_IDS
             | _gspp_kpi_views.GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD
+            | _sup_kpi_views.SUP_KPI_IDS_USE_BUILDER_KP_PERIOD
         ) or _kid_tile == 'TD-M6':
             kper = entry.get('kpi_period')
             if (
@@ -1280,9 +1399,13 @@ def _build_universal_payload(
 
         if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2', 'PD-M3.1', 'PD-M3.2'}:
             tile['unit'] = 'руб.'
+        elif _kid_tile == 'HRD-M1':
+            tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'OD-Q2':
+            tile['unit'] = 'чел.'
+        elif _kid_tile == 'TD-Q2':
             tile['unit'] = 'чел.'
         elif _is_gspp_q5_tile(kpi):
             tile['unit'] = 'чел.'
@@ -1355,6 +1478,8 @@ def _build_universal_payload(
             _build_qualdir_charts(tiles_meta, entries_by_id, qualdir_tile_values, ref_y, ref_m),
         )
         techdir_dashboard.strip_external_orders_budget_from_grafiki(grafiki)
+    if _is_devdir_department(dept):
+        grafiki.update(_build_devdir_charts(entries_by_id, ref_y, ref_m))
     if _is_gspp_department(dept):
         grafiki.update(_build_gspp_charts(tiles_meta, entries_by_id, ref_y, ref_m))
     month_names = {
@@ -1369,6 +1494,7 @@ def _build_universal_payload(
         not techdir_dashboard.is_techdir_department(dept)
         and not _is_devdir_department(dept)
         and not _is_gspp_department(dept)
+        and not _is_sup_department(dept)
     ):
         try:
             rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
@@ -1764,6 +1890,9 @@ def _build_kpi_entry(
         return entry
 
     if _gspp_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+        return entry
+
+    if _sup_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
     if kpi_id == 'KD-M1':
