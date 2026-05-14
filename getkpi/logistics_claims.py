@@ -19,13 +19,15 @@ DOC_ENTITY = "Document_ТД_АктОНесоответствиеПриборов
 ROWS_ENTITY = "Document_ТД_АктОНесоответствиеПриборовИКомплектующих_Несоответствия"
 NOMENCLATURE_ENTITY = "Catalog_Номенклатура"
 DEPARTMENT_ENTITY = "Catalog_СтруктураПредприятия"
+PARTNER_ENTITY = "Catalog_Партнеры"
+COUNTERPARTY_ENTITY = "Catalog_Контрагенты"
 EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 
 TARGET_REASON_CATEGORY = "Поставщик"
 TARGET_RESOLUTION = "Окончательный"
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 def _normalize_odata_base(raw_base_url: str) -> str:
@@ -133,6 +135,18 @@ def _fetch_single(session: requests.Session, entity: str, guid: str, select_fiel
     return data if isinstance(data, dict) else None
 
 
+def _fetch_entity_object(session: requests.Session, entity: str, guid: str) -> dict | None:
+    clean_guid = str(guid or "").strip().strip("{}")
+    if not clean_guid or clean_guid == EMPTY_GUID:
+        return None
+    url = f"{BASE}/{quote(entity)}(guid'{clean_guid}')?$format=json"
+    response = request_with_retry(session, url, timeout=45, retries=2, label=f"LOG claims/{entity}/object")
+    if response is None or not response.ok:
+        return None
+    data = response.json()
+    return data if isinstance(data, dict) else None
+
+
 def _format_ref_name(item: dict | None, fallback: str = "") -> str:
     if not item:
         return fallback
@@ -145,6 +159,97 @@ def _format_ref_name(item: dict | None, fallback: str = "") -> str:
 
 def _clean_text(value: object) -> str:
     return str(value or "").replace("\r\n", " ").replace("\n", " ").strip()
+
+
+def _odata_entity_from_type(type_name: object) -> str:
+    raw = _clean_text(type_name)
+    prefix = "StandardODATA."
+    if raw.startswith(prefix):
+        raw = raw[len(prefix):]
+    return raw
+
+
+def _display_number(item: dict | None) -> str:
+    if not item:
+        return ""
+    return _clean_text(item.get("Number")) or _clean_text(item.get("Code"))
+
+
+def _first_guid(item: dict | None, candidates: tuple[str, ...]) -> str:
+    if not item:
+        return ""
+    for key in candidates:
+        value = _clean_text(item.get(key))
+        if value and value != EMPTY_GUID:
+            return value
+    return ""
+
+
+def _resolve_ref_name(
+    session: requests.Session,
+    cache: dict[str, str],
+    entity: str,
+    key: str,
+) -> str:
+    clean_key = _clean_text(key)
+    if not clean_key or clean_key == EMPTY_GUID:
+        return ""
+    if clean_key not in cache:
+        cache[clean_key] = _format_ref_name(
+            _fetch_single(session, entity, clean_key, "Ref_Key,Description,Code"),
+            clean_key,
+        )
+    return cache.get(clean_key, "")
+
+
+def _resolve_supplier_order(
+    session: requests.Session,
+    doc: dict,
+    supplier_name_cache: dict[str, str],
+    counterparty_name_cache: dict[str, str],
+    order_cache: dict[tuple[str, str], dict | None],
+) -> tuple[str, str]:
+    basis_key = _clean_text(doc.get("ДокументОснование"))
+    if not basis_key or basis_key == EMPTY_GUID:
+        return "", ""
+
+    basis_entity = _odata_entity_from_type(doc.get("ДокументОснование_Type"))
+    candidates = [basis_entity] if basis_entity else []
+    for entity in ("Document_ЗаказПоставщику", "Document_ТД_ЗаявкаПоставщику"):
+        if entity not in candidates:
+            candidates.append(entity)
+
+    basis_doc = None
+    for entity in candidates:
+        if not entity:
+            continue
+        cache_key = (entity, basis_key)
+        if cache_key not in order_cache:
+            order_cache[cache_key] = _fetch_entity_object(session, entity, basis_key)
+        basis_doc = order_cache.get(cache_key)
+        if basis_doc:
+            break
+
+    if not basis_doc:
+        return basis_key, ""
+
+    supplier_key = _first_guid(
+        basis_doc,
+        ("Поставщик_Key", "Партнер_Key", "Контрагент_Key"),
+    )
+    counterparty_key = _first_guid(basis_doc, ("Контрагент_Key",))
+    supplier_name = ""
+    if supplier_key:
+        supplier_name = _resolve_ref_name(session, supplier_name_cache, PARTNER_ENTITY, supplier_key)
+    if (not supplier_name or supplier_name == supplier_key) and (counterparty_key or supplier_key):
+        supplier_name = _resolve_ref_name(
+            session,
+            counterparty_name_cache,
+            COUNTERPARTY_ENTITY,
+            counterparty_key or supplier_key,
+        )
+
+    return _display_number(basis_doc) or basis_key, supplier_name
 
 
 def _load_target_rows(session: requests.Session) -> list[dict]:
@@ -190,7 +295,7 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
     doc_keys = sorted({str(row.get("Ref_Key") or "").strip() for row in target_rows if row.get("Ref_Key")})
     docs: dict[str, dict] = {}
     doc_select = (
-        "Ref_Key,Number,Date,DeletionMark,Posted,Номенклатура_Key,ДокументОснование,"
+        "Ref_Key,Number,Date,DeletionMark,Posted,Номенклатура_Key,ДокументОснование,ДокументОснование_Type,"
         "Состояние,СрокИсполнения,ВыявленныеНесоответствия,Комментарий,"
         "ОписаниеНесоответствия,Тип,Статус"
     )
@@ -201,6 +306,9 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
 
     nomenclature_cache: dict[str, str] = {}
     department_cache: dict[str, str] = {}
+    supplier_name_cache: dict[str, str] = {}
+    counterparty_name_cache: dict[str, str] = {}
+    order_cache: dict[tuple[str, str], dict | None] = {}
 
     result: list[dict] = []
     for row in target_rows:
@@ -233,6 +341,13 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
             or _clean_text(doc.get("Комментарий"))
         )
         status = _clean_text(doc.get("Статус")) or _clean_text(doc.get("Состояние"))
+        supplier_order_number, supplier = _resolve_supplier_order(
+            session,
+            doc,
+            supplier_name_cache,
+            counterparty_name_cache,
+            order_cache,
+        )
 
         result.append({
             "code": _clean_text(doc.get("Number")),
@@ -240,6 +355,8 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
             "date_reg": str(doc.get("Date") or "")[:10],
             "date_plan": str(doc.get("СрокИсполнения") or "")[:10],
             "order_num": _clean_text(doc.get("ДокументОснование")),
+            "supplier_order_number": supplier_order_number,
+            "supplier": supplier,
             "order_dept": department_cache.get(dept_key, "" if dept_key in {"", EMPTY_GUID} else dept_key),
             "nomenclature": nomenclature_cache.get(
                 nomenclature_key,
@@ -254,6 +371,7 @@ def _fetch_from_odata(year: int, month: int) -> list[dict]:
             "received_qty": row.get("Поступило"),
             "checked_qty": row.get("Проверено"),
             "not_match_qty": row.get("НеСоответствуетНТД"),
+            "calculated_defect_qty": row.get("РасчетноеКоличествоБракаВПартии"),
             "actual_defect_pct": row.get("ФактическийБрак"),
             "source_document": DOC_ENTITY,
             "source_rows_entity": ROWS_ENTITY,
