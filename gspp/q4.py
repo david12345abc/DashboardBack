@@ -4,8 +4,9 @@
 **Когорта месяца (план):** все «живые» вехи опорного месяца — плановая дата (baseline и др.)
 попадает в месяц **или** дата окончания в графике (``finish_date``) попадает в месяц.
 
-**Отклонение:** веха из когорты, у которой к концу календарного месяца:
-  - не выполнена (``percent_complete`` < 100%%), а срок не позже конца месяца
+**Отклонение:** веха из когорты, у которой к дате расчёта
+(конец месяца для закрытых периодов, сегодня для текущего месяца):
+  - не выполнена (``percent_complete`` < 100%%), а срок не позже даты расчёта
     (берётся baseline, иначе ``finish_date`` как текущий срок); или
   - выполнена, но фактическое окончание позже baseline (если baseline нет —
     завершённая веха не считается отклонившейся, см. ``debug.milestones_without_baseline``).
@@ -54,8 +55,8 @@ TARGET_MANAGER = "ермаков илья николаевич"
 PROJECT_NAME_SUBSTR = "номенклатур"
 
 GSPP_Q4_CACHE_PREFIX = "gspp_q4_ytd"
-GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v6"
-GSPP_Q4_DISK_VERSION = 6
+GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v7"
+GSPP_Q4_DISK_VERSION = 7
 
 
 def _project_display_name(details: dict[str, Any], summary_item: dict[str, Any]) -> str:
@@ -162,6 +163,12 @@ def _milestone_completed(task: dict[str, Any]) -> bool:
     return frac >= 1.0 - 1e-9
 
 
+def _deviation_as_of_date(ref_y: int, ref_m: int) -> date:
+    """Закрытые месяцы считаем на конец месяца, текущий месяц — только на сегодня."""
+    _, month_end = _month_start_end(ref_y, ref_m)
+    return min(month_end, date.today())
+
+
 def _milestone_deviated(
     task: dict[str, Any],
     ref_y: int,
@@ -170,7 +177,7 @@ def _milestone_deviated(
     without_baseline: list[str],
 ) -> bool:
     """Веха когорты месяца считается отклонившейся — см. модульный docstring."""
-    _, month_end = _month_start_end(ref_y, ref_m)
+    as_of_date = _deviation_as_of_date(ref_y, ref_m)
     completed = _milestone_completed(task)
     act_d = _calendar_date_from_field(task.get("finish_date"))
     base_raw = _task_baseline_finish(task)
@@ -189,14 +196,13 @@ def _milestone_deviated(
     due_d = base_d if base_d is not None else act_d
     if due_d is None:
         return False
-    return due_d <= month_end
+    return due_d <= as_of_date
 
 
 def _gspp_delay_days_for_deviated(
     task: dict[str, Any], ref_y: int, ref_m: int, as_of_date: date,
 ) -> int:
     """Дни отклонения для строки таблицы: просрочка к ``as_of_date`` или срыв относительно baseline."""
-    _, month_end = _month_start_end(ref_y, ref_m)
     completed = _milestone_completed(task)
     act_d = _calendar_date_from_field(task.get("finish_date"))
     base_raw = _task_baseline_finish(task)
@@ -210,7 +216,7 @@ def _gspp_delay_days_for_deviated(
     due_d = base_d if base_d is not None else act_d
     if due_d is None:
         return 0
-    if due_d > month_end:
+    if due_d > as_of_date:
         return 0
     return max(0, (as_of_date - due_d).days)
 
@@ -547,8 +553,7 @@ def _build_gspp_q4_deviation_table_payload(
 ) -> dict[str, Any]:
     tasks_flat = _flatten_tasks_tree(details.get("tasks") or [])
     project_row = _gspp_project_row_for_deviation(item, details, tasks_flat)
-    month_end = _month_start_end(ref_y, ref_m)[1]
-    as_of_date = min(month_end, date.today())
+    as_of_date = _deviation_as_of_date(ref_y, ref_m)
     deviated_tasks = _collect_gspp_q4_deviated_milestones(tasks_flat, ref_y, ref_m)
     deviated_tasks.sort(
         key=lambda t: (

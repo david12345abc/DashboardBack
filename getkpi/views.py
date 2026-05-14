@@ -1048,6 +1048,113 @@ def _build_qualdir_charts(
     return charts
 
 
+def _build_gspp_charts(
+    tiles_meta: list[dict],
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    """Графики ГСПП: линия и столбцы по ФОТ подразделения (M3) и бюджету (M5)."""
+    chart_specs = [
+        ("GSPP-M3", "ФОТ", _is_gspp_m3_tile),
+        ("GSPP-M5", "Бюджет", _is_gspp_m5_tile),
+    ]
+    sources: list[tuple[str, str, dict]] = []
+    for fallback_id, display_name, predicate in chart_specs:
+        meta = next((item for item in tiles_meta if predicate(item)), {})
+        entry = entries_by_id.get(meta.get("kpi_id")) if meta else None
+        sources.append((fallback_id, display_name, entry or {}))
+
+    series: list[dict] = []
+    for fallback_id, display_name, entry in sources:
+        monthly = entry.get("monthly_data") or []
+        points = [
+            {
+                "month": row.get("month"),
+                "month_name": row.get("month_name"),
+                "year": row.get("year"),
+                "plan": row.get("plan"),
+                "fact": row.get("fact"),
+                "kpi_pct": row.get("kpi_pct"),
+                "has_data": row.get("has_data"),
+                "values_unit": row.get("values_unit"),
+            }
+            for row in monthly
+            if isinstance(row, dict)
+        ]
+        if not any((p.get("plan") is not None or p.get("fact") is not None) for p in points):
+            continue
+        series.append({
+            "kpi_id": fallback_id,
+            "name": display_name,
+            "chart_type": "line_plan_fact_monthly",
+            "chart_type_label": f"План/Факт по месяцам: {display_name}",
+            "points": points,
+        })
+
+    charts: dict = {}
+    if series:
+        charts["GSPP-C1"] = {
+            "kpi_id": "GSPP-C1",
+            "name": "Динамика ФОТ и бюджета ГСПП",
+            "periodicity": "ежемесячно",
+            "chart_type": "multi_line_plan_fact_monthly",
+            "chart_type_label": "Линейный тренд по месяцам (план/факт)",
+            "series": series,
+        }
+
+    bar_categories: list[str] = []
+    bar_plan_values: list[float | None] = []
+    bar_fact_values: list[float | None] = []
+    bar_points: list[dict] = []
+    for fallback_id, display_name, entry in sources:
+        kper = entry.get("kpi_period") or {}
+        point_y, point_m = ref_y, ref_m
+        if isinstance(kper, dict) and kper.get("year") is not None and kper.get("month") is not None:
+            point_y = int(kper["year"])
+            point_m = max(1, min(12, int(kper["month"])))
+        point = (
+            pick_monthly_row_for_period(entry.get("monthly_data") or [], point_y, point_m)
+            or entry.get("last_full_month_row")
+            or {}
+        )
+        bar_categories.append(display_name)
+        bar_plan_values.append(point.get("plan"))
+        bar_fact_values.append(point.get("fact"))
+        bar_points.append({
+            "kpi_id": fallback_id,
+            "name": display_name,
+            "month": point.get("month", point_m),
+            "year": point.get("year", point_y),
+            "plan": point.get("plan"),
+            "fact": point.get("fact"),
+            "kpi_pct": point.get("kpi_pct"),
+            "has_data": point.get("has_data"),
+            "values_unit": point.get("values_unit"),
+        })
+
+    if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
+        charts["GSPP-C2"] = {
+            "kpi_id": "GSPP-C2",
+            "name": "ФОТ и бюджет ГСПП за выбранный месяц",
+            "periodicity": "ежемесячно",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "Столбцы: план/факт за месяц",
+            "series": [{
+                "kpi_id": "GSPP-C2",
+                "name": "План/факт за месяц",
+                "chart_type": "column_plan_fact_monthly",
+                "chart_type_label": "Столбцы",
+                "categories": bar_categories,
+                "plan": bar_plan_values,
+                "fact": bar_fact_values,
+                "points": bar_points,
+            }],
+        }
+
+    return charts
+
+
 def _wants_tile_debug(request) -> bool:
     """Параметр ``?include_debug=1`` — добавить в элементы плиток поле ``debug`` (диагностика)."""
     v = (request.GET.get('include_debug') or '').strip().lower()
@@ -1248,6 +1355,8 @@ def _build_universal_payload(
             _build_qualdir_charts(tiles_meta, entries_by_id, qualdir_tile_values, ref_y, ref_m),
         )
         techdir_dashboard.strip_external_orders_budget_from_grafiki(grafiki)
+    if _is_gspp_department(dept):
+        grafiki.update(_build_gspp_charts(tiles_meta, entries_by_id, ref_y, ref_m))
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -1256,7 +1365,11 @@ def _build_universal_payload(
 
     tablitsy = {}
 
-    if not techdir_dashboard.is_techdir_department(dept) and not _is_devdir_department(dept):
+    if (
+        not techdir_dashboard.is_techdir_department(dept)
+        and not _is_devdir_department(dept)
+        and not _is_gspp_department(dept)
+    ):
         try:
             rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
         except Exception:
