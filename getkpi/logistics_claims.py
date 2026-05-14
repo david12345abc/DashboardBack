@@ -27,12 +27,12 @@ EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 TARGET_REASON_CATEGORY = "Поставщик"
 TARGET_RESOLUTION = "Окончательный"
 PRODUCTION_CULPRIT_DEPARTMENTS: dict[str, str] = {
-    "f12f2fca-d5d2-11e7-8267-ac1f6b05524d": "Производственный цех №1",
-    "3a9ac2f2-214f-11e0-b91c-00248c26ee57": "Производственный цех №2",
+    "f12f2fca-d5d2-11e7-8267-ac1f6b05524d": "ТурбулентностьДОНПроизводство1",
+    "3a9ac2f2-214f-11e0-b91c-00248c26ee57": "Алмаз",
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 3
+CACHE_VERSION = 5
 
 
 def _normalize_odata_base(raw_base_url: str) -> str:
@@ -458,11 +458,32 @@ def _fetch_production_from_odata(year: int, month: int) -> list[dict]:
             **row,
             "production_claim": True,
             "name": "Претензия на стороне производства",
+            "order_dept": PRODUCTION_CULPRIT_DEPARTMENTS.get(str(row.get("culprit_dept_key") or "").strip(), row.get("order_dept")),
             "source": "Document_ТД_АктОНесоответствиеПриборовИКомплектующих",
         }
         for row in rows
         if row.get("culprit_dept_key") in PRODUCTION_CULPRIT_DEPARTMENTS
     ]
+
+
+def _infer_production_culprit_from_claim(row: dict) -> tuple[str, str]:
+    dept_key = str(row.get("ВиновноеПодразделение_Key") or "").strip()
+    if dept_key in PRODUCTION_CULPRIT_DEPARTMENTS:
+        return dept_key, PRODUCTION_CULPRIT_DEPARTMENTS[dept_key]
+
+    direction = _clean_text(row.get("ТД_ПлательщикНаправление")).lower()
+    compact = direction.replace(" ", "").replace("-", "")
+    if "производство1" in compact or "цех1" in compact or "пц1" in compact:
+        return "f12f2fca-d5d2-11e7-8267-ac1f6b05524d", "ТурбулентностьДОНПроизводство1"
+    if (
+        "производство2" in compact
+        or "цех2" in compact
+        or "пц2" in compact
+        or "алмаз" in compact
+    ):
+        return "3a9ac2f2-214f-11e0-b91c-00248c26ee57", "Алмаз"
+
+    return "", ""
 
 
 def _fetch_production_catalog_claims_from_odata(year: int, month: int) -> list[dict]:
@@ -472,7 +493,7 @@ def _fetch_production_catalog_claims_from_odata(year: int, month: int) -> list[d
     select_fields = (
         "Ref_Key,Code,Description,ДатаРегистрации,ДатаОкончания,ТД_ДатаОкончанияПлан,"
         "Статус,ВиновноеПодразделение_Key,ТД_Номенклатура_Key,ОписаниеПретензии,"
-        "ПричинаВозникновения_Key,DeletionMark"
+        "ПричинаВозникновения_Key,ТД_ПлательщикНаправление,DeletionMark"
     )
     period_filter = (
         f"ДатаРегистрации ge datetime'{period_start.strftime('%Y-%m-%dT%H:%M:%S')}' "
@@ -497,28 +518,13 @@ def _fetch_production_catalog_claims_from_odata(year: int, month: int) -> list[d
         skip += len(chunk)
 
     rows = [row for row in rows if row.get("DeletionMark") is not True]
-    target_rows = [
-        row for row in rows
-        if str(row.get("ВиновноеПодразделение_Key") or "").strip() in PRODUCTION_CULPRIT_DEPARTMENTS
-    ]
-    has_any_culprit = any(
-        str(row.get("ВиновноеПодразделение_Key") or "").strip() not in {"", EMPTY_GUID}
-        for row in rows
-    )
-    # В апреле/мае 2026 реквизит "ВиновноеПодразделение" в 1С пустой у всех претензий.
-    # В таком случае не прячем таблицу полностью, а показываем претензии за период с явной пометкой.
-    selected = target_rows if target_rows or has_any_culprit else rows
 
     nomenclature_cache: dict[str, str] = {}
-    department_cache: dict[str, str] = {}
     result: list[dict] = []
-    for row in selected:
-        dept_key = str(row.get("ВиновноеПодразделение_Key") or "").strip()
-        if dept_key and dept_key != EMPTY_GUID and dept_key not in department_cache:
-            department_cache[dept_key] = _format_ref_name(
-                _fetch_single(session, DEPARTMENT_ENTITY, dept_key, "Ref_Key,Description"),
-                dept_key,
-            )
+    for row in rows:
+        dept_key, dept_name = _infer_production_culprit_from_claim(row)
+        if not dept_name:
+            continue
 
         nomenclature_key = str(row.get("ТД_Номенклатура_Key") or "").strip()
         if nomenclature_key and nomenclature_key != EMPTY_GUID and nomenclature_key not in nomenclature_cache:
@@ -533,11 +539,7 @@ def _fetch_production_catalog_claims_from_odata(year: int, month: int) -> list[d
             "date_reg": str(row.get("ДатаРегистрации") or "")[:10],
             "date_plan": str(row.get("ТД_ДатаОкончанияПлан") or "")[:10],
             "date_end": str(row.get("ДатаОкончания") or "")[:10],
-            "order_dept": (
-                department_cache.get(dept_key)
-                if dept_key and dept_key != EMPTY_GUID
-                else "Не заполнено в 1С"
-            ),
+            "order_dept": dept_name,
             "culprit_dept_key": dept_key,
             "nomenclature": nomenclature_cache.get(
                 nomenclature_key,
@@ -548,7 +550,6 @@ def _fetch_production_catalog_claims_from_odata(year: int, month: int) -> list[d
             "reason_category": _clean_text(row.get("ПричинаВозникновения_Key")),
             "calculated_defect_qty": None,
             "production_claim": True,
-            "culprit_filter_fallback": not target_rows and not has_any_culprit,
             "source": "Catalog_Претензии",
         })
 
