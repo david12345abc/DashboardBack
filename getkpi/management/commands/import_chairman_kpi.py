@@ -42,7 +42,7 @@ FULL_DASHBOARD: list[dict] = [
         "perspective": "Финансы",
         "goal": "Видеть качество заработка, а не только объём выручки",
         "formula": "Фактическая EBITDA / План EBITDA периода × 100%",
-        "unit": "%",
+        "unit": "руб.",
         "source": "БДР / управленческая отчётность",
         "monthly_target": "≥100%",
         "quarterly_target": None,

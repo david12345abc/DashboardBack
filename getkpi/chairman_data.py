@@ -775,6 +775,9 @@ TILE_IDS = [
     "FND-T1", "FND-T2", "FND-T3", "FND-T4", "FND-T5",
     "FND-T6", "FND-T7", "FND-T9",
 ]
+TILE_UNIT_OVERRIDES = {
+    "FND-T2": "руб.",
+}
 
 # Блок «Председатель / коммерция» (плитки MRK-*)
 CHAIRMAN_BLOCK_COMMERCE = "commerce"
@@ -1861,7 +1864,7 @@ def build_chairman_payload(
             "period": _period_label(meta),
             "thresholds": _thresholds(meta),
             "formula": meta.get("formula"),
-            "unit": meta.get("unit"),
+            "unit": TILE_UNIT_OVERRIDES.get(kid, meta.get("unit")),
             "source": meta.get("source"),
             "frequency": meta.get("frequency"),
             "plan": lm.get("plan") if lm else None,
