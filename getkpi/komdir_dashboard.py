@@ -119,7 +119,19 @@ def _rag_lower_better(pct: float | None) -> str:
     return "red"
 
 
+def _rag_turnover_pct(pct: float | None) -> str:
+    if pct is None:
+        return "unknown"
+    if pct < 90:
+        return "green"
+    if pct <= 100:
+        return "yellow"
+    return "red"
+
+
 def _tile_rag(kpi_id: str, pct: float | None) -> str:
+    if kpi_id == "KD-M11":
+        return _rag_turnover_pct(pct)
     if kpi_id in LOWER_IS_BETTER_IDS:
         return _rag_lower_better(pct)
     return _rag_higher_better(pct)

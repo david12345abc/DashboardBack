@@ -89,6 +89,16 @@ def _rag_limit_pct(pct: float | None) -> str:
     return "red"
 
 
+def _rag_turnover_pct(pct: float | None) -> str:
+    if pct is None:
+        return "unknown"
+    if pct < 90:
+        return "green"
+    if pct <= 100:
+        return "yellow"
+    return "red"
+
+
 def _rag_fot_limit_pct(pct: float | None) -> str:
     if pct is None:
         return "unknown"
@@ -131,10 +141,9 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
         return pct, str(ref_row.get("color") or rag_price_deviation(pct))
 
     if kpi_id in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
-        if kpi_id == "LOG-M3.F":
-            color = _plan_fact_color(entry)
-            if color is not None:
-                return color
+        color = _plan_fact_color(entry)
+        if color is not None:
+            return color
         ref_row = entry.get("ytd") or entry.get("last_full_month_row") or {}
         pct = ref_row.get("kpi_pct")
         if pct is not None:
@@ -144,7 +153,7 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
     if kpi_id == "LOG-Q2":
         color = _plan_fact_color(entry)
         if color is not None:
-            return color
+            return color[0], _rag_turnover_pct(color[0])
 
     if kpi_id == "LOG-Q1":
         ref_row = entry.get("last_full_month_row") or {}

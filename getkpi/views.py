@@ -600,11 +600,37 @@ def _rag_higher_better(pct: float | None) -> str:
 def _rag_lower_turnover(fact_pct: float | None) -> str:
     if fact_pct is None:
         return 'unknown'
-    if fact_pct <= 5:
+    if fact_pct < 90:
         return 'green'
-    if fact_pct <= 7:
+    if fact_pct <= 100:
         return 'yellow'
     return 'red'
+
+
+def _turnover_fact_div_plan_pct(entry: dict) -> float | None:
+    ytd = entry.get('ytd') or {}
+    plan = ytd.get('total_plan')
+    fact = ytd.get('total_fact')
+    if plan is None or fact is None:
+        row = entry.get('last_full_month_row') or {}
+        if not isinstance(row, dict):
+            row = {}
+        plan = row.get('plan')
+        fact = row.get('fact')
+    if plan is None or fact is None:
+        quarterly = entry.get('quarterly_data') or []
+        row = quarterly[-1] if quarterly else {}
+        if isinstance(row, dict):
+            plan = row.get('plan') if row.get('plan') is not None else row.get('plan_max_turnover_pct')
+            fact = row.get('fact') if row.get('fact') is not None else row.get('fact_turnover_pct')
+    try:
+        plan_value = float(plan)
+        fact_value = float(fact)
+    except (TypeError, ValueError):
+        return None
+    if plan_value <= 0:
+        return None
+    return round(fact_value / plan_value * 100, 1)
 
 
 def _normalize_dashboard_kpi_id(raw: object) -> str:
@@ -731,12 +757,12 @@ def _budget_fact_div_plan_pct(entry: dict) -> float | None:
 
 
 def _rag_budget_fact_div_plan(pct: float | None) -> str:
-    """Лимитные бюджет/ФОТ KPI: до 90% — зелёный, 90–100% — жёлтый, иначе — красный."""
+    """Лимитные бюджет/ФОТ KPI: факт < план — зелёный, факт = план — жёлтый, факт > план — красный."""
     if pct is None:
         return 'unknown'
-    if pct <= 90:
+    if pct < 100:
         return 'green'
-    if pct <= 100:
+    if abs(pct - 100.0) < 1e-9:
         return 'yellow'
     return 'red'
 
@@ -828,11 +854,13 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     elif (logistics_color := logistics_views.tile_color(kid, entry)) is not None:
         pct, color = logistics_color
     elif _is_turnover_style_tile(kpi):
-        md = entry.get('monthly_data') or []
-        last_row = md[-1] if md else {}
-        turnover = last_row.get('fact') if md else None
-        color_src = pct if pct is not None else turnover
-        color = _rag_lower_turnover(float(color_src) if color_src is not None else None)
+        pct = _turnover_fact_div_plan_pct(entry)
+        if pct is None:
+            md = entry.get('monthly_data') or []
+            last_row = md[-1] if md else {}
+            turnover = last_row.get('kpi_pct') if md else None
+            pct = float(turnover) if turnover is not None else None
+        color = _rag_lower_turnover(float(pct) if pct is not None else None)
     elif kid in {'OD-M3.1', 'OD-M3.2'}:
         pct = _budget_fact_div_plan_pct(entry)
         color = _rag_budget_fact_div_plan(pct)
@@ -845,7 +873,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
         color = _rag_td_m4_limit(pct)
     elif _is_budget_limit_m3_kpi(kid):
-        color = _rag_dz_lower_better(pct)
+        pct = _budget_fact_div_plan_pct(entry)
+        color = _rag_budget_fact_div_plan(pct)
     elif kid in techdir_kpi_entry.TILE_COLOR_DZ_LOWER_IDS:
         color = _rag_dz_lower_better(pct)
     elif kid in techdir_kpi_entry.TILE_COLOR_TD_M4_LIMIT_IDS | _qualdir_kpi_views.TILE_COLOR_TD_M4_LIMIT_IDS:
@@ -1616,7 +1645,7 @@ def _build_universal_payload(
             if tpct is not None:
                 tile['kpi_pct'] = tpct
             tile['color'] = _rag_lower_turnover(float(tpct) if tpct is not None else None)
-            # Подсказка фронту: kpi_pct = факт/план×100, зелёный при малых значениях порога, не при ≥100.
+            # Подсказка фронту: kpi_pct = факт/план×100, зелёный при <90%, жёлтый до 100%.
             tile['pct_lower_is_better'] = True
 
         if kpi.get('kpi_id') == 'QD-Q1':

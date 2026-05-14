@@ -1595,12 +1595,12 @@ def build_chairman_commerce_payload(
 
         if kid == "MRK-08":
             conv = _build_conversion_monthly_detail(
-                td_m2.get("monthly_data") or [],
                 td_m1.get("monthly_data") or [],
+                td_m2.get("monthly_data") or [],
                 ref_y,
                 ref_m,
-                numerator_label="Отгрузки произведенные",
-                denominator_label="Деньги полученные",
+                numerator_label="Деньги полученные",
+                denominator_label="Отгрузки произведенные",
             )
             ref_info = conv.get("ref") or {}
             pct = ref_info.get("kpi_pct")
@@ -1612,7 +1612,7 @@ def build_chairman_commerce_payload(
                 "color": _mrk_conversion_rag(pct),
                 "period": _period_label(meta),
                 "thresholds": _thresholds(meta),
-                "formula": "Отгрузки произведенные (факт) / Деньги полученные (факт) * 100",
+                "formula": "Деньги полученные (факт) / Отгрузки произведенные (факт) * 100",
                 "unit": meta.get("unit"),
                 "source": meta.get("source"),
                 "frequency": meta.get("frequency"),
