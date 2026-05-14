@@ -1215,8 +1215,8 @@ def _mrk_plan_fact_rag(kpi_pct: float | None) -> str:
 def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
     """
     Помесячный ряд для MRK-09: для каждого месяца m ∈ [1..12] считается
-    процент выигранных тендеров БМИ **за этот конкретный месяц**
-    (от 1 по последний день месяца), не накопительно.
+    процент выигранных тендеров по коммерческим тендерным отделам накопительно
+    с начала года по конец месяца.
 
     Для будущих месяцев текущего года — None (данных ещё нет).
 
@@ -1238,13 +1238,12 @@ def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
                 "has_data": False,
             })
             continue
-        # Только за этот месяц, без накопления с начала года.
         data = cache_manager.locked_call(
-            f"tenders_bmi_monthly_{ref_y}_{m:02d}",
-            calc_tenders_bmi.get_tenders_bmi,
+            f"tenders_commercial_ytd_{ref_y}_{m:02d}",
+            calc_tenders_bmi.get_tenders_departments,
             year=ref_y,
             month=m,
-            cumulative=False,
+            cumulative=True,
         )
         plan = int(data.get("plan") or 0)
         fact = int(data.get("fact") or 0)
@@ -1259,6 +1258,7 @@ def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
             "won": int(data.get("won") or fact),
             "not_participating": int(data.get("not_participating") or 0),
             "status_counts": data.get("status_counts") or {},
+            "tender_departments": data.get("departments") or [],
             "kpi_pct": pct,
             "has_data": plan > 0,
         })
@@ -1626,13 +1626,13 @@ def build_chairman_commerce_payload(
             continue
 
         if kid == "MRK-09":
-            # Плитка считается ТОЛЬКО по выбранному месяцу ref_m (не нарастающим итогом).
+            # Плитка считается накопительно с начала года по выбранный месяц.
             tenders = cache_manager.locked_call(
-                f"tenders_bmi_monthly_{ref_y}_{ref_m:02d}",
-                calc_tenders_bmi.get_tenders_bmi,
+                f"tenders_commercial_ytd_{ref_y}_{ref_m:02d}",
+                calc_tenders_bmi.get_tenders_departments,
                 year=ref_y,
                 month=ref_m,
-                cumulative=False,
+                cumulative=True,
             )
             plan_n = int(tenders.get("plan") or 0)
             fact_n = int(tenders.get("fact") or 0)
@@ -1641,13 +1641,13 @@ def build_chairman_commerce_payload(
             monthly_ytd = _mrk09_monthly_ytd(ref_y, ref_m)
             plitki_items.append({
                 "kpi_id": kid,
-                "name": meta["name"],
+                "name": "Тендеры",
                 "goal": meta.get("goal"),
                 "kpi_pct": pct,
                 "color": _mrk09_rag(pct),
                 "period": _period_label(meta),
                 "thresholds": _thresholds(meta),
-                "formula": meta.get("formula"),
+                "formula": "Выигранные тендеры / Все тендеры по коммерческим отделам × 100%",
                 "unit": "шт",
                 "source": meta.get("source"),
                 "frequency": meta.get("frequency"),
@@ -1660,9 +1660,11 @@ def build_chairman_commerce_payload(
                 "has_data": plan_n > 0,
                 "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
                 "monthly_data": monthly_ytd,
+                "tender_departments": tenders.get("departments") or [],
                 "tenders_detail": {
                     "distribution": tenders.get("distribution") or {},
                     "status_counts": tenders.get("status_counts") or {},
+                    "departments": tenders.get("departments") or [],
                     "samples": tenders.get("samples") or [],
                     "year": tenders.get("year"),
                     "month": tenders.get("month"),

@@ -1,12 +1,12 @@
 """
-calc_tenders_bmi.py — % выигранных тендеров БМИ для учредителя (MRK-09).
+calc_tenders_bmi.py — % выигранных тендеров для учредителя (MRK-09).
 
 Алгоритм:
   Берутся документы ТД_СлужебнаяЗаписка с начала года с отборами:
     - ТемаСлужебнойЗаписки = "Запрос документов по тендеру (регл.)"
-    - УТО_ПодразделениеТендер = "Отдел продаж БМИ"
+    - УТО_ПодразделениеТендер входит в список коммерческих тендерных отделов
 
-  План  = количество таких документов (все тендеры БМИ)
+  План  = количество таких документов (все тендеры)
   Факт  = план с фильтром (УТО_РезультатТендера = 1)  (выигранные)
   %     = Факт / План * 100
 
@@ -14,8 +14,8 @@ calc_tenders_bmi.py — % выигранных тендеров БМИ для у
   python calc_tenders_bmi.py [ГГГГ]
 
 Использование (как модуль):
-  from .calc_tenders_bmi import get_tenders_bmi
-  data = get_tenders_bmi(2026)           # {'plan': int, 'fact': int, 'pct': float|None, ...}
+  from .calc_tenders_bmi import get_tenders_departments
+  data = get_tenders_departments(2026)   # {'plan': int, 'fact': int, 'pct': float|None, ...}
 """
 import functools
 import sys
@@ -32,6 +32,15 @@ AUTH = HTTPBasicAuth("odata.user", "npo852456")
 BMI_KEY   = "9edaa7d4-37a5-11ee-93d3-6cb31113810e"  # Отдел продаж БМИ
 TEMA_KEY  = "f88a0ca1-82eb-11e8-827b-ac1f6b05524d"  # "Запрос документов по тендеру (регл.)"
 TEMA_NAME = "Запрос документов по тендеру (регл.)"
+
+TENDER_DEPARTMENTS: dict[str, str] = {
+    BMI_KEY: "Отдел продаж БМИ",
+    "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО Газпром",
+    "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел внешнеэкономической деятельности",
+    "34497ef7-810f-11e4-80d6-001e67112509": "Отдел продаж эталонного оборудования и услуг",
+    "7587c178-92f6-11f0-96f9-6cb31113810e": "Отдел дилерских продаж",
+    "639ec87b-67b6-11eb-8523-ac1f6b05524d": "Отдел по работе с ключевыми клиентами",
+}
 
 REZ_NAME = {
     0: "не указан / в работе",
@@ -176,6 +185,160 @@ def _fetch_all(session, base_url, page_size=1000, timeout=120):
     return out
 
 
+def _month_end(year: int, month: int) -> date:
+    last_day = 31 if month in {1, 3, 5, 7, 8, 10, 12} else (30 if month != 2 else (29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28))
+    return date(year, month, last_day)
+
+
+def _build_tenders_result(
+    rows: list[dict],
+    *,
+    year: int,
+    month: int,
+    period_start: str,
+    period_end: str,
+    cumulative: bool,
+    code_to_canon: dict[int, str],
+    dept_names: dict[str, str],
+) -> dict:
+    plan = len(rows)
+    distribution: dict[int, int] = {}
+    status_counts = _empty_status_counts()
+    by_dept: dict[str, dict] = {
+        key: {
+            "department_key": key,
+            "department": name,
+            "plan": 0,
+            "fact": 0,
+            "won": 0,
+            "found": 0,
+            "not_participating": 0,
+            "pct": None,
+            "status_counts": _empty_status_counts(),
+        }
+        for key, name in dept_names.items()
+    }
+
+    for r in rows:
+        k = _normalize_result_code(r.get("УТО_РезультатТендера", 0))
+        distribution[k] = distribution.get(k, 0) + 1
+        canon = code_to_canon.get(k)
+        if canon and canon in status_counts:
+            status_counts[canon] += 1
+
+        dept_key = str(r.get("УТО_ПодразделениеТендер_Key") or "")
+        dept_row = by_dept.get(dept_key)
+        if dept_row is not None:
+            dept_row["plan"] += 1
+            dept_row["found"] += 1
+            if canon and canon in dept_row["status_counts"]:
+                dept_row["status_counts"][canon] += 1
+            if k == 1:
+                dept_row["fact"] += 1
+                dept_row["won"] += 1
+            if canon == "не участвуем":
+                dept_row["not_participating"] += 1
+
+    for dept_row in by_dept.values():
+        dept_row["pct"] = round(dept_row["fact"] / dept_row["plan"] * 100, 1) if dept_row["plan"] else None
+
+    fact = distribution.get(1, 0)
+    not_participating = status_counts.get("не участвуем", 0)
+    pct = round(fact / plan * 100, 1) if plan else None
+
+    samples = []
+    for r in sorted(rows, key=lambda x: x.get("Date", ""), reverse=True)[:15]:
+        code = _normalize_result_code(r.get("УТО_РезультатТендера", 0))
+        samples.append({
+            "number": r.get("Number"),
+            "date": (r.get("Date") or "")[:10],
+            "department": dept_names.get(str(r.get("УТО_ПодразделениеТендер_Key") or ""), ""),
+            "result": code,
+            "status": code_to_canon.get(code) or REZ_NAME.get(code, ""),
+            "name": (r.get("УТО_НаименованиеТендера") or "").strip(),
+            "customer": (r.get("УТО_Заказчик") or "").strip(),
+        })
+
+    departments = sorted(by_dept.values(), key=lambda row: row["department"])
+    return {
+        "year": year,
+        "month": month,
+        "period_start": period_start,
+        "period_end": period_end,
+        "plan": plan,
+        "fact": fact,
+        "pct": pct,
+        "found": plan,
+        "won": fact,
+        "not_participating": not_participating,
+        "status_counts": status_counts,
+        "distribution": distribution,
+        "departments": departments,
+        "samples": samples,
+        "cumulative": bool(cumulative),
+    }
+
+
+def get_tenders_departments(
+    year: int | None = None,
+    *,
+    month: int | None = None,
+    departments: dict[str, str] | None = None,
+    cumulative: bool = True,
+) -> dict:
+    today = date.today()
+    y = int(year) if year else today.year
+    m = max(1, min(12, int(month))) if month else 12
+    end_dt = _month_end(y, m)
+    if y == today.year and end_dt >= today:
+        end_dt = today
+
+    start_dt = date(y, 1, 1) if cumulative else date(y, m, 1)
+    start = f"{start_dt.isoformat()}T00:00:00"
+    end = f"{end_dt.isoformat()}T23:59:59"
+
+    dept_names = departments or TENDER_DEPARTMENTS
+    dept_filter = " or ".join(
+        f"УТО_ПодразделениеТендер_Key eq guid'{key}'"
+        for key in dept_names
+    )
+
+    s = requests.Session()
+    s.auth = AUTH
+    flt = (
+        f"({dept_filter})"
+        f" and Date ge datetime'{start}'"
+        f" and Date le datetime'{end}'"
+    )
+    url = (
+        f"{BASE}/{quote('Document_ТД_СлужебнаяЗаписка')}"
+        f"?$filter={quote(flt, safe='')}"
+        f"&$select=Ref_Key,Number,Date,Posted,DeletionMark,"
+        f"ТемаСлужебнойЗаписки,ТемаСлужебнойЗаписки_Type,"
+        f"УТО_ПодразделениеТендер_Key,"
+        f"УТО_РезультатТендера,УТО_НомерТендера,"
+        f"УТО_НаименованиеТендера,УТО_Заказчик,УТО_СуммаНМЦ,"
+        f"УТО_СуммаТКПТендера,УТО_КомментарийПоРезультатуТендера"
+    )
+
+    rows_all = _fetch_all(s, url)
+    rows = [r for r in rows_all
+            if r.get("ТемаСлужебнойЗаписки") == TEMA_KEY
+            or r.get("ТемаСлужебнойЗаписки") == TEMA_NAME]
+    alive = [r for r in rows if not r.get("DeletionMark")]
+    code_to_canon = _get_code_to_canonical(s)
+    return _build_tenders_result(
+        alive,
+        year=y,
+        month=m,
+        period_start=start[:10],
+        period_end=end_dt.isoformat(),
+        cumulative=cumulative,
+        code_to_canon=code_to_canon,
+        dept_names=dept_names,
+    )
+
+
 def get_tenders_bmi(year: int | None = None,
                     *,
                     month: int | None = None,
@@ -200,88 +363,12 @@ def get_tenders_bmi(year: int | None = None,
           'cumulative': bool,
         }
     """
-    today = date.today()
-    y = int(year) if year else today.year
-    m = max(1, min(12, int(month))) if month else 12
-
-    last_day = 31 if m in {1, 3, 5, 7, 8, 10, 12} else (30 if m != 2 else (29 if y % 4 == 0 and (y % 100 != 0 or y % 400 == 0) else 28))
-    end_dt = date(y, m, last_day)
-    if y == today.year and end_dt >= today:
-        end_dt = today
-
-    start_dt = date(y, 1, 1) if cumulative else date(y, m, 1)
-    start = f"{start_dt.isoformat()}T00:00:00"
-    end   = f"{end_dt.isoformat()}T23:59:59"
-
-    s = requests.Session()
-    s.auth = AUTH
-
-    flt = (
-        f"УТО_ПодразделениеТендер_Key eq guid'{BMI_KEY}'"
-        f" and Date ge datetime'{start}'"
-        f" and Date le datetime'{end}'"
+    return get_tenders_departments(
+        year,
+        month=month,
+        departments={BMI_KEY: TENDER_DEPARTMENTS[BMI_KEY]},
+        cumulative=cumulative,
     )
-    url = (
-        f"{BASE}/{quote('Document_ТД_СлужебнаяЗаписка')}"
-        f"?$filter={quote(flt, safe='')}"
-        f"&$select=Ref_Key,Number,Date,Posted,DeletionMark,"
-        f"ТемаСлужебнойЗаписки,ТемаСлужебнойЗаписки_Type,"
-        f"УТО_ПодразделениеТендер_Key,"
-        f"УТО_РезультатТендера,УТО_НомерТендера,"
-        f"УТО_НаименованиеТендера,УТО_Заказчик,УТО_СуммаНМЦ,"
-        f"УТО_СуммаТКПТендера,УТО_КомментарийПоРезультатуТендера"
-    )
-
-    rows_all = _fetch_all(s, url)
-    rows = [r for r in rows_all
-            if r.get("ТемаСлужебнойЗаписки") == TEMA_KEY
-            or r.get("ТемаСлужебнойЗаписки") == TEMA_NAME]
-    alive = [r for r in rows if not r.get("DeletionMark")]
-
-    code_to_canon = _get_code_to_canonical(s)
-
-    plan = len(alive)
-    distribution: dict[int, int] = {}
-    status_counts = _empty_status_counts()
-    for r in alive:
-        k = _normalize_result_code(r.get("УТО_РезультатТендера", 0))
-        distribution[k] = distribution.get(k, 0) + 1
-        canon = code_to_canon.get(k)
-        if canon and canon in status_counts:
-            status_counts[canon] += 1
-
-    fact = status_counts.get("выиграли", 0)
-    not_participating = status_counts.get("не участвуем", 0)
-    pct = round(fact / plan * 100, 1) if plan else None
-
-    samples = []
-    for r in sorted(alive, key=lambda x: x.get("Date", ""), reverse=True)[:15]:
-        code = _normalize_result_code(r.get("УТО_РезультатТендера", 0))
-        samples.append({
-            "number": r.get("Number"),
-            "date": (r.get("Date") or "")[:10],
-            "result": code,
-            "status": code_to_canon.get(code) or REZ_NAME.get(code, ""),
-            "name": (r.get("УТО_НаименованиеТендера") or "").strip(),
-            "customer": (r.get("УТО_Заказчик") or "").strip(),
-        })
-
-    return {
-        "year": y,
-        "month": m,
-        "period_start": start[:10],
-        "period_end": end_dt.isoformat(),
-        "plan": plan,
-        "fact": fact,
-        "pct": pct,
-        "found": plan,
-        "won": fact,
-        "not_participating": not_participating,
-        "status_counts": status_counts,
-        "distribution": distribution,
-        "samples": samples,
-        "cumulative": bool(cumulative),
-    }
 
 
 def _main_cli() -> None:
