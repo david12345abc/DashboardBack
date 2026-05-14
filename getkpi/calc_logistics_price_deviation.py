@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -12,7 +12,7 @@ from .calc_budget_limit import AUTH, BASE
 from .calc_fot_management import MONTH_RU, _normalize_period
 from .cache_manager import CACHE_DIR
 
-SOURCE_TAG = "logistics_price_deviation_v2_weighted_aggregation"
+SOURCE_TAG = "logistics_price_deviation_v3_weighted_period_colors"
 RECEIPT_ENTITY = "Document_ПриобретениеТоваровУслуг"
 PRICE_ENTITY = "InformationRegister_ЦеныНоменклатуры_RecordType"
 TABULAR_FIELD = "Товары"
@@ -20,6 +20,7 @@ PROJECT_PRICE_TYPE_KEY = "25b38f16-6d23-11e7-812d-001e67112509"
 EMPTY = "00000000-0000-0000-0000-000000000000"
 TARGET_DEVIATION_PCT = 5.0
 RUB_KEY = "3fdf75b4-6252-11e7-812d-001e67112509"
+EXCLUDED_NOMENCLATURE_TYPES = {"услуга", "работа"}
 
 CURRENCY_CODES = {
     "0a7c6f22-e1b6-11df-963e-001cc4d04388": "USD",
@@ -114,6 +115,40 @@ def _to_rub(value: float, currency_key: str | None) -> float:
     return value * EXCHANGE_RATES_TO_RUB.get(code, 1.0)
 
 
+def _period_start_date(year: int, month: int, scope: str) -> str:
+    if scope == "year":
+        return f"{year}-01-01"
+    if scope == "quarter":
+        start_month = ((month - 1) // 3) * 3 + 1
+        return f"{year}-{start_month:02d}-01"
+    return f"{year}-{month:02d}-01"
+
+
+def _period_end_date(year: int, month: int) -> str:
+    if month == 12:
+        return f"{year}-12-31"
+    next_month_start = datetime.fromisoformat(f"{year}-{month + 1:02d}-01T00:00:00")
+    return (next_month_start.date() - timedelta(days=1)).isoformat()
+
+
+def _deviation_color(fact_pct: float | None, plan_pct: float = TARGET_DEVIATION_PCT) -> str:
+    if fact_pct is None:
+        return "unknown"
+    if fact_pct < plan_pct:
+        return "green"
+    if abs(fact_pct - plan_pct) < 1e-9:
+        return "yellow"
+    return "red"
+
+
+def _is_excluded_nomenclature_type(value: str | None) -> bool:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return False
+    short_value = normalized.rsplit(".", 1)[-1]
+    return short_value in EXCLUDED_NOMENCLATURE_TYPES
+
+
 def _load_receipts(session: requests.Session, year: int, month: int) -> list[dict]:
     p_start, p_end = _period_bounds(year, month)
     flt = (
@@ -122,6 +157,28 @@ def _load_receipts(session: requests.Session, year: int, month: int) -> list[dic
     )
     url = f"{BASE}/{quote(RECEIPT_ENTITY)}?$format=json&$filter={quote(flt, safe='')}"
     return _fetch_all(session, url)
+
+
+def _load_nomenclature_types(session: requests.Session, nomenclature_keys: set[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    keys = sorted(key for key in nomenclature_keys if key)
+    for i in range(0, len(keys), 25):
+        chunk = keys[i:i + 25]
+        flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in chunk)
+        url = (
+            f"{BASE}/{quote('Catalog_Номенклатура')}?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select={quote('Ref_Key,ТипНоменклатуры', safe=',_')}"
+        )
+        try:
+            rows = _fetch_all(session, url, page=1000)
+        except requests.HTTPError:
+            return {}
+        for row in rows:
+            key = _guid(row.get("Ref_Key"))
+            if key:
+                result[key] = str(row.get("ТипНоменклатуры") or "").strip().lower()
+    return result
 
 
 def _price_identity(row: dict) -> tuple[str, str, str]:
@@ -221,8 +278,14 @@ def _build_month(session: requests.Session, year: int, month: int) -> dict:
                 if key and _row_quantity(row) > 0:
                     nomenclature_keys.add(key)
 
-    prices = _load_project_prices(session, nomenclature_keys, p_end)
+    nomenclature_types = _load_nomenclature_types(session, nomenclature_keys)
+    purchasable_keys = {
+        key for key in nomenclature_keys
+        if not _is_excluded_nomenclature_type(nomenclature_types.get(key))
+    }
+    prices = _load_project_prices(session, purchasable_keys, p_end)
     total_rows = 0
+    excluded_service_work_rows = 0
     compared_rows = 0
     missing_project_price = 0
     zero_project_price = 0
@@ -245,6 +308,9 @@ def _build_month(session: requests.Session, year: int, month: int) -> dict:
             actual_price = _actual_unit_price(row)
             n_key = _guid(row.get("Номенклатура_Key"))
             if not n_key or qty <= 0 or actual_price <= 0:
+                continue
+            if n_key not in purchasable_keys:
+                excluded_service_work_rows += 1
                 continue
 
             total_rows += 1
@@ -313,11 +379,15 @@ def _build_month(session: requests.Session, year: int, month: int) -> dict:
         "display_plan": TARGET_DEVIATION_PCT,
         "display_fact": fact_pct,
         "display_unit": "%",
+        "color": _deviation_color(fact_pct),
         "aggregation": "weighted_delta_amount_div_project_amount",
+        "period_start": _period_start_date(year, month, "month"),
+        "period_end": _period_end_date(year, month),
         "total_rows": total_rows,
         "compared_rows": compared_rows,
         "missing_project_price": missing_project_price,
         "zero_project_price": zero_project_price,
+        "excluded_service_work_rows": excluded_service_work_rows,
         "currency_converted_rows": currency_converted_rows,
         "avg_absolute_deviation": round(absolute_deviation_sum / compared_rows, 2) if compared_rows else None,
         "avg_relative_deviation": round(relative_deviation_sum / compared_rows, 2) if compared_rows else None,
@@ -326,11 +396,13 @@ def _build_month(session: requests.Session, year: int, month: int) -> dict:
         "debug": {
             "receipts_count": len(receipts),
             "nomenclature_count": len(nomenclature_keys),
+            "purchasable_nomenclature_count": len(purchasable_keys),
             "price_keys_loaded": len(prices),
             "price_type": "Проектная",
             "price_type_key": PROJECT_PRICE_TYPE_KEY,
             "actual_price_mode": "без НДС: сумма строки / количество",
             "currency_mode": "сравнение в RUB; известные валюты пересчитываются фиксированными курсами",
+            "excluded_nomenclature_types": sorted(EXCLUDED_NOMENCLATURE_TYPES),
             "sample_rows": debug_rows,
         },
     }
@@ -357,20 +429,25 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
                 "display_plan": TARGET_DEVIATION_PCT,
                 "display_fact": None,
                 "display_unit": "%",
+                "color": "unknown",
                 "aggregation": "weighted_delta_amount_div_project_amount",
                 "total_rows": 0,
                 "compared_rows": 0,
                 "missing_project_price": 0,
                 "zero_project_price": 0,
+                "excluded_service_work_rows": 0,
                 "weighted_delta_amount": 0.0,
                 "project_amount": 0.0,
+                "max_month": 0,
             })
             target["total_rows"] += int(row.get("total_rows") or 0)
             target["compared_rows"] += int(row.get("compared_rows") or 0)
             target["missing_project_price"] += int(row.get("missing_project_price") or 0)
             target["zero_project_price"] += int(row.get("zero_project_price") or 0)
+            target["excluded_service_work_rows"] += int(row.get("excluded_service_work_rows") or 0)
             target["weighted_delta_amount"] += float(row.get("weighted_delta_amount") or 0)
             target["project_amount"] += float(row.get("project_amount") or 0)
+            target["max_month"] = max(int(target.get("max_month") or 0), m)
             target["has_data"] = target["has_data"] or bool(row.get("has_data"))
 
     def finalize(items):
@@ -383,8 +460,16 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             if item["project_amount"] > 0:
                 item["kpi_pct"] = round(item["weighted_delta_amount"] / item["project_amount"] * 100, 2)
                 item["display_fact"] = item["kpi_pct"]
+            item["color"] = _deviation_color(item.get("display_fact"))
+            item["period_start"] = _period_start_date(
+                int(item["year"]),
+                int(item.get("quarter", 1)) * 3 if "quarter" in item else 1,
+                "quarter" if "quarter" in item else "year",
+            )
+            item["period_end"] = _period_end_date(int(item["year"]), int(item.get("max_month") or 12))
             item["weighted_delta_amount"] = delta_amount
             item["project_amount"] = project_amount
+            item.pop("max_month", None)
             out.append(item)
         return out
 
@@ -424,14 +509,18 @@ def get_logistics_price_deviation_monthly(year: int | None = None, month: int | 
             "display_plan": TARGET_DEVIATION_PCT,
             "display_fact": ytd_row.get("kpi_pct"),
             "display_unit": "%",
+            "color": _deviation_color(ytd_row.get("kpi_pct")),
             "total_rows": ytd_row.get("total_rows", 0),
             "compared_rows": ytd_row.get("compared_rows", 0),
             "missing_project_price": ytd_row.get("missing_project_price", 0),
             "zero_project_price": ytd_row.get("zero_project_price", 0),
+            "excluded_service_work_rows": ytd_row.get("excluded_service_work_rows", 0),
             "months_with_data": sum(1 for row in months if row.get("has_data")),
             "months_total": len(months),
             "values_unit": "руб.",
             "aggregation": "weighted_delta_amount_div_project_amount",
+            "period_start": _period_start_date(ref_year, ref_month, "year"),
+            "period_end": _period_end_date(ref_year, ref_month),
         },
         "kpi_period": {
             "type": "last_full_month",

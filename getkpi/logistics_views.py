@@ -62,9 +62,9 @@ def normalize_kpi_definitions(department: str, rows: list[dict]) -> list[dict]:
 def rag_price_deviation(fact_pct: float | None) -> str:
     if fact_pct is None:
         return "unknown"
-    if fact_pct <= 5:
+    if fact_pct < 5:
         return "green"
-    if fact_pct <= 10:
+    if abs(fact_pct - 5.0) < 1e-9:
         return "yellow"
     return "red"
 
@@ -123,10 +123,12 @@ def _plan_fact_color(entry: dict) -> tuple[float | None, str] | None:
 def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
     if kpi_id == "LOG-M2":
         ref_row = entry.get("last_full_month_row") or {}
-        pct = ref_row.get("kpi_pct")
+        pct = ref_row.get("display_fact")
+        if pct is None:
+            pct = ref_row.get("kpi_pct")
         if pct is not None:
             pct = float(pct)
-        return pct, rag_price_deviation(pct)
+        return pct, str(ref_row.get("color") or rag_price_deviation(pct))
 
     if kpi_id in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
         if kpi_id == "LOG-M3.F":
