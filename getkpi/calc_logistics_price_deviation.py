@@ -12,7 +12,7 @@ from .calc_budget_limit import AUTH, BASE
 from .calc_fot_management import MONTH_RU, _normalize_period
 from .cache_manager import CACHE_DIR
 
-SOURCE_TAG = "logistics_price_deviation_v1"
+SOURCE_TAG = "logistics_price_deviation_v2_weighted_aggregation"
 RECEIPT_ENTITY = "Document_ПриобретениеТоваровУслуг"
 PRICE_ENTITY = "InformationRegister_ЦеныНоменклатуры_RecordType"
 TABULAR_FIELD = "Товары"
@@ -295,15 +295,25 @@ def _build_month(session: requests.Session, year: int, month: int) -> dict:
     if total_project_amount_rub > 0:
         fact_pct = round(total_delta_amount_rub / total_project_amount_rub * 100, 2)
 
+    project_amount = round(total_project_amount_rub, 2) if total_project_amount_rub > 0 else None
+    delta_amount = round(total_delta_amount_rub, 2) if total_project_amount_rub > 0 else None
+
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_RU[month].lower(),
-        "plan": TARGET_DEVIATION_PCT,
-        "fact": fact_pct,
+        # Для агрегации нельзя складывать проценты. Поэтому plan/fact — это
+        # знаменатель и числитель формулы отклонения, а отображаемый процент
+        # лежит отдельно в display_* и kpi_pct.
+        "plan": project_amount,
+        "fact": delta_amount,
         "kpi_pct": fact_pct,
         "has_data": total_rows > 0,
-        "values_unit": "%",
+        "values_unit": "руб.",
+        "display_plan": TARGET_DEVIATION_PCT,
+        "display_fact": fact_pct,
+        "display_unit": "%",
+        "aggregation": "weighted_delta_amount_div_project_amount",
         "total_rows": total_rows,
         "compared_rows": compared_rows,
         "missing_project_price": missing_project_price,
@@ -339,11 +349,15 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         ):
             target = store.setdefault(key, {
                 **extra,
-                "plan": TARGET_DEVIATION_PCT,
+                "plan": None,
                 "fact": None,
                 "kpi_pct": None,
                 "has_data": False,
-                "values_unit": "%",
+                "values_unit": "руб.",
+                "display_plan": TARGET_DEVIATION_PCT,
+                "display_fact": None,
+                "display_unit": "%",
+                "aggregation": "weighted_delta_amount_div_project_amount",
                 "total_rows": 0,
                 "compared_rows": 0,
                 "missing_project_price": 0,
@@ -362,11 +376,15 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     def finalize(items):
         out = []
         for item in items:
+            project_amount = round(item["project_amount"], 2)
+            delta_amount = round(item["weighted_delta_amount"], 2)
+            item["plan"] = project_amount if item["project_amount"] > 0 else None
+            item["fact"] = delta_amount if item["project_amount"] > 0 else None
             if item["project_amount"] > 0:
-                item["fact"] = round(item["weighted_delta_amount"] / item["project_amount"] * 100, 2)
-                item["kpi_pct"] = item["fact"]
-            item["weighted_delta_amount"] = round(item["weighted_delta_amount"], 2)
-            item["project_amount"] = round(item["project_amount"], 2)
+                item["kpi_pct"] = round(item["weighted_delta_amount"] / item["project_amount"] * 100, 2)
+                item["display_fact"] = item["kpi_pct"]
+            item["weighted_delta_amount"] = delta_amount
+            item["project_amount"] = project_amount
             out.append(item)
         return out
 
@@ -400,16 +418,20 @@ def get_logistics_price_deviation_monthly(year: int | None = None, month: int | 
         "yearly_data": yearly_data,
         "last_full_month_row": dict(months[-1]) if months else None,
         "ytd": {
-            "total_plan": TARGET_DEVIATION_PCT,
+            "total_plan": ytd_row.get("plan"),
             "total_fact": ytd_row.get("fact"),
             "kpi_pct": ytd_row.get("kpi_pct"),
+            "display_plan": TARGET_DEVIATION_PCT,
+            "display_fact": ytd_row.get("kpi_pct"),
+            "display_unit": "%",
             "total_rows": ytd_row.get("total_rows", 0),
             "compared_rows": ytd_row.get("compared_rows", 0),
             "missing_project_price": ytd_row.get("missing_project_price", 0),
             "zero_project_price": ytd_row.get("zero_project_price", 0),
             "months_with_data": sum(1 for row in months if row.get("has_data")),
             "months_total": len(months),
-            "values_unit": "%",
+            "values_unit": "руб.",
+            "aggregation": "weighted_delta_amount_div_project_amount",
         },
         "kpi_period": {
             "type": "last_full_month",

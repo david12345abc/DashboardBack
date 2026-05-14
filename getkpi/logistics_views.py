@@ -338,6 +338,14 @@ def apply_tile_overrides(kpi: dict, tile: dict) -> None:
 
 
 def apply_tile_value_overrides(kpi: dict, tile: dict, entry: dict) -> None:
+    if kpi.get("kpi_id") == "LOG-M2":
+        row = entry.get("last_full_month_row") or {}
+        tile["plan"] = row.get("display_plan")
+        tile["fact"] = row.get("display_fact")
+        tile["unit"] = row.get("display_unit") or "%"
+        tile["has_data"] = bool(row.get("has_data"))
+        return
+
     if kpi.get("kpi_id") not in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
         return
     ytd = entry.get("ytd") or {}
