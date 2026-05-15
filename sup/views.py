@@ -4,9 +4,17 @@ from __future__ import annotations
 from typing import Any
 
 from sup.hrd_m1 import get_hrd_m1_ytd
+from sup.hrd_m4 import get_hrd_m4_ytd
+from sup.hrd_q4 import get_hrd_q4_ytd
 
-SUP_KPI_IDS: frozenset[str] = frozenset({"HRD-M1"})
+SUP_KPI_IDS: frozenset[str] = frozenset({"HRD-M1", "HRD-M4", "HRD-Q4"})
 SUP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = SUP_KPI_IDS
+
+_PAYLOAD_BUILDERS = {
+    "HRD-M1": get_hrd_m1_ytd,
+    "HRD-M4": get_hrd_m4_ytd,
+    "HRD-Q4": get_hrd_q4_ytd,
+}
 
 
 def merge_kpi_entry_if_applicable(
@@ -16,9 +24,10 @@ def merge_kpi_entry_if_applicable(
     year: int | None,
     month: int | None,
 ) -> bool:
-    if str(kpi_id or "").strip().upper() != "HRD-M1":
+    builder = _PAYLOAD_BUILDERS.get(str(kpi_id or "").strip().upper())
+    if builder is None:
         return False
-    payload = get_hrd_m1_ytd(year=year, month=month)
+    payload = builder(year=year, month=month)
     if payload is None:
         return False
     entry["data_granularity"] = payload.get("data_granularity", "monthly")

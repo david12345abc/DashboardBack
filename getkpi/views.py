@@ -1405,6 +1405,8 @@ def _build_universal_payload(
             tile['unit'] = 'руб.'
         elif _kid_tile == 'HRD-M1':
             tile['unit'] = 'шт.'
+        elif _kid_tile in {'HRD-M4', 'HRD-Q4'}:
+            tile['unit'] = '%'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') == 'OD-Q2':
