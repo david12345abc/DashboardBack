@@ -89,8 +89,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         turboproject_projects_by_resources,
     )
     from .komdir_claims import fetch_claims_for_month
+    from gspp import tkp as gspp_tkp
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
+    from sup import hrd_m1
 
     y, m = ref_y, ref_m
     cd = CACHE_DIR
@@ -279,6 +281,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'gspp_q4_ytd_{y}_{m}',
          gspp_q4.gspp_q4_ytd_cache_path(y, m),
          lambda yy=y, mm=m: gspp_q4.get_gspp_q4_ytd(year=yy, month=mm)),
+
+        (f'gspp_m1_tkp_{y}_{m}',
+         gspp_tkp.gspp_m1_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: gspp_tkp.get_gspp_m1_ytd(year=yy, month=mm)),
+
+        (f'sup_hrd_m1_{y}_{m}',
+         hrd_m1.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: hrd_m1.get_hrd_m1_ytd(year=yy, month=mm)),
     ]
     td_as_of = date.today()
     tasks.append((

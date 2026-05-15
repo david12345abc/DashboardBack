@@ -6,6 +6,7 @@ import os
 import re
 from calendar import monthrange
 from datetime import date, datetime
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -578,6 +579,143 @@ def _td_m5_plan_fact_kpi_pct(plan: float, fact: float) -> float:
     return round(fact / plan * 100, 2)
 
 
+def _td_m5_project_dedupe_key(project: dict[str, Any]) -> str:
+    """Стабильный ключ проекта для агрегации периода без повторного суммирования по месяцам."""
+    for key in ("project_code", "file_id"):
+        value = project.get(key)
+        if value is not None and str(value).strip():
+            return f"{key}:{str(value).strip()}"
+    start, end = _project_date_bounds(project)
+    return "|".join((
+        str(project.get("project_name") or "").strip(),
+        str(project.get("project_manager") or "").strip(),
+        start.isoformat() if start else "",
+        end.isoformat() if end else "",
+    ))
+
+
+def _build_td_m5_period_budget_row(
+    target_projects: list[dict[str, Any]],
+    year: int,
+    start_month: int,
+    end_month: int,
+    *,
+    period_type: str,
+    label: str,
+) -> dict[str, Any]:
+    """Сумма бюджета TD-M5 за период: каждый проект учитывается один раз, если он жив в периоде."""
+    return _build_td_m5_period_budget_row_for_ranges(
+        target_projects,
+        [(year, start_month, end_month)],
+        period_type=period_type,
+        label=label,
+        year=year,
+        start_month=start_month,
+        end_month=end_month,
+    )
+
+
+def _build_td_m5_period_budget_row_for_ranges(
+    target_projects: list[dict[str, Any]],
+    ranges: list[tuple[int, int, int]],
+    *,
+    period_type: str,
+    label: str,
+    year: int,
+    start_month: int | None = None,
+    end_month: int | None = None,
+    selected_quarters: list[int] | None = None,
+) -> dict[str, Any]:
+    """Сумма TD-M5 по набору диапазонов месяцев; проект учитывается один раз на весь набор."""
+    plan_sum = 0.0
+    fact_sum = 0.0
+    seen_projects: set[str] = set()
+
+    for project in target_projects:
+        is_alive_in_selected_period = False
+        for range_year, range_start_month, range_end_month in ranges:
+            period_start = date(range_year, range_start_month, 1)
+            period_end = date(
+                range_year,
+                range_end_month,
+                monthrange(range_year, range_end_month)[1],
+            )
+            if _project_is_alive_in_range(project, period_start, period_end):
+                is_alive_in_selected_period = True
+                break
+        if not is_alive_in_selected_period:
+            continue
+        dedupe_key = _td_m5_project_dedupe_key(project)
+        if dedupe_key in seen_projects:
+            continue
+        seen_projects.add(dedupe_key)
+
+        pv = _safe_float(project.get("byudzhet_plan"))
+        if pv is not None:
+            plan_sum += pv
+        fv = _safe_float(project.get("byudzhet_fakt"))
+        if fv is not None:
+            fact_sum += fv
+
+    plan_sum = round(plan_sum, 2)
+    fact_sum = round(fact_sum, 2)
+    has_data = bool(seen_projects)
+    return {
+        "period_type": period_type,
+        "year": year,
+        "start_month": start_month,
+        "end_month": end_month,
+        "ranges": [
+            {"year": range_year, "start_month": range_start, "end_month": range_end}
+            for range_year, range_start, range_end in ranges
+        ],
+        "selected_quarters": selected_quarters,
+        "label": label,
+        "plan": plan_sum if has_data else None,
+        "fact": fact_sum if has_data else None,
+        "kpi_pct": _td_m5_plan_fact_kpi_pct(plan_sum, fact_sum) if has_data else None,
+        "has_data": has_data,
+        "project_count": len(seen_projects),
+        "values_unit": "руб.",
+        "aggregation_strategy": "unique_projects_alive_in_period",
+    }
+
+
+def _td_m5_quarter_month_range(quarter: int) -> tuple[int, int]:
+    quarter_start = 3 * (quarter - 1) + 1
+    return quarter_start, quarter_start + 2
+
+
+def _build_td_m5_quarter_combination_aggregates(
+    target_projects: list[dict[str, Any]],
+    ref_y: int,
+    _ref_m: int,
+) -> dict[str, dict[str, Any]]:
+    """Все комбинации кварталов года: фронт выбирает ключ вроде ``1,3`` без суммирования строк."""
+    available_quarters = [1, 2, 3, 4]
+    rows: dict[str, dict[str, Any]] = {}
+
+    for size in range(1, len(available_quarters) + 1):
+        for selected in combinations(available_quarters, size):
+            selected_list = list(selected)
+            ranges = [
+                (ref_y, *_td_m5_quarter_month_range(quarter))
+                for quarter in selected_list
+            ]
+            key = ",".join(str(quarter) for quarter in selected_list)
+            label = "+".join(f"Q{quarter}" for quarter in selected_list) + f" {ref_y}"
+            rows[key] = _build_td_m5_period_budget_row_for_ranges(
+                target_projects,
+                ranges,
+                period_type="selected_quarters",
+                label=label,
+                year=ref_y,
+                selected_quarters=selected_list,
+            )
+
+    return rows
+
+
 def _build_td_m5_budget_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     """Помесячные суммы плана (byudzhet_plan) и факта (byudzhet_fakt) по проектам внешних заказов техдира (как TD-M1)."""
     target_projects = _projects_for_filter(TARGET_PROJECT_TYPE_TD_M1)
@@ -647,6 +785,43 @@ def _build_td_m5_budget_payload(year: int | None = None, month: int | None = Non
             "kpi_pct": None,
         })
 
+    quarter = (ref_m - 1) // 3 + 1
+    quarter_start_month = 3 * (quarter - 1) + 1
+    period_aggregates = {
+        "aggregation_strategy": "unique_projects_alive_in_period",
+        "dedupe_key": "project_code_or_file_id",
+        "additive_across_months": False,
+        "month": _build_td_m5_period_budget_row(
+            target_projects,
+            ref_y,
+            ref_m,
+            ref_m,
+            period_type="month",
+            label=f"{MONTH_NAMES[ref_m]} {ref_y}",
+        ),
+        "quarter_to_date": _build_td_m5_period_budget_row(
+            target_projects,
+            ref_y,
+            quarter_start_month,
+            ref_m,
+            period_type="quarter_to_date",
+            label=f"Q{quarter} {ref_y}",
+        ),
+        "year_to_date": _build_td_m5_period_budget_row(
+            target_projects,
+            ref_y,
+            1,
+            ref_m,
+            period_type="year_to_date",
+            label=f"Январь-{MONTH_NAMES[ref_m]} {ref_y}",
+        ),
+        "quarter_combinations": _build_td_m5_quarter_combination_aggregates(
+            target_projects,
+            ref_y,
+            ref_m,
+        ),
+    }
+
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
@@ -658,6 +833,16 @@ def _build_td_m5_budget_payload(year: int | None = None, month: int | None = Non
             "month_name": MONTH_NAMES[ref_m],
         },
         "ytd": ytd_block,
+        "period_aggregates": period_aggregates,
+        "frontend_aggregation": {
+            "additive_across_months": False,
+            "use_period_aggregates_for_buttons": True,
+            "selected_quarters_key_format": "comma_separated_quarter_numbers",
+            "reason": (
+                "TD-M5 хранит бюджет проекта целиком в каждом активном месяце; "
+                "для квартала, набора кварталов и YTD проект нужно учитывать один раз за период."
+            ),
+        },
         "debug": {
             "kpi_id": "TD-M5",
             "filter": (
