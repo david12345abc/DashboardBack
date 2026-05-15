@@ -1,6 +1,6 @@
 {
   "na_datu": "2026-04-30",
-  "cache_date": "2026-05-14",
+  "cache_date": "2026-05-15",
   "dept_alias_source": "commercial_department_aliases_v2",
   "total_overdue": 147402663.66,
   "rows": [
@@ -629,8 +629,8 @@
           "bucket": "180+ дн."
         }
       ],
-      "reason": "ФорсМажор",
-      "action": "ПотребоватьВозвратНеоплаченногоОборудования"
+      "reason": "",
+      "action": ""
     },
     {
       "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
