@@ -69,6 +69,8 @@ def _merge_td_m5(entry: dict[str, Any], year: int | None, month: int | None) -> 
     if td is None:
         return False
     _apply_monthly(entry, td)
+    entry['period_aggregates'] = td.get('period_aggregates')
+    entry['frontend_aggregation'] = td.get('frontend_aggregation')
     entry['debug'] = td.get('debug')
     return True
 

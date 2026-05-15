@@ -798,6 +798,10 @@ def _build_tile_item(
             tile['classifier'] = entry.get('classifier')
     if entry.get('reference_analytics') is not None:
         tile['reference_analytics'] = entry.get('reference_analytics')
+    if entry.get('period_aggregates') is not None:
+        tile['period_aggregates'] = entry.get('period_aggregates')
+    if entry.get('frontend_aggregation') is not None:
+        tile['frontend_aggregation'] = entry.get('frontend_aggregation')
     return tile
 
 
