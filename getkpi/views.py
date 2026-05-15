@@ -1572,6 +1572,9 @@ def _build_universal_payload(
     if _is_gspp_department(dept):
         _gspp_kpi_views.merge_gspp_tables_into_universal_payload(tablitsy, ref_y, ref_m)
 
+    if _is_sup_department(dept):
+        _sup_kpi_views.merge_sup_tables_into_universal_payload(tablitsy, entries_by_id, ref_y, ref_m)
+
     if str(dept).strip().lower() == 'операционный директор':
         try:
             od_q1_table = techdir_projects.get_od_q1_deviation_table(month=ref_m, year=ref_y)

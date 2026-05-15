@@ -26,7 +26,7 @@ SOURCE_FILE = Path(__file__).resolve().parent / "SUP_data.xlsx"
 SHEET_NAME = "Вакансии"
 CACHE_PREFIX = "sup_hrd_m1_vacancies"
 CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v1"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 EXCLUSION_PHRASES = (
     "снята заказчиком",
@@ -103,6 +103,10 @@ def _safe_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return num if num == num else None
+
+
+def _format_date(value: date | None) -> str:
+    return value.isoformat() if value is not None else ""
 
 
 def _find_header_row(ws) -> tuple[int, dict[str, int]]:
@@ -182,6 +186,9 @@ def _load_vacancy_rows() -> tuple[list[dict[str, Any]], dict[str, Any]]:
 
         plan_date = _parse_date(_row_value(row, headers, "датазакрытияплановая"))
         included.append({
+            "company": str(_row_value(row, headers, "компания") or "").strip(),
+            "department": str(_row_value(row, headers, "подразделение") or "").strip(),
+            "vacancy": str(_row_value(row, headers, "вакансия") or "").strip(),
             "fact_date": fact_date,
             "plan_date": plan_date,
             "on_time": _closed_on_time(
@@ -201,6 +208,67 @@ def _load_vacancy_rows() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         "excluded_total": sum(excluded_by_month.values()),
         "excluded_by_month": excluded_by_month,
         "excluded_reasons": excluded_reasons,
+    }
+
+
+def _late_vacancy_rows(
+    vacancies: list[dict[str, Any]],
+    ref_y: int,
+    ref_m: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    late_items = [
+        item
+        for item in vacancies
+        if item["fact_date"].year == ref_y
+        and item["fact_date"].month == ref_m
+        and not item["on_time"]
+    ]
+    late_items.sort(
+        key=lambda item: (
+            item.get("fact_date") or date.max,
+            item.get("company") or "",
+            item.get("department") or "",
+            item.get("vacancy") or "",
+        )
+    )
+    for index, item in enumerate(late_items, start=1):
+        rows.append({
+            "number": index,
+            "company": item.get("company") or "",
+            "department": item.get("department") or "",
+            "vacancy": item.get("vacancy") or "",
+            "plan_close_date": _format_date(item.get("plan_date")),
+            "fact_close_date": _format_date(item.get("fact_date")),
+        })
+    return rows
+
+
+def _late_vacancies_table(
+    vacancies: list[dict[str, Any]],
+    ref_y: int,
+    ref_m: int,
+) -> dict[str, Any]:
+    return {
+        "name": f"HRD-M1: вакансии, закрытые не в срок за {MONTH_NAMES[ref_m]} {ref_y}",
+        "periodicity": "ежемесячно",
+        "description": (
+            "Разница между планом и фактом HRD-M1: критические вакансии типа A, "
+            "закрытые в выбранном месяце позже плановой даты."
+        ),
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "columns": [
+            "Компания",
+            "Подразделение",
+            "Вакансия",
+            "Дата закрытия плановая",
+            "Дата закрытия факт",
+        ],
+        "rows": _late_vacancy_rows(vacancies, ref_y, ref_m),
     }
 
 
@@ -255,6 +323,9 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
             },
             "excluded_reasons": debug["excluded_reasons"],
             "note": "Исключённые вакансии не входят в план/факт HRD-M1.",
+        },
+        "tables": {
+            "HRD-T-M1-LATE-VACANCIES": _late_vacancies_table(vacancies, ref_y, ref_m),
         },
         "debug": {
             "kpi_id": "HRD-M1",
