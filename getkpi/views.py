@@ -1921,6 +1921,8 @@ def _build_universal_payload(
             tile['unit'] = 'руб.'
         elif kpi.get('kpi_id') in {'PD-M1.2', 'PD-M1.2.M', 'PD-M1.2.W', 'PD-M1.2.T'} or _kid_tile == 'HRD-M1':
             tile['unit'] = 'шт.'
+        elif _kid_tile in {'HRD-M4', 'HRD-Q4'}:
+            tile['unit'] = '%'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
         elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
@@ -2111,6 +2113,9 @@ def _build_universal_payload(
 
     if _is_gspp_department(dept):
         _gspp_kpi_views.merge_gspp_tables_into_universal_payload(tablitsy, ref_y, ref_m)
+
+    if _is_sup_department(dept):
+        _sup_kpi_views.merge_sup_tables_into_universal_payload(tablitsy, entries_by_id, ref_y, ref_m)
 
     if str(dept).strip().lower() == 'операционный директор':
         try:
