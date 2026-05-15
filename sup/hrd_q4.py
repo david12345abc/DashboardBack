@@ -1,18 +1,17 @@
 """HRD-Q4 — успешность адаптации / удержания в период адаптации.
 
 Источник: ``sup/SUP_data.xlsx``, лист ``Текучесть``.
-Для каждого месяца в временной копии Excel-файла проставляется номер месяца
-в селектор, книга пересчитывается Excel, затем читаются ``C179`` (план) и
-``D179`` (факт).
+План считается от годового норматива секции адаптации, факт — по накопительным
+итогам строки 179: пары колонок ``F/G``, ``I/J``, ``L/M`` ... с января.
 """
 from __future__ import annotations
 
 import json
 import logging
+import posixpath
 import re
-import shutil
-import tempfile
-import uuid
+import xml.etree.ElementTree as ET
+import zipfile
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -26,133 +25,210 @@ logger = logging.getLogger(__name__)
 SOURCE_FILE = Path(__file__).resolve().parent / "SUP_data.xlsx"
 SHEET_NAME = "Текучесть"
 CACHE_PREFIX = "sup_hrd_q4_adaptation"
-CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v1"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v2"
+CACHE_VERSION = 2
 
-MONTH_SELECTOR_CELLS = ("D14", "C14")
-PLAN_CELL = "C179"
-FACT_CELL = "D179"
 PLAN_FALLBACK_TITLE_CELL = "A98"
+TOTAL_ROW = 179
+FIRST_MONTH_HEADCOUNT_COLUMN = 6  # F
+MONTH_COLUMN_STEP = 3
 
 
-def _safe_percent(value: Any) -> float | None:
+def _safe_number(value: Any) -> float | None:
     if value is None or value == "":
         return None
     if isinstance(value, str):
         raw = value.strip().replace("\xa0", "").replace(" ", "").replace(",", ".")
         if not raw or raw.startswith("#"):
             return None
-        has_percent_sign = raw.endswith("%")
-        if has_percent_sign:
-            raw = raw[:-1]
         try:
             num = float(raw)
         except ValueError:
             return None
-        if has_percent_sign:
-            return round(num, 2)
     else:
         try:
             num = float(value)
         except (TypeError, ValueError):
             return None
-
-    if num != num:
-        return None
-    if abs(num) <= 1:
-        num *= 100
-    return round(num, 2)
+    return num if num == num else None
 
 
-def _fallback_plan_from_title(title: Any, month: int) -> float | None:
-    """Если C179 пустая, берём годовой план из заголовка вида ``... 18%``."""
+def _annual_plan_from_title(title: Any) -> float | None:
+    """Годовой план из заголовка вида ``... 18%``."""
     match = re.search(r"(\d+(?:[,.]\d+)?)\s*%", str(title or ""))
     if not match:
         return None
-    annual_plan = float(match.group(1).replace(",", "."))
-    return round(annual_plan / 12 * month, 2)
+    return float(match.group(1).replace(",", "."))
 
 
-def _read_monthly_rows_via_excel(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _month_columns(month: int) -> tuple[int, int]:
+    headcount_col = FIRST_MONTH_HEADCOUNT_COLUMN + (month - 1) * MONTH_COLUMN_STEP
+    dismissal_col = headcount_col + 1
+    return headcount_col, dismissal_col
+
+
+def _column_letters(index: int) -> str:
+    result = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+def _cell_ref(row: int, column: int) -> str:
+    return f"{_column_letters(column)}{row}"
+
+
+def _xml_text(node: ET.Element | None) -> str:
+    if node is None:
+        return ""
+    return "".join(node.itertext())
+
+
+def _load_shared_strings(zf: zipfile.ZipFile) -> list[str]:
     try:
-        import pythoncom
-        import win32com.client
-    except ImportError as exc:
-        raise RuntimeError("Для HRD-Q4 нужен pywin32/win32com для пересчёта Excel") from exc
+        raw = zf.read("xl/sharedStrings.xml")
+    except KeyError:
+        return []
+    root = ET.fromstring(raw)
+    ns = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    return [_xml_text(si) for si in root.findall("x:si", ns)]
 
-    temp_path = Path(tempfile.gettempdir()) / f"sup_hrd_q4_{uuid.uuid4().hex}.xlsx"
-    shutil.copy2(SOURCE_FILE, temp_path)
 
-    pythoncom.CoInitialize()
-    app = None
-    wb = None
-    try:
-        app = win32com.client.DispatchEx("Excel.Application")
-        app.Visible = False
-        app.DisplayAlerts = False
-        wb = app.Workbooks.Open(str(temp_path))
-        ws = wb.Worksheets(SHEET_NAME)
+def _sheet_xml_path(zf: zipfile.ZipFile, sheet_name: str) -> str:
+    wb_root = ET.fromstring(zf.read("xl/workbook.xml"))
+    rels_root = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+    wb_ns = {
+        "x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    }
+    rel_ns = {"r": "http://schemas.openxmlformats.org/package/2006/relationships"}
+    rel_targets = {
+        rel.attrib["Id"]: rel.attrib["Target"]
+        for rel in rels_root.findall("r:Relationship", rel_ns)
+    }
+    for sheet in wb_root.findall("x:sheets/x:sheet", wb_ns):
+        if sheet.attrib.get("name") != sheet_name:
+            continue
+        rel_id = sheet.attrib.get(f"{{{wb_ns['r']}}}id")
+        target = rel_targets.get(rel_id or "")
+        if not target:
+            break
+        return posixpath.normpath(posixpath.join("xl", target))
+    raise RuntimeError(f"Не найден лист {sheet_name!r} в {SOURCE_FILE}")
 
-        monthly_rows: list[dict[str, Any]] = []
-        raw_cells: list[dict[str, Any]] = []
-        for month in range(1, ref_m + 1):
-            for selector_cell in MONTH_SELECTOR_CELLS:
-                ws.Range(selector_cell).Value = month
-            app.CalculateFullRebuild()
 
-            raw_plan = ws.Range(PLAN_CELL).Value
-            raw_fact = ws.Range(FACT_CELL).Value
-            plan = _safe_percent(raw_plan)
-            if plan is None:
-                plan = _fallback_plan_from_title(ws.Range(PLAN_FALLBACK_TITLE_CELL).Value, month)
-            fact = _safe_percent(raw_fact)
-
-            monthly_rows.append({
-                "month": month,
-                "year": ref_y,
-                "month_name": MONTH_NAMES[month],
-                "plan": plan,
-                "fact": fact,
-                "kpi_pct": fact,
-                "has_data": fact is not None or plan is not None,
-                "values_unit": "%",
-            })
-            raw_cells.append({
-                "month": month,
-                "selector_cells": list(MONTH_SELECTOR_CELLS),
-                "plan_cell": PLAN_CELL,
-                "fact_cell": FACT_CELL,
-                "raw_plan": raw_plan,
-                "raw_fact": raw_fact,
-                "plan": plan,
-                "fact": fact,
-                "plan_used_fallback": raw_plan is None or raw_plan == "",
-            })
-
-        return monthly_rows, {
-            "source_file": str(SOURCE_FILE),
-            "sheet": SHEET_NAME,
-            "selector_cells": list(MONTH_SELECTOR_CELLS),
-            "plan_cell": PLAN_CELL,
-            "fact_cell": FACT_CELL,
-            "plan_fallback_title_cell": PLAN_FALLBACK_TITLE_CELL,
-            "raw_cells": raw_cells,
-        }
-    finally:
-        if wb is not None:
-            wb.Close(False)
-        if app is not None:
-            app.Quit()
-        pythoncom.CoUninitialize()
+def _parse_xlsx_cell_value(cell: ET.Element, shared_strings: list[str]) -> Any:
+    ns = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    cell_type = cell.attrib.get("t")
+    if cell_type == "inlineStr":
+        return _xml_text(cell.find("x:is", ns))
+    value_node = cell.find("x:v", ns)
+    if value_node is None or value_node.text is None:
+        return None
+    raw = value_node.text
+    if cell_type == "s":
         try:
-            temp_path.unlink()
-        except OSError:
-            pass
+            return shared_strings[int(raw)]
+        except (ValueError, IndexError):
+            return ""
+    if cell_type == "str":
+        return raw
+    if cell_type == "b":
+        return raw == "1"
+    try:
+        num = float(raw)
+    except ValueError:
+        return raw
+    return int(num) if num.is_integer() else num
+
+
+def _read_sheet_cells(cell_refs: set[str]) -> dict[str, Any]:
+    with zipfile.ZipFile(SOURCE_FILE) as zf:
+        shared_strings = _load_shared_strings(zf)
+        sheet_path = _sheet_xml_path(zf, SHEET_NAME)
+        root = ET.fromstring(zf.read(sheet_path))
+    ns = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    values: dict[str, Any] = {}
+    for cell in root.findall(".//x:c", ns):
+        ref = cell.attrib.get("r")
+        if ref in cell_refs:
+            values[ref] = _parse_xlsx_cell_value(cell, shared_strings)
+    return values
+
+
+def _read_monthly_rows(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    cell_refs = {PLAN_FALLBACK_TITLE_CELL}
+    for month in range(1, ref_m + 1):
+        headcount_col, dismissal_col = _month_columns(month)
+        cell_refs.add(_cell_ref(TOTAL_ROW, headcount_col))
+        cell_refs.add(_cell_ref(TOTAL_ROW, dismissal_col))
+    sheet_values = _read_sheet_cells(cell_refs)
+    annual_plan = _annual_plan_from_title(sheet_values.get(PLAN_FALLBACK_TITLE_CELL))
+
+    monthly_rows: list[dict[str, Any]] = []
+    raw_cells: list[dict[str, Any]] = []
+    cumulative_headcount = 0.0
+    cumulative_dismissals = 0.0
+
+    for month in range(1, ref_m + 1):
+        headcount_col, dismissal_col = _month_columns(month)
+        headcount_ref = _cell_ref(TOTAL_ROW, headcount_col)
+        dismissal_ref = _cell_ref(TOTAL_ROW, dismissal_col)
+        raw_headcount = sheet_values.get(headcount_ref)
+        raw_dismissals = sheet_values.get(dismissal_ref)
+        headcount = _safe_number(raw_headcount)
+        dismissals = _safe_number(raw_dismissals)
+
+        if headcount is not None:
+            cumulative_headcount += headcount
+        if dismissals is not None:
+            cumulative_dismissals += dismissals
+
+        plan = round(annual_plan / 12 * month, 2) if annual_plan is not None else None
+        fact = (
+            round(cumulative_dismissals / cumulative_headcount * 100, 2)
+            if cumulative_headcount > 0
+            else None
+        )
+
+        monthly_rows.append({
+            "month": month,
+            "year": ref_y,
+            "month_name": MONTH_NAMES[month],
+            "plan": plan,
+            "fact": fact,
+            "kpi_pct": fact,
+            "has_data": fact is not None or plan is not None,
+            "values_unit": "%",
+        })
+        raw_cells.append({
+            "month": month,
+            "headcount_cell": headcount_ref,
+            "dismissal_cell": dismissal_ref,
+            "raw_headcount": raw_headcount,
+            "raw_dismissals": raw_dismissals,
+            "cumulative_headcount": cumulative_headcount,
+            "cumulative_dismissals": cumulative_dismissals,
+            "plan": plan,
+            "fact": fact,
+        })
+
+    return monthly_rows, {
+        "source_file": str(SOURCE_FILE),
+        "sheet": SHEET_NAME,
+        "plan_title_cell": PLAN_FALLBACK_TITLE_CELL,
+        "annual_plan_pct": annual_plan,
+        "total_row": TOTAL_ROW,
+        "first_month_columns": "F/G",
+        "month_column_step": MONTH_COLUMN_STEP,
+        "raw_cells": raw_cells,
+    }
 
 
 def _build_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
-    monthly_rows, debug = _read_monthly_rows_via_excel(ref_y, ref_m)
+    monthly_rows, debug = _read_monthly_rows(ref_y, ref_m)
     ref_row = monthly_rows[-1] if monthly_rows else None
 
     return {
@@ -176,7 +252,7 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
         "debug": {
             "kpi_id": "HRD-Q4",
             "status": "ok",
-            "rule": "set month selector, recalculate Excel, read plan C179 and fact D179",
+            "rule": "plan = annual adaptation norm / 12 * month; fact = cumulative dismissals / cumulative headcount from row 179",
             **debug,
         },
     }
