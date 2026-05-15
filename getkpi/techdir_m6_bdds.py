@@ -1,9 +1,8 @@
 """
-TD-M6: план/факт ФОТ по проектам внешних заказов техдира.
+TD-M6: план/факт БДДС «Оплата труда» по внешним заказам техдира.
 
-План/факт по текущему срезу внешних заказов зашит в модуль. Для новых проектов, которых ещё нет
-во встроенной таблице, сохраняем прежний резервный алгоритм: находим проект в 1С и берём помесячные
-суммы из **самого старого** БДДС (`Document_ТД_БДДС`, ТЧ «Ресурсы», строки с показателем «затраты»).
+План/факт зашит в модуль из строки «БДДС Оплата труда»: в исходной строке идут тройки
+«план / факт / отклонение» начиная с ноября 2024, отклонение не используется.
 
 OData:
   <base_url>/odata/standard.odata/Document_ТД_БДДС
@@ -36,17 +35,13 @@ DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
 DOC_ENTITY = "Document_ТД_БДДС"
 PROJECT_ENTITY = "Catalog_Проекты"
 FOT_REFERENCE_MONTHLY: dict[str, dict[str, float]] = {
-    "2026-01": {"plan": 12089147.30, "fact": 15111854.70},
-    "2026-02": {"plan": 1510775.70, "fact": 6045567.83},
-    "2026-03": {"plan": 4135495.49, "fact": 128525495.48},
-    "2026-04": {"plan": 64339272.32, "fact": 19738752.20},
-    "2026-05": {"plan": 8735300.91, "fact": 671810.27},
-    "2026-06": {"plan": 54173710.59, "fact": 0.0},
-    "2026-07": {"plan": 1354518.44, "fact": 0.0},
-    "2026-08": {"plan": 1062479.41, "fact": 0.0},
-    "2026-09": {"plan": 9567093.39, "fact": 0.0},
-    "2026-10": {"plan": 19519167.77, "fact": 0.0},
+    "2026-01": {"plan": 3200484.21, "fact": 486857.00},
+    "2026-02": {"plan": 0.0, "fact": 164086.50},
+    "2026-03": {"plan": 0.0, "fact": 574400.00},
 }
+# Текущая зашитая строка уже является агрегатом по БДДС, поэтому резервный дозабор
+# отдельных проектов из 1С отключён, чтобы не добавить те же суммы повторно.
+FOT_REFERENCE_IS_AGGREGATE = True
 FOT_REFERENCE_PROJECT_LABELS = [
     "Выполнение пусконаладочных работ газоизмерительной системы СПУ ПГ-018 (ЦФО БМИ) 30.12.2025",
     "Выполнение условий договора №МПГ00007318 от 15.01.2024 на поставку ПУРГС-500-01 (ЦФО БМИ) 29.05.2026",
@@ -597,12 +592,16 @@ def _build_payload(year: int | None, month: int | None) -> dict[str, Any]:
     fot_reference = _load_fot_reference_table()
     fot_monthly = fot_reference.get("monthly", {}) if fot_reference else {}
     fot_project_labels = fot_reference.get("project_labels", []) if fot_reference else []
-    excel_covered_ids = _excel_covered_project_ids(turbo_list, fot_project_labels)
-    fallback_projects = [
-        project
-        for project in turbo_list
-        if str(project.get("file_id") or "") not in excel_covered_ids
-    ]
+    if FOT_REFERENCE_IS_AGGREGATE:
+        excel_covered_ids = {str(project.get("file_id")) for project in turbo_list if project.get("file_id") not in (None, "")}
+        fallback_projects = []
+    else:
+        excel_covered_ids = _excel_covered_project_ids(turbo_list, fot_project_labels)
+        fallback_projects = [
+            project
+            for project in turbo_list
+            if str(project.get("file_id") or "") not in excel_covered_ids
+        ]
     bdds_map: dict[str, dict[str, float]] = {}
     if fallback_projects:
         try:
@@ -682,7 +681,7 @@ def get_td_m6_ytd(year: int | None = None, month: int | None = None) -> dict[str
             return _zero_payload_for_period(ry, rm)
 
     ry, rm = tp._normalize_ref_period(year, month)
-    return cache_manager.locked_call(f"techdir_td_m6_bdds_{ry}_{rm:02d}_v11", _runner)
+    return cache_manager.locked_call(f"techdir_td_m6_bdds_{ry}_{rm:02d}_v12", _runner)
 
 
 # --- Опциональный CLI: один проект (как прежний calc_bdds_project_costs.main) -----------
