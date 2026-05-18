@@ -5,8 +5,9 @@
   Document_ТД_ТекучестьПерсонала
 
 Логика как в david/dashboard/dashboard/факт/calc_tekuchest.py:
-  - план за 2026 год задан фиксированно для "Служба развития";
-  - ВидДокумента = "1" -> факт, поле "Факт" в табличной части "Текучесть";
+  - план берется из 1С: ВидДокумента = "0", поле "План" в табличной части "Текучесть";
+  - для 2026 есть fallback, если в 1С план по подразделению пока не заполнен;
+  - ВидДокумента = "1" -> факт из 1С, поле "Факт" в табличной части "Текучесть";
   - подразделение берется из шапки документа: Подразделение_Key.
 
 Использование:
@@ -49,18 +50,18 @@ MONTH_RU = {
 
 FIXED_PLAN_BY_YEAR = {
     2026: {
-        1: 12.0,
-        2: 13.0,
-        3: 14.0,
-        4: 12.0,
-        5: 0.0,
-        6: 0.0,
-        7: 0.0,
-        8: 0.0,
-        9: 0.0,
-        10: 0.0,
-        11: 0.0,
-        12: 0.0,
+        1: 1.3,
+        2: 2.5,
+        3: 3.8,
+        4: 5.0,
+        5: 6.5,
+        6: 7.5,
+        7: 8.8,
+        8: 10.0,
+        9: 11.3,
+        10: 12.5,
+        11: 13.8,
+        12: 15.0,
     }
 }
 
@@ -162,6 +163,21 @@ def collect_subtree(root_key: str, by_parent: dict[str, list[dict]]) -> set[str]
     return result
 
 
+def _apply_fixed_plan_fallback_if_needed(
+    result: dict[int, dict[str, float]],
+    year: int,
+) -> None:
+    """Используем утвержденный план 2026, пока в 1С для этого контура нет строк плана."""
+    fallback = FIXED_PLAN_BY_YEAR.get(year)
+    if not fallback:
+        return
+    has_1c_plan = any(float(result[month]["plan"] or 0) != 0 for month in range(1, 13))
+    if has_1c_plan:
+        return
+    for month, plan in fallback.items():
+        result[month]["plan"] = plan
+
+
 def load_tekuchest_docs(session: requests.Session) -> list[dict]:
     url = (
         f"{BASE}/{quote(TEKUCHEST_ENTITY)}"
@@ -175,9 +191,6 @@ def load_tekuchest_docs(session: requests.Session) -> list[dict]:
 def calculate_by_month(docs: list[dict], dept_keys: set[str], year: int) -> dict[int, dict[str, float]]:
     result = defaultdict(lambda: {"plan": 0.0, "fact": 0.0})
 
-    for month, plan in FIXED_PLAN_BY_YEAR.get(year, {}).items():
-        result[month]["plan"] = plan
-
     for doc in docs:
         if doc.get("Подразделение_Key", EMPTY) not in dept_keys:
             continue
@@ -189,11 +202,12 @@ def calculate_by_month(docs: list[dict], dept_keys: set[str], year: int) -> dict
                 continue
 
             month = int(month_value[5:7])
-            if doc_type == "0" and year not in FIXED_PLAN_BY_YEAR:
+            if doc_type == "0":
                 result[month]["plan"] += float(row.get("План", 0) or 0)
             elif doc_type == "1":
                 result[month]["fact"] += float(row.get("Факт", 0) or 0)
 
+    _apply_fixed_plan_fallback_if_needed(result, year)
     return result
 
 
