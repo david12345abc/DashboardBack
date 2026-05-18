@@ -48,7 +48,7 @@ AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_q2_monthly_v2"
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 
 GROUP_ALIASES = {
     "Заместитель тех. директора по качеству": [

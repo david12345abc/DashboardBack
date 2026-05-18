@@ -1,5 +1,5 @@
 """
-ГСП-Q4 — вехи проекта TurboProject «номенклатур*», руководитель Ермаков Илья Николаевич.
+ГСП-Q4 — вехи проекта TurboProject «номенклатур*», руководитель из актуальной оргструктуры.
 
 **Когорта месяца (план):** все «живые» вехи опорного месяца — плановая дата (baseline и др.)
 попадает в месяц **или** дата окончания в графике (``finish_date``) попадает в месяц.
@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ import requests
 from getkpi.cache_manager import locked_call
 from getkpi.devdir import ytd_json_cache
 from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from getkpi.list_enterprise_positions import employees_by_position
 from getkpi.techdir_projects import (
     _api_get,
     _bool_is_true,
@@ -51,12 +53,16 @@ from getkpi.techdir_projects import (
 
 logger = logging.getLogger(__name__)
 
-TARGET_MANAGER = "ермаков илья николаевич"
+TARGET_MANAGER_DEPARTMENT = (
+    "Обособленное подразделение / Производство №1 / "
+    "Группа сопровождения продаж и производства"
+)
+TARGET_MANAGER_POSITION = "Руководитель отдела"
 PROJECT_NAME_SUBSTR = "номенклатур"
 
 GSPP_Q4_CACHE_PREFIX = "gspp_q4_ytd"
-GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v7"
-GSPP_Q4_DISK_VERSION = 7
+GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v8"
+GSPP_Q4_DISK_VERSION = 8
 
 
 def _project_display_name(details: dict[str, Any], summary_item: dict[str, Any]) -> str:
@@ -68,9 +74,25 @@ def _name_matches_nomenclature(name: str) -> bool:
     return PROJECT_NAME_SUBSTR in name.lower()
 
 
+@lru_cache(maxsize=1)
+def _target_manager_names() -> tuple[str, ...]:
+    return tuple(employees_by_position(
+        TARGET_MANAGER_POSITION,
+        department_path=TARGET_MANAGER_DEPARTMENT,
+    ))
+
+
+def _target_manager_labels() -> set[str]:
+    return {
+        normalized
+        for name in _target_manager_names()
+        if (normalized := _normalize_person_label(name))
+    }
+
+
 def _manager_matches(data_1c: dict[str, Any]) -> bool:
     lead = _normalize_person_label(data_1c.get("rukovoditel"))
-    return bool(lead) and lead == TARGET_MANAGER
+    return bool(lead) and lead in _target_manager_labels()
 
 
 def _task_baseline_finish(task: dict[str, Any]) -> Any:
@@ -371,7 +393,9 @@ def _build_gspp_q4_payload(year: int | None = None, month: int | None = None) ->
     dbg: dict[str, Any] = {
         "kpi_id": "ГСП-Q4",
         "source": "gspp/q4.py (TurboProject)",
-        "target_manager": TARGET_MANAGER,
+        "target_manager_department": TARGET_MANAGER_DEPARTMENT,
+        "target_manager_position": TARGET_MANAGER_POSITION,
+        "target_managers": list(_target_manager_names()),
         "project_name_substr": PROJECT_NAME_SUBSTR,
         "status": "no_project",
     }
@@ -526,7 +550,7 @@ def _gspp_project_row_for_deviation(
 
 def _empty_gspp_deviation_table(ref_y: int, ref_m: int, *, hint: str | None = None) -> dict[str, Any]:
     desc = (
-        "Проект TurboProject «номенклатур*», руководитель Ермаков И. Н. — вехи с отклонением "
+        "Проект TurboProject «номенклатур*», руководитель из оргструктуры ГСПП — вехи с отклонением "
         f"за {MONTH_NAMES[ref_m]} {ref_y} (структура как у TD-T-*-DEVIATIONS)."
     )
     if hint:
@@ -587,7 +611,7 @@ def _build_gspp_q4_deviation_table_payload(
         "name": "Отклонения по вехам: ГСП-Q4 (номенклатура)",
         "periodicity": "ежемесячно",
         "description": (
-            "Проект TurboProject «номенклатур*», руководитель Ермаков И. Н. — все вехи с отклонением "
+            "Проект TurboProject «номенклатур*», руководитель из оргструктуры ГСПП — все вехи с отклонением "
             f"за {MONTH_NAMES[ref_m]} {ref_y} (логика как у плитки ГСП-Q4). Структура вложенности вех — как у "
             "технического директора (TD-T-M1-DEVIATIONS / TD-T-Q1-DEVIATIONS)."
         ),

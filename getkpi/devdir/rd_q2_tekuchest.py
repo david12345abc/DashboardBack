@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "devdir_rd_q2_tekuchest"
 CACHE_SOURCE_TAG = "devdir_rd_q2_tekuchest_ytd"
-CACHE_VERSION = 2
+CACHE_VERSION = 7
 
 
 def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
@@ -78,6 +78,7 @@ def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = No
         "debug": {
             "source": "getkpi/devdir/calc_tekuchest_dev_service.py",
             "kpi_route": "devdir_rd_q2_tekuchest",
+            "fact_source": "1C Document_ТД_ТекучестьПерсонала, ВидДокумента = 1",
         },
     }
 

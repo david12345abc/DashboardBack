@@ -51,6 +51,8 @@ MONTH_RU = {
 
 ENTITY = "Document_ТД_ТекучестьПерсонала"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
+CACHE_SOURCE_TAG = "tekuchest_monthly_v2"
+CACHE_VERSION = 2
 
 
 def _last_full_month(today: date) -> tuple[int, int]:
@@ -71,7 +73,11 @@ def _load_cache(year: int, ref_month: int) -> dict | None:
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if data.get("cache_date") == date.today().isoformat():
+        if (
+            data.get("cache_source") == CACHE_SOURCE_TAG
+            and data.get("cache_version") == CACHE_VERSION
+            and data.get("cache_date") == date.today().isoformat()
+        ):
             return data
     except (OSError, json.JSONDecodeError):
         pass
@@ -82,7 +88,16 @@ def _save_cache(year: int, ref_month: int, payload: dict) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
         with open(_cache_path(year, ref_month), "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+            json.dump(
+                {
+                    **payload,
+                    "cache_source": CACHE_SOURCE_TAG,
+                    "cache_version": CACHE_VERSION,
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
     except OSError:
         pass
 

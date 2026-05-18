@@ -2,7 +2,7 @@
 ГСП-M5 — бюджет план/факт проекта TurboProject «номенклатур*».
 
 Целевой проект ищется теми же правилами, что и ГСП-Q4:
-название содержит ``номенклатур`` и руководитель Ермаков Илья Николаевич.
+название содержит ``номенклатур`` и руководитель берется из актуальной оргструктуры.
 План и факт берутся из 1С-части карточки TurboProject:
 ``data_1c.byudzhet_plan`` и ``data_1c.byudzhet_fakt``.
 """
@@ -26,8 +26,8 @@ from gspp.q4 import _find_target_project, _login, _project_display_name
 logger = logging.getLogger(__name__)
 
 GSPP_M5_CACHE_PREFIX = "gspp_m5_ytd"
-GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v1"
-GSPP_M5_DISK_VERSION = 1
+GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v2"
+GSPP_M5_DISK_VERSION = 2
 
 
 def _safe_float(value: Any) -> float | None:
@@ -128,7 +128,7 @@ def _build_gspp_m5_payload(year: int | None = None, month: int | None = None) ->
     debug: dict[str, Any] = {
         "kpi_id": "ГСП-M5",
         "source": "gspp/m5.py (TurboProject)",
-        "project_filter": "name contains 'номенклатур', rukovoditel == Ермаков Илья Николаевич",
+        "project_filter": "name contains 'номенклатур', rukovoditel == current ГСПП руководитель отдела",
         "plan_field": "data_1c.byudzhet_plan",
         "fact_field": "data_1c.byudzhet_fakt",
         "status": "no_project",

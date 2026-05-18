@@ -6,6 +6,7 @@ import os
 import re
 from calendar import monthrange
 from datetime import date, datetime
+from functools import lru_cache
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ import requests
 
 from . import cache_manager
 from .kpi_periods import last_full_quarter, quarter_month_tuples
+from .list_enterprise_positions import employees_by_position
 from .turboproject_config import API_BASE as TURBO_CFG_API_BASE, EMAIL as TURBO_CFG_EMAIL, PASSWORD as TURBO_CFG_PASSWORD
 
 logger = logging.getLogger(__name__)
@@ -22,8 +24,8 @@ TARGET_ORGANIZATION = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
 TARGET_PROJECT_TYPE_TD_M1 = "ВнешнийЗаказ"
 TARGET_PROJECT_TYPE_TD_Q1 = "РазвитияИУлучшений"
 TARGET_PROJECT_TYPE_OD_Q1 = None
-# Проекты техдира: вместо фильтра по подразделению — по ФИО в полях 1С (data_1c).
-TECHDIR_PROJECT_OWNER = "Улановский Константин Владимирович"
+# Проекты техдира: вместо фильтра по подразделению — по актуальному ФИО в полях 1С (data_1c).
+TECHDIR_OWNER_POSITION = "Технический директор"
 PRODUCTION_DEPUTY_PROJECT_DEPARTMENTS = {
     "Производственный цех №1",
     "Производственный цех №2",
@@ -33,7 +35,7 @@ TIMEOUT = 60
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CACHE_DIR = cache_manager.CACHE_DIR
 CACHE_PATH = CACHE_DIR / "techdir_projects_snapshot.json"
-CACHE_VERSION = 12
+CACHE_VERSION = 13
 OD_OVERDUE_MILESTONES_SCHEMA = "zero_duration_milestones_v1"
 _CREDENTIAL_FILES = (
     "API для dashboard.py",
@@ -353,6 +355,20 @@ def _normalize_person_label(value: Any) -> str:
     return " ".join(str(value or "").replace("ё", "е").strip().lower().split())
 
 
+@lru_cache(maxsize=1)
+def _techdir_project_owners() -> tuple[str, ...]:
+    """Актуальные ФИО сотрудников на должности технического директора из 1С."""
+    return tuple(employees_by_position(TECHDIR_OWNER_POSITION))
+
+
+def _techdir_project_owner_labels() -> set[str]:
+    return {
+        normalized
+        for owner in _techdir_project_owners()
+        if (normalized := _normalize_person_label(owner))
+    }
+
+
 def _snapshot_row_as_data_1c(project: dict[str, Any]) -> dict[str, Any]:
     """Поля 1С из строки снимка — та же схема, что в details['data_1c'] при первичной выборке."""
     return {
@@ -368,13 +384,15 @@ def _is_target_project(data_1c: dict[str, Any], _project_type: str | None = None
     if data_1c.get("organizatsiya") != TARGET_ORGANIZATION:
         return False
     tip = str(data_1c.get("tip_proekta") or "").strip()
-    owner = _normalize_person_label(TECHDIR_PROJECT_OWNER)
+    owners = _techdir_project_owner_labels()
+    if not owners:
+        return False
     if tip == TARGET_PROJECT_TYPE_TD_M1:
-        return _normalize_person_label(data_1c.get("kurator")) == owner
+        return _normalize_person_label(data_1c.get("kurator")) in owners
     if tip == TARGET_PROJECT_TYPE_TD_Q1:
         return (
-            _normalize_person_label(data_1c.get("rukovoditel")) == owner
-            or _normalize_person_label(data_1c.get("kurator")) == owner
+            _normalize_person_label(data_1c.get("rukovoditel")) in owners
+            or _normalize_person_label(data_1c.get("kurator")) in owners
         )
     return False
 
@@ -468,7 +486,8 @@ def _compute_projects_snapshot() -> dict:
         "projects": target_projects,
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
-            "techdir_project_owner": TECHDIR_PROJECT_OWNER,
+            "techdir_owner_position": TECHDIR_OWNER_POSITION,
+            "techdir_project_owners": list(_techdir_project_owners()),
             "filter_td_m1": f"tip_proekta={TARGET_PROJECT_TYPE_TD_M1!r}, kurator==owner",
             "filter_td_q1": (
                 f"tip_proekta={TARGET_PROJECT_TYPE_TD_Q1!r}, "
@@ -847,7 +866,7 @@ def _build_td_m5_budget_payload(year: int | None = None, month: int | None = Non
             "kpi_id": "TD-M5",
             "filter": (
                 f"tip_proekta={TARGET_PROJECT_TYPE_TD_M1!r}, "
-                f"организация «{TARGET_ORGANIZATION}», куратор «{TECHDIR_PROJECT_OWNER}»"
+                f"организация «{TARGET_ORGANIZATION}», куратор из должности «{TECHDIR_OWNER_POSITION}»"
             ),
             "plan_field": "byudzhet_plan",
             "fact_field": "byudzhet_fakt",
@@ -1144,11 +1163,11 @@ def _build_deviation_table(
     }.get(project_type, project_type)
     selection_note = (
         f"Отбор: организация «{TARGET_ORGANIZATION}», тип «{project_type_label}», "
-        f"куратор «{TECHDIR_PROJECT_OWNER}»."
+        f"куратор из должности «{TECHDIR_OWNER_POSITION}»."
         if project_type == TARGET_PROJECT_TYPE_TD_M1
         else (
             f"Отбор: организация «{TARGET_ORGANIZATION}», тип «{project_type_label}», "
-            f"руководитель или куратор «{TECHDIR_PROJECT_OWNER}»."
+            f"руководитель или куратор из должности «{TECHDIR_OWNER_POSITION}»."
         )
     )
     target_projects = _projects_for_type(project_type)

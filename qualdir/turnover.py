@@ -23,8 +23,8 @@ from getkpi.techdir_tekuchet import MONTH_RU, build_turnover_month_payload
 
 # Кэш в каталоге getkpi/dashboard — как у остальных KPI-бэкендов.
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_qd_q2_monthly_v3"
-CACHE_VERSION = 3
+SOURCE_TAG = "qualdir_qd_q2_monthly_v4"
+CACHE_VERSION = 4
 
 QD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
     "ОТК-1": [
@@ -48,8 +48,8 @@ QD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
 QD_Q2_GROUP_ORDER = list(QD_Q2_GROUP_ALIASES.keys())
 
 QD_Q2_YTD_CACHE_PREFIX = "qualdir_qd_q2_ytd"
-QD_Q2_YTD_DISK_TAG = "qualdir_qd_q2_ytd_payload_v1"
-QD_Q2_YTD_DISK_VERSION = 1
+QD_Q2_YTD_DISK_TAG = "qualdir_qd_q2_ytd_payload_v2"
+QD_Q2_YTD_DISK_VERSION = 2
 
 
 def _qd_q2_kpi_pct(plan: Any, fact: Any) -> float | None:
