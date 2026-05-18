@@ -66,6 +66,15 @@ PROD_DEPUTY_OUTPUT_PERIOD_BY_ID = {
     'PD-M1.2.T': ('pc2', 'total'),
 }
 
+PROD_DEPUTY_TILE_ORDER = {
+    'PD-M1.1.W': 0,
+    'PD-M1.1.M': 1,
+    'PD-M1.1.T': 2,
+    'PD-M1.2.W': 3,
+    'PD-M1.2.M': 4,
+    'PD-M1.2.T': 5,
+}
+
 
 def get_structure_data() -> dict:
     """
@@ -111,7 +120,8 @@ def _get_kpi_dicts(department: str) -> list[dict]:
                 return rows
             fallback = _prod_deputy_fallback_rows_for_department(department, PD_KPI_DEFINITIONS)
             if fallback:
-                return fallback
+                return sorted(fallback, key=_prod_deputy_tile_sort_key)
+        rows = sorted(rows, key=_prod_deputy_tile_sort_key)
     return rows
 
 
@@ -147,7 +157,11 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
             except Exception:
                 return rows
-            return _prod_deputy_fallback_rows_for_department(department, PD_KPI_DEFINITIONS)
+            return sorted(
+                _prod_deputy_fallback_rows_for_department(department, PD_KPI_DEFINITIONS),
+                key=_prod_deputy_tile_sort_key,
+            )
+        rows = sorted(rows, key=_prod_deputy_tile_sort_key)
     return rows
 
 
@@ -392,6 +406,17 @@ def _filter_prod_deputy_rows_for_department(department: str | None, rows: list[d
         return rows
     allowed = _required_prod_deputy_kpi_ids(department)
     return [row for row in rows if str(row.get('kpi_id') or '') in allowed]
+
+
+def _prod_deputy_tile_sort_key(row: dict) -> tuple[int, int, str]:
+    kpi_id = str(row.get('kpi_id') or '')
+    if kpi_id in PROD_DEPUTY_TILE_ORDER:
+        return PROD_DEPUTY_TILE_ORDER[kpi_id], 0, kpi_id
+    try:
+        position = int(row.get('position'))
+    except (TypeError, ValueError):
+        position = 10_000
+    return 100 + position, position, kpi_id
 
 
 def _prod_deputy_fallback_rows_for_department(

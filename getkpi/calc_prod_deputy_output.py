@@ -16,7 +16,7 @@ from .calc_fot_management import MONTH_RU, _normalize_period
 ShopKey = Literal["pc1", "pc2"]
 OutputPeriod = Literal["month", "week", "total"]
 
-SOURCE_TAG = "prod_deputy_output_production_plan_doc_v5"
+SOURCE_TAG = "prod_deputy_output_production_plan_doc_v7_last_week_doc"
 DOC_ENTITY = "Document_ТД_ПроизводственныйПлан"
 TABULAR_FIELD = "ВыполнениеПроизводственногоПлана"
 
@@ -73,6 +73,15 @@ def _to_float(value) -> float:
         return float(str(value).replace(" ", "").replace(",", "."))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _date_from_odata(value) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
 
 
 def _sum_plan_fact_rows(rows: list[dict], shop: ShopKey) -> tuple[float, float, dict]:
@@ -242,6 +251,69 @@ def _last_week_bounds(ref_year: int, ref_month: int) -> tuple[date, date]:
     return week_start, month_end + timedelta(days=1)
 
 
+def _latest_document_week_totals(
+    session: requests.Session,
+    shop: ShopKey,
+    ref_year: int,
+    ref_month: int,
+) -> tuple[date, date, float, float, dict] | None:
+    """Последняя неделя = период последнего документа плана в выбранном месяце."""
+    docs = _load_month_docs(session, shop, ref_year, ref_month)
+    docs_with_period: list[tuple[date, date, dict]] = []
+    for doc in docs:
+        start = _date_from_odata(doc.get("ПериодС"))
+        end = _date_from_odata(doc.get("ПериодПо"))
+        if start is None or end is None:
+            continue
+        if (end - start).days > 7:
+            continue
+        docs_with_period.append((start, end, doc))
+    if not docs_with_period:
+        return None
+
+    latest_start, latest_end, _latest_doc = max(
+        docs_with_period,
+        key=lambda item: (
+            item[1],
+            item[0],
+            str(item[2].get("Date") or ""),
+            str(item[2].get("Number") or ""),
+        ),
+    )
+
+    plan_total = 0.0
+    fact_total = 0.0
+    doc_debug = []
+    for start, end, doc in docs_with_period:
+        if start != latest_start or end != latest_end:
+            continue
+        rows = list(doc.get(TABULAR_FIELD) or [])
+        doc_plan, doc_fact, fields_debug = _sum_plan_fact_rows(rows, shop)
+        plan_total += doc_plan
+        fact_total += doc_fact
+        doc_debug.append({
+            "number": doc.get("Number"),
+            "date": doc.get("Date"),
+            "period_from": doc.get("ПериодС"),
+            "period_to": doc.get("ПериодПо"),
+            "rows": len(rows),
+            "plan": doc_plan,
+            "fact": doc_fact,
+            "fields": fields_debug,
+        })
+
+    end_exclusive = latest_end + timedelta(days=1)
+    return latest_start, end_exclusive, round(plan_total, 2), round(fact_total, 2), {
+        "documents_count": len(doc_debug),
+        "period_start": latest_start.isoformat(),
+        "period_end": latest_end.isoformat(),
+        "date_field": "document_period",
+        "contained": True,
+        "filter_department": True,
+        "documents": doc_debug,
+    }
+
+
 def _month_week_ranges(year: int, month: int) -> list[tuple[date, date]]:
     month_start = date(year, month, 1)
     month_end_exclusive = date(year, month, monthrange(year, month)[1]) + timedelta(days=1)
@@ -398,16 +470,20 @@ def get_prod_deputy_output_monthly(
     quarterly_data, yearly_data = _aggregate_rows(rows)
     total_plan = sum(float(row.get("plan") or 0) for row in rows)
     total_fact = sum(float(row.get("fact") or 0) for row in rows)
-    week_start, week_end_exclusive = _last_week_bounds(ref_year, ref_month)
-    week_plan, week_fact, week_debug = _period_totals_from_production_plan(
-        session,
-        shop,
-        week_start,
-        week_end_exclusive,
-        date_field="ПериодПо",
-        contained=(ref_year == 2026 and ref_month == 4),
-        filter_department=not (ref_year == 2026 and ref_month == 4),
-    )
+    latest_week = _latest_document_week_totals(session, shop, ref_year, ref_month)
+    if latest_week is not None:
+        week_start, week_end_exclusive, week_plan, week_fact, week_debug = latest_week
+    else:
+        week_start, week_end_exclusive = _last_week_bounds(ref_year, ref_month)
+        week_plan, week_fact, week_debug = _period_totals_from_production_plan(
+            session,
+            shop,
+            week_start,
+            week_end_exclusive,
+            date_field="ПериодПо",
+            contained=(ref_year == 2026 and ref_month == 4),
+            filter_department=not (ref_year == 2026 and ref_month == 4),
+        )
     weekly_cumulative, weekly_cumulative_debug = _weekly_cumulative_points(
         session,
         shop,

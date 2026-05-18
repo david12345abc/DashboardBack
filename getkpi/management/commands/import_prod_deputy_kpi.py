@@ -32,7 +32,7 @@ PD_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "95–99,9%",
         "red_threshold": "<95%",
         "weight_pct": 4.17,
-        "position": 0,
+        "position": 1,
     },
     {
         "kpi_id": "PD-M1.1.W",
@@ -51,7 +51,7 @@ PD_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "95–99,9%",
         "red_threshold": "<95%",
         "weight_pct": 4.17,
-        "position": 1,
+        "position": 0,
     },
     {
         "kpi_id": "PD-M1.1.T",
@@ -89,7 +89,7 @@ PD_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "95–99,9%",
         "red_threshold": "<95%",
         "weight_pct": 4.17,
-        "position": 3,
+        "position": 4,
     },
     {
         "kpi_id": "PD-M1.2.W",
@@ -108,7 +108,7 @@ PD_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "95–99,9%",
         "red_threshold": "<95%",
         "weight_pct": 4.17,
-        "position": 4,
+        "position": 3,
     },
     {
         "kpi_id": "PD-M1.2.T",
