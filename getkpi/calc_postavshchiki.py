@@ -55,6 +55,7 @@ CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 # Маркер версии кэша. Меняй при изменении формулы расчёта, чтобы
 # пересобрать кэш на сервере при первом запросе.
 SOURCE_TAG = "supplier_balance_month_delta_v2"
+DETAIL_SOURCE_TAG = "supplier_dz_detail_by_object_v2"
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -106,6 +107,59 @@ def _load_supplier_obj_keys(session: requests.Session) -> set[str]:
         for r in rows
         if str(r.get("Ref_Key") or EMPTY).lower() != EMPTY
     }
+
+
+def _load_supplier_obj_map(session: requests.Session) -> dict[str, dict]:
+    """Объекты расчётов НПО с привязкой к партнёру-поставщику."""
+    flt = quote(f"Организация_Key eq guid'{ORG_GUID_NPO}'", safe="")
+    url = (
+        f"{BASE}/Catalog_ОбъектыРасчетов"
+        f"?$format=json"
+        f"&$select=Ref_Key,Партнер_Key,Description,Номер,Дата"
+        f"&$filter={flt}"
+    )
+    rows = _fetch_all(session, url, label="KZ/ObjCatalogDetail")
+    out: dict[str, dict] = {}
+    for row in rows:
+        key = str(row.get("Ref_Key") or EMPTY).lower()
+        if key == EMPTY:
+            continue
+        out[key] = {
+            "partner_key": str(row.get("Партнер_Key") or EMPTY).lower(),
+            "description": (row.get("Description") or "").strip(),
+            "number": (row.get("Номер") or "").strip(),
+            "date": str(row.get("Дата") or "")[:10],
+        }
+    return out
+
+
+def _resolve_partner_names(session: requests.Session, partner_keys: set[str]) -> dict[str, str]:
+    keys = sorted(
+        key for key in partner_keys
+        if key and key != EMPTY
+    )
+    if not keys:
+        return {}
+
+    names: dict[str, str] = {}
+    batch_size = 40
+    for i in range(0, len(keys), batch_size):
+        batch = keys[i:i + batch_size]
+        flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in batch)
+        url = (
+            f"{BASE}/Catalog_Партнеры?$format=json"
+            f"&$select=Ref_Key,Description"
+            f"&$filter={quote(flt, safe='')}&$top=5000"
+        )
+        response = request_with_retry(session, url, timeout=60, retries=4, label="KZ/Partners")
+        if response is None or not response.ok:
+            continue
+        for item in response.json().get("value", []):
+            key = str(item.get("Ref_Key") or "").lower()
+            name = (item.get("Description") or "").strip()
+            if key:
+                names[key] = name or key[:8]
+    return names
 
 
 def _load_supplier_balance(session: requests.Session, na_datu: date) -> list[dict]:
@@ -169,6 +223,11 @@ def _cache_path_monthly(year: int, month: int) -> Path:
     return CACHE_DIR / f"postavshchiki_monthly_{year}_{month:02d}.json"
 
 
+def _cache_path_dz_detail(na_datu: date) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / f"postavshchiki_dz_detail_{na_datu.isoformat()}.json"
+
+
 def _load_json(path: Path) -> dict | None:
     if not path.exists():
         return None
@@ -206,6 +265,70 @@ def get_supplier_snapshot(na_datu: date) -> dict:
     allowed_obj_keys = _load_supplier_obj_keys(session)
     payload = _build_snapshot(session, na_datu, allowed_obj_keys)
     _save_json(_cache_path_snapshot(na_datu), payload)
+    return payload
+
+
+def get_supplier_dz_detail(na_datu: date) -> dict:
+    """Детализация ДЗ поставщиков на дату в разрезе объектов расчётов."""
+    cache_path = _cache_path_dz_detail(na_datu)
+    cached = _load_json(cache_path)
+    if cached is not None and cached.get("source") == DETAIL_SOURCE_TAG:
+        return cached
+
+    session = requests.Session()
+    session.auth = AUTH
+    logger.info("calc_postavshchiki: supplier DZ detail for %s", na_datu.isoformat())
+
+    obj_map = _load_supplier_obj_map(session)
+    balance_rows = _load_supplier_balance(session, na_datu)
+
+    by_object: dict[str, dict] = {}
+    partner_keys: set[str] = set()
+    for row in balance_rows:
+        obj_key = str(row.get("ОбъектРасчетов_Key") or EMPTY).lower()
+        obj = obj_map.get(obj_key)
+        if not obj:
+            continue
+        amount = float(row.get("ПредоплатаРеглBalance") or 0)
+        if amount <= TOLERANCE:
+            continue
+        partner_key = obj.get("partner_key") or EMPTY
+        item = by_object.setdefault(obj_key, {
+            "order_key": obj_key,
+            "order_num": obj.get("number") or "",
+            "order_date": obj.get("date") or "",
+            "object_name": obj.get("description") or "",
+            "supplier_key": partner_key if partner_key != EMPTY else "",
+            "supplier": obj.get("description") or partner_key[:8] or obj_key[:8],
+            "amount": 0.0,
+        })
+        item["amount"] += amount
+        if partner_key and partner_key != EMPTY:
+            partner_keys.add(partner_key)
+
+    names = _resolve_partner_names(session, partner_keys)
+    rows = []
+    for item in by_object.values():
+        supplier_key = item.get("supplier_key") or ""
+        supplier_name = names.get(supplier_key) or item.get("supplier") or supplier_key[:8]
+        rows.append({
+            "order_key": item.get("order_key") or "",
+            "order_num": item.get("order_num") or "",
+            "order_date": item.get("order_date") or "",
+            "object_name": item.get("object_name") or "",
+            "supplier_key": supplier_key,
+            "supplier": supplier_name,
+            "amount": round(float(item.get("amount") or 0), 2),
+        })
+    rows.sort(key=lambda entry: (-float(entry.get("amount") or 0), str(entry.get("supplier") or "")))
+
+    payload = {
+        "na_datu": na_datu.isoformat(),
+        "source": DETAIL_SOURCE_TAG,
+        "total_predoplata_regl": round(sum(float(row.get("amount") or 0) for row in rows), 2),
+        "rows": rows,
+    }
+    _save_json(cache_path, payload)
     return payload
 
 

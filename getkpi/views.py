@@ -1,5 +1,6 @@
 import json
 import logging
+import calendar
 import random
 import re
 import unicodedata
@@ -17,6 +18,7 @@ from . import (
     calc_fot_management,
     calc_otif_vypusk_zam_proizvodstva,
     calc_plan,
+    calc_postavshchiki,
     calc_tekuchest_opdir,
     calc_vyruchka_opdir,
     chairman_data,
@@ -2017,6 +2019,25 @@ def _build_universal_payload(
 
     tablitsy = {}
 
+    def _period_end_month_for_snapshot() -> int:
+        mode = (aggregation_mode or '').strip().lower()
+        if mode == 'quarter':
+            quarters = [
+                q for q in (selected_quarters or [])
+                if isinstance(q, int) and 1 <= q <= 4
+            ]
+            quarter = max(quarters) if quarters else ((ref_m - 1) // 3) + 1
+            return max(1, min(ref_m, quarter * 3))
+        return ref_m
+
+    def _snapshot_date_for_selected_period() -> date:
+        snap_m = _period_end_month_for_snapshot()
+        snap = date(ref_y, snap_m, calendar.monthrange(ref_y, snap_m)[1])
+        today = date.today()
+        if snap > today:
+            snap = today
+        return snap
+
     include_generic_tables = (
         not techdir_dashboard.is_techdir_department(dept)
         and not _is_prod_deputy_department(dept)
@@ -2087,6 +2108,37 @@ def _build_universal_payload(
                 "rows": lawsuit_rows,
             },
         })
+
+        if logistics_views.is_logistics_head_department(dept):
+            try:
+                supplier_dz_date = _snapshot_date_for_selected_period()
+                supplier_dz_detail = cache_manager.locked_call(
+                    f"log_supplier_dz_detail_{supplier_dz_date.isoformat()}",
+                    calc_postavshchiki.get_supplier_dz_detail,
+                    supplier_dz_date,
+                )
+            except Exception:
+                supplier_dz_detail = {"rows": [], "total_predoplata_regl": 0, "na_datu": ""}
+                supplier_dz_date = _snapshot_date_for_selected_period()
+            tablitsy["LOG-T-SUPPLIER-DZ"] = {
+                "name": f"Дебиторская задолженность на {supplier_dz_detail.get('na_datu') or supplier_dz_date.isoformat()}",
+                "periodicity": "ежемесячно",
+                "description": (
+                    "ДЗ поставщиков = остаток ПредоплатаРеглBalance "
+                    "по AccumulationRegister_РасчетыСПоставщикамиПоСрокам/Balance "
+                    "на дату окончания выбранного периода"
+                ),
+                "period": {
+                    "year": ref_y,
+                    "month": supplier_dz_date.month,
+                    "month_name": month_names.get(supplier_dz_date.month, str(supplier_dz_date.month)),
+                    "as_of_date": supplier_dz_detail.get("na_datu") or supplier_dz_date.isoformat(),
+                    "aggregation_mode": aggregation_mode or "current",
+                },
+                "total": supplier_dz_detail.get("total_predoplata_regl", 0),
+                "columns": ["№ объекта расчетов", "Дата", "Объект расчетов", "Поставщик", "Сумма"],
+                "rows": supplier_dz_detail.get("rows") or [],
+            }
 
     if techdir_dashboard.is_techdir_department(dept):
         techdir_dashboard.merge_deviation_tables(tablitsy, ref_y, ref_m)
