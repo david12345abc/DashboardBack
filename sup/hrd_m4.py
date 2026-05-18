@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 SOURCE_FILE = Path(__file__).resolve().parent / "SUP_data.xlsx"
 SHEET_NAME = "Текучесть"
 CACHE_PREFIX = "sup_hrd_m4_turnover"
-CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v1"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v2"
+CACHE_VERSION = 2
 
 FACT_ROW = 10
 PLAN_ROW = 11

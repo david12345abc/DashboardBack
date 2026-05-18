@@ -32,8 +32,8 @@ from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_perio
 logger = logging.getLogger(__name__)
 
 GSPP_Q5_CACHE_PREFIX = "gspp_q5_tekuchest"
-GSPP_Q5_DISK_TAG = "gspp_q5_tekuchest_payload_v1"
-GSPP_Q5_DISK_VERSION = 1
+GSPP_Q5_DISK_TAG = "gspp_q5_tekuchest_payload_v2"
+GSPP_Q5_DISK_VERSION = 2
 
 GSPP_TURNOVER_DEPARTMENTS = {
     "ГСПП",

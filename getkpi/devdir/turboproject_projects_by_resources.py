@@ -18,12 +18,14 @@ import os
 import sys
 from calendar import monthrange
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import requests
 
 from ..cache_manager import locked_call
+from ..list_enterprise_positions import employees_by_department
 from . import ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES
 from .rd_monthly_period import normalize_rd_tile_period
@@ -36,23 +38,21 @@ PASSWORD = os.getenv("TURBOPROJECT_PASSWORD", "Ruslandavletov28")
 TIMEOUT = 60
 
 TARGET_ORGANIZATION = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
-TARGET_RESOURCES = {
-    "комарькова анастасия эдуардовна",
-    "уставицкий андрей алексеевич",
-    "мангасарян давид каренович",
-    "давлетов руслан игоревич",
-    "ясыров богдан джумазаевич",
-}
-TARGET_RESOURCES_NORMALIZED = TARGET_RESOURCES
+TARGET_RESOURCES_DEPARTMENT = (
+    "Председатель Совета Директоров / ОПЕРАЦИОННЫЙ ДИРЕКТОР / "
+    "Зам.операционного директора - директор по производству / "
+    "ДИРЕКТОР ПО РАЗВИТИЮ / Служба развития / "
+    "Сектор по внедрению искусственного интеллекта"
+)
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
 CACHE_PATH = CACHE_DIR / "devdir_turboproject_projects_by_resources_snapshot.json"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 TABLE_CACHE_PREFIX = "devdir_turboproject_projects_by_resources_deviations"
-TABLE_CACHE_VERSION = 5
+TABLE_CACHE_VERSION = 6
 TILE_CACHE_PREFIX = "devdir_rd_m3_1_turboproject_projects_by_resources"
 TILE_CACHE_SOURCE_TAG = "devdir_rd_m3_1_turboproject_projects_by_resources_ytd"
-TILE_CACHE_VERSION = 4
+TILE_CACHE_VERSION = 5
 
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
@@ -61,6 +61,20 @@ def normalize_name(value: Any) -> str:
     if not isinstance(value, str):
         return ""
     return " ".join(value.strip().lower().replace("ё", "е").split())
+
+
+@lru_cache(maxsize=1)
+def target_resources() -> tuple[str, ...]:
+    """Актуальные сотрудники сектора ИИ из 1С."""
+    return tuple(employees_by_department(TARGET_RESOURCES_DEPARTMENT))
+
+
+def target_resources_normalized() -> set[str]:
+    return {
+        normalized
+        for resource in target_resources()
+        if (normalized := normalize_name(resource))
+    }
 
 
 def unique_resource_names(names: list[Any]) -> list[str]:
@@ -90,14 +104,15 @@ def build_project_resources(details: dict[str, Any]) -> list[str]:
 
 def matched_target_resources(resources: list[str]) -> list[str]:
     normalized = {normalize_name(resource) for resource in resources}
+    targets = target_resources_normalized()
     return sorted(
         {
             resource
             for resource in resources
-            if normalize_name(resource) in TARGET_RESOURCES_NORMALIZED
+            if normalize_name(resource) in targets
         },
         key=str.lower,
-    ) if normalized & TARGET_RESOURCES_NORMALIZED else []
+    ) if normalized & targets else []
 
 
 def has_target_resource(resources: list[str]) -> bool:
@@ -583,7 +598,8 @@ def _build_projects_monthly_payload(
         },
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
-            "target_resources": sorted(TARGET_RESOURCES, key=str.lower),
+            "target_resources_department": TARGET_RESOURCES_DEPARTMENT,
+            "target_resources": list(target_resources()),
             "target_projects_count": len(projects),
             "kpi_route": TILE_CACHE_PREFIX,
         },
@@ -734,11 +750,13 @@ def _compute_projects_snapshot() -> dict:
             ),
             "selection_scope": "resources_only",
             "organization": TARGET_ORGANIZATION,
-            "target_resources": sorted(TARGET_RESOURCES, key=str.lower),
+            "target_resources_department": TARGET_RESOURCES_DEPARTMENT,
+            "target_resources": list(target_resources()),
         },
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
-            "target_resources": sorted(TARGET_RESOURCES, key=str.lower),
+            "target_resources_department": TARGET_RESOURCES_DEPARTMENT,
+            "target_resources": list(target_resources()),
             "target_projects_count": len(target_projects),
             "fact_projects_count": len(fact_projects),
             "cache_path": str(CACHE_PATH),

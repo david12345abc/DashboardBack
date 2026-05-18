@@ -53,6 +53,7 @@ ENTITY = "Document_ТД_ТекучестьПерсонала"
 CAT_STRUKTURA = "Catalog_СтруктураПредприятия"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "tekuchest_opdir_monthly_v1"
+CACHE_VERSION = 2
 
 # Корни поддеревьев, которые не входят в периметр операционного директора (Турбулентность-Дон).
 EXCLUDE_SUBTREE_ROOTS: frozenset[str] = frozenset({
@@ -272,7 +273,11 @@ def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = Non
     is_current_month = ref_year == today.year and ref_month == today.month
 
     cached = _load_json(cache_path)
-    if cached is not None and cached.get("source") == SOURCE_TAG:
+    if (
+        cached is not None
+        and cached.get("source") == SOURCE_TAG
+        and cached.get("cache_version") == CACHE_VERSION
+    ):
         if not is_current_month or cached.get("cache_date") == today.isoformat():
             return cached
 
@@ -317,6 +322,7 @@ def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = Non
     payload = {
         "cache_date": today.isoformat(),
         "source": SOURCE_TAG,
+        "cache_version": CACHE_VERSION,
         "year": ref_year,
         "ref_month": ref_month,
         "months": months_out,
