@@ -1891,13 +1891,18 @@ def _build_universal_payload(
         )
 
         monthly_data = entry.get('monthly_data')
-        lm = (
-            pick_monthly_row_for_period(monthly_data, tile_lm_y, tile_lm_m)
-            if monthly_data
-            else {}
-        )
-        if not lm:
+        if _kid_tile in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID:
+            # Эти плитки не месячная точка графика: week/month/total берутся из
+            # одного выбранного документа ТД_ПроизводственныйПлан.
             lm = entry.get('last_full_month_row') or {}
+        else:
+            lm = (
+                pick_monthly_row_for_period(monthly_data, tile_lm_y, tile_lm_m)
+                if monthly_data
+                else {}
+            )
+            if not lm:
+                lm = entry.get('last_full_month_row') or {}
         if lm:
             tile['plan'] = lm.get('plan')
             tile['fact'] = lm.get('fact')
@@ -2143,15 +2148,15 @@ def _build_universal_payload(
                     supplier_dz_date,
                 )
             except Exception:
-                supplier_dz_detail = {"rows": [], "total_predoplata_regl": 0, "na_datu": ""}
+                supplier_dz_detail = {"rows": [], "total_dolg_regl": 0, "na_datu": ""}
                 supplier_dz_date = _snapshot_date_for_selected_period()
             tablitsy["LOG-T-SUPPLIER-DZ"] = {
                 "name": f"Дебиторская задолженность на {supplier_dz_detail.get('na_datu') or supplier_dz_date.isoformat()}",
                 "periodicity": "ежемесячно",
                 "description": (
-                    "ДЗ поставщиков = остаток ПредоплатаРеглBalance "
-                    "по AccumulationRegister_РасчетыСПоставщикамиПоСрокам/Balance "
-                    "на дату окончания выбранного периода"
+                    "Поставщики с нашим долгом > 0 (ДолгРеглBalance) на дату среза; "
+                    "предоплата не включается; за два полных календарных месяца до даты среза "
+                    "оборот по ДолгРегл = 0 и остаток не менялся"
                 ),
                 "period": {
                     "year": ref_y,
@@ -2160,8 +2165,10 @@ def _build_universal_payload(
                     "as_of_date": supplier_dz_detail.get("na_datu") or supplier_dz_date.isoformat(),
                     "aggregation_mode": aggregation_mode or "current",
                 },
-                "total": supplier_dz_detail.get("total_predoplata_regl", 0),
+                "total": supplier_dz_detail.get("total_dolg_regl", 0),
                 "columns": ["№ объекта расчетов", "Дата", "Объект расчетов", "Поставщик", "Сумма"],
+                "verification": supplier_dz_detail.get("verification") or {},
+                "query_protocol": supplier_dz_detail.get("query_protocol") or {},
                 "rows": supplier_dz_detail.get("rows") or [],
             }
 

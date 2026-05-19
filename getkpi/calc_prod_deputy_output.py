@@ -16,13 +16,18 @@ from .calc_fot_management import MONTH_RU, _normalize_period
 ShopKey = Literal["pc1", "pc2"]
 OutputPeriod = Literal["month", "week", "total"]
 
-SOURCE_TAG = "prod_deputy_output_production_plan_doc_v9_single_doc_period_fields"
+SOURCE_TAG = "prod_deputy_output_production_plan_doc_v10_work_week_doc"
 DOC_ENTITY = "Document_ТД_ПроизводственныйПлан"
 TABULAR_FIELD = "ВыполнениеПроизводственногоПлана"
 
 PRODUCTION_DEPT_KEY: dict[ShopKey, str] = {
     "pc1": "3a9ac2d6-214f-11e0-b91c-00248c26ee57",  # ПРОИЗВОДСТВО НПО
     "pc2": "88cbfc9b-83ed-11e6-8121-001e67112509",  # ПРОИЗВОДСТВО АЛМАЗ
+}
+
+PRODUCTION_DEPT_NAME: dict[ShopKey, str] = {
+    "pc1": "ПРОИЗВОДСТВО НПО",
+    "pc2": "ПРОИЗВОДСТВО АЛМАЗ",
 }
 
 VALUES_UNIT: dict[ShopKey, str] = {
@@ -332,37 +337,46 @@ def _select_production_plan_doc(
     target_start, target_end_exclusive = _target_work_week_bounds(ref_year, ref_month)
     target_end = target_end_exclusive - timedelta(days=1)
 
-    weekly_docs = []
+    docs_with_period = []
     for doc in docs:
         start, end = _doc_period(doc)
         if start is None or end is None:
             continue
-        if (end - start).days <= 7:
-            weekly_docs.append((start, end, doc))
+        docs_with_period.append((start, end, doc))
 
     containing = [
-        item for item in weekly_docs
+        item for item in docs_with_period
         if item[0] <= target_start and item[1] >= target_end
     ]
     if containing:
-        selected = max(containing, key=lambda item: (item[1], item[0], _doc_sort_key(item[2])))[2]
+        # Если есть недельный документ и месячный документ, оба покрывают рабочую неделю.
+        # Берём самый узкий период; для апреля это всё равно будет месячный документ,
+        # если отдельного недельного документа в 1С нет.
+        min_days = min((item[1] - item[0]).days for item in containing)
+        candidates = [item for item in containing if (item[1] - item[0]).days == min_days]
+        selected = max(candidates, key=lambda item: (item[1], item[0], _doc_sort_key(item[2])))[2]
         source = "target_work_week_document"
-    elif weekly_docs:
-        selected = max(weekly_docs, key=lambda item: (item[1], item[0], _doc_sort_key(item[2])))[2]
-        source = "latest_week_document"
-    elif docs:
-        selected = max(docs, key=_doc_sort_key)
-        source = "latest_month_document_fallback"
+    elif docs_with_period:
+        selected = max(docs_with_period, key=lambda item: (item[1], item[0], _doc_sort_key(item[2])))[2]
+        source = "latest_period_document_fallback"
     else:
         selected = None
         source = "no_document"
+
+    selected_start, selected_end = _doc_period(selected) if selected else (None, None)
 
     return selected, {
         "selection_source": source,
         "target_week_start": target_start.isoformat(),
         "target_week_end": target_end.isoformat(),
         "documents_count": len(docs),
-        "weekly_documents_count": len(weekly_docs),
+        "documents_with_period_count": len(docs_with_period),
+        "production_dept_key": PRODUCTION_DEPT_KEY[shop],
+        "production_dept_name": PRODUCTION_DEPT_NAME[shop],
+        "selected_number": selected.get("Number") if selected else None,
+        "selected_date": selected.get("Date") if selected else None,
+        "selected_period_from": selected_start.isoformat() if selected_start else None,
+        "selected_period_to": selected_end.isoformat() if selected_end else None,
     }
 
 
@@ -390,10 +404,16 @@ def _row_from_document(
 
     rows = list(doc.get(TABULAR_FIELD) or [])
     plan, fact, fields_debug = _sum_plan_fact_rows(rows, shop, output_period)
-    start, end = _doc_period(doc)
+    doc_start, doc_end = _doc_period(doc)
+    target_start, target_end_exclusive = _target_work_week_bounds(ref_year, ref_month)
+    target_end = target_end_exclusive - timedelta(days=1)
     label = ""
-    if output_period == "week" and start and end:
-        label = f"{start.strftime('%d.%m')}–{end.strftime('%d.%m.%Y')}"
+    week_start = doc_start
+    week_end = doc_end
+    if output_period == "week":
+        week_start = target_start
+        week_end = target_end
+        label = f"{target_start.strftime('%d.%m')}–{target_end.strftime('%d.%m.%Y')}"
     elif output_period == "total":
         label = f"Итого за {MONTH_RU[ref_month].lower()} {ref_year}"
 
@@ -401,8 +421,8 @@ def _row_from_document(
         "year": ref_year,
         "month": ref_month,
         "month_name": MONTH_RU[ref_month].lower(),
-        "week_start": start.isoformat() if start else None,
-        "week_end": end.isoformat() if end else None,
+        "week_start": week_start.isoformat() if week_start else None,
+        "week_end": week_end.isoformat() if week_end else None,
         "label": label,
         "plan": plan,
         "fact": fact,
@@ -417,6 +437,10 @@ def _row_from_document(
         "date": doc.get("Date"),
         "period_from": doc.get("ПериодС"),
         "period_to": doc.get("ПериодПо"),
+        "target_week_start": target_start.isoformat(),
+        "target_week_end": target_end.isoformat(),
+        "production_dept_key": PRODUCTION_DEPT_KEY[shop],
+        "production_dept_name": PRODUCTION_DEPT_NAME[shop],
         "rows": len(rows),
         "plan": plan,
         "fact": fact,

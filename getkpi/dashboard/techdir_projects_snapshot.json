@@ -11,15 +11,15 @@
       "podrazdelenie": "Сервисная служба",
       "status_proekta": "ВРаботе",
       "start_date": "2026-01-23T09:00:00",
-      "finish_date": "2026-06-08T17:00:00",
+      "finish_date": "2026-06-24T09:00:00",
       "baseline_start": "2026-01-23T09:00:00",
       "baseline_finish": "2026-05-29T11:00:00",
       "data_nachala": "2026-01-23",
       "planovaya_data_nachala": "2026-01-23",
       "planovaya_data_okonchaniya": "2026-05-29",
       "data_okonchaniya": "2026-05-29",
-      "overdue_milestones_count": 3,
-      "project_progress_pct": 43.6,
+      "overdue_milestones_count": 0,
+      "project_progress_pct": 50.0,
       "milestone_months": [
         "2026-01",
         "2026-02",
@@ -27,29 +27,8 @@
         "2026-05",
         "2026-06"
       ],
-      "overdue_milestone_months": [
-        "2026-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "ТЗ согласовано",
-          "start_date": "2026-05-13T14:30:00",
-          "finish_date": "2026-05-13T14:30:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "План выполнения согласован, даты назначены",
-          "start_date": "2026-05-13T15:00:00",
-          "finish_date": "2026-05-13T15:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Совет по качеству",
-          "start_date": "2026-05-15T15:00:00",
-          "finish_date": "2026-05-15T15:00:00",
-          "percent_complete": 0.0
-        }
-      ],
+      "overdue_milestone_months": [],
+      "overdue_milestones": [],
       "byudzhet_plan": 0.0,
       "byudzhet_fakt": 0.0
     },
@@ -534,6 +513,79 @@
       "byudzhet_fakt": 94440.0
     },
     {
+      "file_id": 178,
+      "project_name": "Выполнение условий договора № МПГ00012390 от 30.12.25г. (НЭВЗ)",
+      "project_manager": "Гутин Константин Игоревич",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/БМИ/2026/85",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "ВнешнийЗаказ",
+      "podrazdelenie": "Цех БМИ",
+      "status_proekta": "ВРаботе",
+      "start_date": "2025-12-30T09:00:00",
+      "finish_date": "2026-12-30T10:00:00",
+      "baseline_start": "2025-12-30T09:00:00",
+      "baseline_finish": "2026-12-30T12:00:00",
+      "data_nachala": "2025-12-30",
+      "planovaya_data_nachala": "2025-12-30",
+      "planovaya_data_okonchaniya": "2026-12-30",
+      "data_okonchaniya": "2026-12-30",
+      "overdue_milestones_count": 5,
+      "project_progress_pct": 38.9,
+      "milestone_months": [
+        "2025-12",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+        "2026-07",
+        "2026-08",
+        "2026-09",
+        "2026-10",
+        "2026-11",
+        "2026-12"
+      ],
+      "overdue_milestone_months": [
+        "2026-04",
+        "2026-05"
+      ],
+      "overdue_milestones": [
+        {
+          "name": "Поступление товара ",
+          "start_date": "2026-04-13T09:00:00",
+          "finish_date": "2026-04-13T09:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "ТМЦ на складе",
+          "start_date": "2026-04-13T11:00:00",
+          "finish_date": "2026-04-13T11:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "ТТ собран",
+          "start_date": "2026-05-05T09:00:00",
+          "finish_date": "2026-05-05T09:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Завершено",
+          "start_date": "2026-05-13T10:00:00",
+          "finish_date": "2026-05-13T10:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Договор заключен",
+          "start_date": "2026-05-13T17:00:00",
+          "finish_date": "2026-05-13T17:00:00",
+          "percent_complete": 0.0
+        }
+      ],
+      "byudzhet_plan": 6516138.96,
+      "byudzhet_fakt": 339080.0
+    },
+    {
       "file_id": 177,
       "project_name": "Выполнение условий договора № МПГ00012110 от 25.11.25 (ФХП Вуктыл)",
       "project_manager": "Гутин Константин Игоревич",
@@ -671,7 +723,7 @@
       "overdue_milestone_months": [],
       "overdue_milestones": [],
       "byudzhet_plan": 70245802.62,
-      "byudzhet_fakt": 19181.15
+      "byudzhet_fakt": 35277.15
     },
     {
       "file_id": 176,
@@ -795,7 +847,7 @@
       "planovaya_data_nachala": "2024-08-23",
       "planovaya_data_okonchaniya": "2025-03-31",
       "data_okonchaniya": "2026-12-31",
-      "overdue_milestones_count": 0,
+      "overdue_milestones_count": 2,
       "project_progress_pct": 85.1,
       "milestone_months": [
         "2024-08",
@@ -828,8 +880,23 @@
         "2026-11",
         "2026-12"
       ],
-      "overdue_milestone_months": [],
-      "overdue_milestones": [],
+      "overdue_milestone_months": [
+        "2026-05"
+      ],
+      "overdue_milestones": [
+        {
+          "name": "Завершено",
+          "start_date": "2026-05-18T10:00:00",
+          "finish_date": "2026-05-18T10:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Оплата получена",
+          "start_date": "2026-05-18T10:00:00",
+          "finish_date": "2026-05-18T10:00:00",
+          "percent_complete": 0.0
+        }
+      ],
       "byudzhet_plan": 80319524.5,
       "byudzhet_fakt": 178500.0
     },
@@ -909,7 +976,7 @@
       "planovaya_data_nachala": "2024-04-02",
       "planovaya_data_okonchaniya": "2024-08-02",
       "data_okonchaniya": "2026-05-29",
-      "overdue_milestones_count": 0,
+      "overdue_milestones_count": 1,
       "project_progress_pct": 96.4,
       "milestone_months": [
         "2024-04",
@@ -939,8 +1006,17 @@
         "2026-04",
         "2026-05"
       ],
-      "overdue_milestone_months": [],
-      "overdue_milestones": [],
+      "overdue_milestone_months": [
+        "2026-05"
+      ],
+      "overdue_milestones": [
+        {
+          "name": " Монтаж АСУТП и и электрооборудования завершен",
+          "start_date": "2026-05-18T08:00:00",
+          "finish_date": "2026-05-18T08:00:00",
+          "percent_complete": 0.0
+        }
+      ],
       "byudzhet_plan": 14223637.28,
       "byudzhet_fakt": 34160.0
     },
@@ -963,7 +1039,7 @@
       "planovaya_data_okonchaniya": "2026-05-30",
       "data_okonchaniya": "2026-05-30",
       "overdue_milestones_count": 0,
-      "project_progress_pct": 61.8,
+      "project_progress_pct": 65.2,
       "milestone_months": [
         "2026-02",
         "2026-03",
@@ -986,7 +1062,7 @@
       "podrazdelenie": "Сервисная служба",
       "status_proekta": "ВРаботе",
       "start_date": "2026-01-19T08:00:00",
-      "finish_date": "2026-06-29T15:00:00",
+      "finish_date": "2026-06-30T15:00:00",
       "baseline_start": "2026-01-19T08:00:00",
       "baseline_finish": "2026-06-30T12:00:00",
       "data_nachala": "2026-02-17",
@@ -994,7 +1070,7 @@
       "planovaya_data_okonchaniya": "2026-06-30",
       "data_okonchaniya": "2026-06-30",
       "overdue_milestones_count": 0,
-      "project_progress_pct": 53.1,
+      "project_progress_pct": 57.8,
       "milestone_months": [
         "2026-01",
         "2026-02",
@@ -1028,15 +1104,15 @@
         "podrazdelenie": "Сервисная служба",
         "status_proekta": "ВРаботе",
         "start_date": "2026-01-23T09:00:00",
-        "finish_date": "2026-06-08T17:00:00",
+        "finish_date": "2026-06-24T09:00:00",
         "baseline_start": "2026-01-23T09:00:00",
         "baseline_finish": "2026-05-29T11:00:00",
         "data_nachala": "2026-01-23",
         "planovaya_data_nachala": "2026-01-23",
         "planovaya_data_okonchaniya": "2026-05-29",
         "data_okonchaniya": "2026-05-29",
-        "overdue_milestones_count": 3,
-        "project_progress_pct": 43.6,
+        "overdue_milestones_count": 0,
+        "project_progress_pct": 50.0,
         "milestone_months": [
           "2026-01",
           "2026-02",
@@ -1044,29 +1120,8 @@
           "2026-05",
           "2026-06"
         ],
-        "overdue_milestone_months": [
-          "2026-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "ТЗ согласовано",
-            "start_date": "2026-05-13T14:30:00",
-            "finish_date": "2026-05-13T14:30:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "План выполнения согласован, даты назначены",
-            "start_date": "2026-05-13T15:00:00",
-            "finish_date": "2026-05-13T15:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Совет по качеству",
-            "start_date": "2026-05-15T15:00:00",
-            "finish_date": "2026-05-15T15:00:00",
-            "percent_complete": 0.0
-          }
-        ],
+        "overdue_milestone_months": [],
+        "overdue_milestones": [],
         "byudzhet_plan": 0.0,
         "byudzhet_fakt": 0.0
       },
@@ -1551,6 +1606,79 @@
         "byudzhet_fakt": 94440.0
       },
       {
+        "file_id": 178,
+        "project_name": "Выполнение условий договора № МПГ00012390 от 30.12.25г. (НЭВЗ)",
+        "project_manager": "Гутин Константин Игоревич",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/БМИ/2026/85",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "ВнешнийЗаказ",
+        "podrazdelenie": "Цех БМИ",
+        "status_proekta": "ВРаботе",
+        "start_date": "2025-12-30T09:00:00",
+        "finish_date": "2026-12-30T10:00:00",
+        "baseline_start": "2025-12-30T09:00:00",
+        "baseline_finish": "2026-12-30T12:00:00",
+        "data_nachala": "2025-12-30",
+        "planovaya_data_nachala": "2025-12-30",
+        "planovaya_data_okonchaniya": "2026-12-30",
+        "data_okonchaniya": "2026-12-30",
+        "overdue_milestones_count": 5,
+        "project_progress_pct": 38.9,
+        "milestone_months": [
+          "2025-12",
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08",
+          "2026-09",
+          "2026-10",
+          "2026-11",
+          "2026-12"
+        ],
+        "overdue_milestone_months": [
+          "2026-04",
+          "2026-05"
+        ],
+        "overdue_milestones": [
+          {
+            "name": "Поступление товара ",
+            "start_date": "2026-04-13T09:00:00",
+            "finish_date": "2026-04-13T09:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "ТМЦ на складе",
+            "start_date": "2026-04-13T11:00:00",
+            "finish_date": "2026-04-13T11:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "ТТ собран",
+            "start_date": "2026-05-05T09:00:00",
+            "finish_date": "2026-05-05T09:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Завершено",
+            "start_date": "2026-05-13T10:00:00",
+            "finish_date": "2026-05-13T10:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Договор заключен",
+            "start_date": "2026-05-13T17:00:00",
+            "finish_date": "2026-05-13T17:00:00",
+            "percent_complete": 0.0
+          }
+        ],
+        "byudzhet_plan": 6516138.96,
+        "byudzhet_fakt": 339080.0
+      },
+      {
         "file_id": 177,
         "project_name": "Выполнение условий договора № МПГ00012110 от 25.11.25 (ФХП Вуктыл)",
         "project_manager": "Гутин Константин Игоревич",
@@ -1688,7 +1816,7 @@
         "overdue_milestone_months": [],
         "overdue_milestones": [],
         "byudzhet_plan": 70245802.62,
-        "byudzhet_fakt": 19181.15
+        "byudzhet_fakt": 35277.15
       },
       {
         "file_id": 176,
@@ -1812,7 +1940,7 @@
         "planovaya_data_nachala": "2024-08-23",
         "planovaya_data_okonchaniya": "2025-03-31",
         "data_okonchaniya": "2026-12-31",
-        "overdue_milestones_count": 0,
+        "overdue_milestones_count": 2,
         "project_progress_pct": 85.1,
         "milestone_months": [
           "2024-08",
@@ -1845,8 +1973,23 @@
           "2026-11",
           "2026-12"
         ],
-        "overdue_milestone_months": [],
-        "overdue_milestones": [],
+        "overdue_milestone_months": [
+          "2026-05"
+        ],
+        "overdue_milestones": [
+          {
+            "name": "Завершено",
+            "start_date": "2026-05-18T10:00:00",
+            "finish_date": "2026-05-18T10:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Оплата получена",
+            "start_date": "2026-05-18T10:00:00",
+            "finish_date": "2026-05-18T10:00:00",
+            "percent_complete": 0.0
+          }
+        ],
         "byudzhet_plan": 80319524.5,
         "byudzhet_fakt": 178500.0
       },
@@ -1926,7 +2069,7 @@
         "planovaya_data_nachala": "2024-04-02",
         "planovaya_data_okonchaniya": "2024-08-02",
         "data_okonchaniya": "2026-05-29",
-        "overdue_milestones_count": 0,
+        "overdue_milestones_count": 1,
         "project_progress_pct": 96.4,
         "milestone_months": [
           "2024-04",
@@ -1956,8 +2099,17 @@
           "2026-04",
           "2026-05"
         ],
-        "overdue_milestone_months": [],
-        "overdue_milestones": [],
+        "overdue_milestone_months": [
+          "2026-05"
+        ],
+        "overdue_milestones": [
+          {
+            "name": " Монтаж АСУТП и и электрооборудования завершен",
+            "start_date": "2026-05-18T08:00:00",
+            "finish_date": "2026-05-18T08:00:00",
+            "percent_complete": 0.0
+          }
+        ],
         "byudzhet_plan": 14223637.28,
         "byudzhet_fakt": 34160.0
       },
@@ -1980,7 +2132,7 @@
         "planovaya_data_okonchaniya": "2026-05-30",
         "data_okonchaniya": "2026-05-30",
         "overdue_milestones_count": 0,
-        "project_progress_pct": 61.8,
+        "project_progress_pct": 65.2,
         "milestone_months": [
           "2026-02",
           "2026-03",
@@ -2003,7 +2155,7 @@
         "podrazdelenie": "Сервисная служба",
         "status_proekta": "ВРаботе",
         "start_date": "2026-01-19T08:00:00",
-        "finish_date": "2026-06-29T15:00:00",
+        "finish_date": "2026-06-30T15:00:00",
         "baseline_start": "2026-01-19T08:00:00",
         "baseline_finish": "2026-06-30T12:00:00",
         "data_nachala": "2026-02-17",
@@ -2011,7 +2163,7 @@
         "planovaya_data_okonchaniya": "2026-06-30",
         "data_okonchaniya": "2026-06-30",
         "overdue_milestones_count": 0,
-        "project_progress_pct": 53.1,
+        "project_progress_pct": 57.8,
         "milestone_months": [
           "2026-01",
           "2026-02",
@@ -2026,7 +2178,7 @@
       }
     ]
   },
-  "cache_date": "2026-05-18",
+  "cache_date": "2026-05-19",
   "cache_version": 13,
   "od_overdue_milestones_schema": "zero_duration_milestones_v1"
 }

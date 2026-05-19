@@ -55,7 +55,7 @@ CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 # Маркер версии кэша. Меняй при изменении формулы расчёта, чтобы
 # пересобрать кэш на сервере при первом запросе.
 SOURCE_TAG = "supplier_balance_month_delta_v2"
-DETAIL_SOURCE_TAG = "supplier_dz_detail_by_object_v2"
+DETAIL_SOURCE_TAG = "supplier_debt_stable_2_full_months_v3"
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -176,6 +176,147 @@ def _load_supplier_balance(session: requests.Session, na_datu: date) -> list[dic
     return _fetch_all(session, url, label="KZ/Balance")
 
 
+def _load_supplier_document_balance(session: requests.Session, na_datu: date) -> list[dict]:
+    """Balance регистра РасчетыСПоставщикамиПоДокументам на конец даты."""
+    period_iso = f"{(na_datu + timedelta(days=1)).isoformat()}T00:00:00"
+    url = (
+        f"{BASE}/AccumulationRegister_РасчетыСПоставщикамиПоДокументам/Balance"
+        f"?$format=json"
+        f"&Period=datetime'{period_iso}'"
+        f"&$select=АналитикаУчетаПоПартнерам_Key,ЗаказПоставщику_Key,"
+        f"РасчетныйДокумент,РасчетныйДокумент_Type,Валюта_Key,ДолгРеглBalance,ПредоплатаРеглBalance"
+    )
+    return _fetch_all(session, url, label="KZ/DocumentBalance")
+
+
+def _two_full_month_window(na_datu: date) -> tuple[date, date]:
+    """Два полных календарных месяца перед месяцем даты среза: [start, end)."""
+    end = date(na_datu.year, na_datu.month, 1)
+    month = end.month - 2
+    year = end.year
+    while month <= 0:
+        month += 12
+        year -= 1
+    return date(year, month, 1), end
+
+
+def _balance_by_object(
+    rows: list[dict],
+    allowed_obj_keys: set[str],
+    *,
+    resource: str = "ДолгРеглBalance",
+) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for row in rows:
+        obj_key = str(row.get("ОбъектРасчетов_Key") or EMPTY).lower()
+        if obj_key not in allowed_obj_keys:
+            continue
+        value = float(row.get(resource) or 0)
+        if abs(value) <= TOLERANCE:
+            continue
+        result[obj_key] = round(result.get(obj_key, 0.0) + value, 2)
+    return result
+
+
+def _load_supplier_debt_movements_by_object(
+    session: requests.Session,
+    start: date,
+    end: date,
+    allowed_obj_keys: set[str],
+) -> dict[str, dict]:
+    """Обороты ДолгРегл по объектам расчётов за период [start, end)."""
+    flt = (
+        "Active eq true"
+        f" and Period ge datetime'{start.isoformat()}T00:00:00'"
+        f" and Period lt datetime'{end.isoformat()}T00:00:00'"
+    )
+    url = (
+        f"{BASE}/{REGISTER}_RecordType?$format=json"
+        f"&$select=Period,RecordType,Recorder,Recorder_Type,ОбъектРасчетов_Key,РасчетныйДокумент,"
+        f"РасчетныйДокумент_Type,ДолгРегл,ПредоплатаРегл"
+        f"&$filter={quote(flt, safe='')}"
+    )
+    rows = _fetch_all(session, url, label="KZ/ObjectMovements")
+    result: dict[str, dict] = {}
+    for row in rows:
+        obj_key = str(row.get("ОбъектРасчетов_Key") or EMPTY).lower()
+        if obj_key not in allowed_obj_keys:
+            continue
+        dolg = float(row.get("ДолгРегл") or 0)
+        if abs(dolg) <= TOLERANCE:
+            continue
+        item = result.setdefault(obj_key, {
+            "turnover_abs": 0.0,
+            "turnover_signed": 0.0,
+            "records": 0,
+            "sample": [],
+        })
+        item["turnover_abs"] += abs(dolg)
+        item["turnover_signed"] += dolg
+        item["records"] += 1
+        if len(item["sample"]) < 3:
+            item["sample"].append({
+                "period": str(row.get("Period") or "")[:10],
+                "record_type": row.get("RecordType"),
+                "recorder": row.get("Recorder"),
+                "recorder_type": row.get("Recorder_Type"),
+                "dolg_regl": round(dolg, 2),
+            })
+    for item in result.values():
+        item["turnover_abs"] = round(float(item.get("turnover_abs") or 0), 2)
+        item["turnover_signed"] = round(float(item.get("turnover_signed") or 0), 2)
+    return result
+
+
+def _load_supplier_debt_movements_by_document(
+    session: requests.Session,
+    start: date,
+    end: date,
+) -> dict[str, dict]:
+    """Обороты ДолгРегл по расчетным документам за период [start, end)."""
+    flt = (
+        "Active eq true"
+        f" and Period ge datetime'{start.isoformat()}T00:00:00'"
+        f" and Period lt datetime'{end.isoformat()}T00:00:00'"
+    )
+    url = (
+        f"{BASE}/AccumulationRegister_РасчетыСПоставщикамиПоДокументам_RecordType?$format=json"
+        f"&$select=Period,RecordType,Recorder,Recorder_Type,ЗаказПоставщику_Key,"
+        f"РасчетныйДокумент,РасчетныйДокумент_Type,ДолгРегл,ПредоплатаРегл"
+        f"&$filter={quote(flt, safe='')}"
+    )
+    rows = _fetch_all(session, url, label="KZ/DocumentMovements")
+    result: dict[str, dict] = {}
+    for row in rows:
+        doc_key = str(row.get("РасчетныйДокумент") or row.get("ЗаказПоставщику_Key") or EMPTY).lower()
+        if doc_key == EMPTY:
+            continue
+        dolg = float(row.get("ДолгРегл") or 0)
+        if abs(dolg) <= TOLERANCE:
+            continue
+        item = result.setdefault(doc_key, {
+            "turnover_abs": 0.0,
+            "turnover_signed": 0.0,
+            "records": 0,
+            "sample": [],
+        })
+        item["turnover_abs"] += abs(dolg)
+        item["turnover_signed"] += dolg
+        item["records"] += 1
+        if len(item["sample"]) < 3:
+            item["sample"].append({
+                "period": str(row.get("Period") or "")[:10],
+                "record_type": row.get("RecordType"),
+                "recorder": row.get("Recorder"),
+                "recorder_type": row.get("Recorder_Type"),
+                "dolg_regl": round(dolg, 2),
+            })
+    for item in result.values():
+        item["turnover_abs"] = round(float(item.get("turnover_abs") or 0), 2)
+        item["turnover_signed"] = round(float(item.get("turnover_signed") or 0), 2)
+    return result
+
+
 def _aggregate_balance_rows(rows: list[dict], allowed_obj_keys: set[str]) -> tuple[float, float]:
     total_kz = 0.0
     total_dz = 0.0
@@ -269,7 +410,7 @@ def get_supplier_snapshot(na_datu: date) -> dict:
 
 
 def get_supplier_dz_detail(na_datu: date) -> dict:
-    """Детализация ДЗ поставщиков на дату в разрезе объектов расчётов."""
+    """Наш долг поставщикам на дату: долг > 0 без оборота за 2 полных месяца."""
     cache_path = _cache_path_dz_detail(na_datu)
     cached = _load_json(cache_path)
     if cached is not None and cached.get("source") == DETAIL_SOURCE_TAG:
@@ -280,17 +421,44 @@ def get_supplier_dz_detail(na_datu: date) -> dict:
     logger.info("calc_postavshchiki: supplier DZ detail for %s", na_datu.isoformat())
 
     obj_map = _load_supplier_obj_map(session)
+    allowed_obj_keys = set(obj_map)
+    window_start, window_end = _two_full_month_window(na_datu)
     balance_rows = _load_supplier_balance(session, na_datu)
+    start_balance_rows = _load_supplier_balance(session, window_start - timedelta(days=1))
+    end_balance_rows = _load_supplier_balance(session, window_end - timedelta(days=1))
+    document_balance_rows = _load_supplier_document_balance(session, na_datu)
+    object_movements = _load_supplier_debt_movements_by_object(
+        session,
+        window_start,
+        window_end,
+        allowed_obj_keys,
+    )
+    document_movements = _load_supplier_debt_movements_by_document(session, window_start, window_end)
+
+    current_debt = _balance_by_object(balance_rows, allowed_obj_keys, resource="ДолгРеглBalance")
+    start_debt = _balance_by_object(start_balance_rows, allowed_obj_keys, resource="ДолгРеглBalance")
+    end_debt = _balance_by_object(end_balance_rows, allowed_obj_keys, resource="ДолгРеглBalance")
 
     by_object: dict[str, dict] = {}
     partner_keys: set[str] = set()
-    for row in balance_rows:
-        obj_key = str(row.get("ОбъектРасчетов_Key") or EMPTY).lower()
+    excluded_positive = 0
+    for obj_key, amount in current_debt.items():
         obj = obj_map.get(obj_key)
         if not obj:
             continue
-        amount = float(row.get("ПредоплатаРеглBalance") or 0)
         if amount <= TOLERANCE:
+            continue
+        start_amount = start_debt.get(obj_key, 0.0)
+        end_amount = end_debt.get(obj_key, 0.0)
+        movement = object_movements.get(obj_key) or {}
+        turnover_abs = float(movement.get("turnover_abs") or 0)
+        balance_unchanged = (
+            abs(start_amount - end_amount) <= TOLERANCE
+            and abs(end_amount - amount) <= TOLERANCE
+        )
+        no_turnover = turnover_abs <= TOLERANCE
+        if not (balance_unchanged and no_turnover):
+            excluded_positive += 1
             continue
         partner_key = obj.get("partner_key") or EMPTY
         item = by_object.setdefault(obj_key, {
@@ -301,6 +469,10 @@ def get_supplier_dz_detail(na_datu: date) -> dict:
             "supplier_key": partner_key if partner_key != EMPTY else "",
             "supplier": obj.get("description") or partner_key[:8] or obj_key[:8],
             "amount": 0.0,
+            "balance_start": start_amount,
+            "balance_window_end": end_amount,
+            "turnover_2_full_months": turnover_abs,
+            "movement_records": int(movement.get("records") or 0),
         })
         item["amount"] += amount
         if partner_key and partner_key != EMPTY:
@@ -319,13 +491,72 @@ def get_supplier_dz_detail(na_datu: date) -> dict:
             "supplier_key": supplier_key,
             "supplier": supplier_name,
             "amount": round(float(item.get("amount") or 0), 2),
+            "balance_start": round(float(item.get("balance_start") or 0), 2),
+            "balance_window_end": round(float(item.get("balance_window_end") or 0), 2),
+            "turnover_2_full_months": round(float(item.get("turnover_2_full_months") or 0), 2),
+            "movement_records": int(item.get("movement_records") or 0),
+            "stability_window_start": window_start.isoformat(),
+            "stability_window_end": (window_end - timedelta(days=1)).isoformat(),
         })
     rows.sort(key=lambda entry: (-float(entry.get("amount") or 0), str(entry.get("supplier") or "")))
+
+    register_total_debt = round(sum(current_debt.values()), 2)
+    document_total_debt = round(sum(
+        float(row.get("ДолгРеглBalance") or 0)
+        for row in document_balance_rows
+        if float(row.get("ДолгРеглBalance") or 0) > TOLERANCE
+    ), 2)
+    included_total = round(sum(float(row.get("amount") or 0) for row in rows), 2)
 
     payload = {
         "na_datu": na_datu.isoformat(),
         "source": DETAIL_SOURCE_TAG,
-        "total_predoplata_regl": round(sum(float(row.get("amount") or 0) for row in rows), 2),
+        "source_register": f"{REGISTER}/Balance",
+        "source_document_register": "AccumulationRegister_РасчетыСПоставщикамиПоДокументам/Balance",
+        "resource": "ДолгРегл",
+        "stability_window": {
+            "start": window_start.isoformat(),
+            "end_exclusive": window_end.isoformat(),
+            "label": f"{window_start.isoformat()}..{(window_end - timedelta(days=1)).isoformat()}",
+        },
+        "total_dolg_regl": included_total,
+        # Оставляем старый ключ как alias для совместимости фронта/кэшей.
+        "total_predoplata_regl": included_total,
+        "verification": {
+            "report_like_register": f"{REGISTER}/Balance",
+            "document_register": "AccumulationRegister_РасчетыСПоставщикамиПоДокументам",
+            "movement_register": f"{REGISTER}_RecordType",
+            "resource": "ДолгРегл",
+            "current_positive_objects": len(current_debt),
+            "included_stable_objects": len(rows),
+            "excluded_positive_objects": excluded_positive,
+            "register_total_dolg_regl_positive": register_total_debt,
+            "document_register_total_dolg_regl_positive": document_total_debt,
+            "included_total_dolg_regl": included_total,
+            "object_movement_keys_with_turnover": len(object_movements),
+            "document_movement_keys_with_turnover": len(document_movements),
+            "rules": [
+                "ДолгРеглBalance > 0 на дату среза",
+                "ПредоплатаРеглBalance не включается",
+                "по объекту расчётов за два полных календарных месяца до даты среза оборот ДолгРегл = 0",
+                "остаток ДолгРегл на начало окна, конец окна и дату среза не менялся",
+            ],
+        },
+        "query_protocol": {
+            "balance": (
+                f"{REGISTER}/Balance Period={(na_datu + timedelta(days=1)).isoformat()}T00:00:00; "
+                "select ОбъектРасчетов_Key, ДолгРеглBalance, ПредоплатаРеглBalance"
+            ),
+            "movements": (
+                f"{REGISTER}_RecordType Period >= {window_start.isoformat()} and Period < {window_end.isoformat()}; "
+                "select ОбъектРасчетов_Key, РасчетныйДокумент, ДолгРегл, ПредоплатаРегл"
+            ),
+            "document_movements": (
+                "AccumulationRegister_РасчетыСПоставщикамиПоДокументам_RecordType "
+                f"Period >= {window_start.isoformat()} and Period < {window_end.isoformat()}; "
+                "select РасчетныйДокумент, ЗаказПоставщику_Key, ДолгРегл, ПредоплатаРегл"
+            ),
+        },
         "rows": rows,
     }
     _save_json(cache_path, payload)
