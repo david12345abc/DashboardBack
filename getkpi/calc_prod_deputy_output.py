@@ -16,7 +16,7 @@ from .calc_fot_management import MONTH_RU, _normalize_period
 ShopKey = Literal["pc1", "pc2"]
 OutputPeriod = Literal["month", "week", "total"]
 
-SOURCE_TAG = "prod_deputy_output_production_plan_doc_v7_last_week_doc"
+SOURCE_TAG = "prod_deputy_output_production_plan_doc_v9_single_doc_period_fields"
 DOC_ENTITY = "Document_ТД_ПроизводственныйПлан"
 TABULAR_FIELD = "ВыполнениеПроизводственногоПлана"
 
@@ -38,6 +38,33 @@ PLAN_FIELD: dict[ShopKey, str] = {
 BASE_FACT_FIELD: dict[ShopKey, str] = {
     "pc1": "ФактРуб",
     "pc2": "ФактШт",
+}
+
+PERIOD_FIELDS: dict[OutputPeriod, dict[str, dict[ShopKey, str]]] = {
+    "week": {
+        "plan": PLAN_FIELD,
+        "fact": BASE_FACT_FIELD,
+    },
+    "month": {
+        "plan": {
+            "pc1": "ПланРубМесяц",
+            "pc2": "ПланШтМесяц",
+        },
+        "fact": {
+            "pc1": "ФактРубМесяц",
+            "pc2": "ФактШтМесяц",
+        },
+    },
+    "total": {
+        "plan": {
+            "pc1": "ПланРубИтого",
+            "pc2": "ПланШтИтого",
+        },
+        "fact": {
+            "pc1": "ФактРубИтого",
+            "pc2": "ФактШтИтого",
+        },
+    },
 }
 
 
@@ -62,7 +89,9 @@ def _save_json(path: Path, payload: dict) -> None:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
-def _kpi_pct(plan: float, fact: float) -> float | None:
+def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
+    if plan is None or fact is None:
+        return None
     return round(fact / plan * 100, 1) if plan > 0 else None
 
 
@@ -84,19 +113,31 @@ def _date_from_odata(value) -> date | None:
         return None
 
 
-def _sum_plan_fact_rows(rows: list[dict], shop: ShopKey) -> tuple[float, float, dict]:
-    plan_field = PLAN_FIELD[shop]
-    fact_field = BASE_FACT_FIELD[shop]
+def _sum_plan_fact_rows(
+    rows: list[dict],
+    shop: ShopKey,
+    output_period: OutputPeriod = "week",
+) -> tuple[float | None, float | None, dict]:
+    field_group = PERIOD_FIELDS.get(output_period) or PERIOD_FIELDS["week"]
+    plan_field = field_group["plan"][shop]
+    fact_field = field_group["fact"][shop]
     plan = 0.0
     fact = 0.0
     for row in rows:
         plan += _to_float(row.get(plan_field))
         fact += _to_float(row.get(fact_field))
-    return round(plan, 2), round(fact, 2), {
-        "plan_field": plan_field,
-        "fact_field": fact_field,
-        "rows": len(rows),
-    }
+    has_values = abs(plan) > 0.01 or abs(fact) > 0.01
+    return (
+        round(plan, 2) if has_values else None,
+        round(fact, 2) if has_values else None,
+        {
+            "plan_field": plan_field,
+            "fact_field": fact_field,
+            "rows": len(rows),
+            "has_values": has_values,
+            "output_period": output_period,
+        },
+    )
 
 
 def _period_bounds(year: int, month: int) -> tuple[str, str]:
@@ -219,8 +260,8 @@ def _period_totals_from_production_plan(
     for doc in docs:
         rows = list(doc.get(TABULAR_FIELD) or [])
         doc_plan, doc_fact, fields_debug = _sum_plan_fact_rows(rows, shop)
-        plan_total += doc_plan
-        fact_total += doc_fact
+        plan_total += float(doc_plan or 0)
+        fact_total += float(doc_fact or 0)
 
         doc_debug.append({
             "number": doc.get("Number"),
@@ -249,6 +290,139 @@ def _last_week_bounds(ref_year: int, ref_month: int) -> tuple[date, date]:
     month_end = date(ref_year, ref_month, monthrange(ref_year, ref_month)[1])
     week_start = max(month_start, month_end - timedelta(days=7))
     return week_start, month_end + timedelta(days=1)
+
+
+def _target_work_week_bounds(ref_year: int, ref_month: int) -> tuple[date, date]:
+    """Рабочая неделя Пн-Пт: для текущего месяца предыдущая, для прошлого — последняя в месяце."""
+    today = date.today()
+    if ref_year == today.year and ref_month == today.month:
+        current_monday = today - timedelta(days=today.weekday())
+        monday = current_monday - timedelta(days=7)
+        friday = monday + timedelta(days=4)
+        return monday, friday + timedelta(days=1)
+
+    month_end = date(ref_year, ref_month, monthrange(ref_year, ref_month)[1])
+    friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
+    monday = friday - timedelta(days=4)
+    month_start = date(ref_year, ref_month, 1)
+    if monday < month_start:
+        monday = month_start
+    return monday, friday + timedelta(days=1)
+
+
+def _doc_period(doc: dict) -> tuple[date | None, date | None]:
+    return _date_from_odata(doc.get("ПериодС")), _date_from_odata(doc.get("ПериодПо"))
+
+
+def _doc_sort_key(doc: dict) -> tuple[str, str, str]:
+    return (
+        str(doc.get("ПериодПо") or ""),
+        str(doc.get("Date") or ""),
+        str(doc.get("Number") or ""),
+    )
+
+
+def _select_production_plan_doc(
+    session: requests.Session,
+    shop: ShopKey,
+    ref_year: int,
+    ref_month: int,
+) -> tuple[dict | None, dict]:
+    docs = _load_month_docs(session, shop, ref_year, ref_month)
+    target_start, target_end_exclusive = _target_work_week_bounds(ref_year, ref_month)
+    target_end = target_end_exclusive - timedelta(days=1)
+
+    weekly_docs = []
+    for doc in docs:
+        start, end = _doc_period(doc)
+        if start is None or end is None:
+            continue
+        if (end - start).days <= 7:
+            weekly_docs.append((start, end, doc))
+
+    containing = [
+        item for item in weekly_docs
+        if item[0] <= target_start and item[1] >= target_end
+    ]
+    if containing:
+        selected = max(containing, key=lambda item: (item[1], item[0], _doc_sort_key(item[2])))[2]
+        source = "target_work_week_document"
+    elif weekly_docs:
+        selected = max(weekly_docs, key=lambda item: (item[1], item[0], _doc_sort_key(item[2])))[2]
+        source = "latest_week_document"
+    elif docs:
+        selected = max(docs, key=_doc_sort_key)
+        source = "latest_month_document_fallback"
+    else:
+        selected = None
+        source = "no_document"
+
+    return selected, {
+        "selection_source": source,
+        "target_week_start": target_start.isoformat(),
+        "target_week_end": target_end.isoformat(),
+        "documents_count": len(docs),
+        "weekly_documents_count": len(weekly_docs),
+    }
+
+
+def _row_from_document(
+    doc: dict | None,
+    shop: ShopKey,
+    output_period: OutputPeriod,
+    *,
+    ref_year: int,
+    ref_month: int,
+    unit: str,
+) -> tuple[dict, dict]:
+    if not doc:
+        row = {
+            "year": ref_year,
+            "month": ref_month,
+            "month_name": MONTH_RU[ref_month].lower(),
+            "plan": None,
+            "fact": None,
+            "kpi_pct": None,
+            "has_data": False,
+            "values_unit": unit,
+        }
+        return row, {"documents_count": 0, "output_period": output_period}
+
+    rows = list(doc.get(TABULAR_FIELD) or [])
+    plan, fact, fields_debug = _sum_plan_fact_rows(rows, shop, output_period)
+    start, end = _doc_period(doc)
+    label = ""
+    if output_period == "week" and start and end:
+        label = f"{start.strftime('%d.%m')}–{end.strftime('%d.%m.%Y')}"
+    elif output_period == "total":
+        label = f"Итого за {MONTH_RU[ref_month].lower()} {ref_year}"
+
+    row = {
+        "year": ref_year,
+        "month": ref_month,
+        "month_name": MONTH_RU[ref_month].lower(),
+        "week_start": start.isoformat() if start else None,
+        "week_end": end.isoformat() if end else None,
+        "label": label,
+        "plan": plan,
+        "fact": fact,
+        "kpi_pct": _kpi_pct(plan, fact),
+        "has_data": plan is not None or fact is not None,
+        "values_unit": unit,
+    }
+    debug = {
+        "documents_count": 1,
+        "output_period": output_period,
+        "number": doc.get("Number"),
+        "date": doc.get("Date"),
+        "period_from": doc.get("ПериодС"),
+        "period_to": doc.get("ПериодПо"),
+        "rows": len(rows),
+        "plan": plan,
+        "fact": fact,
+        "fields": fields_debug,
+    }
+    return row, debug
 
 
 def _latest_document_week_totals(
@@ -289,8 +463,8 @@ def _latest_document_week_totals(
             continue
         rows = list(doc.get(TABULAR_FIELD) or [])
         doc_plan, doc_fact, fields_debug = _sum_plan_fact_rows(rows, shop)
-        plan_total += doc_plan
-        fact_total += doc_fact
+        plan_total += float(doc_plan or 0)
+        fact_total += float(doc_fact or 0)
         doc_debug.append({
             "number": doc.get("Number"),
             "date": doc.get("Date"),
@@ -548,75 +722,38 @@ def get_prod_deputy_output_period(
     year: int | None = None,
     month: int | None = None,
 ) -> dict:
-    data = get_prod_deputy_output_monthly(shop, year=year, month=month)
     period = period if period in {"month", "week", "total"} else "month"
+    ref_year, ref_month = _normalize_period(year, month)
     unit = VALUES_UNIT[shop]
 
-    if period == "week":
-        row = dict(data.get("last_week_row") or {})
-        return {
-            **data,
-            "period_type": "week",
-            "selected_row": row,
-            "last_full_month_row": row,
-            "monthly_data": [],
-            "quarterly_data": [],
-            "yearly_data": [],
-            "ytd": {
-                "total_plan": row.get("plan"),
-                "total_fact": row.get("fact"),
-                "kpi_pct": row.get("kpi_pct"),
-                "months_with_data": 1 if row.get("has_data") else 0,
-                "months_total": 1,
-                "values_unit": unit,
-            },
-            "kpi_period": {
-                "type": "last_week",
-                "label": row.get("label"),
-                "week_start": row.get("week_start"),
-                "week_end": row.get("week_end"),
-            },
-        }
+    data = get_prod_deputy_output_monthly(shop, year=ref_year, month=ref_month)
+    session = requests.Session()
+    session.auth = AUTH
+    selected_doc, selection_debug = _select_production_plan_doc(session, shop, ref_year, ref_month)
+    row, row_debug = _row_from_document(
+        selected_doc,
+        shop,
+        period,
+        ref_year=ref_year,
+        ref_month=ref_month,
+        unit=unit,
+    )
 
-    if period == "total":
-        ytd = dict(data.get("ytd") or {})
-        selected_month = dict(data.get("last_full_month_row") or {})
-        total_plan = selected_month.get("plan")
-        total_fact = selected_month.get("fact")
-        row = {
-            "year": data.get("year"),
-            "month": data.get("ref_month"),
-            "label": f"Итого за {MONTH_RU[data.get('ref_month')].lower()} {data.get('year')}",
-            "plan": total_plan,
-            "fact": total_fact,
-            "kpi_pct": _kpi_pct(float(total_plan or 0), float(total_fact or 0)),
-            "has_data": total_plan is not None or total_fact is not None,
-            "values_unit": unit,
-        }
-        return {
-            **data,
-            "period_type": "total",
-            "selected_row": row,
-            "last_full_month_row": row,
-            "ytd": {
-                **ytd,
-                "total_plan": row.get("plan"),
-                "total_fact": row.get("fact"),
-                "kpi_pct": row.get("kpi_pct"),
-                "values_unit": unit,
-            },
-            "kpi_period": {
-                "type": "ytd",
-                "year": data.get("year"),
-                "month": data.get("ref_month"),
-            },
-        }
+    kpi_period = {
+        "type": "last_week" if period == "week" else ("ytd" if period == "total" else "current_month"),
+        "year": ref_year,
+        "month": ref_month,
+        "month_name": MONTH_RU[ref_month].lower(),
+        "label": row.get("label"),
+        "week_start": row.get("week_start"),
+        "week_end": row.get("week_end"),
+    }
 
-    row = dict(data.get("last_full_month_row") or {})
     return {
         **data,
-        "period_type": "month",
+        "period_type": period,
         "selected_row": row,
+        "last_full_month_row": row,
         "ytd": {
             "total_plan": row.get("plan"),
             "total_fact": row.get("fact"),
@@ -624,6 +761,12 @@ def get_prod_deputy_output_period(
             "months_with_data": 1 if row.get("has_data") else 0,
             "months_total": 1,
             "values_unit": unit,
+        },
+        "kpi_period": kpi_period,
+        "debug": {
+            **(data.get("debug") or {}),
+            "selected_document": selection_debug,
+            "selected_row": row_debug,
         },
     }
 

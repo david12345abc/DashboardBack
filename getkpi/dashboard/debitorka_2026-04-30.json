@@ -1,7 +1,7 @@
 {
   "na_datu": "2026-04-30",
   "dept_alias_source": "commercial_department_aliases_v2",
-  "total_dz": 331613308.62,
+  "total_dz": 348068202.21,
   "total_kz": 229124695.2,
   "total_overdue": 147402663.66,
   "kz_source": "predoplata_upr",
@@ -29,7 +29,7 @@
       }
     },
     "Отдел ПАО Газпром": {
-      "dz": 124410855.55,
+      "dz": 140865749.14,
       "kz": 42833285.48,
       "overdue": 43500000.0,
       "aging": {
