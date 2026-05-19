@@ -2554,6 +2554,29 @@ def _build_kpi_entry(
             entry['debug'] = data.get('debug')
             return entry
 
+    if kpi_id in {'МЕТ-M1', 'METD-M1'}:
+        from . import calc_metrolog_production_plan
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'metrolog_production_plan_{ref_y}_{ref_m}',
+            calc_metrolog_production_plan.get_metrolog_production_plan_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            entry['debug'] = data.get('debug')
+            return entry
+
     if kpi_id == 'METD-Q3':
         if year and month:
             ref_y, ref_m = year, month
