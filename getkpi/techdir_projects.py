@@ -14,6 +14,7 @@ from typing import Any
 import requests
 
 from . import cache_manager
+from . import fot_vneshnie_zakazy as fot_excel
 from .kpi_periods import last_full_quarter, quarter_month_tuples
 from .list_enterprise_positions import employees_by_position
 from .turboproject_config import API_BASE as TURBO_CFG_API_BASE, EMAIL as TURBO_CFG_EMAIL, PASSWORD as TURBO_CFG_PASSWORD
@@ -735,8 +736,225 @@ def _build_td_m5_quarter_combination_aggregates(
     return rows
 
 
-def _build_td_m5_budget_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
-    """Помесячные суммы плана (byudzhet_plan) и факта (byudzhet_fakt) по проектам внешних заказов техдира (как TD-M1)."""
+def _build_td_m5_period_row_from_excel(
+    monthly_totals: dict[int, dict[str, float | None]],
+    year: int,
+    month_numbers: list[int],
+    *,
+    period_type: str,
+    label: str,
+    start_month: int | None = None,
+    end_month: int | None = None,
+    selected_quarters: list[int] | None = None,
+) -> dict[str, Any]:
+    """Сумма строки «Итого» Excel по перечню месяцев (для кнопок периода на плитке)."""
+    plan_sum = 0.0
+    fact_sum = 0.0
+    has_plan = False
+    has_fact = False
+    months_with_values = 0
+
+    for month in month_numbers:
+        values = monthly_totals.get(month) or {}
+        plan = values.get("plan")
+        fact = values.get("fact")
+        if plan is not None:
+            plan_sum += plan
+            has_plan = True
+        if fact is not None:
+            fact_sum += fact
+            has_fact = True
+        if plan is not None or fact is not None:
+            months_with_values += 1
+
+    plan_sum = round(plan_sum, 2)
+    fact_sum = round(fact_sum, 2)
+    has_data = has_plan or has_fact
+    return {
+        "period_type": period_type,
+        "year": year,
+        "start_month": start_month,
+        "end_month": end_month,
+        "ranges": [{"year": year, "start_month": m, "end_month": m} for m in month_numbers],
+        "selected_quarters": selected_quarters,
+        "label": label,
+        "plan": plan_sum if has_data else None,
+        "fact": fact_sum if has_data else None,
+        "kpi_pct": _td_m5_plan_fact_kpi_pct(plan_sum, fact_sum) if has_data else None,
+        "has_data": has_data,
+        "months_with_values": months_with_values,
+        "values_unit": "руб.",
+        "aggregation_strategy": "sum_excel_itogo_monthly",
+    }
+
+
+def _build_td_m5_quarter_combination_aggregates_from_excel(
+    monthly_totals: dict[int, dict[str, float | None]],
+    ref_y: int,
+) -> dict[str, dict[str, Any]]:
+    available_quarters = [1, 2, 3, 4]
+    rows: dict[str, dict[str, Any]] = {}
+
+    for size in range(1, len(available_quarters) + 1):
+        for selected in combinations(available_quarters, size):
+            selected_list = list(selected)
+            month_numbers: list[int] = []
+            for quarter in selected_list:
+                start_m, end_m = _td_m5_quarter_month_range(quarter)
+                month_numbers.extend(range(start_m, end_m + 1))
+            month_numbers = sorted(set(month_numbers))
+            key = ",".join(str(quarter) for quarter in selected_list)
+            label = "+".join(f"Q{quarter}" for quarter in selected_list) + f" {ref_y}"
+            rows[key] = _build_td_m5_period_row_from_excel(
+                monthly_totals,
+                ref_y,
+                month_numbers,
+                period_type="selected_quarters",
+                label=label,
+                selected_quarters=selected_list,
+            )
+
+    return rows
+
+
+def _build_td_m5_budget_payload_from_excel(
+    year: int | None = None,
+    month: int | None = None,
+) -> dict[str, Any]:
+    """TD-M5: план/факт по месяцам из строки «Итого» fot_vneshnie_zakazy.xlsx."""
+    ref_y, ref_m = _normalize_ref_period(year, month)
+    monthly_totals = fot_excel.load_monthly_totals_row(ref_y)
+    pairs = _month_pairs_until(ref_y, ref_m)
+    monthly_rows: list[dict[str, Any]] = []
+    ref_row: dict[str, Any] | None = None
+
+    for y, m in pairs:
+        values = monthly_totals.get(m) or {}
+        plan = values.get("plan")
+        fact = values.get("fact")
+        has_data = plan is not None or fact is not None
+        if has_data:
+            plan_val = round(float(plan or 0.0), 2)
+            fact_val = round(float(fact or 0.0), 2)
+            row = {
+                "month": m,
+                "year": y,
+                "month_name": MONTH_NAMES[m],
+                "plan": plan_val if plan is not None else None,
+                "fact": fact_val if fact is not None else None,
+                "kpi_pct": _td_m5_plan_fact_kpi_pct(plan_val if plan is not None else 0.0, fact_val),
+                "has_data": True,
+                "values_unit": "руб.",
+            }
+        else:
+            row = {
+                "month": m,
+                "year": y,
+                "month_name": MONTH_NAMES[m],
+                "plan": None,
+                "fact": None,
+                "kpi_pct": None,
+                "has_data": False,
+            }
+        monthly_rows.append(row)
+        if (y, m) == (ref_y, ref_m):
+            ref_row = row
+
+    ytd_block: dict[str, Any] = {
+        "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
+        "months_total": len(monthly_rows),
+    }
+    if ref_row and ref_row.get("has_data"):
+        ytd_block.update({
+            "total_plan": ref_row.get("plan"),
+            "total_fact": ref_row.get("fact"),
+            "kpi_pct": ref_row.get("kpi_pct"),
+            "values_unit": "руб.",
+        })
+    else:
+        ytd_block.update({
+            "total_plan": None,
+            "total_fact": None,
+            "kpi_pct": None,
+        })
+
+    quarter = (ref_m - 1) // 3 + 1
+    quarter_start_month = 3 * (quarter - 1) + 1
+    period_aggregates = {
+        "aggregation_strategy": "sum_excel_itogo_monthly",
+        "dedupe_key": None,
+        "additive_across_months": True,
+        "month": _build_td_m5_period_row_from_excel(
+            monthly_totals,
+            ref_y,
+            [ref_m],
+            period_type="month",
+            label=f"{MONTH_NAMES[ref_m]} {ref_y}",
+            start_month=ref_m,
+            end_month=ref_m,
+        ),
+        "quarter_to_date": _build_td_m5_period_row_from_excel(
+            monthly_totals,
+            ref_y,
+            list(range(quarter_start_month, ref_m + 1)),
+            period_type="quarter_to_date",
+            label=f"Q{quarter} {ref_y}",
+            start_month=quarter_start_month,
+            end_month=ref_m,
+        ),
+        "year_to_date": _build_td_m5_period_row_from_excel(
+            monthly_totals,
+            ref_y,
+            list(range(1, ref_m + 1)),
+            period_type="year_to_date",
+            label=f"Январь-{MONTH_NAMES[ref_m]} {ref_y}",
+            start_month=1,
+            end_month=ref_m,
+        ),
+        "quarter_combinations": _build_td_m5_quarter_combination_aggregates_from_excel(
+            monthly_totals,
+            ref_y,
+        ),
+    }
+
+    xlsx_path = fot_excel.resolve_xlsx_path()
+    return {
+        "data_granularity": "monthly",
+        "monthly_data": monthly_rows,
+        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+        "kpi_period": {
+            "type": "last_full_month",
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "ytd": ytd_block,
+        "period_aggregates": period_aggregates,
+        "frontend_aggregation": {
+            "additive_across_months": True,
+            "use_period_aggregates_for_buttons": True,
+            "selected_quarters_key_format": "comma_separated_quarter_numbers",
+            "reason": (
+                "TD-M5 на плитке: план/факт из строки «Итого» fot_vneshnie_zakazy.xlsx; "
+                "для квартала и YTD суммируются помесячные итоги файла."
+            ),
+        },
+        "debug": {
+            "kpi_id": "TD-M5",
+            "source": "fot_vneshnie_zakazy.xlsx",
+            "excel_path": str(xlsx_path.resolve()),
+            "excel_row": "Итого",
+            "plan_field": "План",
+            "fact_field": "Факт",
+        },
+    }
+
+
+def _build_td_m5_budget_payload_from_turboproject(
+    year: int | None = None,
+    month: int | None = None,
+) -> dict[str, Any]:
+    """Резервный расчёт TD-M5 из TurboProject (если Excel недоступен)."""
     target_projects = _projects_for_filter(TARGET_PROJECT_TYPE_TD_M1)
     ref_y, ref_m = _normalize_ref_period(year, month)
     pairs = _month_pairs_until(ref_y, ref_m)
@@ -864,6 +1082,7 @@ def _build_td_m5_budget_payload(year: int | None = None, month: int | None = Non
         },
         "debug": {
             "kpi_id": "TD-M5",
+            "source": "TurboProject",
             "filter": (
                 f"tip_proekta={TARGET_PROJECT_TYPE_TD_M1!r}, "
                 f"организация «{TARGET_ORGANIZATION}», куратор из должности «{TECHDIR_OWNER_POSITION}»"
@@ -873,6 +1092,18 @@ def _build_td_m5_budget_payload(year: int | None = None, month: int | None = Non
             "target_projects_count": len(target_projects),
         },
     }
+
+
+def _build_td_m5_budget_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
+    """TD-M5: план/факт с плитки — строка «Итого» из fot_vneshnie_zakazy.xlsx."""
+    try:
+        return _build_td_m5_budget_payload_from_excel(year=year, month=month)
+    except Exception as exc:
+        logger.warning(
+            "TD-M5: не удалось загрузить fot_vneshnie_zakazy.xlsx (%s), резерв TurboProject",
+            exc,
+        )
+        return _build_td_m5_budget_payload_from_turboproject(year=year, month=month)
 
 
 def _build_monthly_payload(
@@ -1261,7 +1492,7 @@ def get_td_m1_ytd() -> dict | None:
 
 
 def get_td_m5_ytd(year: int | None = None, month: int | None = None) -> dict | None:
-    """TD-M5: суммы плана (byudzhet_plan) и факта (byudzhet_fakt) по проектам внешних заказов техдира."""
+    """TD-M5: план/факт бюджета внешних заказов техдира из fot_vneshnie_zakazy.xlsx (строка «Итого»)."""
 
     def _runner() -> dict | None:
         try:

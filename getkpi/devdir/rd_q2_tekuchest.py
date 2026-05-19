@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "devdir_rd_q2_tekuchest"
 CACHE_SOURCE_TAG = "devdir_rd_q2_tekuchest_ytd"
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 
 
 def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
@@ -48,7 +48,7 @@ def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = No
             "fact": fact_v,
             "kpi_pct": kpi_pct,
             "has_data": has_data,
-            "values_unit": "чел.",
+            "values_unit": "%",
         }
         monthly_rows.append(row)
         if (y, m) == (ref_y, ref_m):
@@ -73,7 +73,7 @@ def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = No
             "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
-            "values_unit": "чел.",
+            "values_unit": "%",
         },
         "debug": {
             "source": "getkpi/devdir/calc_tekuchest_dev_service.py",

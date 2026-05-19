@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from gspp.tkp import get_gspp_m1_ytd
+from gspp.tkp_lifecycle import get_gspp_m1_ytd
 from gspp.ol_gspp_monthly import get_gspp_m2_ytd
 from gspp.m3 import get_gspp_m3_ytd
 from gspp.m5 import get_gspp_m5_ytd

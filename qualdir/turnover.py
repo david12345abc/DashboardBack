@@ -19,12 +19,12 @@ from typing import Any
 
 from getkpi.cache_manager import locked_call
 from getkpi.devdir import ytd_json_cache
-from getkpi.techdir_tekuchet import MONTH_RU, build_turnover_month_payload
+from getkpi.techdir_tekuchet import MONTH_RU, TURNOVER_VALUES_UNIT, build_turnover_month_payload
 
 # Кэш в каталоге getkpi/dashboard — как у остальных KPI-бэкендов.
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_qd_q2_monthly_v4"
-CACHE_VERSION = 4
+SOURCE_TAG = "qualdir_qd_q2_monthly_v5"
+CACHE_VERSION = 5
 
 QD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
     "ОТК-1": [
@@ -49,7 +49,7 @@ QD_Q2_GROUP_ORDER = list(QD_Q2_GROUP_ALIASES.keys())
 
 QD_Q2_YTD_CACHE_PREFIX = "qualdir_qd_q2_ytd"
 QD_Q2_YTD_DISK_TAG = "qualdir_qd_q2_ytd_payload_v2"
-QD_Q2_YTD_DISK_VERSION = 2
+QD_Q2_YTD_DISK_VERSION = 3
 
 
 def _qd_q2_kpi_pct(plan: Any, fact: Any) -> float | None:
@@ -181,7 +181,7 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "fact": fact,
                     "kpi_pct": _qd_q2_kpi_pct(plan, fact),
                     "has_data": has_data,
-                    "values_unit": "шт.",
+                    "values_unit": TURNOVER_VALUES_UNIT,
                 })
 
             with_data = [row for row in month_rows if row["has_data"]]
@@ -203,7 +203,7 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
                     "months_with_data": months_with_data,
                     "months_total": len(month_rows),
-                    "values_unit": "шт.",
+                    "values_unit": TURNOVER_VALUES_UNIT,
                 },
                 "kpi_period": {
                     "type": "last_full_month",
@@ -230,7 +230,7 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "kpi_pct": None,
                     "months_with_data": 0,
                     "months_total": 0,
-                    "values_unit": "шт.",
+                    "values_unit": TURNOVER_VALUES_UNIT,
                 },
                 "kpi_period": {
                     "type": "last_full_month",
