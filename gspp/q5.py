@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 GSPP_Q5_CACHE_PREFIX = "gspp_q5_tekuchest"
 GSPP_Q5_DISK_TAG = "gspp_q5_tekuchest_payload_v2"
-GSPP_Q5_DISK_VERSION = 2
+GSPP_Q5_DISK_VERSION = 3
 
 GSPP_TURNOVER_DEPARTMENTS = {
     "ГСПП",
@@ -175,7 +175,7 @@ def _build_gspp_q5_payload(year: int | None = None, month: int | None = None) ->
             "fact": fact,
             "kpi_pct": _kpi_pct(plan, fact),
             "has_data": plan > 0 or fact > 0,
-            "values_unit": "чел.",
+            "values_unit": "%",
         }
         monthly_rows.append(row)
         if m == ref_m:
@@ -198,7 +198,7 @@ def _build_gspp_q5_payload(year: int | None = None, month: int | None = None) ->
             "kpi_pct": ref_row.get("kpi_pct"),
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
-            "values_unit": "чел.",
+            "values_unit": "%",
         },
         "debug": {
             "kpi_id": "ГСП-Q5",

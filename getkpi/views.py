@@ -1409,12 +1409,8 @@ def _build_universal_payload(
             tile['unit'] = '%'
         elif kpi.get('kpi_id') == 'KD-M11':
             tile['unit'] = 'чел.'
-        elif kpi.get('kpi_id') == 'OD-Q2':
-            tile['unit'] = 'чел.'
-        elif _kid_tile == 'TD-Q2':
-            tile['unit'] = 'чел.'
-        elif _is_gspp_q5_tile(kpi):
-            tile['unit'] = 'чел.'
+        elif _is_turnover_style_tile(kpi):
+            tile['unit'] = '%'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1'}:
@@ -1429,8 +1425,6 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-M3-1':
             tile['unit'] = 'шт.'
-        elif _kid_tile == 'RD-Q2':
-            tile['unit'] = 'чел.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
             tile['unit'] = 'руб.'
 

@@ -87,6 +87,8 @@ GROUP_ALIASES = {
 
 GROUP_ORDER = list(GROUP_ALIASES.keys())
 
+TURNOVER_VALUES_UNIT = "%"
+
 MONTH_RU = {
     1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
     5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
@@ -593,7 +595,7 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                     "fact": fact,
                     "kpi_pct": fact,
                     "has_data": has_data,
-                    "values_unit": "чел.",
+                    "values_unit": TURNOVER_VALUES_UNIT,
                 })
 
             with_data = [row for row in month_rows if row["has_data"]]
@@ -612,7 +614,7 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                     "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
                     "months_with_data": months_with_data,
                     "months_total": len(month_rows),
-                    "values_unit": "чел.",
+                    "values_unit": TURNOVER_VALUES_UNIT,
                 },
                 "kpi_period": {
                     "type": "last_full_month",
@@ -645,7 +647,7 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                     "kpi_pct": None,
                     "months_with_data": 0,
                     "months_total": 0,
-                    "values_unit": "чел.",
+                    "values_unit": TURNOVER_VALUES_UNIT,
                 },
                 "kpi_period": {
                     "type": "last_full_month",

@@ -53,7 +53,7 @@ ENTITY = "Document_ТД_ТекучестьПерсонала"
 CAT_STRUKTURA = "Catalog_СтруктураПредприятия"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "tekuchest_opdir_monthly_v1"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 # Корни поддеревьев, которые не входят в периметр операционного директора (Турбулентность-Дон).
 EXCLUDE_SUBTREE_ROOTS: frozenset[str] = frozenset({
@@ -303,7 +303,7 @@ def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = Non
             "fact": fact_total,
             "kpi_pct": round(fact_total / plan_total * 100, 1) if plan_total > 0 else None,
             "has_data": abs(plan_total) > 0 or abs(fact_total) > 0,
-            "values_unit": "чел.",
+            "values_unit": "%",
             "plan_by_dept": {
                 child["name"]: round(float(child.get("plan") or 0), 2)
                 for child in children
@@ -333,7 +333,7 @@ def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = Non
             "kpi_pct": round(total_fact / total_plan * 100, 1) if total_plan > 0 else None,
             "months_with_data": sum(1 for row in months_out if row.get("has_data")),
             "months_total": len(months_out),
-            "values_unit": "чел." if months_out else None,
+            "values_unit": "%" if months_out else None,
         },
         "kpi_period": {
             "type": "last_full_month",
