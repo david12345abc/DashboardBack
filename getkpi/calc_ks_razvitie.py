@@ -90,7 +90,7 @@ ALLOWED_DEPARTMENTS: dict[str, str] = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = "ks_razvitie_units_v13_service_dept_charts"
+CACHE_VERSION = "ks_razvitie_units_v14_dealer_ufgh_orders"
 TARGET_SERVICE_CUSTOMERS_DEPT_KEY = "34497ef7-810f-11e4-80d6-001e67112509"
 TARGET_SERVICE_CUSTOMERS_DEPT_NAME = "Отдел продаж эталонного оборудования и услуг"
 TARGET_SERVICE_CUSTOMERS_INDICATOR = "Новые заказчики по услугам"
@@ -100,6 +100,10 @@ DEALER_SALES_DEPT_NAME = "Отдел дилерских продаж"
 DEALER_EXISTING_INDICATOR = "Развитие имеющихся дилеров"
 DEALER_NEW_INDICATOR = "Новые дилеры"
 DEALER_UFGH_INDICATOR = "Выручка UFG-H через дилерский канал"
+DEALER_UFGH_NOMENCLATURE_NAME = "Расходомер UFG-H"
+DEALER_SEGMENT_PROPERTY_NAME = "Сегмент партнера"
+DEALER_SEGMENT_VALUE_NAME = "Дилер"
+DEALER_UFGH_ORDER_STATUS_VALUES = {"квыполнению", "кобеспечению"}
 DEALER_ALLOWED_CHARTS = {
     (DEALER_EXISTING_INDICATOR, "шт."),
     (DEALER_NEW_INDICATOR, "шт."),
@@ -396,6 +400,10 @@ def _fetch_table_by_refs(
 def _normalize_text(value: object) -> str:
     raw = str(value or "").strip().lower().replace("ё", "е")
     return " ".join("".join(ch if ch.isalnum() else " " for ch in raw).split())
+
+
+def _normalize_compact(value: object) -> str:
+    return _normalize_text(value).replace(" ", "")
 
 
 def _load_service_work_order_keys(session: requests.Session, order_keys: set[str]) -> set[str]:
@@ -865,12 +873,340 @@ def _find_or_create_indicator_key_by_unit(
     return ind_key
 
 
+def _load_exact_ufgh_nomenclature(session: requests.Session) -> tuple[set[str], dict]:
+    """Точная номенклатура без подбора по подстроке: «Расходомер UFG-H»."""
+    select = "Ref_Key,Description,НаименованиеПолное,Артикул,DeletionMark,IsFolder"
+    name = DEALER_UFGH_NOMENCLATURE_NAME.replace("'", "''")
+    flt = (
+        "DeletionMark eq false and IsFolder eq false and "
+        f"(Description eq '{name}' or НаименованиеПолное eq '{name}')"
+    )
+    url = (
+        f"{BASE}/{quote('Catalog_Номенклатура')}?$format=json"
+        f"&$filter={quote(flt, safe='')}"
+        f"&$select={quote(select, safe=',_')}"
+    )
+    rows = _fetch_all_json(session, url, label="ks_razvitie/ufgh_nomenclature", page=1000)
+    keys = {str(row.get("Ref_Key") or "") for row in rows if row.get("Ref_Key")}
+    protocol = {
+        "entity": "Catalog_Номенклатура",
+        "filter": flt,
+        "matched_count": len(rows),
+        "matched": [
+            {
+                "Ref_Key": row.get("Ref_Key"),
+                "Description": row.get("Description"),
+                "НаименованиеПолное": row.get("НаименованиеПолное"),
+                "Артикул": row.get("Артикул"),
+            }
+            for row in rows
+        ],
+    }
+    if not keys:
+        protocol["warning"] = "Точная номенклатура «Расходомер UFG-H» не найдена."
+    return keys, protocol
+
+
+def _resolve_property_value_names(session: requests.Session, value_keys: set[str]) -> dict[str, str]:
+    values = _fetch_by_refs(
+        session,
+        "Catalog_ЗначенияСвойствОбъектов",
+        value_keys,
+        "Ref_Key,Description",
+        label="ks_razvitie/segment_values",
+        batch_size=40,
+    )
+    return {key: str(row.get("Description") or "") for key, row in values.items()}
+
+
+def _load_dealer_partner_keys_from_extra_segment(session: requests.Session) -> tuple[set[str], dict]:
+    """Партнёры, у которых доп. реквизит «Сегмент партнера» равен ровно «Дилер»."""
+    prop_select = "Ref_Key,Description"
+    prop_filter = f"substringof('Сегмент',Description)"
+    prop_url = (
+        f"{BASE}/{quote('ChartOfCharacteristicTypes_ДополнительныеРеквизитыИСведения')}?$format=json"
+        f"&$filter={quote(prop_filter, safe='')}"
+        f"&$select={quote(prop_select, safe=',_')}"
+    )
+    prop_rows = _fetch_all_json(session, prop_url, label="ks_razvitie/segment_property", page=1000)
+    target_property_norm = _normalize_compact(DEALER_SEGMENT_PROPERTY_NAME)
+    matched_props = [
+        row
+        for row in prop_rows
+        if _normalize_compact(row.get("Description")) == target_property_norm
+    ]
+    protocol = {
+        "property_entity": "ChartOfCharacteristicTypes_ДополнительныеРеквизитыИСведения",
+        "property_filter": prop_filter,
+        "property_target": DEALER_SEGMENT_PROPERTY_NAME,
+        "properties_found": [
+            {"Ref_Key": row.get("Ref_Key"), "Description": row.get("Description")}
+            for row in prop_rows
+        ],
+        "value_entity": "Catalog_ЗначенияСвойствОбъектов",
+        "value_target": DEALER_SEGMENT_VALUE_NAME,
+    }
+    if len(matched_props) != 1:
+        protocol["warning"] = (
+            "Нельзя однозначно определить доп. реквизит «Сегмент партнера»: "
+            f"найдено {len(matched_props)} точных совпадений."
+        )
+        return set(), protocol
+
+    prop_key = str(matched_props[0].get("Ref_Key") or "")
+    rows_select = "Ref_Key,Свойство_Key,Значение,ТекстоваяСтрока,Значение_Type"
+    rows_filter = f"Свойство_Key eq guid'{prop_key}'"
+    rows_url = (
+        f"{BASE}/{quote('Catalog_Партнеры_ДополнительныеРеквизиты')}?$format=json"
+        f"&$filter={quote(rows_filter, safe='')}"
+        f"&$select={quote(rows_select, safe=',_')}"
+    )
+    rows = _fetch_all_json(session, rows_url, label="ks_razvitie/partner_segment_rows")
+    value_keys = {
+        str(row.get("Значение") or "")
+        for row in rows
+        if row.get("Значение")
+        and "Catalog_ЗначенияСвойствОбъектов" in str(row.get("Значение_Type") or "")
+    }
+    value_names = _resolve_property_value_names(session, value_keys)
+    dealer_norm = _normalize_text(DEALER_SEGMENT_VALUE_NAME)
+    dealer_partner_keys: set[str] = set()
+    value_counts: dict[str, int] = {}
+    for row in rows:
+        value_key = str(row.get("Значение") or "")
+        value_name = value_names.get(value_key) or str(row.get("ТекстоваяСтрока") or "")
+        value_counts[value_name or value_key or ""] = value_counts.get(value_name or value_key or "", 0) + 1
+        if _normalize_text(value_name) == dealer_norm:
+            partner_key = str(row.get("Ref_Key") or "")
+            if partner_key:
+                dealer_partner_keys.add(partner_key)
+
+    protocol.update({
+        "property_key": prop_key,
+        "rows_filter": rows_filter,
+        "rows_total": len(rows),
+        "value_counts": value_counts,
+        "dealer_partner_count": len(dealer_partner_keys),
+    })
+    if not dealer_partner_keys:
+        protocol["warning"] = "Не найдено партнёров с доп. реквизитом «Сегмент партнера» = «Дилер»."
+    return dealer_partner_keys, protocol
+
+
+def _load_ufgh_order_lines(session: requests.Session, nomenclature_keys: set[str]) -> list[dict]:
+    rows: list[dict] = []
+    select = "Ref_Key,LineNumber,Номенклатура_Key,Количество,Сумма,СуммаСНДС,Отменено"
+    keys = sorted(k for k in nomenclature_keys if k and k != EMPTY)
+    for i in range(0, len(keys), 20):
+        batch = keys[i:i + 20]
+        flt = " or ".join(f"Номенклатура_Key eq guid'{key}'" for key in batch)
+        url = (
+            f"{BASE}/{quote('Document_ЗаказКлиента_Товары')}?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select={quote(select, safe=',_')}"
+        )
+        rows.extend(_fetch_all_json(session, url, label="ks_razvitie/ufgh_order_lines"))
+    return rows
+
+
+def _load_customer_orders_for_ufgh(session: requests.Session, order_keys: set[str]) -> dict[str, dict]:
+    select = (
+        "Ref_Key,Number,Date,Posted,DeletionMark,Статус,Партнер_Key,"
+        "Подразделение_Key,Валюта_Key"
+    )
+    return _fetch_by_refs(
+        session,
+        "Document_ЗаказКлиента",
+        order_keys,
+        select,
+        label="ks_razvitie/ufgh_orders",
+        batch_size=25,
+    )
+
+
+def _load_catalog_descriptions(session: requests.Session, entity: str, keys: set[str]) -> dict[str, str]:
+    rows = _fetch_by_refs(
+        session,
+        entity,
+        keys,
+        "Ref_Key,Description,Code",
+        label=f"ks_razvitie/catalog/{entity}",
+        batch_size=40,
+    )
+    result: dict[str, str] = {}
+    for key, row in rows.items():
+        desc = str(row.get("Description") or "").strip()
+        code = str(row.get("Code") or "").strip()
+        result[key] = desc or code or key
+    return result
+
+
+def _month_from_order_date(value: object, year: int) -> int | None:
+    text = str(value or "")
+    if len(text) < 7:
+        return None
+    try:
+        row_year = int(text[:4])
+        month = int(text[5:7])
+    except (TypeError, ValueError):
+        return None
+    if row_year != int(year) or not (1 <= month <= 12):
+        return None
+    return month
+
+
+def _load_dealer_ufgh_revenue_fact(session: requests.Session, year: int) -> dict:
+    nomenclature_keys, nomenclature_protocol = _load_exact_ufgh_nomenclature(session)
+    dealer_partner_keys, segment_protocol = _load_dealer_partner_keys_from_extra_segment(session)
+    metadata_protocol = {
+        "nomenclature": nomenclature_protocol,
+        "partner_segment": segment_protocol,
+        "order": {
+            "entity": "Document_ЗаказКлиента",
+            "date_field": "Date",
+            "status_field": "Статус",
+            "posted_field": "Posted",
+            "deletion_mark_field": "DeletionMark",
+            "target_status_ru": "К выполнению",
+            "published_status_values_used": sorted(DEALER_UFGH_ORDER_STATUS_VALUES),
+        },
+        "order_lines": {
+            "entity": "Document_ЗаказКлиента_Товары",
+            "amount_field": "Сумма",
+            "quantity_field": "Количество",
+            "nomenclature_field": "Номенклатура_Key",
+        },
+    }
+    empty_months = {m: 0.0 for m in range(1, 13)}
+    if not nomenclature_keys or not dealer_partner_keys:
+        return {
+            "facts_by_month": empty_months,
+            "quantity_by_month": empty_months.copy(),
+            "orders_count_by_month": {m: 0 for m in range(1, 13)},
+            "details_by_month": {m: [] for m in range(1, 13)},
+            "currency_totals_by_month": {m: {} for m in range(1, 13)},
+            "metadata_protocol": metadata_protocol,
+            "query_protocol": {"skipped": "Не найдена точная номенклатура или точный сегмент партнёра."},
+        }
+
+    lines = _load_ufgh_order_lines(session, nomenclature_keys)
+    order_keys = {
+        str(row.get("Ref_Key") or "")
+        for row in lines
+        if row.get("Ref_Key") and not row.get("Отменено")
+    }
+    orders = _load_customer_orders_for_ufgh(session, order_keys)
+    partner_names = _load_catalog_descriptions(
+        session,
+        "Catalog_Партнеры",
+        {str(row.get("Партнер_Key") or "") for row in orders.values() if row.get("Партнер_Key")},
+    )
+    currency_names = _load_catalog_descriptions(
+        session,
+        "Catalog_Валюты",
+        {str(row.get("Валюта_Key") or "") for row in orders.values() if row.get("Валюта_Key")},
+    )
+
+    facts_by_month: dict[int, float] = {m: 0.0 for m in range(1, 13)}
+    quantity_by_month: dict[int, float] = {m: 0.0 for m in range(1, 13)}
+    orders_by_month: dict[int, set[str]] = {m: set() for m in range(1, 13)}
+    details_by_month: dict[int, list[dict]] = {m: [] for m in range(1, 13)}
+    currency_totals_by_month: dict[int, dict[str, float]] = {m: {} for m in range(1, 13)}
+    skipped = {
+        "cancelled_line": 0,
+        "missing_order": 0,
+        "not_posted_or_deleted": 0,
+        "outside_year": 0,
+        "wrong_status": 0,
+        "not_dealer_segment": 0,
+    }
+
+    for line in lines:
+        if line.get("Отменено"):
+            skipped["cancelled_line"] += 1
+            continue
+        order = orders.get(str(line.get("Ref_Key") or ""))
+        if not order:
+            skipped["missing_order"] += 1
+            continue
+        if not order.get("Posted") or order.get("DeletionMark"):
+            skipped["not_posted_or_deleted"] += 1
+            continue
+        month = _month_from_order_date(order.get("Date"), int(year))
+        if month is None:
+            skipped["outside_year"] += 1
+            continue
+        if _normalize_compact(order.get("Статус")) not in DEALER_UFGH_ORDER_STATUS_VALUES:
+            skipped["wrong_status"] += 1
+            continue
+        partner_key = str(order.get("Партнер_Key") or "")
+        if partner_key not in dealer_partner_keys:
+            skipped["not_dealer_segment"] += 1
+            continue
+
+        amount = _parse_plan(line.get("Сумма"))
+        quantity = _parse_plan(line.get("Количество"))
+        order_key = str(order.get("Ref_Key") or "")
+        currency_key = str(order.get("Валюта_Key") or "")
+        currency_name = currency_names.get(currency_key) or currency_key or "Без валюты"
+        facts_by_month[month] += amount
+        quantity_by_month[month] += quantity
+        orders_by_month[month].add(order_key)
+        currency_totals_by_month[month][currency_name] = (
+            currency_totals_by_month[month].get(currency_name, 0.0) + amount
+        )
+        details_by_month[month].append({
+            "order_key": order_key,
+            "order_number": order.get("Number"),
+            "order_date": str(order.get("Date") or "")[:10],
+            "status": order.get("Статус"),
+            "partner_key": partner_key,
+            "partner": partner_names.get(partner_key) or partner_key,
+            "currency": currency_name,
+            "line_number": line.get("LineNumber"),
+            "nomenclature_key": line.get("Номенклатура_Key"),
+            "amount": round(amount, 2),
+            "quantity": round(quantity, 4),
+        })
+
+    return {
+        "facts_by_month": {m: round(facts_by_month.get(m, 0.0), 2) for m in range(1, 13)},
+        "quantity_by_month": {m: round(quantity_by_month.get(m, 0.0), 4) for m in range(1, 13)},
+        "orders_count_by_month": {m: len(orders_by_month.get(m) or set()) for m in range(1, 13)},
+        "details_by_month": details_by_month,
+        "currency_totals_by_month": {
+            m: {k: round(v, 2) for k, v in (currency_totals_by_month.get(m) or {}).items()}
+            for m in range(1, 13)
+        },
+        "metadata_protocol": metadata_protocol,
+        "query_protocol": {
+            "period": f"{int(year)}-01-01..{int(year)}-12-31",
+            "order_date_field": "Document_ЗаказКлиента.Date",
+            "line_filter": f"Document_ЗаказКлиента_Товары.Номенклатура_Key in {sorted(nomenclature_keys)}",
+            "header_filters": [
+                "Posted = true",
+                "DeletionMark = false",
+                "Date within selected year",
+                "Статус in published execution statuses",
+                "Партнер_Key has additional property «Сегмент партнера» = «Дилер»",
+            ],
+            "lines_loaded": len(lines),
+            "orders_loaded": len(orders),
+            "matched_lines": sum(len(v) for v in details_by_month.values()),
+            "matched_orders": len({d["order_key"] for rows in details_by_month.values() for d in rows}),
+            "skipped": skipped,
+        },
+    }
+
+
 def _apply_dealer_sales_chart_rules(
+    session: requests.Session,
     by_dept_agg: dict[str, dict[str, dict[str, float]]],
     indicator_labels: dict[str, str],
     unit_by_dept_indicator: dict[tuple[str, str], str],
     indicators_set: set[str],
     dept_name_by_key: dict[str, str],
+    year: int,
 ) -> None:
     try:
         from . import calc_komdir_active_dealers
@@ -885,6 +1221,12 @@ def _apply_dealer_sales_chart_rules(
         new_dealers_report = {}
         active_dealers_fact = 0.0
         new_dealers_fact = 0.0
+
+    try:
+        ufgh_revenue_report = _load_dealer_ufgh_revenue_fact(session=session, year=int(year))
+    except Exception:
+        logger.exception("ks_razvitie: failed to calculate dealer UFG-H revenue")
+        ufgh_revenue_report = {}
 
     dept_name_by_key[DEALER_SALES_DEPT] = DEALER_SALES_DEPT_NAME
     dept_bucket = by_dept_agg.setdefault(DEALER_SALES_DEPT_NAME, {})
@@ -977,6 +1319,24 @@ def _apply_dealer_sales_chart_rules(
                     "dealer_detection": (new_dealers_report or {}).get("dealer_detection") or {},
                     "period_from": (new_dealers_report or {}).get("period_from"),
                     "period_to": (new_dealers_report or {}).get("period_to"),
+                }
+            elif indicator == DEALER_UFGH_INDICATOR and unit == "руб.":
+                prev = (
+                    month_bucket.get(ind_key)
+                    or existing_units_by_label.get((_normalize_text(indicator), unit))
+                    or existing_by_label.get(_normalize_text(indicator))
+                    or {"plan": 0.0, "fact": 0.0, "unit": unit}
+                )
+                month_bucket[ind_key] = {
+                    "plan": round(float(prev.get("plan") or 0.0), 4),
+                    "fact": round(float((ufgh_revenue_report.get("facts_by_month") or {}).get(m) or 0.0), 4),
+                    "unit": unit,
+                    "quantity": round(float((ufgh_revenue_report.get("quantity_by_month") or {}).get(m) or 0.0), 4),
+                    "orders_count": int((ufgh_revenue_report.get("orders_count_by_month") or {}).get(m) or 0),
+                    "currency_totals": (ufgh_revenue_report.get("currency_totals_by_month") or {}).get(m) or {},
+                    "details": (ufgh_revenue_report.get("details_by_month") or {}).get(m) or [],
+                    "metadata_protocol": ufgh_revenue_report.get("metadata_protocol") or {},
+                    "query_protocol": ufgh_revenue_report.get("query_protocol") or {},
                 }
             else:
                 prev = (
@@ -1155,13 +1515,24 @@ def _months_to_chart(indicator: str,
         plan = float(cell.get("plan") or 0.0)
         fact = float(cell.get("fact") or 0.0)
         point_unit = cell.get("unit") or unit or ""
-        series.append({
+        point = {
             "month": m,
             "month_name": MONTH_NAMES_RU[m],
             "plan": round(plan, 4),
             "fact": round(fact, 4),
             "unit": point_unit,
-        })
+        }
+        for extra_key in (
+            "quantity",
+            "orders_count",
+            "currency_totals",
+            "details",
+            "metadata_protocol",
+            "query_protocol",
+        ):
+            if extra_key in cell:
+                point[extra_key] = cell.get(extra_key)
+        series.append(point)
     return {"indicator": indicator_label or indicator, "unit": unit or "", "months": series}
 
 
@@ -1441,11 +1812,13 @@ def _fetch_from_odata(year: int) -> dict:
     )
 
     _apply_dealer_sales_chart_rules(
+        session,
         by_dept_agg,
         indicator_labels,
         unit_by_dept_indicator,
         indicators_set,
         dept_name_by_key,
+        int(year),
     )
 
     indicators = sorted(indicators_set)
@@ -1489,11 +1862,22 @@ def _fetch_from_odata(year: int) -> dict:
                 for ind_key in dept_inds:
                     cell = dept_present[key].get(ind_key)
                     if isinstance(cell, dict):
-                        base[key][ind_key] = _pf(
+                        point = _pf(
                             cell.get("plan", 0.0),
                             cell.get("fact", 0.0),
                             cell.get("unit") or unit_by_dept_indicator.get((dept_name, ind_key), ""),
                         )
+                        for extra_key in (
+                            "quantity",
+                            "orders_count",
+                            "currency_totals",
+                            "details",
+                            "metadata_protocol",
+                            "query_protocol",
+                        ):
+                            if extra_key in cell:
+                                point[extra_key] = cell.get(extra_key)
+                        base[key][ind_key] = point
         dept_charts = [
             _months_to_chart(
                 ind_key,
