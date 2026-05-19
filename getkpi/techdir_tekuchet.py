@@ -2,10 +2,8 @@
 calc_tekuchest_techdir.py — Текучесть персонала техдирекции.
 
 Источник:
-  - Document_ТД_ТекучестьПерсонала
-    * ВидДокумента = '0' -> план
-    * ВидДокумента = '1' -> факт
-    * табличная часть "Текучесть": Месяц, План, Факт
+  - План: Document_ТД_ТекучестьПерсонала (ВидДокумента = '0', табличная часть «Текучесть»)
+  - Факт TD-Q2: штатные единицы и увольнения (techdir_tekuchet_fact)
 
 Логика:
   1. Загружаются все документы по текучести.
@@ -32,6 +30,7 @@ import time
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
+from typing import Any
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
@@ -48,7 +47,7 @@ AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "techdir_q2_monthly_v2"
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 
 GROUP_ALIASES = {
     "Заместитель тех. директора по качеству": [
@@ -439,19 +438,19 @@ def build_turnover_month_payload(
     group_aliases: dict[str, list[str]],
     group_order: list[str],
     aggregate: str = "top2",
+    fact_from_hr: bool = False,
 ) -> dict:
-    """Снимок текучести за месяц из Document_ТД_ТекучестьПерсонала (без файлового кэша).
+    """Снимок текучести за месяц (без файлового кэша).
 
-    TD-Q2 (aggregate top2): по группе max по строкам месяца в документе, затем max по документам.
-    QD-Q2 (aggregate sum_all): по группе сумма строк месяца в каждом документе, затем сумма по документам.
+    TD-Q2 (aggregate top2, fact_from_hr=True): план — top2 из Document_ТД_ТекучестьПерсонала;
+    факт — уволено / штат × 100 % (techdir_tekuchet_fact).
 
-    aggregate:
-      - ``top2`` (как TD-Q2): итог = сумма двух крупнейших групп по плану и по факту;
-      - ``sum_all`` (QD-Q2): итог = сумма по группам; внутри группы строки месяца
-        **суммируются** (и по нескольким документам одного подразделения), не max.
+    QD-Q2 (aggregate sum_all): план и факт из Document_ТД_ТекучестьПерсонала (сумма по группам).
     """
     target_str = f"{year}-{month:02d}"
     branch_aggregate = "sum_lines" if aggregate == "sum_all" else "max"
+    fact_debug: dict[str, Any] = {}
+    session: requests.Session | None = None
     try:
         session = requests.Session()
         session.auth = AUTH
@@ -484,6 +483,7 @@ def build_turnover_month_payload(
             2,
         )
         plan_agg_label = "sum_all_groups_1c_tekuchet"
+        fact_agg_label = "sum_all_groups_1c_tekuchet"
     else:
         ordered_groups = sorted(
             group_order,
@@ -494,16 +494,32 @@ def build_turnover_month_payload(
             sum((result[group_name]["plan"] for group_name in ordered_groups[:2])),
             2,
         )
-        ordered_fact_groups = sorted(
-            group_order,
-            key=lambda group_name: (result.get(group_name, {}).get("fact", 0.0), group_name),
-            reverse=True,
-        )
-        total_fact = round(
-            sum((result[group_name]["fact"] for group_name in ordered_fact_groups[:2])),
-            2,
-        )
         plan_agg_label = "group_max_top2_1c_tekuchet"
+        if fact_from_hr:
+            from . import techdir_tekuchet_fact as tekuchet_fact
+
+            fact_payload = tekuchet_fact.compute_turnover_fact_percent(
+                year,
+                month,
+                session=session,
+            )
+            total_fact = float(fact_payload["total_fact"])
+            fact_agg_label = fact_payload["fact_source"]
+            fact_debug = fact_payload
+            for group_name in group_order:
+                result[group_name]["fact"] = 0.0
+                result[group_name]["fact_rows"] = 0
+        else:
+            ordered_fact_groups = sorted(
+                group_order,
+                key=lambda group_name: (result.get(group_name, {}).get("fact", 0.0), group_name),
+                reverse=True,
+            )
+            total_fact = round(
+                sum((result[group_name]["fact"] for group_name in ordered_fact_groups[:2])),
+                2,
+            )
+            fact_agg_label = "group_max_top2_1c_tekuchet"
 
     return {
         "year": year,
@@ -531,6 +547,8 @@ def build_turnover_month_payload(
                 {d.get("Подразделение_Key") for d in docs if d.get("Подразделение_Key")}
             ),
             "plan_source": plan_agg_label,
+            "fact_source": fact_agg_label,
+            "fact_hr": fact_debug or None,
             "aggregation": aggregate,
             "branch_aggregate": branch_aggregate,
             "plan_target": None,
@@ -544,7 +562,11 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
         return cached
 
     result = build_turnover_month_payload(
-        year, month, group_aliases=GROUP_ALIASES, group_order=GROUP_ORDER,
+        year,
+        month,
+        group_aliases=GROUP_ALIASES,
+        group_order=GROUP_ORDER,
+        fact_from_hr=True,
     )
     _save_cache(year, month, result)
     return result
@@ -602,9 +624,10 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                 "debug": {
                     "status": "ok",
                     "kpi_id": "TD-Q2",
-                    "source": "Document_ТД_ТекучестьПерсонала",
+                    "source": "Document_ТД_ТекучестьПерсонала + HR staffing/dismissals",
                     "months": month_rows,
                     "plan_source": "1c_tekuchet",
+                    "fact_source": "hr_staff_dismissals_turnover_pct",
                 },
             }
         except Exception as exc:

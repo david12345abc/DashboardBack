@@ -75,7 +75,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     )
     from .komdir_claims import fetch_claims_for_month
     from gspp import ol_gspp_monthly as gspp_ol_m2
-    from gspp import tkp as gspp_tkp
+    from gspp import tkp_lifecycle as gspp_tkp
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
     from sup import hrd_m1
