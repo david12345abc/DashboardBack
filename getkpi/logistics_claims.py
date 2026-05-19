@@ -26,13 +26,14 @@ EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 
 TARGET_REASON_CATEGORY = "Поставщик"
 TARGET_RESOLUTION = "Окончательный"
+PRODUCTION_CLAIM_REASON_PRETENSION = "7a4719be-3e1b-11ec-8742-ac1f6b05524d"
 PRODUCTION_CULPRIT_DEPARTMENTS: dict[str, str] = {
     "f12f2fca-d5d2-11e7-8267-ac1f6b05524d": "ТурбулентностьДОНПроизводство1",
     "3a9ac2f2-214f-11e0-b91c-00248c26ee57": "Алмаз",
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 
 
 def _normalize_odata_base(raw_base_url: str) -> str:
@@ -517,7 +518,12 @@ def _fetch_production_catalog_claims_from_odata(year: int, month: int) -> list[d
             break
         skip += len(chunk)
 
-    rows = [row for row in rows if row.get("DeletionMark") is not True]
+    rows = [
+        row
+        for row in rows
+        if row.get("DeletionMark") is not True
+        and _clean_text(row.get("ПричинаВозникновения_Key")) == PRODUCTION_CLAIM_REASON_PRETENSION
+    ]
 
     nomenclature_cache: dict[str, str] = {}
     result: list[dict] = []
@@ -577,9 +583,7 @@ def fetch_production_claims_for_month(year: int, month: int) -> list[dict]:
         return cached
 
     try:
-        rows = _fetch_production_from_odata(year, month)
-        if not rows:
-            rows = _fetch_production_catalog_claims_from_odata(year, month)
+        rows = _fetch_production_catalog_claims_from_odata(year, month)
     except Exception:
         logger.exception("Production claims: failed to fetch rows for %s-%02d", year, month)
         rows = []
