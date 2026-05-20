@@ -47,7 +47,8 @@ INSTALLED_APPS = [
     'devdir',
     'qualdir',
     'gspp',
-    'sup'
+    'sup',
+    'feedback',
 ]
 
 MIDDLEWARE = [
@@ -138,3 +139,13 @@ CORS_ALLOW_ALL_ORIGINS = True
 JWT_SECRET = SECRET_KEY
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_DAYS = 7
+
+# Feedback mail transport. Credentials stay on the backend only.
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.environ.get('DASHBOARD_FEEDBACK_EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('DASHBOARD_FEEDBACK_EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('DASHBOARD_FEEDBACK_EMAIL_USE_TLS', '1') != '0'
+EMAIL_HOST_USER = os.environ.get('DASHBOARD_FEEDBACK_EMAIL_USER', 'mangasaryangeneral@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('DASHBOARD_FEEDBACK_EMAIL_PASSWORD', 'udhttlogbcmaxebf')
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+FEEDBACK_EMAIL_TO = os.environ.get('DASHBOARD_FEEDBACK_EMAIL_TO', 'mangasaryandon@outlook.com')

@@ -19,7 +19,9 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/user/feedback-requests/', include('feedback.urls')),
     path('api/user/', include('User.urls')),
+    path('api/feedback-requests/', include('feedback.urls')),
     path('api/kpi/', include('getkpi.urls')),
     path('api/search/', include('searchengine.urls')),
 ]
