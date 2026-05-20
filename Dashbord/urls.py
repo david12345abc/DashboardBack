@@ -17,9 +17,16 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 
+from User import views as user_views
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/user/', include('User.urls')),
+    path('api/feedback-requests/', user_views.feedback_requests, name='feedback-request-list-create-alt'),
+    path('api/feedback-requests/admin/', user_views.list_feedback_requests, name='feedback-request-admin-list-alt'),
+    path('api/feedback-requests/<int:request_id>/complete/', user_views.complete_feedback_request, name='feedback-request-complete-alt'),
+    path('api/feedback-requests/<int:request_id>/reject/', user_views.reject_feedback_request, name='feedback-request-reject-alt'),
+    path('api/feedback-requests/<int:request_id>/delete/', user_views.delete_feedback_request, name='feedback-request-delete-alt'),
     path('api/kpi/', include('getkpi.urls')),
     path('api/search/', include('searchengine.urls')),
 ]
