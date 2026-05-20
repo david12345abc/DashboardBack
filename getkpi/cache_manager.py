@@ -63,7 +63,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_reclamations,
         calc_svoevremennaya_otgruzka,
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
-        techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet,
+        techdir_m3, techdir_m4, techdir_m5, techdir_projects, techdir_tekuchet,
     )
     from . import gspp_q4
     from .devdir import (
@@ -159,6 +159,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         ('techdir_m4',
          techdir_m4._cache_path(y, m),
          lambda: techdir_m4.get_td_m4_ytd(year=y, month=m)),
+
+        (f'techdir_m5_{y}_{m}',
+         techdir_m5.ytd_cache_path(y, m),
+         lambda yy=y, mm=m: techdir_m5.get_td_m5_ytd(year=yy, month=mm)),
 
         ('techdir_tekuchet',
          techdir_tekuchet._cache_path(y, m),

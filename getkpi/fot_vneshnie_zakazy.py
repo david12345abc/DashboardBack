@@ -1,7 +1,7 @@
 """
 План/факт внешних заказов из fot_vneshnie_zakazy.xlsx (строка «Итого» по месяцам).
 
-Используется плиткой TD-M5 и TD-M6.
+Используется TD-M6 и сводными выгрузками (плитка TD-M5 — TurboProject).
 """
 from __future__ import annotations
 
