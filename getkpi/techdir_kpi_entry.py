@@ -4,7 +4,16 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Callable
 
-from . import techdir_m2, techdir_m3, techdir_m4, techdir_m6_bdds, techdir_projects, techdir_tekuchet, techdir_y1
+from . import (
+    techdir_m2,
+    techdir_m3,
+    techdir_m4,
+    techdir_m5,
+    techdir_m6_bdds,
+    techdir_projects,
+    techdir_tekuchet,
+    techdir_y1,
+)
 
 TECHDIR_TILE_KPI_IDS: frozenset[str] = frozenset({
     'TD-M1', 'TD-M2', 'TD-Q1', 'TD-M3', 'TD-M4', 'TD-M5', 'TD-M6', 'TD-Q2', 'TD-Y1',
@@ -65,7 +74,7 @@ def _merge_td_m4(entry: dict[str, Any], year: int | None, month: int | None) -> 
 
 
 def _merge_td_m5(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
-    td = techdir_projects.get_td_m5_ytd(year=year, month=month)
+    td = techdir_m5.get_td_m5_ytd(year=year, month=month)
     if td is None:
         return False
     _apply_monthly(entry, td)
