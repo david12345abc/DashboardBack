@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import fot_vneshnie_zakazy, techdir_m3, techdir_m4, techdir_projects, techdir_tekuchet
+from . import techdir_m3, techdir_m4, techdir_m5, techdir_projects, techdir_tekuchet
 from .kpi_periods import pick_monthly_row_for_period
 
 # Плитки с единицами «руб.» в универсальном билдере (часть KPI техдира в БД может дублироваться у QD).
@@ -21,7 +21,11 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     mapping: dict[str, list[Path]] = {
         'TD-M1': [techdir_projects.CACHE_PATH],
         'TD-Q1': [techdir_projects.CACHE_PATH],
-        'TD-M5': [fot_vneshnie_zakazy.resolve_xlsx_path()],
+        'TD-M5': [
+            techdir_projects.CACHE_PATH,
+            techdir_m5.ytd_cache_path(ref_y, ref_m),
+            techdir_m5.FACT_CACHE_DIR,
+        ],
         'TD-M6': [techdir_projects.CACHE_PATH],
         'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
         'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
