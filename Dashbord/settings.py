@@ -47,7 +47,8 @@ INSTALLED_APPS = [
     'devdir',
     'qualdir',
     'gspp',
-    'sup'
+    'sup',
+    'tools',
 ]
 
 MIDDLEWARE = [

@@ -23,6 +23,7 @@ from . import (
     denzhi_dz,
     dept_budget_m3,
     dept_dz,
+    dept_protocol_tables,
     dept_turnover_q5,
     komdir_dashboard,
     komdir_quarterly,
@@ -561,7 +562,7 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_lower_turnover(float(pct) if pct is not None else None)
         return pct, color
 
-    if kid == 'QD-M1':
+    if kid == 'QD-M1' or kid == 'QD-M5':
         pct = ytd.get('kpi_pct')
         if pct is not None:
             pct = float(pct)
@@ -689,6 +690,13 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             *qd_m1_excel_paths_for_cache_stamp(ref_y, ref_m),
             qd_m1_tile_cache_path(ref_y, ref_m),
         ]
+    elif kpi_id == 'QD-M5':
+        from qualdir.qd_m5 import internal_brak_month_cache_path, qd_m5_ytd_cache_path
+
+        cache_files = [
+            qd_m5_ytd_cache_path(ref_y, ref_m),
+            internal_brak_month_cache_path(ref_y, ref_m),
+        ]
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
         if not cache_files and kpi_id == 'QD-Q2':
@@ -796,6 +804,10 @@ def _build_tile_item(
         tile['articles'] = entry.get('articles')
         if entry.get('classifier') is not None:
             tile['classifier'] = entry.get('classifier')
+    if kpi.get('kpi_id') == 'QD-M5':
+        tile['departments'] = entry.get('departments')
+        if entry.get('departments_by_month') is not None:
+            tile['departments_by_month'] = entry.get('departments_by_month')
     if entry.get('reference_analytics') is not None:
         tile['reference_analytics'] = entry.get('reference_analytics')
     if entry.get('period_aggregates') is not None:
@@ -1585,6 +1597,8 @@ def _build_universal_payload(
         if pd_q1_table:
             tablitsy['PD-T-Q1-DEVIATIONS'] = pd_q1_table
 
+    dept_protocol_tables.merge_protocol_overdue_table(tablitsy, dept, year=ref_y, month=ref_m)
+
     return {
         'month': ref_m,
         'year': ref_y,
@@ -2109,6 +2123,7 @@ def get_kpi(request):
         payload = komdir_dashboard.build_komdir_payload(
             kpis, month=req_month, year=req_year, dept_guid=dg,
         )
+        dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
         return JsonResponse(
             {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
             json_dumps_params={'ensure_ascii': False},
@@ -2123,6 +2138,7 @@ def get_kpi(request):
 
     if _is_komdir_department(requested_dept):
         payload = komdir_dashboard.build_komdir_payload(kpis, month=req_month, year=req_year)
+        dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
         return JsonResponse(
             {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
             json_dumps_params={'ensure_ascii': False},
@@ -2177,6 +2193,7 @@ def get_kpi(request):
             },
         })
         payload['Таблицы'] = tables
+        dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
         return JsonResponse(
             {
                 'department': requested_dept,
@@ -2249,6 +2266,7 @@ def get_all_departments(request):
                 }, status=404)
             dg = dept_guid_for_kpi_key(ck)
             payload = _build_komdir_style_payload(ck, kpis, request, dept_guid=dg)
+            dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
             return JsonResponse(
                 {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
                 json_dumps_params={'ensure_ascii': False},
@@ -2270,6 +2288,7 @@ def get_all_departments(request):
 
         if _is_komdir_department(requested_dept):
             payload = _build_komdir_style_payload(requested_dept, kpis, request)
+            dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
             return JsonResponse(
                 {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
                 json_dumps_params={'ensure_ascii': False},
@@ -2328,6 +2347,7 @@ def get_all_departments(request):
                 },
             })
             payload['Таблицы'] = tables
+            dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
             return JsonResponse(
                 {
                     'department': requested_dept,
@@ -2369,6 +2389,7 @@ def get_all_departments(request):
         kpis = _get_kpi_dicts(dept)
         if _is_komdir_department(dept):
             payload = _build_komdir_style_payload(dept, kpis, request)
+            dept_protocol_tables.enrich_payload_tables(payload, dept)
             return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
         if chairman_data.is_chairman_department(dept):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
@@ -2418,6 +2439,7 @@ def get_all_departments(request):
                 },
             })
             payload['Таблицы'] = tables
+            dept_protocol_tables.enrich_payload_tables(payload, dept)
             return {
                 'department': dept,
                 'for': for_block,
@@ -2427,11 +2449,13 @@ def get_all_departments(request):
         if is_komdir_child(dept):
             dg = dept_guid_for_kpi_key(commercial_kpi_key(dept))
             payload = _build_komdir_style_payload(dept, kpis, request, dept_guid=dg)
+            dept_protocol_tables.enrich_payload_tables(payload, dept)
             return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
         if isinstance((ck := commercial_kpi_key(dept)), str):
             ck_kpis = _get_kpi_dicts(ck)
             dg = dept_guid_for_kpi_key(ck)
             payload = _build_komdir_style_payload(ck, ck_kpis, request, dept_guid=dg)
+            dept_protocol_tables.enrich_payload_tables(payload, dept)
             return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
         payload = _build_universal_payload(
             dept,

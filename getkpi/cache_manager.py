@@ -228,6 +228,15 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          hrd_m1.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: hrd_m1.get_hrd_m1_ytd(year=yy, month=mm)),
     ]
+
+    from getkpi import dept_protocol_tables
+
+    tasks.append((
+        "dept_protocol_overdue_warm_all",
+        dept_protocol_tables.warm_stamp_path(),
+        dept_protocol_tables.warm_all_department_caches,
+    ))
+
     return tasks
 
 
