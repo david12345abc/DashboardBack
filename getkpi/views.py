@@ -876,6 +876,24 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_lower_turnover(float(pct) if pct is not None else None)
         return pct, color
 
+    if kid == 'METD-Q2':
+        fact = ytd.get('total_fact')
+        plan = ytd.get('total_plan')
+        if fact is None or plan is None:
+            quarterly = entry.get('quarterly_data') or []
+            row = quarterly[-1] if quarterly else {}
+            if isinstance(row, dict):
+                fact = row.get('fact')
+                plan = row.get('plan')
+        try:
+            pct = float(fact) if fact is not None else None
+            ratio = round(float(fact) / float(plan) * 100, 1) if fact is not None and plan else None
+        except (TypeError, ValueError, ZeroDivisionError):
+            pct = None
+            ratio = None
+        color = _rag_lower_turnover(ratio)
+        return pct, color
+
     if kid == 'QD-M1':
         pct = ytd.get('kpi_pct')
         if pct is not None:
@@ -2296,6 +2314,14 @@ def _build_universal_payload(
             # Reuse the already supported project-deviation table key so older loaded frontend code
             # renders metrologist project rows without waiting for a static JS refresh.
             tablitsy['GK-T-M1-DEVIATIONS'] = metrolog_table
+        try:
+            from . import calc_metrolog_turnover
+
+            turnover_table = calc_metrolog_turnover.get_metrolog_turnover_table(year=ref_y, month=ref_m)
+        except Exception:
+            turnover_table = None
+        if turnover_table:
+            tablitsy['METD-T-Q2-TURNOVER'] = turnover_table
 
     return {
         'month': ref_m,
@@ -2572,6 +2598,29 @@ def _build_kpi_entry(
             entry['data_granularity'] = data.get('data_granularity', 'monthly')
             entry['monthly_data'] = data.get('monthly_data') or []
             entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            entry['debug'] = data.get('debug')
+            return entry
+
+    if kpi_id == 'METD-Q2':
+        from . import calc_metrolog_turnover
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'metrolog_turnover_{ref_y}_{ref_m}',
+            calc_metrolog_turnover.get_metrolog_turnover_ytd,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'quarterly')
+            entry['quarterly_data'] = data.get('quarterly_data') or []
+            entry['last_full_quarter_row'] = data.get('last_full_quarter_row')
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             entry['debug'] = data.get('debug')
