@@ -1804,6 +1804,106 @@ def _build_devdir_charts(
     return charts
 
 
+def _build_chief_metrolog_charts(
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    """Графики главного метролога: ФОТ и бюджет, план/факт по месяцам."""
+    sources = [
+        ("METD-M3.F", "ФОТ", entries_by_id.get("METD-M3.F") or {}),
+        ("METD-M3.B", "Бюджет", entries_by_id.get("METD-M3.B") or {}),
+    ]
+
+    series: list[dict] = []
+    for kid, display_name, entry in sources:
+        points = [
+            {
+                "month": row.get("month"),
+                "month_name": row.get("month_name"),
+                "year": row.get("year"),
+                "plan": row.get("plan"),
+                "fact": row.get("fact"),
+                "kpi_pct": row.get("kpi_pct"),
+                "has_data": row.get("has_data"),
+                "values_unit": row.get("values_unit"),
+            }
+            for row in entry.get("monthly_data") or []
+            if isinstance(row, dict)
+        ]
+        if not any((p.get("plan") is not None or p.get("fact") is not None) for p in points):
+            continue
+        series.append({
+            "kpi_id": kid,
+            "name": display_name,
+            "chart_type": "line_plan_fact_monthly",
+            "chart_type_label": f"План/Факт по месяцам: {display_name}",
+            "points": points,
+        })
+
+    charts: dict = {}
+    if series:
+        charts["METD-C1"] = {
+            "kpi_id": "METD-C1",
+            "name": "Динамика ФОТ и бюджета",
+            "periodicity": "ежемесячно",
+            "chart_type": "multi_line_plan_fact_monthly",
+            "chart_type_label": "Линейный тренд по месяцам (план/факт)",
+            "series": series,
+        }
+
+    bar_categories: list[str] = []
+    bar_plan_values: list[float | None] = []
+    bar_fact_values: list[float | None] = []
+    bar_points: list[dict] = []
+    for kid, display_name, entry in sources:
+        kper = entry.get("kpi_period") or {}
+        point_y, point_m = ref_y, ref_m
+        if isinstance(kper, dict) and kper.get("year") is not None and kper.get("month") is not None:
+            point_y = int(kper["year"])
+            point_m = max(1, min(12, int(kper["month"])))
+        point = (
+            pick_monthly_row_for_period(entry.get("monthly_data") or [], point_y, point_m)
+            or entry.get("last_full_month_row")
+            or {}
+        )
+        bar_categories.append(display_name)
+        bar_plan_values.append(point.get("plan"))
+        bar_fact_values.append(point.get("fact"))
+        bar_points.append({
+            "kpi_id": kid,
+            "name": display_name,
+            "month": point.get("month", point_m),
+            "year": point.get("year", point_y),
+            "plan": point.get("plan"),
+            "fact": point.get("fact"),
+            "kpi_pct": point.get("kpi_pct"),
+            "has_data": point.get("has_data"),
+            "values_unit": point.get("values_unit"),
+        })
+
+    if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
+        charts["METD-C2"] = {
+            "kpi_id": "METD-C2",
+            "name": "ФОТ и бюджет за выбранный месяц",
+            "periodicity": "ежемесячно",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "Столбцы: план/факт за месяц",
+            "series": [{
+                "kpi_id": "METD-C2",
+                "name": "План/факт за месяц",
+                "chart_type": "column_plan_fact_monthly",
+                "chart_type_label": "Столбцы",
+                "categories": bar_categories,
+                "plan": bar_plan_values,
+                "fact": bar_fact_values,
+                "points": bar_points,
+            }],
+        }
+
+    return charts
+
+
 def _wants_tile_debug(request) -> bool:
     """Параметр ``?include_debug=1`` — добавить в элементы плиток поле ``debug`` (диагностика)."""
     v = (request.GET.get('include_debug') or '').strip().lower()
@@ -1858,6 +1958,7 @@ def _build_universal_payload(
         or _is_prod_deputy_department(dept)
         or _is_qualdir_department(dept)
         or _is_chief_constructor_department(dept)
+        or _is_chief_metrolog_department(dept)
         or logistics_views.is_logistics_head_department(dept)
         or _is_devdir_department(dept)
         or _is_gspp_department(dept)
@@ -1966,7 +2067,7 @@ def _build_universal_payload(
             'OD-M1', 'OD-M3.1', 'OD-M3.2',
             'PD-M1.1', 'PD-M1.1.M', 'PD-M1.1.W', 'PD-M1.1.T',
             'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
-            'PD-M3.1', 'PD-M3.2',
+            'PD-M3.1', 'PD-M3.2', 'METD-M3.B', 'METD-M3.F',
         }:
             tile['unit'] = 'руб.'
         elif kpi.get('kpi_id') in {'PD-M1.2', 'PD-M1.2.M', 'PD-M1.2.W', 'PD-M1.2.T'} or _kid_tile == 'HRD-M1':
@@ -2057,6 +2158,8 @@ def _build_universal_payload(
         grafiki.update(_build_devdir_charts(entries_by_id, ref_y, ref_m))
     if _is_gspp_department(dept):
         grafiki.update(_build_gspp_charts(tiles_meta, entries_by_id, ref_y, ref_m))
+    if _is_chief_metrolog_department(dept):
+        grafiki.update(_build_chief_metrolog_charts(entries_by_id, ref_y, ref_m))
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -2322,6 +2425,22 @@ def _build_universal_payload(
             turnover_table = None
         if turnover_table:
             tablitsy['METD-T-Q2-TURNOVER'] = turnover_table
+        try:
+            from . import calc_metrolog_fot
+
+            fot_table = calc_metrolog_fot.get_metrolog_fot_table(year=ref_y, month=ref_m)
+        except Exception:
+            fot_table = None
+        if fot_table:
+            tablitsy['METD-T-M3-FOT'] = fot_table
+        try:
+            from . import calc_metrolog_budget
+
+            budget_table = calc_metrolog_budget.get_metrolog_budget_table(year=ref_y, month=ref_m)
+        except Exception:
+            budget_table = None
+        if budget_table:
+            tablitsy['METD-T-M3-BUDGET'] = budget_table
 
     return {
         'month': ref_m,
@@ -2471,6 +2590,28 @@ def _build_kpi_entry(
             entry['kpi_period'] = dz.get('kpi_period')
             return entry
 
+    if kpi_id == 'METD-M3.B':
+        from . import calc_metrolog_budget
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'metrolog_budget_{ref_y}_{ref_m}',
+            calc_metrolog_budget.get_metrolog_budget_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry['data_granularity'] = data.get('data_granularity', 'monthly')
+        entry['monthly_data'] = data.get('monthly_data') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        entry['debug'] = data.get('debug')
+        return entry
+
     if dept_key and _is_budget_limit_m3_kpi(kpi_id) and not _is_prod_deputy_pc_m3_kpi(kpi_id):
         bm = dept_budget_m3.get_dept_budget_m3_ytd(dept_key)
         if bm is not None:
@@ -2480,6 +2621,28 @@ def _build_kpi_entry(
             entry['ytd'] = bm['ytd']
             entry['kpi_period'] = bm.get('kpi_period')
             return entry
+
+    if kpi_id == 'METD-M3.F':
+        from . import calc_metrolog_fot
+
+        if year and month:
+            ref_y, ref_m = year, month
+        else:
+            today = date.today()
+            ref_y, ref_m = today.year, today.month
+        data = cache_manager.locked_call(
+            f'metrolog_fot_{ref_y}_{ref_m}',
+            calc_metrolog_fot.get_metrolog_fot_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry['data_granularity'] = data.get('data_granularity', 'monthly')
+        entry['monthly_data'] = data.get('monthly_data') or []
+        entry['last_full_month_row'] = data.get('last_full_month_row')
+        entry['ytd'] = data.get('ytd') or {}
+        entry['kpi_period'] = data.get('kpi_period')
+        entry['debug'] = data.get('debug')
+        return entry
 
     if dept_key and dept_turnover_q5.is_turnover_q5_kpi(kpi_id):
         tq = dept_turnover_q5.build_turnover_q5_entry(dept_key)
@@ -2632,35 +2795,22 @@ def _build_kpi_entry(
         else:
             today = date.today()
             ref_y, ref_m = today.year, today.month
-        entry['data_granularity'] = 'monthly'
-        entry['monthly_data'] = []
-        entry['last_full_month_row'] = {
-            'month': ref_m,
-            'year': ref_y,
-            'month_name': MONTH_NAMES.get(ref_m, str(ref_m)),
-            'plan': None,
-            'fact': None,
-            'kpi_pct': None,
-            'has_data': False,
-        }
-        entry['ytd'] = {
-            'total_plan': None,
-            'total_fact': None,
-            'kpi_pct': None,
-            'months_with_data': 0,
-            'months_total': 0,
-        }
-        entry['kpi_period'] = {
-            'type': 'last_full_month',
-            'year': ref_y,
-            'month': ref_m,
-            'month_name': MONTH_NAMES.get(ref_m, str(ref_m)),
-        }
-        entry['debug'] = {
-            'status': 'methodology_pending',
-            'reason': 'Не задана методика получения проектов отдела сертификации',
-        }
-        return entry
+        from . import calc_metrolog_projects
+
+        data = cache_manager.locked_call(
+            f'metrolog_certification_projects_{ref_y}_{ref_m}',
+            calc_metrolog_projects.get_certification_projects_without_major_deviation_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        if data is not None:
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
+            entry['ytd'] = data.get('ytd') or {}
+            entry['kpi_period'] = data.get('kpi_period')
+            entry['debug'] = data.get('debug')
+            return entry
 
     if kpi_id == 'METD-Q4':
         plan = 100.0

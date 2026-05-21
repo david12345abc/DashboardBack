@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 SOURCE_TAG = "metrolog_turnover_q2_v1"
+YTD_SOURCE_TAG = "metrolog_turnover_q2_ytd_v1"
 CACHE_VERSION = 2
 PLAN_FALLBACK_PCT = 5.0
 
@@ -83,6 +84,11 @@ def _cache_path(year: int, quarter: int) -> Path:
     return CACHE_DIR / f"metrolog_turnover_q2_{year}_q{quarter}.json"
 
 
+def ytd_cache_path(year: int, month: int) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / f"metrolog_turnover_q2_ytd_{int(year)}_{int(month):02d}.json"
+
+
 def _load_cache(year: int, quarter: int) -> dict | None:
     path = _cache_path(year, quarter)
     if not path.exists():
@@ -93,6 +99,24 @@ def _load_cache(year: int, quarter: int) -> dict | None:
     except (OSError, json.JSONDecodeError):
         return None
     if data.get("source") != SOURCE_TAG:
+        return None
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
+    if data.get("cache_date") != date.today().isoformat():
+        return None
+    return data
+
+
+def _load_ytd_cache(year: int, month: int) -> dict | None:
+    path = ytd_cache_path(year, month)
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("source") != YTD_SOURCE_TAG:
         return None
     if data.get("cache_version") != CACHE_VERSION:
         return None
@@ -117,6 +141,24 @@ def _save_cache(year: int, quarter: int, payload: dict) -> None:
             )
     except OSError:
         logger.exception("Не удалось сохранить кэш METD-Q2")
+
+
+def _save_ytd_cache(year: int, month: int, payload: dict) -> None:
+    try:
+        with ytd_cache_path(year, month).open("w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    **payload,
+                    "source": YTD_SOURCE_TAG,
+                    "cache_version": CACHE_VERSION,
+                    "cache_date": date.today().isoformat(),
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except OSError:
+        logger.exception("Не удалось сохранить YTD-кэш METD-Q2")
 
 
 def _quarter_months(quarter: int) -> list[int]:
@@ -356,6 +398,9 @@ def get_metrolog_turnover_ytd(year: int | None = None, month: int | None = None)
         ref_date = date.today()
         ref_y = year or ref_date.year
         ref_m = month or ref_date.month
+        cached = _load_ytd_cache(ref_y, ref_m)
+        if cached is not None:
+            return cached
         last_q = _completed_quarter_for_month(ref_m)
         quarter_rows = []
         for quarter in range(1, last_q + 1):
@@ -375,7 +420,7 @@ def get_metrolog_turnover_ytd(year: int | None = None, month: int | None = None)
             })
 
         ref_row = quarter_rows[-1] if quarter_rows else None
-        return {
+        payload = {
             "data_granularity": "quarterly",
             "quarterly_data": quarter_rows,
             "last_full_quarter_row": ref_row,
@@ -401,6 +446,8 @@ def get_metrolog_turnover_ytd(year: int | None = None, month: int | None = None)
                 "source": "1C:ERP staffing/dismissals + Document_ТД_ТекучестьПерсонала",
             },
         }
+        _save_ytd_cache(ref_y, ref_m, payload)
+        return payload
 
     ref_date = date.today()
     ref_y = year or ref_date.year

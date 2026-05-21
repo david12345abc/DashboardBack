@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_PATH = cache_manager.CACHE_DIR / "metrolog_projects_snapshot.json"
 CACHE_VERSION = 2
+YTD_CACHE_VERSION = 1
 TARGET_OWNER = "Хозуян"
 CERTIFICATION_DEPARTMENT_MARKERS = ("сертификац", "омис")
 
@@ -61,6 +62,44 @@ def _save_cache(payload: dict) -> None:
         CACHE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError:
         logger.exception("Не удалось сохранить кэш проектов главного метролога")
+
+
+def metrolog_projects_ytd_cache_path(year: int, month: int) -> Any:
+    return cache_manager.CACHE_DIR / f"metrolog_projects_ytd_{int(year)}_{int(month):02d}.json"
+
+
+def certification_projects_ytd_cache_path(year: int, month: int) -> Any:
+    return cache_manager.CACHE_DIR / f"metrolog_certification_projects_ytd_{int(year)}_{int(month):02d}.json"
+
+
+def _load_period_cache(path: Any, source: str) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("cache_date") != date.today().isoformat():
+        return None
+    if data.get("cache_version") != YTD_CACHE_VERSION:
+        return None
+    if data.get("cache_source") != source:
+        return None
+    return data
+
+
+def _save_period_cache(path: Any, source: str, payload: dict) -> None:
+    cache_manager.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    data = {
+        **payload,
+        "cache_date": date.today().isoformat(),
+        "cache_version": YTD_CACHE_VERSION,
+        "cache_source": source,
+    }
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        logger.exception("Не удалось сохранить периодный кэш проектов главного метролога")
 
 
 def _normalize_person(value: Any) -> str:
@@ -196,9 +235,13 @@ def get_metrolog_projects_without_major_deviation_monthly(
 ) -> dict | None:
     """Plan/fact for projects where Hozuyan is curator or project manager."""
     try:
+        ref_y, ref_m = _normalize_ref_period(year, month)
+        cache_path = metrolog_projects_ytd_cache_path(ref_y, ref_m)
+        cached = _load_period_cache(cache_path, "metrolog_projects_ytd")
+        if cached is not None:
+            return cached
         snapshot = _compute_projects_snapshot()
         projects = list(snapshot.get("projects") or [])
-        ref_y, ref_m = _normalize_ref_period(year, month)
         rows: list[dict[str, Any]] = []
         ref_row: dict[str, Any] | None = None
 
@@ -229,7 +272,7 @@ def get_metrolog_projects_without_major_deviation_monthly(
             if (y, m) == (ref_y, ref_m):
                 ref_row = row
 
-        return {
+        payload = {
             "data_granularity": "monthly",
             "monthly_data": rows,
             "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
@@ -249,6 +292,8 @@ def get_metrolog_projects_without_major_deviation_monthly(
             },
             "debug": snapshot.get("debug") or {},
         }
+        _save_period_cache(cache_path, "metrolog_projects_ytd", payload)
+        return payload
     except Exception:
         logger.exception("Ошибка при расчёте проектов главного метролога")
         return None
@@ -319,17 +364,24 @@ def get_certification_projects_without_major_deviation_monthly(
 ) -> dict | None:
     """Plan/fact for certification department projects without >10 workday milestone deviations."""
     try:
+        ref_y, ref_m = _normalize_ref_period(year, month)
+        cache_path = certification_projects_ytd_cache_path(ref_y, ref_m)
+        cached = _load_period_cache(cache_path, "metrolog_certification_projects_ytd")
+        if cached is not None:
+            return cached
         snapshot = _compute_projects_snapshot()
         projects = list(snapshot.get("certification_projects") or [])
-        return _build_projects_without_major_deviation_monthly(
+        payload = _build_projects_without_major_deviation_monthly(
             projects,
-            year=year,
-            month=month,
+            year=ref_y,
+            month=ref_m,
             debug={
                 **(snapshot.get("debug") or {}),
                 "filter": "certification department markers",
             },
         )
+        _save_period_cache(cache_path, "metrolog_certification_projects_ytd", payload)
+        return payload
     except Exception:
         logger.exception("Ошибка при расчёте проектов отдела сертификации главного метролога")
         return None

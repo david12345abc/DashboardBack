@@ -76,6 +76,8 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_reclamations,
         calc_svoevremennaya_otgruzka,
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
+        calc_metrolog_budget, calc_metrolog_fot, calc_metrolog_production_plan,
+        calc_metrolog_projects, calc_metrolog_turnover,
         techdir_m3, techdir_m4, techdir_m5, techdir_projects, techdir_tekuchet,
     )
     from .calc_prod_deputy_pc_common import cache_path as prod_deputy_pc_cache_path
@@ -258,6 +260,30 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'ks_razvitie_{y}',
          calc_ks_razvitie.cache_path(y),
          lambda yy=y: calc_ks_razvitie.get_ks_razvitie_plans(year=yy)),
+
+        (f'metrolog_m1_production_plan_{y}_{m}',
+         calc_metrolog_production_plan.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: calc_metrolog_production_plan.get_metrolog_production_plan_monthly(year=yy, month=mm)),
+
+        (f'metrolog_m3_budget_{y}_{m}',
+         calc_metrolog_budget.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: calc_metrolog_budget.get_metrolog_budget_monthly(year=yy, month=mm)),
+
+        (f'metrolog_m3_fot_{y}_{m}',
+         calc_metrolog_fot.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: calc_metrolog_fot.get_metrolog_fot_monthly(year=yy, month=mm)),
+
+        (f'metrolog_q1_projects_{y}_{m}',
+         calc_metrolog_projects.metrolog_projects_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: calc_metrolog_projects.get_metrolog_projects_without_major_deviation_monthly(year=yy, month=mm)),
+
+        (f'metrolog_q3_certification_projects_{y}_{m}',
+         calc_metrolog_projects.certification_projects_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: calc_metrolog_projects.get_certification_projects_without_major_deviation_monthly(year=yy, month=mm)),
+
+        (f'metrolog_q2_turnover_{y}_{m}',
+         calc_metrolog_turnover.ytd_cache_path(y, m),
+         lambda yy=y, mm=m: calc_metrolog_turnover.get_metrolog_turnover_ytd(year=yy, month=mm)),
 
         (f'devdir_rd_m1_zpr_{y}_{m}',
          rd_m1_zpr.cache_file_path_for_period(y, m),

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from calendar import monthrange
 from datetime import date, datetime, time
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
@@ -15,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
 EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
+CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
+CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v1"
+CACHE_VERSION = 1
 
 BASE = DEFAULT_BASE_URL.rstrip("/") + "/odata/standard.odata"
 if os.getenv("ONEC_BASE_URL"):
@@ -40,6 +45,44 @@ MONTH_NAMES = {
     5: "май", 6: "июнь", 7: "июль", 8: "август",
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
+
+
+def cache_file_path_for_period(year: int, month: int) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / f"metrolog_production_plan_{int(year)}_{int(month):02d}.json"
+
+
+def _load_cache(year: int, month: int) -> dict | None:
+    path = cache_file_path_for_period(year, month)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("cache_source") != CACHE_SOURCE_TAG:
+        return None
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
+    if data.get("cache_date") != date.today().isoformat():
+        return None
+    return data
+
+
+def _save_cache(year: int, month: int, payload: dict) -> None:
+    data = {
+        **payload,
+        "cache_source": CACHE_SOURCE_TAG,
+        "cache_version": CACHE_VERSION,
+        "cache_date": date.today().isoformat(),
+    }
+    try:
+        cache_file_path_for_period(year, month).write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        logger.exception("Не удалось сохранить кэш METD-M1")
 
 
 def _dt(value: str | None) -> datetime | None:
@@ -267,9 +310,12 @@ def _month_row(year: int, month: int) -> dict:
 def get_metrolog_production_plan_monthly(year: int, month: int) -> dict:
     ref_y = int(year)
     ref_m = max(1, min(12, int(month)))
+    cached = _load_cache(ref_y, ref_m)
+    if cached is not None:
+        return cached
     months = [_month_row(ref_y, m) for m in range(1, ref_m + 1)]
     last = months[-1] if months else None
-    return {
+    payload = {
         "data_granularity": "monthly",
         "monthly_data": months,
         "last_full_month_row": last,
@@ -288,3 +334,5 @@ def get_metrolog_production_plan_monthly(year: int, month: int) -> dict:
         },
         "debug": last.get("debug") if last else {},
     }
+    _save_cache(ref_y, ref_m, payload)
+    return payload
