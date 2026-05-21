@@ -1,3 +1,5 @@
+import json
+
 from django.conf import settings
 from django.core.mail import EmailMessage
 from django.http import JsonResponse
@@ -60,6 +62,51 @@ def _send_feedback_email(req: FeedbackRequest, files) -> None:
             uploaded.content_type or 'application/octet-stream',
         )
     message.send(fail_silently=False)
+
+
+def _parse_json_body(request) -> tuple[dict | None, JsonResponse | None]:
+    try:
+        return json.loads(request.body or b'{}'), None
+    except json.JSONDecodeError:
+        return None, JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+
+def _send_guide_support_email(department: str, full_name: str, question: str) -> None:
+    message = EmailMessage(
+        subject='[Дашборд] Вопрос из руководства пользователя',
+        body='\n'.join([
+            'Источник: страница руководства пользователя',
+            f'Отдел: {department}',
+            f'ФИО: {full_name}',
+            '',
+            'Вопрос:',
+            question,
+        ]),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[settings.FEEDBACK_EMAIL_TO],
+    )
+    message.send(fail_silently=False)
+
+
+@require_POST
+def guide_support_request(request):
+    data, error = _parse_json_body(request)
+    if error:
+        return error
+
+    department = (data.get('department') or '').strip()
+    full_name = (data.get('full_name') or data.get('fio') or '').strip()
+    question = (data.get('question') or '').strip()
+
+    if not department or not full_name or not question:
+        return JsonResponse({'error': 'department, full_name and question are required'}, status=400)
+
+    try:
+        _send_guide_support_email(department, full_name, question)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc), 'email_sent': False}, status=502)
+
+    return JsonResponse({'ok': True, 'email_sent': True})
 
 
 @require_http_methods(['GET', 'POST'])

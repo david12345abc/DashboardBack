@@ -5,6 +5,7 @@ from pathlib import Path
 
 import jwt
 from django.conf import settings
+from django.core.mail import EmailMessage
 from django.http import JsonResponse
 from django.utils import timezone as django_timezone
 from django.views.decorators.http import require_POST, require_GET, require_http_methods
@@ -138,6 +139,26 @@ def _validate_department(department: str) -> bool:
     return department in set(_load_departments())
 
 
+def _send_access_request_email(req: AccessRequest) -> None:
+    subject = f'[Дашборд] Новая заявка: {req.get_request_type_display()}'
+    body = '\n'.join([
+        f'Тип заявки: {req.get_request_type_display()}',
+        f'Логин: {req.nickname}',
+        f'Подразделение: {req.department or "—"}',
+        f'Статус: {req.get_status_display()}',
+        f'Создана: {req.created_at.isoformat()}',
+        '',
+        'Заявка также доступна в админ-панели дашборда.',
+    ])
+    message = EmailMessage(
+        subject=subject,
+        body=body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[settings.FEEDBACK_EMAIL_TO],
+    )
+    message.send(fail_silently=False)
+
+
 # ---------------------------------------------------------------------------
 # POST /api/user/login/
 # ---------------------------------------------------------------------------
@@ -208,7 +229,12 @@ def request_registration(request):
     )
     req.set_password(password)
     req.save()
-    return JsonResponse({'request': _access_request_to_dict(req)}, status=201)
+    email_sent = True
+    try:
+        _send_access_request_email(req)
+    except Exception:
+        email_sent = False
+    return JsonResponse({'request': _access_request_to_dict(req), 'email_sent': email_sent}, status=201)
 
 
 @require_POST
