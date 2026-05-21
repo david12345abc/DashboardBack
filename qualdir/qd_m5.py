@@ -1,11 +1,11 @@
 """
-QD-M1 — внешний брак (директор по качеству / qualdir).
+QD-M5 — внутренний брак (директор по качеству / qualdir).
 
-Источник: Document_ТД_Форма0319 через ``qualdir.brak_report`` (см. ``external_brak.py``).
+Источник: Document_ТД_Форма0318 через ``qualdir.brak_report``.
 На плитке: всего документов за месяц и разбивка по подразделениям (ОТК-1 / ОТК-2).
 
-Кэш: помесячно ``qualdir_external_brak_<Y>_<MM>.json``; полный YTD —
-``qualdir_qd_m1_ytd_<Y>_<MM>.json``.
+Кэш: помесячно ``qualdir_internal_brak_<Y>_<MM>.json``; полный YTD —
+``qualdir_qd_m5_ytd_<Y>_<MM>.json``.
 """
 
 from __future__ import annotations
@@ -22,17 +22,17 @@ from getkpi.cache_manager import locked_call
 from getkpi.devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
-from qualdir.brak_report import EXTERNAL_BRAK_ENTITY, compute_external_brak_month
+from qualdir.brak_report import INTERNAL_BRAK_ENTITY, compute_internal_brak_month
 
 logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_external_brak_month_v1"
+SOURCE_TAG = "qualdir_internal_brak_month_v1"
 CACHE_VERSION = 1
 
-QD_M1_YTD_CACHE_PREFIX = "qualdir_qd_m1_ytd"
-QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v1"
-QD_M1_YTD_DISK_VERSION = 1
+QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
+QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v1"
+QD_M5_YTD_DISK_VERSION = 1
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
@@ -47,19 +47,14 @@ def _month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
     return [(year, mm) for mm in range(1, ref_month + 1)]
 
 
-def external_brak_month_cache_path(year: int, month: int) -> Path:
+def internal_brak_month_cache_path(year: int, month: int) -> Path:
     _CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-    return _CACHE_ROOT / f"qualdir_external_brak_{year}_{month:02d}.json"
+    return _CACHE_ROOT / f"qualdir_internal_brak_{year}_{month:02d}.json"
 
 
-def qd_m1_ytd_cache_path(year: int | None = None, month: int | None = None) -> Path:
+def qd_m5_ytd_cache_path(year: int | None = None, month: int | None = None) -> Path:
     ref_y, ref_m = _normalize_period(year, month)
-    return ytd_json_cache.cache_path(QD_M1_YTD_CACHE_PREFIX, ref_y, ref_m)
-
-
-def qd_m1_tile_cache_path(year: int, month: int) -> Path:
-    """Алиас YTD-кэша (для cache_manager / warm)."""
-    return qd_m1_ytd_cache_path(year, month)
+    return ytd_json_cache.cache_path(QD_M5_YTD_CACHE_PREFIX, ref_y, ref_m)
 
 
 def _month_row_cache_is_perpetual(year: int, month: int) -> bool:
@@ -68,7 +63,7 @@ def _month_row_cache_is_perpetual(year: int, month: int) -> bool:
 
 
 def _load_month_cache(year: int, month: int) -> dict[str, Any] | None:
-    path = external_brak_month_cache_path(year, month)
+    path = internal_brak_month_cache_path(year, month)
     if not path.exists():
         return None
     try:
@@ -88,7 +83,7 @@ def _load_month_cache(year: int, month: int) -> dict[str, Any] | None:
 
 def _save_month_cache(year: int, month: int, payload: dict[str, Any]) -> None:
     try:
-        with external_brak_month_cache_path(year, month).open("w", encoding="utf-8") as handle:
+        with internal_brak_month_cache_path(year, month).open("w", encoding="utf-8") as handle:
             json.dump(
                 {
                     **payload,
@@ -104,7 +99,7 @@ def _save_month_cache(year: int, month: int, payload: dict[str, Any]) -> None:
         pass
 
 
-def compute_qd_m1_external_brak_month(
+def compute_qd_m5_internal_brak_month(
     year: int,
     month: int,
     *,
@@ -115,9 +110,9 @@ def compute_qd_m1_external_brak_month(
         return cached
 
     try:
-        snapshot = compute_external_brak_month(year, month, session=session)
+        snapshot = compute_internal_brak_month(year, month, session=session)
     except Exception as exc:
-        logger.warning("QD-M1: нет данных за %d-%02d: %s", year, month, exc)
+        logger.warning("QD-M5: нет данных за %d-%02d: %s", year, month, exc)
         snapshot = {
             "year": year,
             "month": month,
@@ -147,7 +142,7 @@ def _departments_by_month_section(monthly_rows: list[dict[str, Any]]) -> list[di
     ]
 
 
-def _compute_qd_m1_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
+def _compute_qd_m5_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
     monthly_rows: list[dict[str, Any]] = []
     session = requests.Session()
     from qualdir.brak_report import AUTH
@@ -157,9 +152,9 @@ def _compute_qd_m1_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
     try:
         for y, m in _month_pairs(ref_y, ref_m):
             try:
-                snapshot = compute_qd_m1_external_brak_month(y, m, session=session)
+                snapshot = compute_qd_m5_internal_brak_month(y, m, session=session)
             except requests.RequestException as exc:
-                logger.warning("QD-M1: OData error %d-%02d: %s", y, m, exc)
+                logger.warning("QD-M5: OData error %d-%02d: %s", y, m, exc)
                 snapshot = {
                     "year": y,
                     "month": m,
@@ -215,8 +210,8 @@ def _compute_qd_m1_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
             },
             "debug": {
                 "status": "ok",
-                "kpi_id": "QD-M1",
-                "source": EXTERNAL_BRAK_ENTITY,
+                "kpi_id": "QD-M5",
+                "source": INTERNAL_BRAK_ENTITY,
                 "logic": "qualdir.brak_report",
             },
         }
@@ -224,26 +219,26 @@ def _compute_qd_m1_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
         session.close()
 
 
-def get_qd_m1_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
-    """QD-M1: внешний брак — всего документов с разбивкой по подразделениям, помесячно."""
+def get_qd_m5_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
+    """QD-M5: внутренний брак — всего документов с разбивкой по подразделениям, помесячно."""
     ref_y, ref_m = _normalize_period(year, month)
-    disk_path = qd_m1_ytd_cache_path(ref_y, ref_m)
+    disk_path = qd_m5_ytd_cache_path(ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
     def _runner() -> dict[str, Any]:
         cached = ytd_json_cache.load_payload(
             disk_path,
-            source_tag=QD_M1_YTD_DISK_TAG,
-            version=QD_M1_YTD_DISK_VERSION,
+            source_tag=QD_M5_YTD_DISK_TAG,
+            version=QD_M5_YTD_DISK_VERSION,
             perpetual=perpetual,
         )
         if cached is not None:
             return cached
 
         try:
-            payload = _compute_qd_m1_tile(ref_y, ref_m)
+            payload = _compute_qd_m5_tile(ref_y, ref_m)
         except Exception as exc:
-            logger.exception("Ошибка при расчёте QD-M1 (внешний брак)")
+            logger.exception("Ошибка при расчёте QD-M5 (внутренний брак)")
             payload = {
                 "data_granularity": "monthly",
                 "monthly_data": [],
@@ -266,8 +261,8 @@ def get_qd_m1_ytd(year: int | None = None, month: int | None = None) -> dict[str
                 },
                 "debug": {
                     "status": "error",
-                    "kpi_id": "QD-M1",
-                    "source": EXTERNAL_BRAK_ENTITY,
+                    "kpi_id": "QD-M5",
+                    "source": INTERNAL_BRAK_ENTITY,
                     "error": str(exc),
                 },
             }
@@ -276,9 +271,9 @@ def get_qd_m1_ytd(year: int | None = None, month: int | None = None) -> dict[str
             ytd_json_cache.save_payload(
                 disk_path,
                 payload,
-                source_tag=QD_M1_YTD_DISK_TAG,
-                version=QD_M1_YTD_DISK_VERSION,
+                source_tag=QD_M5_YTD_DISK_TAG,
+                version=QD_M5_YTD_DISK_VERSION,
             )
         return payload
 
-    return locked_call(f"qualdir_qd_m1_{ref_y}_{ref_m:02d}", _runner)
+    return locked_call(f"qualdir_qd_m5_{ref_y}_{ref_m:02d}", _runner)

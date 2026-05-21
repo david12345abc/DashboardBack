@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'gspp',
     'sup',
     'feedback',
+    'tools',
 ]
 
 MIDDLEWARE = [

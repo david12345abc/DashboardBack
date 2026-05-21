@@ -336,6 +336,15 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_komdir_active_dealers.new_dealers_cache_path(td_as_of),
         lambda d=td_as_of: calc_komdir_active_dealers.compute_new_dealers_report(d),
     ))
+
+    from getkpi import dept_protocol_tables
+
+    tasks.append((
+        "dept_protocol_overdue_warm_all",
+        dept_protocol_tables.warm_stamp_path(),
+        dept_protocol_tables.warm_all_department_caches,
+    ))
+
     return tasks
 
 
