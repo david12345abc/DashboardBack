@@ -53,8 +53,8 @@ def _merge_qd_m1(entry: dict[str, Any], year: int | None, month: int | None) -> 
     entry['last_full_month_row'] = qd.get('last_full_month_row')
     entry['ytd'] = qd['ytd']
     entry['kpi_period'] = qd['kpi_period']
-    entry['articles'] = qd.get('articles')
-    entry['classifier'] = qd.get('classifier')
+    entry['departments'] = qd.get('departments')
+    entry['departments_by_month'] = qd.get('departments_by_month')
     entry['debug'] = qd.get('debug')
     return True
 

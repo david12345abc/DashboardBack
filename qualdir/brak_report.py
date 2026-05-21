@@ -40,6 +40,7 @@ EMPTY = "00000000-0000-0000-0000-000000000000"
 KIND_ENTITY = "Catalog_ТД_ВидыНесоответствияПроцессовСТО"
 
 INTERNAL_BRAK_ENTITY = "Document_ТД_Форма0318"
+EXTERNAL_BRAK_ENTITY = "Document_ТД_Форма0319"
 
 INDUSTRIAL_DEPT = "отк-1"
 HOUSEHOLD_DEPT = "отк-2"
@@ -66,6 +67,12 @@ INTERNAL_BRAK_CONFIG = ReportConfig(
     doc_entity=INTERNAL_BRAK_ENTITY,
     title="Внутренний брак · ТД_Форма0318",
     description="Внутренний брак по документам ТД_Форма0318.",
+)
+
+EXTERNAL_BRAK_CONFIG = ReportConfig(
+    doc_entity=EXTERNAL_BRAK_ENTITY,
+    title="Внешний брак · ТД_Форма0319",
+    description="Внешний брак по документам ТД_Форма0319.",
 )
 
 
@@ -304,14 +311,14 @@ def departments_payload(counts: dict[str, int]) -> list[dict[str, Any]]:
     return rows
 
 
-def compute_internal_brak_counts(
+def compute_brak_counts(
     date_from: date,
     date_to: date,
     *,
     session: requests.Session | None = None,
     config: ReportConfig | None = None,
 ) -> dict[str, Any]:
-    """Сводка по документам внутреннего брака за период (для API QD-M5)."""
+    """Сводка по документам брака за период (QD-M1 / QD-M5)."""
     cfg = config or INTERNAL_BRAK_CONFIG
     own_session = session is None
     if session is None:
@@ -343,17 +350,50 @@ def compute_internal_brak_counts(
             session.close()
 
 
+def compute_brak_month(
+    year: int,
+    month: int,
+    *,
+    session: requests.Session | None = None,
+    config: ReportConfig | None = None,
+) -> dict[str, Any]:
+    date_from, date_to = month_bounds(year, month)
+    payload = compute_brak_counts(date_from, date_to, session=session, config=config)
+    payload["year"] = year
+    payload["month"] = month
+    return payload
+
+
 def compute_internal_brak_month(
     year: int,
     month: int,
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    date_from, date_to = month_bounds(year, month)
-    payload = compute_internal_brak_counts(date_from, date_to, session=session)
-    payload["year"] = year
-    payload["month"] = month
-    return payload
+    return compute_brak_month(
+        year,
+        month,
+        session=session,
+        config=INTERNAL_BRAK_CONFIG,
+    )
+
+
+def compute_external_brak_month(
+    year: int,
+    month: int,
+    *,
+    session: requests.Session | None = None,
+) -> dict[str, Any]:
+    return compute_brak_month(
+        year,
+        month,
+        session=session,
+        config=EXTERNAL_BRAK_CONFIG,
+    )
+
+
+# backward compat
+compute_internal_brak_counts = compute_brak_counts
 
 
 def terminal_width(default: int = 100, maximum: int = 110) -> int:

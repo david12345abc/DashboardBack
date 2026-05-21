@@ -41,7 +41,12 @@ import gspp.views as _gspp_kpi_views
 import qualdir.views as _qualdir_kpi_views
 import sup.views as _sup_kpi_views
 from . import techdir_kpi_entry
-from qualdir.qd_m1 import get_qd_m1_ytd, qd_m1_excel_paths_for_cache_stamp, qd_m1_tile_cache_path
+from qualdir.qd_m1 import (
+    external_brak_month_cache_path,
+    get_qd_m1_ytd,
+    qd_m1_tile_cache_path,
+    qd_m1_ytd_cache_path,
+)
 from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
 from qualdir.turnover import (
     _qd_q2_kpi_pct,
@@ -687,7 +692,8 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
         cache_files = _qd_q1_stamp_paths(ref_y, ref_m)
     elif kpi_id == 'QD-M1':
         cache_files = [
-            *qd_m1_excel_paths_for_cache_stamp(ref_y, ref_m),
+            qd_m1_ytd_cache_path(ref_y, ref_m),
+            external_brak_month_cache_path(ref_y, ref_m),
             qd_m1_tile_cache_path(ref_y, ref_m),
         ]
     elif kpi_id == 'QD-M5':
@@ -800,11 +806,7 @@ def _build_tile_item(
         tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
     if entry.get('yearly_data') is not None:
         tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
-    if kpi.get('kpi_id') == 'QD-M1':
-        tile['articles'] = entry.get('articles')
-        if entry.get('classifier') is not None:
-            tile['classifier'] = entry.get('classifier')
-    if kpi.get('kpi_id') == 'QD-M5':
+    if kpi.get('kpi_id') in {'QD-M1', 'QD-M5'}:
         tile['departments'] = entry.get('departments')
         if entry.get('departments_by_month') is not None:
             tile['departments_by_month'] = entry.get('departments_by_month')
