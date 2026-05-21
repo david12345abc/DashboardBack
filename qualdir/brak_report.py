@@ -294,6 +294,20 @@ def count_by_direction(docs: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def count_by_supplier_dept(docs: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for doc in docs:
+        name = (doc.get("supplier_dept") or "—").strip() or "—"
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def departments_payload_by_name(counts: dict[str, int]) -> list[dict[str, Any]]:
+    rows = [{"name": name, "count": int(count)} for name, count in counts.items()]
+    rows.sort(key=lambda row: (-row["count"], row["name"].lower()))
+    return rows
+
+
 def departments_payload(counts: dict[str, int]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for direction in ("industrial", "household", "other"):
@@ -317,8 +331,14 @@ def compute_brak_counts(
     *,
     session: requests.Session | None = None,
     config: ReportConfig | None = None,
+    group_by: str = "direction",
 ) -> dict[str, Any]:
-    """Сводка по документам брака за период (QD-M1 / QD-M5)."""
+    """Сводка по документам брака за период (QD-M1 / QD-M5).
+
+    group_by:
+      - ``direction`` — ОТК-1 / ОТК-2 / Прочие (QD-M5);
+      - ``supplier_dept`` — фактическое ``ПодразделениеПоставщика`` (QD-M1).
+    """
     cfg = config or INTERNAL_BRAK_CONFIG
     own_session = session is None
     if session is None:
@@ -335,14 +355,20 @@ def compute_brak_counts(
         }
         kind_names = load_kind_names(session, kind_keys)
         docs = normalize_documents(raw_docs, kind_names)
-        counts = count_by_direction(docs)
+        if group_by == "supplier_dept":
+            counts = count_by_supplier_dept(docs)
+            departments = departments_payload_by_name(counts)
+        else:
+            counts = count_by_direction(docs)
+            departments = departments_payload(counts)
         total = len(docs)
         return {
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "total": total,
             "counts": counts,
-            "departments": departments_payload(counts),
+            "departments": departments,
+            "group_by": group_by,
             "has_data": True,
         }
     finally:
@@ -356,9 +382,16 @@ def compute_brak_month(
     *,
     session: requests.Session | None = None,
     config: ReportConfig | None = None,
+    group_by: str = "direction",
 ) -> dict[str, Any]:
     date_from, date_to = month_bounds(year, month)
-    payload = compute_brak_counts(date_from, date_to, session=session, config=config)
+    payload = compute_brak_counts(
+        date_from,
+        date_to,
+        session=session,
+        config=config,
+        group_by=group_by,
+    )
     payload["year"] = year
     payload["month"] = month
     return payload
@@ -389,11 +422,73 @@ def compute_external_brak_month(
         month,
         session=session,
         config=EXTERNAL_BRAK_CONFIG,
+        group_by="supplier_dept",
     )
 
 
 # backward compat
 compute_internal_brak_counts = compute_brak_counts
+
+BRAK_TABLE_COLUMNS = [
+    "Документ",
+    "Объект несоответствия",
+    "Вид несоответствия",
+    "Подразделение",
+]
+
+
+def document_table_row(doc: dict[str, Any]) -> dict[str, str]:
+    doc_label = doc.get("number") or "—"
+    doc_date = doc.get("date") or ""
+    if doc_date:
+        doc_label = f"{doc_label} от {doc_date}"
+    kinds = doc.get("kinds") or []
+    return {
+        "Документ": doc_label,
+        "Объект несоответствия": str(doc.get("product") or "—"),
+        "Вид несоответствия": "; ".join(kinds) if kinds else "—",
+        "Подразделение": str(doc.get("supplier_dept") or "—"),
+    }
+
+
+def load_brak_documents(
+    year: int,
+    month: int,
+    *,
+    config: ReportConfig,
+    session: requests.Session | None = None,
+) -> list[dict[str, Any]]:
+    """Нормализованные документы брака за календарный месяц."""
+    date_from, date_to = month_bounds(year, month)
+    own_session = session is None
+    if session is None:
+        session = requests.Session()
+        session.auth = AUTH
+
+    try:
+        raw_docs = load_documents(session, config, date_from, date_to)
+        kind_keys = {
+            item.get("ВидНесоответствия_Key")
+            for row in raw_docs
+            for item in row.get("Несоответствия") or []
+            if item.get("ВидНесоответствия_Key")
+        }
+        kind_names = load_kind_names(session, kind_keys)
+        return normalize_documents(raw_docs, kind_names)
+    finally:
+        if own_session:
+            session.close()
+
+
+def load_brak_table_rows(
+    year: int,
+    month: int,
+    *,
+    config: ReportConfig,
+    session: requests.Session | None = None,
+) -> list[dict[str, str]]:
+    docs = load_brak_documents(year, month, config=config, session=session)
+    return [document_table_row(doc) for doc in docs]
 
 
 def terminal_width(default: int = 100, maximum: int = 110) -> int:

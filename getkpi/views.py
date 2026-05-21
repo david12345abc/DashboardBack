@@ -27,6 +27,7 @@ from . import (
     dept_turnover_q5,
     komdir_dashboard,
     komdir_quarterly,
+    qualdir_tables,
     techdir_dashboard,
     techdir_projects,
     valovaya_pribyl,
@@ -1509,6 +1510,7 @@ def _build_universal_payload(
         and not _is_devdir_department(dept)
         and not _is_gspp_department(dept)
         and not _is_sup_department(dept)
+        and not _is_qualdir_department(dept)
     ):
         try:
             rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
@@ -1553,6 +1555,9 @@ def _build_universal_payload(
                 "rows": lawsuit_rows,
             },
         })
+
+    if _is_qualdir_department(dept):
+        qualdir_tables.merge_qualdir_brak_tables(tablitsy, year=ref_y, month=ref_m)
 
     if techdir_dashboard.is_techdir_department(dept):
         techdir_dashboard.merge_deviation_tables(tablitsy, ref_y, ref_m)

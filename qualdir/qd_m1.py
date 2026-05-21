@@ -27,12 +27,12 @@ from qualdir.brak_report import EXTERNAL_BRAK_ENTITY, compute_external_brak_mont
 logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_external_brak_month_v1"
-CACHE_VERSION = 1
+SOURCE_TAG = "qualdir_external_brak_month_v2"
+CACHE_VERSION = 2
 
 QD_M1_YTD_CACHE_PREFIX = "qualdir_qd_m1_ytd"
-QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v1"
-QD_M1_YTD_DISK_VERSION = 1
+QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v2"
+QD_M1_YTD_DISK_VERSION = 2
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
