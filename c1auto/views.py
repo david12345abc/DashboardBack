@@ -6,9 +6,11 @@ import unicodedata
 from typing import Any
 
 from getkpi.c1auto.c1_m4_fot import get_c1_m4_fot_ytd
+from getkpi.c1auto.it_q5_tekuchest import get_it_q5_tekuchest_ytd
 
 DEPARTMENT = "Начальник отдела сопровождения 1С"
 
+# В БД коды с кириллической «С»: 1С-M4, 1С-Q5 → после нормализации 1C-M4, 1C-Q5.
 C1AUTO_KPI_IDS: frozenset[str] = frozenset({
     "ИТ-M1-1", "IT-M1-1",
     "ИТ-M1-2", "IT-M1-2",
@@ -17,6 +19,7 @@ C1AUTO_KPI_IDS: frozenset[str] = frozenset({
     "1С-M4", "1C-M4",
     "ИТ-Q4", "IT-Q4",
     "ИТ-Q5", "IT-Q5",
+    "1С-Q5", "1C-Q5",
     "ИТ-C1", "IT-C1",
     "ИТ-B1", "IT-B1",
     "ИТ-B2", "IT-B2",
@@ -30,6 +33,7 @@ C1AUTO_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
     "1С-M4", "1C-M4",
     "ИТ-Q4", "IT-Q4",
     "ИТ-Q5", "IT-Q5",
+    "1С-Q5", "1C-Q5",
 })
 
 C1AUTO_RUB_KPI_IDS: frozenset[str] = frozenset({
@@ -39,6 +43,18 @@ C1AUTO_RUB_KPI_IDS: frozenset[str] = frozenset({
 C1AUTO_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({
     "1С-M4", "1C-M4",
 })
+
+C1AUTO_TURNOVER_KPI_IDS: frozenset[str] = frozenset({
+    "ИТ-Q5", "IT-Q5",
+    "1С-Q5", "1C-Q5",
+})
+
+
+def _normalize_c1auto_kpi_id(kpi_id: str) -> str:
+    kid = str(kpi_id or "").strip().upper()
+    for cyr, lat in (("М", "M"), ("С", "C"), ("Р", "P"), ("Т", "T"), ("И", "I")):
+        kid = kid.replace(cyr, lat)
+    return kid
 
 
 def is_c1auto_department(dept: str | None) -> bool:
@@ -74,10 +90,11 @@ def merge_kpi_entry_if_applicable(
     month: int | None,
 ) -> bool:
     """Если ``kpi_id`` — KPI контура 1С, заполняет ``entry`` и возвращает True."""
-    kid = str(kpi_id or "").strip().upper()
-    for cyr, lat in (("М", "M"), ("С", "C"), ("Р", "P"), ("Т", "T"), ("И", "I")):
-        kid = kid.replace(cyr, lat)
+    kid = _normalize_c1auto_kpi_id(kpi_id)
     if kid == "1C-M4":
         _merge_monthly(entry, get_c1_m4_fot_ytd(year=year, month=month))
+        return True
+    if kid in {"1C-Q5", "IT-Q5"}:
+        _merge_monthly(entry, get_it_q5_tekuchest_ytd(year=year, month=month))
         return True
     return False

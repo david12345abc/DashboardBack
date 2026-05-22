@@ -15,6 +15,12 @@ from .kpi_periods import last_full_quarter, quarter_month_tuples
 
 
 def is_turnover_q5_kpi(kpi_id: str) -> bool:
+    """СЛУ-Q5 и прочие; 1C-Q5 / IT-Q5 / ГСП-Q5 считаются в своих модулях."""
+    if kpi_id in {
+        "1C-Q5", "IT-Q5", "IT-Q2", "ГСП-Q5", "GSP-Q5",
+        "ZKD-Q2", "TD-Q2", "QD-Q2", "RD-Q2",
+    }:
+        return False
     return kpi_id.endswith("-Q5") or kpi_id == "ZKD-Q2"
 
 

@@ -6,6 +6,7 @@ import unicodedata
 from typing import Any
 
 from getkpi.autoit.it_m4_fot import get_it_m4_fot_ytd
+from getkpi.autoit.it_q2_tekuchest import get_it_q2_tekuchest_ytd
 
 DEPARTMENT = "Начальник отдела автоматизации ИТ"
 
@@ -81,5 +82,8 @@ def merge_kpi_entry_if_applicable(
         kid = kid.replace(cyr, lat)
     if kid in {"IT-M4", "ИТ-M4"}:
         _merge_monthly(entry, get_it_m4_fot_ytd(year=year, month=month))
+        return True
+    if kid in {"IT-Q2", "ИТ-Q2"}:
+        _merge_monthly(entry, get_it_q2_tekuchest_ytd(year=year, month=month))
         return True
     return False

@@ -452,7 +452,7 @@ def _is_turnover_style_tile(kpi: dict) -> bool:
     nm = (kpi.get('name') or '').lower()
     if 'текучесть' in nm:
         return True
-    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2', 'QD-Q2', 'RD-Q2'}:
+    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2', 'QD-Q2', 'RD-Q2', 'IT-Q2', '1C-Q5'}:
         return True
     return False
 
@@ -719,6 +719,14 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
                 qd_q2_ytd_cache_path(ref_y, ref_m),
                 turnover_month_cache_path(ref_y, ref_m),
             ]
+        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS:
+            from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1_q5_cache
+
+            cache_files = [c1_q5_cache(ref_y, ref_m)]
+        if not cache_files and kpi_id == 'IT-Q2':
+            from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as it_q2_cache
+
+            cache_files = [it_q2_cache(ref_y, ref_m)]
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -1417,6 +1425,11 @@ def _build_universal_payload(
             tile['unit'] = 'чел.'
         elif _is_turnover_style_tile(kpi):
             tile['unit'] = '%'
+            if _kid_tile in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS | {'IT-Q2'}:
+                tile['period'] = 'ежемесячно'
+                tile['frequency'] = 'ежемесячно'
+                if entry.get('data_granularity') == 'monthly':
+                    tile['data_granularity'] = 'monthly'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1'}:
@@ -1732,6 +1745,10 @@ def _build_kpi_entry(
     kpi_id = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
     dg = _dept_guid_for_universal(dept_key)
 
+    # 1С-*: склейка по коду KPI, независимо от строки department в запросе.
+    if _c1auto_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+        return entry
+
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
         dz = dept_dz.get_dept_dz_ytd(dept_key)
         if dz is not None:
@@ -1917,9 +1934,6 @@ def _build_kpi_entry(
     if _autoit_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
-    if _c1auto_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
-        return entry
-
     if kpi_id == 'KD-M1':
         today = date.today()
         if year is not None and month is not None:
@@ -2000,6 +2014,21 @@ def _build_kpi_entry(
     else:
         freq_l = (freq or '').lower()
         if 'квартал' in freq_l:
+            _kid_syn = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+            if (
+                (_is_c1auto_department(dept_key) and _kid_syn in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS)
+                or (_is_autoit_department(dept_key) and _kid_syn in {'IT-Q2', 'ИТ-Q2'})
+            ):
+                entry['data_granularity'] = 'monthly'
+                entry['monthly_data'] = []
+                entry['ytd'] = {
+                    'total_plan': None,
+                    'total_fact': None,
+                    'kpi_pct': None,
+                    'months_with_data': 0,
+                    'months_total': 0,
+                }
+                return entry
             qrow, kper = _synthetic_quarter_row_for_tile(kpi)
             entry['data_granularity'] = 'quarterly'
             entry['quarterly_data'] = [qrow]
