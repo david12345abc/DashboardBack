@@ -48,6 +48,8 @@ INSTALLED_APPS = [
     'qualdir',
     'gspp',
     'sup',
+    'autoit',
+    'c1auto',
     'tools',
 ]
 

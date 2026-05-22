@@ -240,6 +240,44 @@ def build_filter(leader_key: str, as_of: date) -> str:
     return " and ".join(parts)
 
 
+def _fetch_register_all(
+    session: requests.Session,
+    url: str,
+    *,
+    page: int = 500,
+    timeout: int,
+) -> list[dict[str, Any]]:
+    try:
+        from getkpi.odata_http import request_with_retry
+    except ImportError:
+        return fetch_all(session, url, page=page, timeout=timeout)
+
+    rows: list[dict[str, Any]] = []
+    skip = 0
+    while True:
+        sep = "&" if "?" in url else "?"
+        page_url = f"{url}{sep}$top={page}&$skip={skip}&$format=json"
+        response = request_with_retry(
+            session,
+            page_url,
+            timeout=timeout,
+            retries=4,
+            label="protocol_tasks",
+        )
+        if response is None:
+            raise RuntimeError(f"OData request failed: {page_url[:160]}")
+        if not response.ok:
+            raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
+        batch = response.json().get("value", [])
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < page:
+            break
+        skip += len(batch)
+    return rows
+
+
 def load_tasks(
     session: requests.Session,
     leader_key: str,
@@ -258,7 +296,8 @@ def load_tasks(
         f"&$select={select}"
         f"&$expand={expand}"
     )
-    probe = session.get(f"{url}&$top=1", timeout=120)
+    read_timeout = int(os.getenv("ODATA_READ_TIMEOUT", "240"))
+    probe = session.get(f"{url}&$top=1", timeout=read_timeout)
     if probe.status_code == 404:
         raise LookupError(
             f"{entity}: не опубликован в OData (HTTP 404). "
@@ -272,8 +311,7 @@ def load_tasks(
     if not probe.ok:
         raise RuntimeError(f"{entity}: HTTP {probe.status_code}: {probe.text[:500]}")
 
-    read_timeout = int(os.getenv("ODATA_READ_TIMEOUT", "240"))
-    rows = fetch_all(session, url, page=500, timeout=read_timeout)
+    rows = _fetch_register_all(session, url, page=500, timeout=read_timeout)
     return entity, rows
 
 

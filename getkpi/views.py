@@ -41,6 +41,8 @@ import devdir.views as _devdir_kpi_views
 import gspp.views as _gspp_kpi_views
 import qualdir.views as _qualdir_kpi_views
 import sup.views as _sup_kpi_views
+import autoit.views as _autoit_kpi_views
+import c1auto.views as _c1auto_kpi_views
 from . import techdir_kpi_entry
 from qualdir.qd_m1 import (
     external_brak_month_cache_path,
@@ -336,6 +338,14 @@ def _is_sup_department(dept: str | None) -> bool:
     }
 
 
+def _is_autoit_department(dept: str | None) -> bool:
+    return _autoit_kpi_views.is_autoit_department(dept)
+
+
+def _is_c1auto_department(dept: str | None) -> bool:
+    return _c1auto_kpi_views.is_c1auto_department(dept)
+
+
 def _thresholds_block(kpi: dict) -> dict:
     return {
         'green': kpi.get('green_threshold'),
@@ -561,12 +571,6 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     """Вычислить kpi_pct и RAG-цвет для плитки."""
     ytd = entry.get('ytd') or {}
     kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
-    # QD-Q2: на плитке KPI = факт/план×100; пороги карточки (≤5 / 5,1–7 / >7 %) — к этому же значению,
-    # а не к «сырому» факту (иначе при расхождении опорного месяца и md[-1] или разных шкал цвет не совпадает с %).
-    if kid == 'QD-Q2':
-        pct = _qd_q2_pct_from_entry(entry)
-        color = _rag_lower_turnover(float(pct) if pct is not None else None)
-        return pct, color
 
     if kid == 'QD-M1' or kid == 'QD-M5':
         pct = ytd.get('kpi_pct')
@@ -769,11 +773,6 @@ def _build_tile_item(
     tile['cache_updated_at'] = _tile_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
     if entry.get('last_full_month_row'):
         lfr = entry['last_full_month_row']
-        if kpi.get('kpi_id') == 'QD-Q2' and isinstance(lfr, dict):
-            lfr = {
-                **lfr,
-                'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
-            }
         if kpi.get('kpi_id') == 'QD-Q1' and isinstance(lfr, dict):
             lfr = {
                 **lfr,
@@ -782,16 +781,6 @@ def _build_tile_item(
         tile['last_full_month_row'] = _public_unit_row(lfr)
     if entry.get('monthly_data') is not None:
         raw_rows = entry.get('monthly_data') or []
-        if kpi.get('kpi_id') == 'QD-Q2':
-            raw_rows = [
-                {
-                    **row,
-                    'kpi_pct': _qd_q2_kpi_pct(row.get('plan'), row.get('fact')),
-                }
-                if isinstance(row, dict)
-                else row
-                for row in raw_rows
-            ]
         if kpi.get('kpi_id') == 'QD-Q1':
             raw_rows = [
                 {
@@ -1331,6 +1320,8 @@ def _build_universal_payload(
         or _is_devdir_department(dept)
         or _is_gspp_department(dept)
         or _is_sup_department(dept)
+        or _is_autoit_department(dept)
+        or _is_c1auto_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -1363,6 +1354,8 @@ def _build_universal_payload(
             | _devdir_kpi_views.DEVDIR_KPI_IDS
             | _gspp_kpi_views.GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD
             | _sup_kpi_views.SUP_KPI_IDS_USE_BUILDER_KP_PERIOD
+            | _autoit_kpi_views.AUTOIT_KPI_IDS_USE_BUILDER_KP_PERIOD
+            | _c1auto_kpi_views.C1AUTO_KPI_IDS_USE_BUILDER_KP_PERIOD
         ) or _kid_tile == 'TD-M6':
             kper = entry.get('kpi_period')
             if (
@@ -1395,18 +1388,7 @@ def _build_universal_payload(
             if 'fact_by_dept' in lm:
                 tile['fact_by_dept'] = lm.get('fact_by_dept')
         # Не подменять tile['monthly_data'] сырым entry: _build_tile_item уже положил
-        # нормализованные строки (QD-Q2 — пересчёт kpi_pct); иначе фронт может снова
-        # окрасить плитку по «сырым» kpi_pct и правилу «чем выше % — тем лучше».
-
-        if kpi.get('kpi_id') == 'QD-Q2':
-            p_fin = tile.get('plan')
-            f_fin = tile.get('fact')
-            tpct = _qd_q2_kpi_pct(p_fin, f_fin)
-            if tpct is not None:
-                tile['kpi_pct'] = tpct
-            tile['color'] = _rag_lower_turnover(float(tpct) if tpct is not None else None)
-            # Подсказка фронту: kpi_pct = факт/план×100, зелёный при малых значениях порога, не при ≥100.
-            tile['pct_lower_is_better'] = True
+        # нормализованные строки; иначе фронт может снова окрасить плитку по «сырым» kpi_pct.
 
         if kpi.get('kpi_id') == 'QD-Q1':
             p_fin = tile.get('plan')
@@ -1511,6 +1493,8 @@ def _build_universal_payload(
         and not _is_gspp_department(dept)
         and not _is_sup_department(dept)
         and not _is_qualdir_department(dept)
+        and not _is_autoit_department(dept)
+        and not _is_c1auto_department(dept)
     ):
         try:
             rows = _fetch_claims_rows_for_department(ref_y, ref_m, dept)
@@ -1917,6 +1901,12 @@ def _build_kpi_entry(
         return entry
 
     if _sup_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+        return entry
+
+    if _autoit_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+        return entry
+
+    if _c1auto_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
     if kpi_id == 'KD-M1':

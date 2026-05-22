@@ -1,13 +1,11 @@
 """
 QD-Q2 — текучесть персонала контура директора по качеству.
 
-Та же выборка из Document_ТД_ТекучестьПерсонала, что у TD-Q2 (max план/факт по строкам месяца
-на подразделение). Итог по плитке: сумма планов и сумма фактов по четырём подразделениям
-ОТК-1, ОТК-2, Лаборатория неразрушающего контроля, Отдел управления несоответствиями.
+План: top2 по группам из Document_ТД_ТекучестьПерсонала (как TD-Q2).
+Факт: уволено / штат × 100 % по HR (как TD-Q2).
 
 Кэш: помесячно ``qualdir_tekuchet_<Y>_<MM>.json``; полный YTD —
-``qualdir_qd_q2_ytd_<Y>_<MM>.json`` (``ytd_json_cache``). Прошлые календарные месяцы
-в помесячном файле без ежедневного сброса.
+``qualdir_qd_q2_ytd_<Y>_<MM>.json`` (``ytd_json_cache``).
 """
 
 from __future__ import annotations
@@ -20,11 +18,12 @@ from typing import Any
 from getkpi.cache_manager import locked_call
 from getkpi.devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU, TURNOVER_VALUES_UNIT, build_turnover_month_payload
+from getkpi.turnover_hr_scope import TurnoverHrScope
 
 # Кэш в каталоге getkpi/dashboard — как у остальных KPI-бэкендов.
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_qd_q2_monthly_v5"
-CACHE_VERSION = 5
+SOURCE_TAG = "qualdir_qd_q2_monthly_v6"
+CACHE_VERSION = 6
 
 QD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
     "ОТК-1": [
@@ -47,13 +46,18 @@ QD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
 
 QD_Q2_GROUP_ORDER = list(QD_Q2_GROUP_ALIASES.keys())
 
+QD_Q2_HR_SCOPE = TurnoverHrScope(
+    group_aliases=QD_Q2_GROUP_ALIASES,
+    group_order=QD_Q2_GROUP_ORDER,
+)
+
 QD_Q2_YTD_CACHE_PREFIX = "qualdir_qd_q2_ytd"
-QD_Q2_YTD_DISK_TAG = "qualdir_qd_q2_ytd_payload_v2"
-QD_Q2_YTD_DISK_VERSION = 3
+QD_Q2_YTD_DISK_TAG = "qualdir_qd_q2_ytd_payload_v3"
+QD_Q2_YTD_DISK_VERSION = 4
 
 
 def _qd_q2_kpi_pct(plan: Any, fact: Any) -> float | None:
-    """KPI по формуле плитки: факт / план × 100 %."""
+    """KPI по формуле плитки: факт / план × 100 % (QD-Q1 и др.)."""
     if plan is None or fact is None:
         return None
     try:
@@ -64,6 +68,16 @@ def _qd_q2_kpi_pct(plan: Any, fact: Any) -> float | None:
     if pv <= 0:
         return None
     return round(fv / pv * 100.0, 1)
+
+
+def _turnover_kpi_pct(fact: Any) -> float | None:
+    """KPI текучести на плитке = факт (%), как TD-Q2."""
+    if fact is None:
+        return None
+    try:
+        return round(float(fact), 1)
+    except (TypeError, ValueError):
+        return None
 
 
 def turnover_month_cache_path(year: int, month: int) -> Path:
@@ -123,7 +137,9 @@ def compute_qd_q2_turnover_month(year: int, month: int) -> dict[str, Any]:
         month,
         group_aliases=QD_Q2_GROUP_ALIASES,
         group_order=QD_Q2_GROUP_ORDER,
-        aggregate="sum_all",
+        aggregate="top2",
+        fact_from_hr=True,
+        hr_scope=QD_Q2_HR_SCOPE,
     )
     _save_cache(year, month, result)
     return result
@@ -179,7 +195,7 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                     "month_name": MONTH_RU[row_month].lower(),
                     "plan": plan,
                     "fact": fact,
-                    "kpi_pct": _qd_q2_kpi_pct(plan, fact),
+                    "kpi_pct": _turnover_kpi_pct(fact),
                     "has_data": has_data,
                     "values_unit": TURNOVER_VALUES_UNIT,
                 })
@@ -215,7 +231,9 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
                 "debug": {
                     "status": "ok",
                     "kpi_id": "QD-Q2",
-                    "source": "Document_ТД_ТекучестьПерсонала",
+                    "source": "Document_ТД_ТекучестьПерсонала + HR staffing/dismissals",
+                    "plan_source": "group_max_top2_1c_tekuchet",
+                    "fact_source": "hr_staff_dismissals_turnover_pct",
                     "groups": QD_Q2_GROUP_ORDER,
                 },
             }

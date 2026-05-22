@@ -1,0 +1,191 @@
+{
+  "QD-Q2 qualdir": {
+    "period": "2026-04",
+    "plan_source": "group_max_top2_1c_tekuchet",
+    "fact_source": "hr_staff_dismissals_turnover_pct",
+    "matched_in_1c_structure": {
+      "ОТК-1": [
+        "ОТК-1"
+      ],
+      "ОТК-2": [
+        "ОТК-2"
+      ],
+      "Лаборатория неразрушающего контроля": [
+        "Лаборатория неразрушающего контроля"
+      ],
+      "Отдел управления несоответствиями": [
+        "Отдел управления несоответствиями"
+      ]
+    },
+    "groups_plan_fact": {
+      "ОТК-1": {
+        "plan": 2.7,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      },
+      "ОТК-2": {
+        "plan": 0.0,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      },
+      "Лаборатория неразрушающего контроля": {
+        "plan": 0.0,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      },
+      "Отдел управления несоответствиями": {
+        "plan": 0.0,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      }
+    },
+    "hr_org_departments": [
+      {
+        "group": "Лаборатория неразрушающего контроля",
+        "structure": "Лаборатория неразрушающего контроля",
+        "org_key": "7ebffdf2-88b3-11eb-8577-ac1f6b05524d",
+        "note": null
+      }
+    ],
+    "hr_fact_debug": {
+      "total_fact": 0.0,
+      "staff_units": 4.0,
+      "dismissed_count": 0,
+      "fact_source": "hr_staff_dismissals_turnover_pct"
+    },
+    "warnings": {
+      "37f2482d-62c5-11e6-8121-001e67112509": "не найдено среди оргподразделений контура",
+      "91111f82-62c5-11e6-8121-001e67112509": "не найдено среди оргподразделений контура",
+      "8def4449-16d7-11f1-97b5-6cb31113810c": "не найдено среди оргподразделений контура"
+    }
+  },
+  "GSP-Q5 gspp": {
+    "period": "2026-04",
+    "plan_source": "group_max_top2_1c_tekuchet",
+    "fact_source": "hr_staff_dismissals_turnover_pct",
+    "matched_in_1c_structure": {
+      "ГСПП": [
+        "ГСПП"
+      ],
+      "Сектор сопровождения продаж": [
+        "Сектор сопровождения продаж"
+      ],
+      "Сектор сопровождения производства и продаж": [
+        "Сектор сопровождения производства и продаж"
+      ],
+      "Сектор доработки и улучшения продукции": [
+        "Сектор доработки и улучшения продукции"
+      ],
+      "Сектор постановки на производство несерийной продукции": [
+        "Сектор постановки на производство несерийной продукции"
+      ]
+    },
+    "groups_plan_fact": {
+      "ГСПП": {
+        "plan": 3.3,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      },
+      "Сектор сопровождения продаж": {
+        "plan": 1.7,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      },
+      "Сектор сопровождения производства и продаж": {
+        "plan": 1.7,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      },
+      "Сектор доработки и улучшения продукции": {
+        "plan": 1.7,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      },
+      "Сектор постановки на производство несерийной продукции": {
+        "plan": 1.7,
+        "fact": 0.0,
+        "plan_rows": 1,
+        "fact_rows": 0,
+        "docs": 2
+      }
+    },
+    "hr_org_departments": [
+      {
+        "group": "Сектор сопровождения продаж",
+        "structure": "Сектор сопровождения продаж",
+        "org_key": "da45bdbd-f081-11f0-977e-6cb31113810e",
+        "note": null
+      },
+      {
+        "group": "Сектор сопровождения производства и продаж",
+        "structure": "Сектор сопровождения производства и продаж",
+        "org_key": "e9485e57-f081-11f0-977e-6cb31113810e",
+        "note": null
+      }
+    ],
+    "hr_fact_debug": {
+      "total_fact": 0.0,
+      "staff_units": 14.0,
+      "dismissed_count": 0,
+      "fact_source": "hr_staff_dismissals_turnover_pct"
+    },
+    "warnings": {
+      "baf5e095-8ef0-11ec-8810-ac1f6b05524d": "не найдено среди оргподразделений контура",
+      "81e619f7-f04b-11f0-977e-6cb31113810e": "не найдено среди оргподразделений контура",
+      "b9ed844d-f2dd-11f0-9781-6cb31113810e": "не найдено среди оргподразделений контура"
+    }
+  },
+  "RD-Q2 devservice": {
+    "period": "2026-04",
+    "plan_source": "group_max_top2_1c_tekuchet",
+    "fact_source": "hr_staff_dismissals_turnover_pct",
+    "matched_in_1c_structure": {
+      "Служба развития": [
+        "ДИРЕКТОР ПО РАЗВИТИЮ",
+        "Служба развития"
+      ]
+    },
+    "groups_plan_fact": {
+      "Служба развития": {
+        "plan": 0.0,
+        "fact": 0.0,
+        "plan_rows": 0,
+        "fact_rows": 0,
+        "docs": 0
+      }
+    },
+    "hr_org_departments": [
+      {
+        "group": "Служба развития",
+        "structure": "Служба развития",
+        "org_key": "eee813d7-f395-11e8-8283-ac1f6b05524d",
+        "note": "выбрано из 3 одноимённых"
+      }
+    ],
+    "hr_fact_debug": {
+      "total_fact": 0.0,
+      "staff_units": 26.0,
+      "dismissed_count": 0,
+      "fact_source": "hr_staff_dismissals_turnover_pct"
+    },
+    "warnings": {
+      "2ae402cc-51c5-11e8-8273-ac1f6b05524d": "не найдено среди оргподразделений контура"
+    }
+  }
+}

@@ -1,6 +1,9 @@
-"""KPI RD-Q2: текучесть «Служба развития» по месяцам из ``calc_tekuchest_dev_service``.
+"""KPI RD-Q2: текучесть «Служба развития» (devservice / директор по развитию).
 
-Кэш: ``getkpi/dashboard/devdir_rd_q2_tekuchest_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
+План: top2 из Document_ТД_ТекучестьПерсонала (как TD-Q2).
+Факт: уволено / штат × 100 % по HR (как TD-Q2).
+
+Кэш: ``getkpi/dashboard/devdir_rd_q2_tekuchest_<год>_<месяц>.json``.
 """
 
 from __future__ import annotations
@@ -9,53 +12,72 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import requests
+from getkpi.techdir_tekuchet import TURNOVER_VALUES_UNIT, build_turnover_month_payload
+from getkpi.turnover_hr_scope import TurnoverHrScope
 
 from ..cache_manager import locked_call
-from . import calc_tekuchest_dev_service, ytd_json_cache
+from . import ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "devdir_rd_q2_tekuchest"
 CACHE_SOURCE_TAG = "devdir_rd_q2_tekuchest_ytd"
-CACHE_VERSION = 8
+CACHE_VERSION = 9
+
+RD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
+    "Служба развития": [
+        "служба развития",
+        "директор по развитию",
+    ],
+}
+RD_Q2_GROUP_ORDER = list(RD_Q2_GROUP_ALIASES.keys())
+RD_Q2_HR_SCOPE = TurnoverHrScope(
+    group_aliases=RD_Q2_GROUP_ALIASES,
+    group_order=RD_Q2_GROUP_ORDER,
+)
+
+
+def _turnover_kpi_pct(_plan: Any, fact: Any) -> float | None:
+    if fact is None:
+        return None
+    try:
+        return round(float(fact), 1)
+    except (TypeError, ValueError):
+        return None
 
 
 def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
-    pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
-
-    session = requests.Session()
-    session.auth = calc_tekuchest_dev_service.AUTH
-    by_month = calc_tekuchest_dev_service.fetch_yearly_monthly_totals(session, ref_y)
-
     monthly_rows: list[dict[str, Any]] = []
     ref_row: dict[str, Any] | None = None
 
-    for y, m in pairs:
-        cell = by_month.get(m) or {"plan": 0.0, "fact": 0.0}
-        plan_v = float(cell["plan"])
-        fact_v = float(cell["fact"])
-        has_data = plan_v > 0 or fact_v > 0
-        kpi_pct = round(fact_v, 2)
-
+    for m in range(1, ref_m + 1):
+        snapshot = build_turnover_month_payload(
+            ref_y,
+            m,
+            group_aliases=RD_Q2_GROUP_ALIASES,
+            group_order=RD_Q2_GROUP_ORDER,
+            aggregate="top2",
+            fact_from_hr=True,
+            hr_scope=RD_Q2_HR_SCOPE,
+        )
+        plan = snapshot.get("total_plan")
+        fact = snapshot.get("total_fact")
+        has_data = plan is not None and fact is not None
         row: dict[str, Any] = {
             "month": m,
-            "year": y,
+            "year": ref_y,
             "month_name": MONTH_NAMES[m],
-            "plan": plan_v,
-            "fact": fact_v,
-            "kpi_pct": kpi_pct,
+            "plan": plan,
+            "fact": fact,
+            "kpi_pct": _turnover_kpi_pct(plan, fact),
             "has_data": has_data,
-            "values_unit": "%",
+            "values_unit": TURNOVER_VALUES_UNIT,
         }
         monthly_rows.append(row)
-        if (y, m) == (ref_y, ref_m):
+        if m == ref_m:
             ref_row = row
-
-    plan_sum = sum(float(r["plan"]) for r in monthly_rows if r.get("plan") is not None)
-    fact_sum = sum(float(r["fact"]) for r in monthly_rows if r.get("fact") is not None)
 
     return {
         "data_granularity": "monthly",
@@ -68,17 +90,18 @@ def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = No
             "month_name": MONTH_NAMES[ref_m],
         },
         "ytd": {
-            "total_plan": round(plan_sum, 2) if monthly_rows else None,
-            "total_fact": round(fact_sum, 2) if monthly_rows else None,
+            "total_plan": ref_row.get("plan") if ref_row else None,
+            "total_fact": ref_row.get("fact") if ref_row else None,
             "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
-            "values_unit": "%",
+            "values_unit": TURNOVER_VALUES_UNIT,
         },
         "debug": {
-            "source": "getkpi/devdir/calc_tekuchest_dev_service.py",
+            "source": "Document_ТД_ТекучестьПерсонала + HR staffing/dismissals",
             "kpi_route": "devdir_rd_q2_tekuchest",
-            "fact_source": "1C Document_ТД_ТекучестьПерсонала, ВидДокумента = 1",
+            "plan_source": "group_max_top2_1c_tekuchet",
+            "fact_source": "hr_staff_dismissals_turnover_pct",
         },
     }
 

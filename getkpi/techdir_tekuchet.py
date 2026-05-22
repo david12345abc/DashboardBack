@@ -441,13 +441,14 @@ def build_turnover_month_payload(
     group_order: list[str],
     aggregate: str = "top2",
     fact_from_hr: bool = False,
+    hr_scope=None,
 ) -> dict:
     """Снимок текучести за месяц (без файлового кэша).
 
     TD-Q2 (aggregate top2, fact_from_hr=True): план — top2 из Document_ТД_ТекучестьПерсонала;
     факт — уволено / штат × 100 % (techdir_tekuchet_fact).
 
-    QD-Q2 (aggregate sum_all): план и факт из Document_ТД_ТекучестьПерсонала (сумма по группам).
+    Для qualdir / gspp / devdir — тот же принцип: top2-план из 1С, факт из HR.
     """
     target_str = f"{year}-{month:02d}"
     branch_aggregate = "sum_lines" if aggregate == "sum_all" else "max"
@@ -499,11 +500,19 @@ def build_turnover_month_payload(
         plan_agg_label = "group_max_top2_1c_tekuchet"
         if fact_from_hr:
             from . import techdir_tekuchet_fact as tekuchet_fact
+            from .turnover_hr_scope import TurnoverHrScope
 
+            scope = hr_scope
+            if scope is None:
+                scope = TurnoverHrScope(
+                    group_aliases=group_aliases,
+                    group_order=group_order,
+                )
             fact_payload = tekuchet_fact.compute_turnover_fact_percent(
                 year,
                 month,
                 session=session,
+                scope=scope,
             )
             total_fact = float(fact_payload["total_fact"])
             fact_agg_label = fact_payload["fact_source"]
