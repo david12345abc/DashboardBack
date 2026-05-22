@@ -5,6 +5,8 @@ import re
 import unicodedata
 from typing import Any
 
+from getkpi.c1auto.c1_m4_fot import get_c1_m4_fot_ytd
+
 DEPARTMENT = "Начальник отдела сопровождения 1С"
 
 C1AUTO_KPI_IDS: frozenset[str] = frozenset({
@@ -12,6 +14,7 @@ C1AUTO_KPI_IDS: frozenset[str] = frozenset({
     "ИТ-M1-2", "IT-M1-2",
     "ИТ-M2", "IT-M2",
     "ИТ-M3", "IT-M3",
+    "1С-M4", "1C-M4",
     "ИТ-Q4", "IT-Q4",
     "ИТ-Q5", "IT-Q5",
     "ИТ-C1", "IT-C1",
@@ -24,8 +27,17 @@ C1AUTO_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
     "ИТ-M1-2", "IT-M1-2",
     "ИТ-M2", "IT-M2",
     "ИТ-M3", "IT-M3",
+    "1С-M4", "1C-M4",
     "ИТ-Q4", "IT-Q4",
     "ИТ-Q5", "IT-Q5",
+})
+
+C1AUTO_RUB_KPI_IDS: frozenset[str] = frozenset({
+    "1С-M4", "1C-M4",
+})
+
+C1AUTO_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({
+    "1С-M4", "1C-M4",
 })
 
 
@@ -42,6 +54,18 @@ def is_c1auto_department(dept: str | None) -> bool:
     }
 
 
+def _merge_monthly(entry: dict[str, Any], payload: dict[str, Any] | None) -> None:
+    if payload is None:
+        return
+    entry["data_granularity"] = payload.get("data_granularity", "monthly")
+    entry["monthly_data"] = payload.get("monthly_data") or []
+    entry["last_full_month_row"] = payload.get("last_full_month_row")
+    entry["ytd"] = payload.get("ytd") or {}
+    entry["kpi_period"] = payload.get("kpi_period")
+    if payload.get("debug") is not None:
+        entry["debug"] = payload["debug"]
+
+
 def merge_kpi_entry_if_applicable(
     kpi_id: str,
     entry: dict[str, Any],
@@ -49,6 +73,11 @@ def merge_kpi_entry_if_applicable(
     year: int | None,
     month: int | None,
 ) -> bool:
-    """Заполнение плиток c1auto — по мере появления расчётных модулей."""
-    _ = (kpi_id, entry, year, month)
+    """Если ``kpi_id`` — KPI контура 1С, заполняет ``entry`` и возвращает True."""
+    kid = str(kpi_id or "").strip().upper()
+    for cyr, lat in (("М", "M"), ("С", "C"), ("Р", "P"), ("Т", "T"), ("И", "I")):
+        kid = kid.replace(cyr, lat)
+    if kid == "1C-M4":
+        _merge_monthly(entry, get_c1_m4_fot_ytd(year=year, month=month))
+        return True
     return False

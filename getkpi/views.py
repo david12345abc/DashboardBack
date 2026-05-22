@@ -595,6 +595,10 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif kid == 'RD-M3-1':
         color = _rag_higher_better(pct)
+    elif kid in _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS:
+        color = _rag_td_m4_limit(pct)
+    elif kid in _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS:
+        color = _rag_td_m4_limit(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
         color = _rag_td_m4_limit(pct)
     elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
@@ -1184,14 +1188,18 @@ def _build_devdir_charts(
     ref_y: int,
     ref_m: int,
 ) -> dict:
-    """Графики директора по развитию: линия и столбцы по ФОТ (RD-M4) и бюджету (RD-M3)."""
-    sources = [
+    """Графики devdir: линия — RD-M4/RD-M3; столбцы RD-C2 — RD-M3-1 и RD-M2-1."""
+    line_sources = [
         ("RD-M4", "ФОТ", entries_by_id.get("RD-M4") or {}),
         ("RD-M3", "Бюджет", entries_by_id.get("RD-M3") or {}),
     ]
+    bar_sources = [
+        ("RD-M3-1", entries_by_id.get("RD-M3-1") or {}),
+        ("RD-M2-1", entries_by_id.get("RD-M2-1") or {}),
+    ]
 
     series: list[dict] = []
-    for kid, display_name, entry in sources:
+    for kid, display_name, entry in line_sources:
         monthly = entry.get("monthly_data") or []
         points = [
             {
@@ -1232,7 +1240,7 @@ def _build_devdir_charts(
     bar_plan_values: list[float | None] = []
     bar_fact_values: list[float | None] = []
     bar_points: list[dict] = []
-    for kid, display_name, entry in sources:
+    for kid, entry in bar_sources:
         kper = entry.get("kpi_period") or {}
         point_y, point_m = ref_y, ref_m
         if isinstance(kper, dict) and kper.get("year") is not None and kper.get("month") is not None:
@@ -1243,6 +1251,7 @@ def _build_devdir_charts(
             or entry.get("last_full_month_row")
             or {}
         )
+        display_name = (entry.get("name") or kid).strip()
         bar_categories.append(display_name)
         bar_plan_values.append(point.get("plan"))
         bar_fact_values.append(point.get("fact"))
@@ -1261,7 +1270,7 @@ def _build_devdir_charts(
     if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
         charts["RD-C2"] = {
             "kpi_id": "RD-C2",
-            "name": "ФОТ и бюджет за выбранный месяц",
+            "name": "План/факт за выбранный месяц (RD-M3-1, RD-M2-1)",
             "periodicity": "ежемесячно",
             "chart_type": "column_plan_fact_monthly",
             "chart_type_label": "Столбцы: план/факт за месяц",
@@ -1422,6 +1431,8 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-M3-1':
             tile['unit'] = 'шт.'
+        elif _kid_tile in _autoit_kpi_views.AUTOIT_RUB_KPI_IDS | _c1auto_kpi_views.C1AUTO_RUB_KPI_IDS:
+            tile['unit'] = 'руб.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
             tile['unit'] = 'руб.'
 
