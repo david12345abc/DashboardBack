@@ -17,7 +17,9 @@ from . import cache_manager
 from .calc_prod_deputy_projects import (
     _api_get,
     _api_overdue_milestones,
+    _bool_is_true,
     _login,
+    _milestone_progress_as_fraction,
     _overdue_milestone_rows,
     _parse_real_project_date,
     _project_progress_pct,
@@ -27,10 +29,29 @@ from .turboproject_config import TIMEOUT
 logger = logging.getLogger(__name__)
 
 CACHE_PATH = cache_manager.CACHE_DIR / "chief_constructor_projects_snapshot.json"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 TARGET_DEPARTMENT = "Конструкторское бюро"
 MAX_ALLOWED_DELAY_WORKDAYS = 10
 RND_PROJECT_TYPE_MARKERS = ("ОКР", "НИР", "НИОКР")
+PLAN_FINISH_KEYS = (
+    "baseline_finish",
+    "BaselineFinish",
+    "baselineFinish",
+    "plan_finish",
+    "planned_finish",
+    "planned_finish_date",
+    "plan_finish_date",
+    "constraint_date",
+    "finish_date",
+)
+FACT_FINISH_KEYS = (
+    "actual_finish",
+    "actual_finish_date",
+    "fact_finish",
+    "fact_finish_date",
+    "finish_actual",
+    "data_fakticheskogo_okonchaniya",
+)
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -112,6 +133,86 @@ def _business_days_between_exclusive(start: date, end: date) -> int:
     return count
 
 
+def _first_present_value(row: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _task_date(row: dict[str, Any], keys: tuple[str, ...]) -> date | None:
+    return _parse_real_project_date(_first_present_value(row, keys))
+
+
+def _flatten_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def walk(items: list[Any]) -> None:
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            task_id = str(item.get("id") or item.get("task_id") or item.get("uid") or "").strip()
+            if task_id:
+                if task_id in seen:
+                    continue
+                seen.add(task_id)
+            rows.append(item)
+            for key in ("children", "childTasks", "subTasks", "tasks"):
+                children = item.get(key)
+                if isinstance(children, list):
+                    walk(children)
+
+    walk(tasks)
+    return rows
+
+
+def _is_milestone_task(task: dict[str, Any]) -> bool:
+    if task.get("is_summary"):
+        return False
+    if _bool_is_true(task.get("is_milestone")):
+        return True
+    start_dt = _parse_real_project_date(task.get("start_date"))
+    finish_dt = _parse_real_project_date(task.get("finish_date"))
+    return bool(start_dt and finish_dt and start_dt == finish_dt)
+
+
+def _milestone_plan_finish_date(task: dict[str, Any]) -> date | None:
+    return _task_date(task, PLAN_FINISH_KEYS)
+
+
+def _milestone_fact_finish_date(task: dict[str, Any]) -> date | None:
+    fact_dt = _task_date(task, FACT_FINISH_KEYS)
+    if fact_dt is not None:
+        return fact_dt
+    progress = _milestone_progress_as_fraction(task.get("percent_complete"))
+    if progress is not None and progress >= 1.0 - 1e-9:
+        return _parse_real_project_date(task.get("finish_date"))
+    return None
+
+
+def _project_milestone_rows(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for task in _flatten_tasks(tasks):
+        if not _is_milestone_task(task):
+            continue
+        plan_finish = _milestone_plan_finish_date(task)
+        fact_finish = _milestone_fact_finish_date(task)
+        rows.append({
+            "task_id": task.get("id") or task.get("task_id") or task.get("uid"),
+            "name": task.get("name") or "",
+            "start_date": task.get("start_date"),
+            "finish_date": task.get("finish_date"),
+            "plan_finish_date": plan_finish.isoformat() if plan_finish else None,
+            "fact_finish_date": fact_finish.isoformat() if fact_finish else None,
+            "percent_complete": task.get("percent_complete"),
+            "outline_level": task.get("outline_level"),
+        })
+    rows.sort(key=lambda row: (row.get("plan_finish_date") or "", row.get("name") or ""))
+    return rows
+
+
 def _project_summary(summary_item: dict[str, Any], details: dict[str, Any]) -> dict[str, Any]:
     data_1c = details.get("data_1c") or {}
     project_meta = details.get("project") or {}
@@ -135,6 +236,7 @@ def _project_summary(summary_item: dict[str, Any], details: dict[str, Any]) -> d
         "data_okonchaniya": data_1c.get("data_okonchaniya"),
         "project_progress_pct": _project_progress_pct(tasks),
         "overdue_milestones": overdue_milestones,
+        "milestones": _project_milestone_rows(tasks),
     }
 
 
@@ -162,6 +264,12 @@ def _project_is_alive_in_month(project: dict[str, Any], year: int, month: int) -
     if end is not None and end < month_start:
         return False
     return True
+
+
+def _project_is_active_on_month_end(project: dict[str, Any], year: int, month: int) -> bool:
+    _month_start, month_end = _month_start_end(year, month)
+    start, end = _project_date_bounds(project)
+    return bool(start and end and start <= month_end <= end)
 
 
 def _project_is_alive_in_period(project: dict[str, Any], period_start: date, period_end: date) -> bool:
@@ -228,16 +336,52 @@ def _project_delay_details(project: dict[str, Any], as_of_date: date) -> tuple[i
     return max_delay, details
 
 
-def _project_deviation_card_rows(projects: list[dict[str, Any]], as_of_date: date) -> list[dict[str, Any]]:
+def _milestone_in_month(milestone: dict[str, Any], year: int, month: int) -> bool:
+    plan_finish = _parse_real_project_date(milestone.get("plan_finish_date"))
+    if plan_finish is None:
+        return False
+    return plan_finish.year == year and plan_finish.month == month
+
+
+def _project_milestone_deviation_details(
+    project: dict[str, Any],
+    year: int,
+    month: int,
+) -> tuple[int, list[dict[str, Any]]]:
+    details: list[dict[str, Any]] = []
+    for milestone in project.get("milestones") or []:
+        if not _milestone_in_month(milestone, year, month):
+            continue
+        plan_finish = _parse_real_project_date(milestone.get("plan_finish_date"))
+        fact_finish = _parse_real_project_date(milestone.get("fact_finish_date"))
+        if plan_finish is None or fact_finish is None:
+            continue
+        delay_workdays = _business_days_between_exclusive(plan_finish, fact_finish)
+        if delay_workdays <= MAX_ALLOWED_DELAY_WORKDAYS:
+            continue
+        details.append({
+            "name": milestone.get("name") or "",
+            "task_id": milestone.get("task_id"),
+            "plan_finish_date": milestone.get("plan_finish_date"),
+            "fact_finish_date": milestone.get("fact_finish_date"),
+            "delay_workdays": delay_workdays,
+            "percent_complete": milestone.get("percent_complete"),
+        })
+    details.sort(key=lambda row: (-(int(row.get("delay_workdays") or 0)), row.get("plan_finish_date") or ""))
+    max_delay = max((int(row.get("delay_workdays") or 0) for row in details), default=0)
+    return max_delay, details
+
+
+def _project_deviation_card_rows(projects: list[dict[str, Any]], year: int, month: int) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for project in projects:
-        max_delay, milestone_details = _project_delay_details(project, as_of_date)
+        max_delay, milestone_details = _project_milestone_deviation_details(project, year, month)
         rows.append({
             "project_name": project.get("project_name") or "",
             "project_manager": project.get("project_manager") or "",
             "delay_workdays": max_delay,
             "milestones_count": len(milestone_details),
-            "is_deviated": max_delay >= MAX_ALLOWED_DELAY_WORKDAYS,
+            "is_deviated": bool(milestone_details),
         })
     rows.sort(
         key=lambda row: (
@@ -293,27 +437,27 @@ def get_gk_m1_monthly(year: int | None = None, month: int | None = None) -> dict
         ref_row: dict[str, Any] | None = None
 
         for y, m in _month_pairs_until(ref_y, ref_m):
-            _month_start, month_end = _month_start_end(y, m)
-            as_of_date = min(month_end, date.today())
-            month_projects = [project for project in projects if _project_is_alive_in_month(project, y, m)]
-            ok_projects = []
+            month_projects = [project for project in projects if _project_is_active_on_month_end(project, y, m)]
+            deviated_projects = []
             for project in month_projects:
-                max_delay, _details = _project_delay_details(project, as_of_date)
-                if max_delay < MAX_ALLOWED_DELAY_WORKDAYS:
-                    ok_projects.append(project)
+                _max_delay, details = _project_milestone_deviation_details(project, y, m)
+                if details:
+                    deviated_projects.append(project)
             plan_count = len(month_projects)
-            fact_count = len(ok_projects)
+            deviated_count = len(deviated_projects)
+            fact_count = max(plan_count - deviated_count, 0)
             row = {
                 "month": m,
                 "year": y,
                 "month_name": MONTH_NAMES[m],
                 "plan": plan_count,
                 "fact": fact_count,
+                "fact_deviated_over_10_workdays": deviated_count,
                 "kpi_pct": round(fact_count / plan_count * 100, 1) if plan_count else None,
                 "has_data": plan_count > 0,
                 "values_unit": "шт.",
                 "max_allowed_delay_workdays": MAX_ALLOWED_DELAY_WORKDAYS,
-                "project_deviation_rows": _project_deviation_card_rows(month_projects, as_of_date),
+                "project_deviation_rows": _project_deviation_card_rows(month_projects, y, m),
             }
             rows.append(row)
             if (y, m) == (ref_y, ref_m):
@@ -349,61 +493,78 @@ def get_gk_q1_rnd_quarterly(year: int | None = None, month: int | None = None) -
         snapshot = _compute_projects_snapshot()
         projects = list(snapshot.get("projects") or [])
         ref_y, ref_m = _normalize_ref_period(year, month)
-        q_y, q = _last_full_quarter_for_period(ref_y, ref_m)
-        quarter_start, quarter_end = _quarter_start_end(q_y, q)
-        as_of_date = min(quarter_end, date.today())
+        rows: list[dict[str, Any]] = []
+        ref_row: dict[str, Any] | None = None
 
-        rnd_projects = [
+        for y, m in _month_pairs_until(ref_y, ref_m):
+            rnd_projects = [
+                project for project in projects
+                if _is_rnd_project_type(project.get("tip_proekta"))
+                and _project_is_active_on_month_end(project, y, m)
+            ]
+            deviated_projects = []
+            for project in rnd_projects:
+                _max_delay, details = _project_milestone_deviation_details(project, y, m)
+                if details:
+                    deviated_projects.append(project)
+
+            plan_count = len(rnd_projects)
+            deviated_count = len(deviated_projects)
+            fact_count = max(plan_count - deviated_count, 0)
+            row = {
+                "month": m,
+                "year": y,
+                "month_name": MONTH_NAMES[m],
+                "plan": plan_count,
+                "fact": fact_count,
+                "fact_deviated_over_10_workdays": deviated_count,
+                "kpi_pct": round(fact_count / plan_count * 100, 1) if plan_count else None,
+                "has_data": plan_count > 0,
+                "values_unit": "шт.",
+                "project_type_markers": list(RND_PROJECT_TYPE_MARKERS),
+                "max_allowed_delay_workdays": MAX_ALLOWED_DELAY_WORKDAYS,
+                "project_deviation_rows": _project_deviation_card_rows(rnd_projects, y, m),
+            }
+            rows.append(row)
+            if (y, m) == (ref_y, ref_m):
+                ref_row = row
+
+        type_counts: dict[str, int] = {}
+        ref_projects = [
             project for project in projects
             if _is_rnd_project_type(project.get("tip_proekta"))
-            and _project_is_alive_in_period(project, quarter_start, quarter_end)
+            and _project_is_active_on_month_end(project, ref_y, ref_m)
         ]
-        delayed_projects = []
-        for project in rnd_projects:
-            max_delay, _details = _project_delay_details(project, as_of_date)
-            if max_delay > MAX_ALLOWED_DELAY_WORKDAYS:
-                delayed_projects.append(project)
-
-        plan_count = len(rnd_projects)
-        delayed_count = len(delayed_projects)
-        fact_count = max(plan_count - delayed_count, 0)
-        row = {
-            "quarter": q,
-            "year": q_y,
-            "label": f"Q{q} {q_y}",
-            "plan": plan_count,
-            "fact": fact_count,
-            "fact_delayed_over_10_workdays": delayed_count,
-            "kpi_pct": round(fact_count / plan_count * 100, 1) if plan_count else None,
-            "has_data": plan_count > 0,
-            "values_unit": "шт.",
-            "project_type_markers": list(RND_PROJECT_TYPE_MARKERS),
-            "max_allowed_delay_workdays": MAX_ALLOWED_DELAY_WORKDAYS,
-        }
-        type_counts: dict[str, int] = {}
-        for project in rnd_projects:
+        for project in ref_projects:
             key = str(project.get("tip_proekta") or "").strip() or "без типа"
             type_counts[key] = type_counts.get(key, 0) + 1
 
         return {
-            "data_granularity": "quarterly",
-            "quarterly_data": [row],
-            "last_full_quarter_row": dict(row) if row.get("has_data") else None,
+            "data_granularity": "monthly",
+            "monthly_data": rows,
+            "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
             "ytd": {
-                "total_plan": row.get("plan"),
-                "total_fact": row.get("fact"),
-                "total_fact_delayed_over_10_workdays": row.get("fact_delayed_over_10_workdays"),
-                "kpi_pct": row.get("kpi_pct"),
-                "quarters_with_data": 1 if row.get("has_data") else 0,
-                "quarters_total": 1,
+                "total_plan": ref_row.get("plan") if ref_row else None,
+                "total_fact": ref_row.get("fact") if ref_row else None,
+                "total_fact_deviated_over_10_workdays": (
+                    ref_row.get("fact_deviated_over_10_workdays") if ref_row else None
+                ),
+                "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+                "months_with_data": sum(1 for row in rows if row.get("has_data")),
+                "months_total": len(rows),
                 "values_unit": "шт.",
             },
-            "kpi_period": {"type": "last_full_quarter", "year": q_y, "quarter": q},
+            "kpi_period": {
+                "type": "last_full_month",
+                "year": ref_y,
+                "month": ref_m,
+                "month_name": MONTH_NAMES[ref_m],
+            },
             "debug": {
                 **(snapshot.get("debug") or {}),
                 "filter": (
                     f"podrazdelenie={TARGET_DEPARTMENT!r}; "
-                    "tip_proekta contains ОКР/НИР/НИОКР"
+                    "tip_proekta contains ОКР/НИР; active on selected month end"
                 ),
                 "project_type_counts": type_counts,
             },
@@ -418,15 +579,13 @@ def get_gk_m1_deviation_table(month: int | None = None, year: int | None = None)
         snapshot = _compute_projects_snapshot()
         projects = list(snapshot.get("projects") or [])
         ref_y, ref_m = _normalize_ref_period(year, month)
-        _month_start, month_end = _month_start_end(ref_y, ref_m)
-        as_of_date = min(month_end, date.today())
         rows: list[dict[str, Any]] = []
 
         for project in projects:
-            if not _project_is_alive_in_month(project, ref_y, ref_m):
+            if not _project_is_active_on_month_end(project, ref_y, ref_m):
                 continue
-            max_delay, milestone_details = _project_delay_details(project, as_of_date)
-            if max_delay <= 0 or max_delay >= MAX_ALLOWED_DELAY_WORKDAYS:
+            max_delay, milestone_details = _project_milestone_deviation_details(project, ref_y, ref_m)
+            if not milestone_details:
                 continue
             rows.append({
                 "number": len(rows) + 1,
@@ -451,11 +610,11 @@ def get_gk_m1_deviation_table(month: int | None = None, year: int | None = None)
             row["number"] = index
 
         return {
-            "name": "Проекты КБ с отклонениями до 10 рабочих дней",
+            "name": "Проекты КБ с отклонениями по вехам >10 рабочих дней",
             "periodicity": "ежемесячно",
             "description": (
                 "Проекты TurboProject с podrazdelenie=Конструкторское бюро, у которых есть "
-                "отклонения по вехам меньше 10 рабочих дней."
+                "вехи выбранного месяца с фактическим выполнением позже плана более чем на 10 рабочих дней."
             ),
             "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES[ref_m]},
             "columns": ["№ 1С", "Название", "РП", "Сроки", "Отклонение", "Статус", "Прогресс"],

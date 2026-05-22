@@ -1156,6 +1156,11 @@ def _build_tile_item(
                 'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
             }
         tile['last_full_month_row'] = _public_unit_row(lfr)
+        if isinstance(lfr, dict):
+            if 'project_deviation_rows' in lfr:
+                tile['project_deviation_rows'] = lfr.get('project_deviation_rows')
+            if 'max_allowed_delay_workdays' in lfr:
+                tile['max_allowed_delay_workdays'] = lfr.get('max_allowed_delay_workdays')
     if entry.get('monthly_data') is not None:
         raw_rows = entry.get('monthly_data') or []
         if kpi.get('kpi_id') == 'QD-Q2':
@@ -2771,8 +2776,10 @@ def _build_kpi_entry(
             month=ref_m,
         )
         if data is not None:
-            entry['data_granularity'] = data.get('data_granularity', 'quarterly')
+            entry['data_granularity'] = data.get('data_granularity', 'monthly')
+            entry['monthly_data'] = data.get('monthly_data') or []
             entry['quarterly_data'] = data.get('quarterly_data') or []
+            entry['last_full_month_row'] = data.get('last_full_month_row')
             entry['last_full_quarter_row'] = data.get('last_full_quarter_row')
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')

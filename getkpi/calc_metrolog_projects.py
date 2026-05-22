@@ -14,10 +14,11 @@ from .calc_chief_constructor_projects import (
     MAX_ALLOWED_DELAY_WORKDAYS,
     MONTH_NAMES,
     _month_pairs_until,
-    _month_start_end,
     _normalize_ref_period,
-    _project_date_bounds,
-    _project_delay_details,
+    _project_deviation_card_rows,
+    _project_is_active_on_month_end,
+    _project_milestone_deviation_details,
+    _project_milestone_rows,
     _project_status_label,
     _project_timeline_label,
 )
@@ -33,8 +34,8 @@ from .turboproject_config import TIMEOUT
 logger = logging.getLogger(__name__)
 
 CACHE_PATH = cache_manager.CACHE_DIR / "metrolog_projects_snapshot.json"
-CACHE_VERSION = 2
-YTD_CACHE_VERSION = 1
+CACHE_VERSION = 3
+YTD_CACHE_VERSION = 2
 TARGET_OWNER = "Хозуян"
 CERTIFICATION_DEPARTMENT_MARKERS = ("сертификац", "омис")
 
@@ -170,6 +171,7 @@ def _project_summary(summary_item: dict[str, Any], details: dict[str, Any]) -> d
         "data_okonchaniya": data_1c.get("data_okonchaniya"),
         "project_progress_pct": _project_progress_pct(tasks),
         "overdue_milestones": overdue_milestones,
+        "milestones": _project_milestone_rows(tasks),
     }
 
 
@@ -219,16 +221,6 @@ def _compute_projects_snapshot() -> dict:
     return payload
 
 
-def _project_is_alive_in_month(project: dict[str, Any], year: int, month: int) -> bool:
-    month_start, month_end = _month_start_end(year, month)
-    start, end = _project_date_bounds(project)
-    if start is not None and start > month_end:
-        return False
-    if end is not None and end < month_start:
-        return False
-    return True
-
-
 def get_metrolog_projects_without_major_deviation_monthly(
     year: int | None = None,
     month: int | None = None,
@@ -246,27 +238,28 @@ def get_metrolog_projects_without_major_deviation_monthly(
         ref_row: dict[str, Any] | None = None
 
         for y, m in _month_pairs_until(ref_y, ref_m):
-            _month_start, month_end = _month_start_end(y, m)
-            as_of_date = min(month_end, date.today())
-            month_projects = [project for project in projects if _project_is_alive_in_month(project, y, m)]
-            ok_projects = []
+            month_projects = [project for project in projects if _project_is_active_on_month_end(project, y, m)]
+            deviated_projects = []
             for project in month_projects:
-                max_delay, _details = _project_delay_details(project, as_of_date)
-                if max_delay < MAX_ALLOWED_DELAY_WORKDAYS:
-                    ok_projects.append(project)
+                _max_delay, details = _project_milestone_deviation_details(project, y, m)
+                if details:
+                    deviated_projects.append(project)
             plan_count = len(month_projects)
-            fact_count = len(ok_projects)
+            deviated_count = len(deviated_projects)
+            fact_count = max(plan_count - deviated_count, 0)
             row = {
                 "month": m,
                 "year": y,
                 "month_name": MONTH_NAMES[m],
                 "plan": plan_count,
                 "fact": fact_count,
+                "fact_deviated_over_10_workdays": deviated_count,
                 "kpi_pct": round(fact_count / plan_count * 100, 1) if plan_count else None,
                 "has_data": plan_count > 0,
                 "values_unit": "шт.",
                 "target_owner": TARGET_OWNER,
                 "max_allowed_delay_workdays": MAX_ALLOWED_DELAY_WORKDAYS,
+                "project_deviation_rows": _project_deviation_card_rows(month_projects, y, m),
             }
             rows.append(row)
             if (y, m) == (ref_y, ref_m):
@@ -311,26 +304,27 @@ def _build_projects_without_major_deviation_monthly(
     ref_row: dict[str, Any] | None = None
 
     for y, m in _month_pairs_until(ref_y, ref_m):
-        _month_start, month_end = _month_start_end(y, m)
-        as_of_date = min(month_end, date.today())
-        month_projects = [project for project in projects if _project_is_alive_in_month(project, y, m)]
-        ok_projects = []
+        month_projects = [project for project in projects if _project_is_active_on_month_end(project, y, m)]
+        deviated_projects = []
         for project in month_projects:
-            max_delay, _details = _project_delay_details(project, as_of_date)
-            if max_delay < MAX_ALLOWED_DELAY_WORKDAYS:
-                ok_projects.append(project)
+            _max_delay, details = _project_milestone_deviation_details(project, y, m)
+            if details:
+                deviated_projects.append(project)
         plan_count = len(month_projects)
-        fact_count = len(ok_projects)
+        deviated_count = len(deviated_projects)
+        fact_count = max(plan_count - deviated_count, 0)
         row = {
             "month": m,
             "year": y,
             "month_name": MONTH_NAMES[m],
             "plan": plan_count,
             "fact": fact_count,
+            "fact_deviated_over_10_workdays": deviated_count,
             "kpi_pct": round(fact_count / plan_count * 100, 1) if plan_count else None,
             "has_data": plan_count > 0,
             "values_unit": "шт.",
             "max_allowed_delay_workdays": MAX_ALLOWED_DELAY_WORKDAYS,
+            "project_deviation_rows": _project_deviation_card_rows(month_projects, y, m),
         }
         rows.append(row)
         if (y, m) == (ref_y, ref_m):
@@ -404,15 +398,13 @@ def get_metrolog_project_deviation_table(month: int | None = None, year: int | N
         snapshot = _compute_projects_snapshot()
         projects = list(snapshot.get("projects") or [])
         ref_y, ref_m = _normalize_ref_period(year, month)
-        _month_start, month_end = _month_start_end(ref_y, ref_m)
-        as_of_date = min(month_end, date.today())
         rows: list[dict[str, Any]] = []
 
         for project in projects:
-            if not _project_is_alive_in_month(project, ref_y, ref_m):
+            if not _project_is_active_on_month_end(project, ref_y, ref_m):
                 continue
-            max_delay, milestone_details = _project_delay_details(project, as_of_date)
-            if max_delay <= MAX_ALLOWED_DELAY_WORKDAYS:
+            max_delay, milestone_details = _project_milestone_deviation_details(project, ref_y, ref_m)
+            if not milestone_details:
                 continue
             public_details = _public_milestone_details(milestone_details)
             rows.append({
@@ -444,7 +436,7 @@ def get_metrolog_project_deviation_table(month: int | None = None, year: int | N
             "periodicity": "ежемесячно",
             "description": (
                 "Проекты TurboProject, где Хозуян указан куратором или руководителем проекта, "
-                "и отклонение по вехам больше 10 рабочих дней."
+                "и вехи выбранного месяца выполнены позже плана более чем на 10 рабочих дней."
             ),
             "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES[ref_m]},
             "columns": ["№ 1С", "Название", "РП", "Сроки", "Отклонение", "Статус", "Прогресс"],
