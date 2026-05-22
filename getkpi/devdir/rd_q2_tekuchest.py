@@ -1,6 +1,6 @@
 """KPI RD-Q2: текучесть «Служба развития» (devservice / директор по развитию).
 
-План: top2 из Document_ТД_ТекучестьПерсонала (как TD-Q2).
+План: утверждённая таблица на 2026 (``rd_q2_tekuchest_plan``); иначе top2 из 1С.
 Факт: уволено / штат × 100 % по HR (как TD-Q2).
 
 Кэш: ``getkpi/dashboard/devdir_rd_q2_tekuchest_<год>_<месяц>.json``.
@@ -18,12 +18,13 @@ from getkpi.turnover_hr_scope import TurnoverHrScope
 from ..cache_manager import locked_call
 from . import ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from .rd_q2_tekuchest_plan import plan_for_month as rd_q2_plan_for_month
 
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "devdir_rd_q2_tekuchest"
 CACHE_SOURCE_TAG = "devdir_rd_q2_tekuchest_ytd"
-CACHE_VERSION = 9
+CACHE_VERSION = 10
 
 RD_Q2_GROUP_ALIASES: dict[str, list[str]] = {
     "Служба развития": [
@@ -62,7 +63,9 @@ def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = No
             fact_from_hr=True,
             hr_scope=RD_Q2_HR_SCOPE,
         )
-        plan = snapshot.get("total_plan")
+        plan = rd_q2_plan_for_month(ref_y, m)
+        if plan is None:
+            plan = snapshot.get("total_plan")
         fact = snapshot.get("total_fact")
         has_data = plan is not None and fact is not None
         row: dict[str, Any] = {
@@ -100,7 +103,7 @@ def _build_rd_q2_monthly_payload(year: int | None = None, month: int | None = No
         "debug": {
             "source": "Document_ТД_ТекучестьПерсонала + HR staffing/dismissals",
             "kpi_route": "devdir_rd_q2_tekuchest",
-            "plan_source": "group_max_top2_1c_tekuchet",
+            "plan_source": "getkpi/devdir/rd_q2_tekuchest_plan.py (2026); иначе group_max_top2_1c_tekuchet",
             "fact_source": "hr_staff_dismissals_turnover_pct",
         },
     }
