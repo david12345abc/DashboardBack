@@ -250,7 +250,7 @@
     "5": {
       "Выручка UFG-H через дилерский канал@@unit:руб.": {
         "plan": 15000000.0,
-        "fact": 65442.0,
+        "fact": 238842.0,
         "unit": "руб."
       },
       "Закладки в проекты@@unit:руб.": {
@@ -275,7 +275,7 @@
       },
       "Новые заказчики по услугам@@unit:руб.": {
         "plan": 2.0,
-        "fact": 7.0,
+        "fact": 8.0,
         "unit": "шт."
       },
       "Новые страны с первой выручкой@@unit:шт.": {
@@ -295,12 +295,12 @@
       },
       "Развитие холдингов@@unit:%": {
         "plan": 100.0,
-        "fact": 85.2941,
+        "fact": 85.7143,
         "unit": "%"
       },
       "Развитие холдингов@@unit:шт.": {
         "plan": 0.0,
-        "fact": 29.0,
+        "fact": 30.0,
         "unit": "шт."
       }
     },
@@ -989,14 +989,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -1104,14 +1104,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -1219,14 +1219,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -1334,14 +1334,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -1365,12 +1365,12 @@
         "5": {
           "Выручка UFG-H через дилерский канал@@unit:руб.": {
             "plan": 15000000.0,
-            "fact": 65442.0,
+            "fact": 238842.0,
             "unit": "руб.",
-            "quantity": 1.0,
-            "orders_count": 1,
+            "quantity": 2.0,
+            "orders_count": 2,
             "currency_totals": {
-              "руб.": 65442.0
+              "руб.": 238842.0
             },
             "details": [
               {
@@ -1384,6 +1384,19 @@
                 "line_number": "1",
                 "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
                 "amount": 65442.0,
+                "quantity": 1.0
+              },
+              {
+                "order_key": "545d35b7-541b-11f1-9807-6cb31113810e",
+                "order_number": "АЛ00-000731",
+                "order_date": "2026-05-20",
+                "status": "КОбеспечению",
+                "partner_key": "03775d43-56f5-11ee-93f3-6cb31113810e",
+                "partner": "Кащенко Алексей Витальевич ИП",
+                "currency": "руб.",
+                "line_number": "1",
+                "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
+                "amount": 173400.0,
                 "quantity": 1.0
               }
             ],
@@ -1465,14 +1478,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -1580,14 +1593,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -1695,14 +1708,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -1810,14 +1823,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -1925,14 +1938,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -2040,14 +2053,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -2155,14 +2168,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -2270,14 +2283,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -2392,14 +2405,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -2492,14 +2505,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -2592,14 +2605,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -2692,14 +2705,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -2708,12 +2721,12 @@
               "month": 5,
               "month_name": "май",
               "plan": 15000000.0,
-              "fact": 65442.0,
+              "fact": 238842.0,
               "unit": "руб.",
-              "quantity": 1.0,
-              "orders_count": 1,
+              "quantity": 2.0,
+              "orders_count": 2,
               "currency_totals": {
-                "руб.": 65442.0
+                "руб.": 238842.0
               },
               "details": [
                 {
@@ -2727,6 +2740,19 @@
                   "line_number": "1",
                   "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
                   "amount": 65442.0,
+                  "quantity": 1.0
+                },
+                {
+                  "order_key": "545d35b7-541b-11f1-9807-6cb31113810e",
+                  "order_number": "АЛ00-000731",
+                  "order_date": "2026-05-20",
+                  "status": "КОбеспечению",
+                  "partner_key": "03775d43-56f5-11ee-93f3-6cb31113810e",
+                  "partner": "Кащенко Алексей Витальевич ИП",
+                  "currency": "руб.",
+                  "line_number": "1",
+                  "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
+                  "amount": 173400.0,
                   "quantity": 1.0
                 }
               ],
@@ -2808,14 +2834,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -2908,14 +2934,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -3008,14 +3034,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -3108,14 +3134,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -3208,14 +3234,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -3308,14 +3334,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -3408,14 +3434,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -3508,14 +3534,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -4261,12 +4287,12 @@
           },
           "Развитие холдингов@@unit:%": {
             "plan": 100.0,
-            "fact": 85.2941,
+            "fact": 85.7143,
             "unit": "%"
           },
           "Развитие холдингов@@unit:шт.": {
             "plan": 0.0,
-            "fact": 29.0,
+            "fact": 30.0,
             "unit": "шт."
           }
         },
@@ -4519,7 +4545,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 100.0,
-              "fact": 85.2941,
+              "fact": 85.7143,
               "unit": "%"
             },
             {
@@ -4611,7 +4637,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 0.0,
-              "fact": 29.0,
+              "fact": 30.0,
               "unit": "шт."
             },
             {
@@ -4920,7 +4946,7 @@
           },
           "Новые заказчики по услугам@@unit:руб.": {
             "plan": 2.0,
-            "fact": 7.0,
+            "fact": 8.0,
             "unit": "шт."
           }
         },
@@ -5138,7 +5164,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 2.0,
-              "fact": 7.0,
+              "fact": 8.0,
               "unit": "шт."
             },
             {
@@ -5482,14 +5508,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -5597,14 +5623,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -5712,14 +5738,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -5827,14 +5853,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -5858,12 +5884,12 @@
         "5": {
           "Выручка UFG-H через дилерский канал@@unit:руб.": {
             "plan": 15000000.0,
-            "fact": 65442.0,
+            "fact": 238842.0,
             "unit": "руб.",
-            "quantity": 1.0,
-            "orders_count": 1,
+            "quantity": 2.0,
+            "orders_count": 2,
             "currency_totals": {
-              "руб.": 65442.0
+              "руб.": 238842.0
             },
             "details": [
               {
@@ -5877,6 +5903,19 @@
                 "line_number": "1",
                 "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
                 "amount": 65442.0,
+                "quantity": 1.0
+              },
+              {
+                "order_key": "545d35b7-541b-11f1-9807-6cb31113810e",
+                "order_number": "АЛ00-000731",
+                "order_date": "2026-05-20",
+                "status": "КОбеспечению",
+                "partner_key": "03775d43-56f5-11ee-93f3-6cb31113810e",
+                "partner": "Кащенко Алексей Витальевич ИП",
+                "currency": "руб.",
+                "line_number": "1",
+                "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
+                "amount": 173400.0,
                 "quantity": 1.0
               }
             ],
@@ -5958,14 +5997,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -6073,14 +6112,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -6188,14 +6227,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -6303,14 +6342,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -6418,14 +6457,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -6533,14 +6572,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -6648,14 +6687,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -6763,14 +6802,14 @@
               ],
               "lines_loaded": 78,
               "orders_loaded": 51,
-              "matched_lines": 1,
-              "matched_orders": 1,
+              "matched_lines": 2,
+              "matched_orders": 2,
               "skipped": {
                 "cancelled_line": 23,
                 "missing_order": 0,
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
-                "wrong_status": 7,
+                "wrong_status": 6,
                 "not_dealer_segment": 8
               }
             }
@@ -6885,14 +6924,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -6985,14 +7024,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7085,14 +7124,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7185,14 +7224,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7201,12 +7240,12 @@
               "month": 5,
               "month_name": "май",
               "plan": 15000000.0,
-              "fact": 65442.0,
+              "fact": 238842.0,
               "unit": "руб.",
-              "quantity": 1.0,
-              "orders_count": 1,
+              "quantity": 2.0,
+              "orders_count": 2,
               "currency_totals": {
-                "руб.": 65442.0
+                "руб.": 238842.0
               },
               "details": [
                 {
@@ -7220,6 +7259,19 @@
                   "line_number": "1",
                   "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
                   "amount": 65442.0,
+                  "quantity": 1.0
+                },
+                {
+                  "order_key": "545d35b7-541b-11f1-9807-6cb31113810e",
+                  "order_number": "АЛ00-000731",
+                  "order_date": "2026-05-20",
+                  "status": "КОбеспечению",
+                  "partner_key": "03775d43-56f5-11ee-93f3-6cb31113810e",
+                  "partner": "Кащенко Алексей Витальевич ИП",
+                  "currency": "руб.",
+                  "line_number": "1",
+                  "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
+                  "amount": 173400.0,
                   "quantity": 1.0
                 }
               ],
@@ -7301,14 +7353,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7401,14 +7453,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7501,14 +7553,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7601,14 +7653,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7701,14 +7753,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7801,14 +7853,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -7901,14 +7953,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -8001,14 +8053,14 @@
                 ],
                 "lines_loaded": 78,
                 "orders_loaded": 51,
-                "matched_lines": 1,
-                "matched_orders": 1,
+                "matched_lines": 2,
+                "matched_orders": 2,
                 "skipped": {
                   "cancelled_line": 23,
                   "missing_order": 0,
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
-                  "wrong_status": 7,
+                  "wrong_status": 6,
                   "not_dealer_segment": 8
                 }
               }
@@ -8567,12 +8619,12 @@
           },
           "Развитие холдингов@@unit:%": {
             "plan": 100.0,
-            "fact": 85.2941,
+            "fact": 85.7143,
             "unit": "%"
           },
           "Развитие холдингов@@unit:шт.": {
             "plan": 0.0,
-            "fact": 29.0,
+            "fact": 30.0,
             "unit": "шт."
           }
         },
@@ -8825,7 +8877,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 100.0,
-              "fact": 85.2941,
+              "fact": 85.7143,
               "unit": "%"
             },
             {
@@ -8917,7 +8969,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 0.0,
-              "fact": 29.0,
+              "fact": 30.0,
               "unit": "шт."
             },
             {
@@ -9226,7 +9278,7 @@
           },
           "Новые заказчики по услугам@@unit:руб.": {
             "plan": 2.0,
-            "fact": 7.0,
+            "fact": 8.0,
             "unit": "шт."
           }
         },
@@ -9444,7 +9496,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 2.0,
-              "fact": 7.0,
+              "fact": 8.0,
               "unit": "шт."
             },
             {
@@ -9717,14 +9769,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -9817,14 +9869,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -9917,14 +9969,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10017,14 +10069,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10033,12 +10085,12 @@
           "month": 5,
           "month_name": "май",
           "plan": 15000000.0,
-          "fact": 65442.0,
+          "fact": 238842.0,
           "unit": "руб.",
-          "quantity": 1.0,
-          "orders_count": 1,
+          "quantity": 2.0,
+          "orders_count": 2,
           "currency_totals": {
-            "руб.": 65442.0
+            "руб.": 238842.0
           },
           "details": [
             {
@@ -10052,6 +10104,19 @@
               "line_number": "1",
               "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
               "amount": 65442.0,
+              "quantity": 1.0
+            },
+            {
+              "order_key": "545d35b7-541b-11f1-9807-6cb31113810e",
+              "order_number": "АЛ00-000731",
+              "order_date": "2026-05-20",
+              "status": "КОбеспечению",
+              "partner_key": "03775d43-56f5-11ee-93f3-6cb31113810e",
+              "partner": "Кащенко Алексей Витальевич ИП",
+              "currency": "руб.",
+              "line_number": "1",
+              "nomenclature_key": "befd79fd-912d-11ef-959e-6cb31113810e",
+              "amount": 173400.0,
               "quantity": 1.0
             }
           ],
@@ -10133,14 +10198,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10233,14 +10298,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10333,14 +10398,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10433,14 +10498,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10533,14 +10598,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10633,14 +10698,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10733,14 +10798,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -10833,14 +10898,14 @@
             ],
             "lines_loaded": 78,
             "orders_loaded": 51,
-            "matched_lines": 1,
-            "matched_orders": 1,
+            "matched_lines": 2,
+            "matched_orders": 2,
             "skipped": {
               "cancelled_line": 23,
               "missing_order": 0,
               "not_posted_or_deleted": 1,
               "outside_year": 38,
-              "wrong_status": 7,
+              "wrong_status": 6,
               "not_dealer_segment": 8
             }
           }
@@ -11437,7 +11502,7 @@
           "month": 5,
           "month_name": "май",
           "plan": 100.0,
-          "fact": 85.2941,
+          "fact": 85.7143,
           "unit": "%"
         },
         {
@@ -11529,7 +11594,7 @@
           "month": 5,
           "month_name": "май",
           "plan": 0.0,
-          "fact": 29.0,
+          "fact": 30.0,
           "unit": "шт."
         },
         {
@@ -11805,7 +11870,7 @@
           "month": 5,
           "month_name": "май",
           "plan": 2.0,
-          "fact": 7.0,
+          "fact": 8.0,
           "unit": "шт."
         },
         {
@@ -11864,12 +11929,12 @@
   ],
   "fact_debug": {
     "new_service_customers": {
-      "partners_total": 124,
-      "current_shipment_rows": 272,
-      "current_service_events": 260,
-      "candidate_partners": 124,
-      "history_shipment_rows": 4013,
-      "history_service_events": 3914
+      "partners_total": 126,
+      "current_shipment_rows": 278,
+      "current_service_events": 266,
+      "candidate_partners": 126,
+      "history_shipment_rows": 4110,
+      "history_service_events": 4006
     },
     "project_bookmarks": {
       "docs_total": 5,
@@ -11883,8 +11948,8 @@
       "skipped_no_manager_dept": 0
     },
     "key_clients": {
-      "docs_loaded": 1897,
-      "docs_for_dept": 501,
+      "docs_loaded": 1911,
+      "docs_for_dept": 502,
       "managers_loaded": 31,
       "customers_total": 110,
       "shipments_loaded": 83,
@@ -11892,6 +11957,6 @@
       "history_end": "2027-01-01T00:00:00"
     }
   },
-  "cached_at": "2026-05-21",
+  "cached_at": "2026-05-22",
   "source_tag": "ks_razvitie_units_v14_dealer_ufgh_orders"
 }

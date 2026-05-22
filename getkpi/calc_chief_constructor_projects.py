@@ -27,7 +27,7 @@ from .turboproject_config import TIMEOUT
 logger = logging.getLogger(__name__)
 
 CACHE_PATH = cache_manager.CACHE_DIR / "chief_constructor_projects_snapshot.json"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 TARGET_DEPARTMENT = "Конструкторское бюро"
 MAX_ALLOWED_DELAY_WORKDAYS = 10
 RND_PROJECT_TYPE_MARKERS = ("ОКР", "НИР", "НИОКР")
@@ -228,6 +228,27 @@ def _project_delay_details(project: dict[str, Any], as_of_date: date) -> tuple[i
     return max_delay, details
 
 
+def _project_deviation_card_rows(projects: list[dict[str, Any]], as_of_date: date) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for project in projects:
+        max_delay, milestone_details = _project_delay_details(project, as_of_date)
+        rows.append({
+            "project_name": project.get("project_name") or "",
+            "project_manager": project.get("project_manager") or "",
+            "delay_workdays": max_delay,
+            "milestones_count": len(milestone_details),
+            "is_deviated": max_delay >= MAX_ALLOWED_DELAY_WORKDAYS,
+        })
+    rows.sort(
+        key=lambda row: (
+            0 if row.get("is_deviated") else 1,
+            -(int(row.get("delay_workdays") or 0)),
+            str(row.get("project_name") or ""),
+        )
+    )
+    return rows
+
+
 def _compute_projects_snapshot() -> dict:
     cached = _load_cache()
     if cached is not None:
@@ -292,6 +313,7 @@ def get_gk_m1_monthly(year: int | None = None, month: int | None = None) -> dict
                 "has_data": plan_count > 0,
                 "values_unit": "шт.",
                 "max_allowed_delay_workdays": MAX_ALLOWED_DELAY_WORKDAYS,
+                "project_deviation_rows": _project_deviation_card_rows(month_projects, as_of_date),
             }
             rows.append(row)
             if (y, m) == (ref_y, ref_m):

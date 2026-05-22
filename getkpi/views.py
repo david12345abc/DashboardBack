@@ -13,6 +13,7 @@ from django.views.decorators.http import require_GET
 from User.views import login_required
 from . import (
     cache_manager,
+    calc_chief_accountant,
     calc_budget_limit,
     calc_dengi_fact,
     calc_fot_management,
@@ -114,6 +115,8 @@ def _get_kpi_dicts(department: str) -> list[dict]:
         rows = _normalize_chief_constructor_kpi_definitions(department, rows)
     if _is_chief_metrolog_department(department):
         rows = _normalize_chief_metrolog_kpi_definitions(department, rows)
+    if _is_chief_accountant_department(department):
+        rows = _normalize_chief_accountant_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         rows = _filter_prod_deputy_rows_for_department(department, rows)
@@ -145,6 +148,8 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
             except Exception:
                 return None
             return _prod_deputy_fallback_rows_for_department(department, PD_KPI_DEFINITIONS)
+        if _is_chief_accountant_department(department):
+            return _normalize_chief_accountant_kpi_definitions(department, [])
         return None
     rows = [obj.to_dict() for obj in qs]
     if logistics_views.is_logistics_head_department(department):
@@ -153,6 +158,8 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
         rows = _normalize_chief_constructor_kpi_definitions(department, rows)
     if _is_chief_metrolog_department(department):
         rows = _normalize_chief_metrolog_kpi_definitions(department, rows)
+    if _is_chief_accountant_department(department):
+        rows = _normalize_chief_accountant_kpi_definitions(department, rows)
     if _is_prod_deputy_department(department):
         rows = [row for row in rows if str(row.get('kpi_id') or '') != 'UFG-H']
         rows = _filter_prod_deputy_rows_for_department(department, rows)
@@ -378,6 +385,26 @@ def _is_chief_metrolog_department(dept: str | None) -> bool:
     return normalized == 'главный метролог'
 
 
+def _normalize_chief_accountant_department(dept: str | None) -> str:
+    normalized = re.sub(
+        r'\s+', ' ',
+        unicodedata.normalize('NFKC', (dept or '').strip()).lower(),
+    )
+    normalized = re.sub(r'\s*-\s*', '-', normalized)
+    return normalized
+
+
+def _is_chief_accountant_department(dept: str | None) -> bool:
+    return _normalize_chief_accountant_department(dept) in {
+        'главный бухгалтер',
+        'главный бухгалтер нпо',
+        'главный бухгалтер алмаз',
+        'турбулентность-дон',
+        'турбулентность дон',
+        'алмаз',
+    }
+
+
 CHIEF_METROLOG_TILE_ORDER = (
     'METD-M1',
     'METD-M2',
@@ -498,6 +525,12 @@ def _normalize_chief_constructor_kpi_definitions(department: str, rows: list[dic
         split_rows = _chief_constructor_split_m3_rows(department, source_m3)
         normalized.extend(row for row in split_rows if str(row.get('kpi_id') or '') not in current_ids)
     return normalized
+
+
+def _normalize_chief_accountant_kpi_definitions(department: str, rows: list[dict]) -> list[dict]:
+    if not _is_chief_accountant_department(department):
+        return rows
+    return calc_chief_accountant.normalize_kpi_definitions(department, rows)
 
 
 def _metrolog_row_template(rows: list[dict], *ids: str) -> dict:
@@ -739,7 +772,7 @@ def _is_gspp_q5_tile(kpi: dict) -> bool:
 def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
     """Плитки «в пределах лимита»: M3 плюс разрез ПЦ1/ПЦ2 для зам. операционного."""
     normalized = (kpi_id or '').upper()
-    if normalized in {'LOG-M3.B', 'LOG-M3.F', 'METD-M3.B', 'METD-M3.F'}:
+    if normalized in {'LOG-M3.B', 'LOG-M3.F', 'METD-M3.B', 'METD-M3.F', 'GB-M3.B', 'GB-M3.F'}:
         return True
     if normalized.startswith('PD-M3.B') or normalized.startswith('PD-M3.F'):
         return True
@@ -2045,6 +2078,10 @@ def _build_universal_payload(
                 tile['plan_by_dept'] = lm.get('plan_by_dept')
             if 'fact_by_dept' in lm:
                 tile['fact_by_dept'] = lm.get('fact_by_dept')
+            if 'project_deviation_rows' in lm:
+                tile['project_deviation_rows'] = lm.get('project_deviation_rows')
+            if 'max_allowed_delay_workdays' in lm:
+                tile['max_allowed_delay_workdays'] = lm.get('max_allowed_delay_workdays')
         # Не подменять tile['monthly_data'] сырым entry: _build_tile_item уже положил
         # нормализованные строки (QD-Q2 — пересчёт kpi_pct); иначе фронт может снова
         # окрасить плитку по «сырым» kpi_pct и правилу «чем выше % — тем лучше».
@@ -2596,6 +2633,11 @@ def _build_kpi_entry(
     logistics_entry = logistics_views.build_kpi_entry(kpi_id, entry, year=year, month=month)
     if logistics_entry is not None:
         return logistics_entry
+
+    chief_accountant_entry = calc_chief_accountant.build_kpi_entry(kpi_id, year=year, month=month)
+    if chief_accountant_entry is not None:
+        entry.update(chief_accountant_entry)
+        return entry
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
         dz = dept_dz.get_dept_dz_ytd(dept_key)
