@@ -2464,7 +2464,10 @@ def _build_universal_payload(
         if gk_m1_table:
             tablitsy['GK-T-M1-DEVIATIONS'] = gk_m1_table
 
-    if _is_chief_metrolog_department(dept) or 'METD-Q1' in entries_by_id or 'МЕТ-Q4-1' in entries_by_id:
+    if (
+        not _is_chief_metrolog_department(dept)
+        and ('METD-Q1' in entries_by_id or 'МЕТ-Q4-1' in entries_by_id)
+    ):
         try:
             from . import calc_metrolog_projects
 
@@ -2499,7 +2502,15 @@ def _build_universal_payload(
             budget_table = None
         if budget_table:
             tablitsy['METD-T-M3-BUDGET'] = budget_table
-    dept_protocol_tables.merge_protocol_overdue_table(tablitsy, dept, year=ref_y, month=ref_m)
+    if _is_chief_metrolog_department(dept):
+        try:
+            from .komdir_dashboard import _build_overdue_table
+
+            tablitsy['KD-T-OVERDUE'] = _build_overdue_table(ref_y, ref_m, dept_guid=None)
+        except Exception:
+            pass
+    else:
+        dept_protocol_tables.merge_protocol_overdue_table(tablitsy, dept, year=ref_y, month=ref_m)
 
     return {
         'month': ref_m,
