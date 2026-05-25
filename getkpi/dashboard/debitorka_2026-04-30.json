@@ -1,7 +1,7 @@
 {
   "na_datu": "2026-04-30",
   "dept_alias_source": "commercial_department_aliases_v2",
-  "total_dz": 348068202.21,
+  "total_dz": 347263202.21,
   "total_kz": 229124695.2,
   "total_overdue": 147402663.66,
   "kz_source": "predoplata_upr",
@@ -62,7 +62,7 @@
       }
     },
     "Отдел эталонного оборудования": {
-      "dz": 6157327.73,
+      "dz": 5352327.73,
       "kz": 5477147.4,
       "overdue": 56640.0,
       "aging": {

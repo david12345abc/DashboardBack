@@ -295,12 +295,12 @@
       },
       "Развитие холдингов@@unit:%": {
         "plan": 100.0,
-        "fact": 85.7143,
+        "fact": 86.1111,
         "unit": "%"
       },
       "Развитие холдингов@@unit:шт.": {
         "plan": 0.0,
-        "fact": 30.0,
+        "fact": 31.0,
         "unit": "шт."
       }
     },
@@ -4287,12 +4287,12 @@
           },
           "Развитие холдингов@@unit:%": {
             "plan": 100.0,
-            "fact": 85.7143,
+            "fact": 86.1111,
             "unit": "%"
           },
           "Развитие холдингов@@unit:шт.": {
             "plan": 0.0,
-            "fact": 30.0,
+            "fact": 31.0,
             "unit": "шт."
           }
         },
@@ -4545,7 +4545,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 100.0,
-              "fact": 85.7143,
+              "fact": 86.1111,
               "unit": "%"
             },
             {
@@ -4637,7 +4637,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 0.0,
-              "fact": 30.0,
+              "fact": 31.0,
               "unit": "шт."
             },
             {
@@ -8619,12 +8619,12 @@
           },
           "Развитие холдингов@@unit:%": {
             "plan": 100.0,
-            "fact": 85.7143,
+            "fact": 86.1111,
             "unit": "%"
           },
           "Развитие холдингов@@unit:шт.": {
             "plan": 0.0,
-            "fact": 30.0,
+            "fact": 31.0,
             "unit": "шт."
           }
         },
@@ -8877,7 +8877,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 100.0,
-              "fact": 85.7143,
+              "fact": 86.1111,
               "unit": "%"
             },
             {
@@ -8969,7 +8969,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 0.0,
-              "fact": 30.0,
+              "fact": 31.0,
               "unit": "шт."
             },
             {
@@ -11502,7 +11502,7 @@
           "month": 5,
           "month_name": "май",
           "plan": 100.0,
-          "fact": 85.7143,
+          "fact": 86.1111,
           "unit": "%"
         },
         {
@@ -11594,7 +11594,7 @@
           "month": 5,
           "month_name": "май",
           "plan": 0.0,
-          "fact": 30.0,
+          "fact": 31.0,
           "unit": "шт."
         },
         {
@@ -11930,7 +11930,7 @@
   "fact_debug": {
     "new_service_customers": {
       "partners_total": 126,
-      "current_shipment_rows": 278,
+      "current_shipment_rows": 277,
       "current_service_events": 266,
       "candidate_partners": 126,
       "history_shipment_rows": 4110,
@@ -11948,8 +11948,8 @@
       "skipped_no_manager_dept": 0
     },
     "key_clients": {
-      "docs_loaded": 1911,
-      "docs_for_dept": 502,
+      "docs_loaded": 1937,
+      "docs_for_dept": 503,
       "managers_loaded": 31,
       "customers_total": 110,
       "shipments_loaded": 83,
@@ -11957,6 +11957,6 @@
       "history_end": "2027-01-01T00:00:00"
     }
   },
-  "cached_at": "2026-05-22",
+  "cached_at": "2026-05-25",
   "source_tag": "ks_razvitie_units_v14_dealer_ufgh_orders"
 }
