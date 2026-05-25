@@ -595,9 +595,9 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif kid == 'RD-M3-1':
         color = _rag_higher_better(pct)
-    elif kid in _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS:
+    elif kid in _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS | _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS:
         color = _rag_td_m4_limit(pct)
-    elif kid in _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS:
+    elif kid in _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS | _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS:
         color = _rag_td_m4_limit(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
         color = _rag_td_m4_limit(pct)
@@ -719,6 +719,14 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
                 qd_q2_ytd_cache_path(ref_y, ref_m),
                 turnover_month_cache_path(ref_y, ref_m),
             ]
+        if not cache_files and kpi_id in _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS:
+            from getkpi.autoit.it_m3 import cache_file_path_for_period as it_m3_cache
+
+            cache_files = [it_m3_cache(ref_y, ref_m)]
+        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS:
+            from getkpi.c1auto.c1_m3 import cache_file_path_for_period as c1_m3_cache
+
+            cache_files = [c1_m3_cache(ref_y, ref_m)]
         if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS:
             from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1_q5_cache
 
@@ -1745,8 +1753,14 @@ def _build_kpi_entry(
     kpi_id = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
     dg = _dept_guid_for_universal(dept_key)
 
-    # 1С-*: склейка по коду KPI, независимо от строки department в запросе.
-    if _c1auto_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+    # ИТ-* / 1С-*: склейка по коду KPI с учётом department (IT-M3 — autoit vs c1auto).
+    if _autoit_kpi_views.merge_kpi_entry_if_applicable(
+        kpi_id, entry, year=year, month=month, department=dept_key,
+    ):
+        return entry
+    if _c1auto_kpi_views.merge_kpi_entry_if_applicable(
+        kpi_id, entry, year=year, month=month, department=dept_key,
+    ):
         return entry
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
@@ -1931,7 +1945,9 @@ def _build_kpi_entry(
     if _sup_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
-    if _autoit_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+    if _autoit_kpi_views.merge_kpi_entry_if_applicable(
+        kpi_id, entry, year=year, month=month, department=dept_key,
+    ):
         return entry
 
     if kpi_id == 'KD-M1':

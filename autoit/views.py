@@ -5,8 +5,11 @@ import re
 import unicodedata
 from typing import Any
 
+from getkpi.autoit.it_m3 import get_it_m3_ytd
 from getkpi.autoit.it_m4_fot import get_it_m4_fot_ytd
 from getkpi.autoit.it_q2_tekuchest import get_it_q2_tekuchest_ytd
+
+from c1auto.views import is_c1auto_department
 
 DEPARTMENT = "Начальник отдела автоматизации ИТ"
 
@@ -40,6 +43,10 @@ AUTOIT_RUB_KPI_IDS: frozenset[str] = frozenset({
     "ИТ-M4", "IT-M4",
 })
 
+AUTOIT_BUDGET_LIMIT_KPI_IDS: frozenset[str] = frozenset({
+    "ИТ-M3", "IT-M3",
+})
+
 AUTOIT_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({
     "ИТ-M4", "IT-M4",
 })
@@ -53,6 +60,7 @@ def is_autoit_department(dept: str | None) -> bool:
     )
     return normalized in {
         "начальник отдела автоматизации ит",
+        "служба автоматизации",
         "autoit",
     }
 
@@ -75,11 +83,17 @@ def merge_kpi_entry_if_applicable(
     *,
     year: int | None,
     month: int | None,
+    department: str | None = None,
 ) -> bool:
     """Если ``kpi_id`` — KPI контура ИТ, заполняет ``entry`` и возвращает True."""
     kid = str(kpi_id or "").strip().upper()
     for cyr, lat in (("М", "M"), ("С", "C"), ("Р", "P"), ("Т", "T"), ("И", "I")):
         kid = kid.replace(cyr, lat)
+    if kid == "IT-M3":
+        if is_c1auto_department(department):
+            return False
+        _merge_monthly(entry, get_it_m3_ytd(year=year, month=month))
+        return True
     if kid in {"IT-M4", "ИТ-M4"}:
         _merge_monthly(entry, get_it_m4_fot_ytd(year=year, month=month))
         return True
