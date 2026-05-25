@@ -5,6 +5,7 @@ import re
 import unicodedata
 from typing import Any
 
+from getkpi.c1auto.c1_m1_sla import get_c1_m1_sla_ytd
 from getkpi.c1auto.c1_m3 import get_c1_m3_ytd
 from getkpi.c1auto.c1_m4_fot import get_c1_m4_fot_ytd
 from getkpi.c1auto.it_q5_tekuchest import get_it_q5_tekuchest_ytd
@@ -13,6 +14,7 @@ DEPARTMENT = "Начальник отдела сопровождения 1С"
 
 # В БД коды с кириллической «С»: 1С-M4, 1С-Q5 → после нормализации 1C-M4, 1C-Q5.
 C1AUTO_KPI_IDS: frozenset[str] = frozenset({
+    "1С-M1", "1C-M1",
     "ИТ-M1-1", "IT-M1-1",
     "ИТ-M1-2", "IT-M1-2",
     "ИТ-M2", "IT-M2",
@@ -28,6 +30,7 @@ C1AUTO_KPI_IDS: frozenset[str] = frozenset({
 })
 
 C1AUTO_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
+    "1С-M1", "1C-M1",
     "ИТ-M1-1", "IT-M1-1",
     "ИТ-M1-2", "IT-M1-2",
     "ИТ-M2", "IT-M2",
@@ -48,6 +51,11 @@ C1AUTO_RUB_KPI_IDS: frozenset[str] = frozenset({
 C1AUTO_BUDGET_LIMIT_KPI_IDS: frozenset[str] = frozenset({
     "ИТ-M3", "IT-M3",
     "1С-M3", "1C-M3",
+})
+
+C1AUTO_SLA_KPI_IDS: frozenset[str] = frozenset({
+    "1С-M1", "1C-M1",
+    "ИТ-M1-2", "IT-M1-2",
 })
 
 C1AUTO_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({
@@ -102,6 +110,9 @@ def merge_kpi_entry_if_applicable(
 ) -> bool:
     """Если ``kpi_id`` — KPI контура 1С, заполняет ``entry`` и возвращает True."""
     kid = _normalize_c1auto_kpi_id(kpi_id)
+    if kid in {"1C-M1", "IT-M1-2"}:
+        _merge_monthly(entry, get_c1_m1_sla_ytd(year=year, month=month))
+        return True
     if kid in {"1C-M3", "IT-M3"}:
         if kid == "IT-M3" and department is not None and not is_c1auto_department(department):
             return False

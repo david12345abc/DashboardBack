@@ -733,6 +733,16 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             from getkpi.autoit.it_m3 import cache_file_path_for_period as it_m3_cache
 
             cache_files = [it_m3_cache(ref_y, ref_m)]
+        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
+            from getkpi.c1auto.c1_m1_sla import (
+                cache_file_path_for_period as c1_m1_cache,
+                monthly_cache_path as c1_m1_monthly_cache,
+            )
+
+            cache_files = [
+                c1_m1_cache(ref_y, ref_m),
+                c1_m1_monthly_cache(ref_y, ref_m),
+            ]
         if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS:
             from getkpi.c1auto.c1_m3 import cache_file_path_for_period as c1_m3_cache
 
@@ -1462,7 +1472,7 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-M3-1':
             tile['unit'] = 'шт.'
-        elif _kid_tile in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS:
+        elif _kid_tile in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS | _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
             tile['unit'] = '%'
         elif _kid_tile in _autoit_kpi_views.AUTOIT_RUB_KPI_IDS | _c1auto_kpi_views.C1AUTO_RUB_KPI_IDS:
             tile['unit'] = 'руб.'
