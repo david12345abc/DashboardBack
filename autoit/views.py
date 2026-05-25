@@ -5,6 +5,7 @@ import re
 import unicodedata
 from typing import Any
 
+from getkpi.autoit.it_m1_sla import get_it_m1_sla_ytd
 from getkpi.autoit.it_m3 import get_it_m3_ytd
 from getkpi.autoit.it_m4_fot import get_it_m4_fot_ytd
 from getkpi.autoit.it_q2_tekuchest import get_it_q2_tekuchest_ytd
@@ -45,6 +46,10 @@ AUTOIT_RUB_KPI_IDS: frozenset[str] = frozenset({
 
 AUTOIT_BUDGET_LIMIT_KPI_IDS: frozenset[str] = frozenset({
     "ИТ-M3", "IT-M3",
+})
+
+AUTOIT_SLA_KPI_IDS: frozenset[str] = frozenset({
+    "ИТ-M1", "IT-M1",
 })
 
 AUTOIT_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({
@@ -89,6 +94,11 @@ def merge_kpi_entry_if_applicable(
     kid = str(kpi_id or "").strip().upper()
     for cyr, lat in (("М", "M"), ("С", "C"), ("Р", "P"), ("Т", "T"), ("И", "I")):
         kid = kid.replace(cyr, lat)
+    if kid == "IT-M1":
+        if is_c1auto_department(department):
+            return False
+        _merge_monthly(entry, get_it_m1_sla_ytd(year=year, month=month))
+        return True
     if kid == "IT-M3":
         if is_c1auto_department(department):
             return False
