@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     'gspp',
     'sup',
     'feedback',
+    'autoit',
+    'c1auto',
     'tools',
 ]
 

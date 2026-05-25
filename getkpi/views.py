@@ -31,6 +31,7 @@ from . import (
     logistics_views,
     komdir_dashboard,
     komdir_quarterly,
+    qualdir_tables,
     techdir_dashboard,
     techdir_projects,
     valovaya_pribyl,
@@ -44,6 +45,8 @@ import devdir.views as _devdir_kpi_views
 import gspp.views as _gspp_kpi_views
 import qualdir.views as _qualdir_kpi_views
 import sup.views as _sup_kpi_views
+import autoit.views as _autoit_kpi_views
+import c1auto.views as _c1auto_kpi_views
 from . import techdir_kpi_entry
 from qualdir.qd_m1 import (
     external_brak_month_cache_path,
@@ -648,6 +651,14 @@ def _is_sup_department(dept: str | None) -> bool:
     }
 
 
+def _is_autoit_department(dept: str | None) -> bool:
+    return _autoit_kpi_views.is_autoit_department(dept)
+
+
+def _is_c1auto_department(dept: str | None) -> bool:
+    return _c1auto_kpi_views.is_c1auto_department(dept)
+
+
 def _thresholds_block(kpi: dict) -> dict:
     return {
         'green': kpi.get('green_threshold'),
@@ -789,7 +800,7 @@ def _is_turnover_style_tile(kpi: dict) -> bool:
     nm = (kpi.get('name') or '').lower()
     if 'текучесть' in nm:
         return True
-    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2', 'QD-Q2', 'RD-Q2'}:
+    if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2', 'QD-Q2', 'RD-Q2', 'IT-Q2', '1C-Q5'}:
         return True
     return False
 
@@ -908,12 +919,6 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     """Вычислить kpi_pct и RAG-цвет для плитки."""
     ytd = entry.get('ytd') or {}
     kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
-    # QD-Q2: на плитке KPI = факт/план×100; пороги карточки (≤5 / 5,1–7 / >7 %) — к этому же значению,
-    # а не к «сырому» факту (иначе при расхождении опорного месяца и md[-1] или разных шкал цвет не совпадает с %).
-    if kid == 'QD-Q2':
-        pct = _qd_q2_pct_from_entry(entry)
-        color = _rag_lower_turnover(float(pct) if pct is not None else None)
-        return pct, color
 
     if kid == 'METD-Q2':
         fact = ytd.get('total_fact')
@@ -966,6 +971,10 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif kid == 'RD-M3-1':
         color = _rag_higher_better(pct)
+    elif kid in _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS:
+        color = _rag_td_m4_limit(pct)
+    elif kid in _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS:
+        color = _rag_td_m4_limit(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
         color = _rag_td_m4_limit(pct)
     elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
@@ -1087,6 +1096,14 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
                 qd_q2_ytd_cache_path(ref_y, ref_m),
                 turnover_month_cache_path(ref_y, ref_m),
             ]
+        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS:
+            from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1_q5_cache
+
+            cache_files = [c1_q5_cache(ref_y, ref_m)]
+        if not cache_files and kpi_id == 'IT-Q2':
+            from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as it_q2_cache
+
+            cache_files = [it_q2_cache(ref_y, ref_m)]
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -1145,11 +1162,6 @@ def _build_tile_item(
     tile['cache_updated_at'] = _tile_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
     if entry.get('last_full_month_row'):
         lfr = entry['last_full_month_row']
-        if kpi.get('kpi_id') == 'QD-Q2' and isinstance(lfr, dict):
-            lfr = {
-                **lfr,
-                'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
-            }
         if kpi.get('kpi_id') == 'QD-Q1' and isinstance(lfr, dict):
             lfr = {
                 **lfr,
@@ -1163,16 +1175,6 @@ def _build_tile_item(
                 tile['max_allowed_delay_workdays'] = lfr.get('max_allowed_delay_workdays')
     if entry.get('monthly_data') is not None:
         raw_rows = entry.get('monthly_data') or []
-        if kpi.get('kpi_id') == 'QD-Q2':
-            raw_rows = [
-                {
-                    **row,
-                    'kpi_pct': _qd_q2_kpi_pct(row.get('plan'), row.get('fact')),
-                }
-                if isinstance(row, dict)
-                else row
-                for row in raw_rows
-            ]
         if kpi.get('kpi_id') == 'QD-Q1':
             raw_rows = [
                 {
@@ -1760,14 +1762,18 @@ def _build_devdir_charts(
     ref_y: int,
     ref_m: int,
 ) -> dict:
-    """Графики директора по развитию: линия и столбцы по ФОТ (RD-M4) и бюджету (RD-M3)."""
-    sources = [
+    """Графики devdir: линия — RD-M4/RD-M3; столбцы RD-C2 — RD-M3-1 и RD-M2-1."""
+    line_sources = [
         ("RD-M4", "ФОТ", entries_by_id.get("RD-M4") or {}),
         ("RD-M3", "Бюджет", entries_by_id.get("RD-M3") or {}),
     ]
+    bar_sources = [
+        ("RD-M3-1", entries_by_id.get("RD-M3-1") or {}),
+        ("RD-M2-1", entries_by_id.get("RD-M2-1") or {}),
+    ]
 
     series: list[dict] = []
-    for kid, display_name, entry in sources:
+    for kid, display_name, entry in line_sources:
         monthly = entry.get("monthly_data") or []
         points = [
             {
@@ -1808,7 +1814,7 @@ def _build_devdir_charts(
     bar_plan_values: list[float | None] = []
     bar_fact_values: list[float | None] = []
     bar_points: list[dict] = []
-    for kid, display_name, entry in sources:
+    for kid, entry in bar_sources:
         kper = entry.get("kpi_period") or {}
         point_y, point_m = ref_y, ref_m
         if isinstance(kper, dict) and kper.get("year") is not None and kper.get("month") is not None:
@@ -1819,6 +1825,7 @@ def _build_devdir_charts(
             or entry.get("last_full_month_row")
             or {}
         )
+        display_name = (entry.get("name") or kid).strip()
         bar_categories.append(display_name)
         bar_plan_values.append(point.get("plan"))
         bar_fact_values.append(point.get("fact"))
@@ -1837,7 +1844,7 @@ def _build_devdir_charts(
     if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
         charts["RD-C2"] = {
             "kpi_id": "RD-C2",
-            "name": "ФОТ и бюджет за выбранный месяц",
+            "name": "План/факт за выбранный месяц (RD-M3-1, RD-M2-1)",
             "periodicity": "ежемесячно",
             "chart_type": "column_plan_fact_monthly",
             "chart_type_label": "Столбцы: план/факт за месяц",
@@ -2015,6 +2022,8 @@ def _build_universal_payload(
         or _is_devdir_department(dept)
         or _is_gspp_department(dept)
         or _is_sup_department(dept)
+        or _is_autoit_department(dept)
+        or _is_c1auto_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -2047,6 +2056,8 @@ def _build_universal_payload(
             | _devdir_kpi_views.DEVDIR_KPI_IDS
             | _gspp_kpi_views.GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD
             | _sup_kpi_views.SUP_KPI_IDS_USE_BUILDER_KP_PERIOD
+            | _autoit_kpi_views.AUTOIT_KPI_IDS_USE_BUILDER_KP_PERIOD
+            | _c1auto_kpi_views.C1AUTO_KPI_IDS_USE_BUILDER_KP_PERIOD
         ) or _kid_tile == 'TD-M6':
             kper = entry.get('kpi_period')
             if (
@@ -2140,6 +2151,13 @@ def _build_universal_payload(
             tile['unit'] = 'чел.'
         elif _is_gspp_q5_tile(kpi):
             tile['unit'] = 'чел.'
+        elif _is_turnover_style_tile(kpi):
+            tile['unit'] = '%'
+            if _kid_tile in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS | {'IT-Q2'}:
+                tile['period'] = 'ежемесячно'
+                tile['frequency'] = 'ежемесячно'
+                if entry.get('data_granularity') == 'monthly':
+                    tile['data_granularity'] = 'monthly'
         elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'} or _kid_tile in {'MET-Q4-1', 'METD-Q1', 'METD-Q3'}:
             tile['unit'] = 'шт.'
 
@@ -2155,6 +2173,8 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-M3-1':
             tile['unit'] = 'шт.'
+        elif _kid_tile in _autoit_kpi_views.AUTOIT_RUB_KPI_IDS | _c1auto_kpi_views.C1AUTO_RUB_KPI_IDS:
+            tile['unit'] = 'руб.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
             tile['unit'] = 'руб.'
 
@@ -2253,6 +2273,9 @@ def _build_universal_payload(
         and not _is_devdir_department(dept)
         and not _is_gspp_department(dept)
         and not _is_sup_department(dept)
+        and not _is_qualdir_department(dept)
+        and not _is_autoit_department(dept)
+        and not _is_c1auto_department(dept)
     )
 
     if include_generic_tables:
@@ -2348,6 +2371,9 @@ def _build_universal_payload(
                 "query_protocol": supplier_dz_detail.get("query_protocol") or {},
                 "rows": supplier_dz_detail.get("rows") or [],
             }
+
+    if _is_qualdir_department(dept):
+        qualdir_tables.merge_qualdir_brak_tables(tablitsy, year=ref_y, month=ref_m)
 
     if techdir_dashboard.is_techdir_department(dept):
         techdir_dashboard.merge_deviation_tables(tablitsy, ref_y, ref_m)
@@ -2653,6 +2679,10 @@ def _build_kpi_entry(
     chief_accountant_entry = calc_chief_accountant.build_kpi_entry(kpi_id, year=year, month=month)
     if chief_accountant_entry is not None:
         entry.update(chief_accountant_entry)
+        return entry
+
+    # 1С-*: склейка по коду KPI, независимо от строки department в запросе.
+    if _c1auto_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
@@ -3208,6 +3238,9 @@ def _build_kpi_entry(
     if _sup_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
+    if _autoit_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+        return entry
+
     if kpi_id == 'KD-M1':
         today = date.today()
         if year is not None and month is not None:
@@ -3288,6 +3321,21 @@ def _build_kpi_entry(
     else:
         freq_l = (freq or '').lower()
         if 'квартал' in freq_l:
+            _kid_syn = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
+            if (
+                (_is_c1auto_department(dept_key) and _kid_syn in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS)
+                or (_is_autoit_department(dept_key) and _kid_syn in {'IT-Q2', 'ИТ-Q2'})
+            ):
+                entry['data_granularity'] = 'monthly'
+                entry['monthly_data'] = []
+                entry['ytd'] = {
+                    'total_plan': None,
+                    'total_fact': None,
+                    'kpi_pct': None,
+                    'months_with_data': 0,
+                    'months_total': 0,
+                }
+                return entry
             qrow, kper = _synthetic_quarter_row_for_tile(kpi)
             entry['data_granularity'] = 'quarterly'
             entry['quarterly_data'] = [qrow]

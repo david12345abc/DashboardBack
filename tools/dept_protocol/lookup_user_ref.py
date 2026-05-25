@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import functools
+import os
 import re
 import sys
 from urllib.parse import quote
@@ -28,6 +29,7 @@ log = functools.partial(print, flush=True, file=sys.stderr)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
+DEFAULT_ODATA_TIMEOUT = int(os.getenv("ODATA_READ_TIMEOUT", "240"))
 
 USER_ENTITY = "Catalog_Пользователи"
 PERSON_ENTITY = "Catalog_ФизическиеЛица"
@@ -39,13 +41,14 @@ def normalize_name(value: str) -> str:
     return " ".join(value.split())
 
 
-def fetch_all(session: requests.Session, url: str, page: int = 500, timeout: int = 120) -> list[dict]:
+def fetch_all(session: requests.Session, url: str, page: int = 500, timeout: int | None = None) -> list[dict]:
+    read_timeout = DEFAULT_ODATA_TIMEOUT if timeout is None else int(timeout)
     rows: list[dict] = []
     skip = 0
     while True:
         sep = "&" if "?" in url else "?"
         page_url = f"{url}{sep}$top={page}&$skip={skip}&$format=json"
-        response = session.get(page_url, timeout=120)
+        response = session.get(page_url, timeout=read_timeout)
         if not response.ok:
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
         batch = response.json().get("value", [])

@@ -96,6 +96,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
     from sup import hrd_m1
+    from getkpi.autoit.it_m4_fot import cache_file_path_for_period as autoit_it_m4_cache_path
+    from getkpi.autoit.it_m4_fot import get_it_m4_fot_ytd
+    from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as autoit_it_q2_cache_path
+    from getkpi.autoit.it_q2_tekuchest import get_it_q2_tekuchest_ytd
+    from getkpi.c1auto.c1_m4_fot import cache_file_path_for_period as c1auto_c1_m4_cache_path
+    from getkpi.c1auto.c1_m4_fot import get_c1_m4_fot_ytd
+    from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1auto_it_q5_cache_path
+    from getkpi.c1auto.it_q5_tekuchest import get_it_q5_tekuchest_ytd
 
     y, m = ref_y, ref_m
     cd = CACHE_DIR
@@ -324,6 +332,22 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'sup_hrd_m1_{y}_{m}',
          hrd_m1.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: hrd_m1.get_hrd_m1_ytd(year=yy, month=mm)),
+
+        (f'autoit_it_m4_fot_{y}_{m}',
+         autoit_it_m4_cache_path(y, m),
+         lambda yy=y, mm=m: get_it_m4_fot_ytd(year=yy, month=mm)),
+
+        (f'autoit_it_q2_tekuchest_{y}_{m}',
+         autoit_it_q2_cache_path(y, m),
+         lambda yy=y, mm=m: get_it_q2_tekuchest_ytd(year=yy, month=mm)),
+
+        (f'c1auto_c1_m4_fot_{y}_{m}',
+         c1auto_c1_m4_cache_path(y, m),
+         lambda yy=y, mm=m: get_c1_m4_fot_ytd(year=yy, month=mm)),
+
+        (f'c1auto_it_q5_tekuchest_{y}_{m}',
+         c1auto_it_q5_cache_path(y, m),
+         lambda yy=y, mm=m: get_it_q5_tekuchest_ytd(year=yy, month=mm)),
     ]
     td_as_of = date.today()
     tasks.append((

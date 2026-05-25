@@ -18,11 +18,13 @@ from .odata_http import request_with_retry
 from .techdir_tekuchet import (
     AUTH,
     BASE,
+    GROUP_ALIASES,
     GROUP_ORDER,
     load_structure,
     normalize_name,
     resolve_group_department_keys,
 )
+from .turnover_hr_scope import TurnoverHrScope
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,17 @@ STRUCTURE_ORG_OVERRIDES: dict[str, str] = {
 }
 
 STRUCTURE_ORG_ALIASES: dict[str, tuple[str, ...]] = {}
+
+TD_TURNOVER_HR_SCOPE = TurnoverHrScope(
+    group_aliases=GROUP_ALIASES,
+    group_order=GROUP_ORDER,
+    restrict_org_keys=frozenset(TEKUCHEST_ALLOWED_ORG_KEYS),
+    staff_count_structure_keys=STAFF_COUNT_STRUCTURE_KEYS,
+    extra_allowed_org_keys=frozenset(TEKUCHEST_ALLOWED_ORG_KEYS),
+    structure_org_overrides=STRUCTURE_ORG_OVERRIDES,
+    structure_org_skip=STRUCTURE_ORG_SKIP,
+    structure_org_aliases=STRUCTURE_ORG_ALIASES,
+)
 
 ORG_DEPT_ENTITY = "Catalog_ПодразделенияОрганизаций"
 STAFFING_ENTITY = "Catalog_ШтатноеРасписание"
@@ -131,23 +144,29 @@ def load_hierarchy(session: requests.Session, entity: str) -> tuple[dict[str, di
     return by_key, exact
 
 
-def pick_best_org_candidate(candidates: list[dict]) -> dict | None:
+def _scope_org_allowed(org_key: str, scope: TurnoverHrScope) -> bool:
+    if scope.restrict_org_keys is None:
+        return True
+    return org_key in scope.restrict_org_keys
+
+
+def pick_best_org_candidate(
+    candidates: list[dict],
+    *,
+    scope: TurnoverHrScope,
+) -> dict | None:
     if not candidates:
         return None
-    allowed = TEKUCHEST_ALLOWED_ORG_KEYS
+    preferred = scope.extra_allowed_org_keys or frozenset()
     return sorted(
         candidates,
         key=lambda row: (
             1 if row.get("DeletionMark") else 0,
-            0 if row.get("Ref_Key") in allowed else 1,
+            0 if row.get("Ref_Key") in preferred else 1,
             len(normalize_name(row.get("Description", ""))),
             row.get("Description", ""),
         ),
     )[0]
-
-
-def in_tekuchest_org_scope(org_key: str) -> bool:
-    return org_key in TEKUCHEST_ALLOWED_ORG_KEYS
 
 
 def map_structure_to_org(
@@ -156,27 +175,29 @@ def map_structure_to_org(
     org_rows: list[dict],
     org_exact: dict[str, list[dict]],
     org_by_key: dict[str, dict],
+    *,
+    scope: TurnoverHrScope,
 ) -> tuple[str | None, str]:
-    if structure_key in STRUCTURE_ORG_SKIP:
-        return None, STRUCTURE_ORG_SKIP[structure_key]
+    if structure_key in scope.structure_org_skip:
+        return None, scope.structure_org_skip[structure_key]
 
-    override = STRUCTURE_ORG_OVERRIDES.get(structure_key)
+    override = scope.structure_org_overrides.get(structure_key)
     if override:
         row = org_by_key.get(override)
-        if row and is_active_dept(row) and in_tekuchest_org_scope(override):
+        if row and is_active_dept(row) and _scope_org_allowed(override, scope):
             return override, ""
         return None, "override не найден в оргструктуре"
 
-    search_names = (structure_name,) + STRUCTURE_ORG_ALIASES.get(structure_key, ())
+    search_names = (structure_name,) + scope.structure_org_aliases.get(structure_key, ())
     for name in search_names:
         exact_matches = [
             row for row in org_exact.get(normalize_name(name), [])
-            if is_active_dept(row) and in_tekuchest_org_scope(row["Ref_Key"])
+            if is_active_dept(row) and _scope_org_allowed(row["Ref_Key"], scope)
         ]
         if len(exact_matches) == 1:
             return exact_matches[0]["Ref_Key"], ""
         if len(exact_matches) > 1:
-            best = pick_best_org_candidate(exact_matches)
+            best = pick_best_org_candidate(exact_matches, scope=scope)
             return best["Ref_Key"], f"выбрано из {len(exact_matches)} одноимённых"
 
     for name in search_names:
@@ -185,25 +206,30 @@ def map_structure_to_org(
             row for row in org_rows
             if is_active_dept(row)
             and alias_norm in normalize_name(row.get("Description", ""))
-            and in_tekuchest_org_scope(row["Ref_Key"])
+            and _scope_org_allowed(row["Ref_Key"], scope)
         ]
         if contains_matches:
-            best = pick_best_org_candidate(contains_matches)
+            best = pick_best_org_candidate(contains_matches, scope=scope)
             return best["Ref_Key"], "частичное совпадение наименования"
 
-    return None, "не найдено среди разрешённых оргподразделений ТД"
+    return None, "не найдено среди оргподразделений контура"
 
 
-def build_department_map(session: requests.Session) -> tuple[list[dict], dict[str, str]]:
+def build_department_map(
+    session: requests.Session,
+    scope: TurnoverHrScope,
+) -> tuple[list[dict], dict[str, str]]:
     structure_rows, _structure_by_key, structure_exact = load_structure(session)
-    _group_keys, diagnostics = resolve_group_department_keys(structure_rows, structure_exact)
+    _group_keys, diagnostics = resolve_group_department_keys(
+        structure_rows, structure_exact, scope.group_aliases,
+    )
     org_by_key, org_exact = load_hierarchy(session, ORG_DEPT_ENTITY)
     org_rows = list(org_by_key.values())
 
     departments: list[dict] = []
     warnings: dict[str, str] = {}
 
-    for group_name in GROUP_ORDER:
+    for group_name in scope.group_order:
         matched = diagnostics.get(group_name, [])
         if not matched:
             departments.append({
@@ -223,6 +249,7 @@ def build_department_map(session: requests.Session) -> tuple[list[dict], dict[st
                 org_rows,
                 org_exact,
                 org_by_key,
+                scope=scope,
             )
             departments.append({
                 "group": group_name,
@@ -256,15 +283,23 @@ def build_org_structure_index(departments: list[dict]) -> dict[str, str]:
     return index
 
 
-def staff_count_departments(departments: list[dict]) -> list[dict]:
-    return [
-        dept for dept in departments
-        if dept.get("structure_key") in STAFF_COUNT_STRUCTURE_KEYS and dept.get("org_key")
-    ]
+def staff_count_departments(
+    departments: list[dict],
+    scope: TurnoverHrScope,
+) -> list[dict]:
+    if scope.staff_count_structure_keys:
+        return [
+            dept for dept in departments
+            if dept.get("structure_key") in scope.staff_count_structure_keys and dept.get("org_key")
+        ]
+    return [dept for dept in departments if dept.get("org_key")]
 
 
-def dismissal_org_keys(departments: list[dict]) -> set[str]:
-    keys = set(TEKUCHEST_ALLOWED_ORG_KEYS)
+def dismissal_org_keys(
+    departments: list[dict],
+    scope: TurnoverHrScope,
+) -> set[str]:
+    keys = set(scope.extra_allowed_org_keys)
     keys.update(dept["org_key"] for dept in departments if dept.get("org_key"))
     return keys
 
@@ -461,21 +496,24 @@ def compute_turnover_fact_percent(
     year: int,
     month: int,
     session: requests.Session | None = None,
+    *,
+    scope: TurnoverHrScope | None = None,
 ) -> dict[str, Any]:
     """
-    Факт TD-Q2: доля уволенных в % от штатных единиц на конец месяца.
-    Возвращает total_fact (процент) и диагностику расчёта.
+    Факт текучести: уволено / штат × 100 % на конец месяца.
+    По умолчанию — контур техдиректора (TD-Q2).
     """
+    hr_scope = scope or TD_TURNOVER_HR_SCOPE
     own_session = session is None
     if own_session:
         session = requests.Session()
         session.auth = AUTH
 
     try:
-        departments, _warnings = build_department_map(session)
-        count_departments = staff_count_departments(departments)
+        departments, _warnings = build_department_map(session, hr_scope)
+        count_departments = staff_count_departments(departments, hr_scope)
         org_keys = {d["org_key"] for d in count_departments}
-        allowed_dismissal_org_keys = dismissal_org_keys(count_departments)
+        allowed_dismissal_org_keys = dismissal_org_keys(count_departments, hr_scope)
         org_structure_index = build_org_structure_index(count_departments)
 
         excluded = load_excluded_employees(session)
