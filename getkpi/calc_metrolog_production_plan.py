@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
 EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v1"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v2"
+CACHE_VERSION = 2
 
 BASE = DEFAULT_BASE_URL.rstrip("/") + "/odata/standard.odata"
 if os.getenv("ONEC_BASE_URL"):
@@ -235,9 +235,13 @@ def _month_row(year: int, month: int) -> dict:
     department = _resolve_department(session)
     schedule_rows, query_protocol = _load_schedule_rows(session, period_start, period_end, evaluation_dt)
     unique_schedule: dict[str, dict] = {}
+    population_rows: list[tuple[str, dict]] = []
     for row in schedule_rows:
         key = _stage_key(row)
-        if key and key not in unique_schedule:
+        if not key or key == EMPTY_GUID:
+            continue
+        population_rows.append((key, row))
+        if key not in unique_schedule:
             unique_schedule[key] = row
 
     stages = _load_stage_docs(session, set(unique_schedule.keys())) if unique_schedule else {}
@@ -245,7 +249,7 @@ def _month_row(year: int, month: int) -> dict:
     late = 0
     skipped_wrong_department = 0
     details: list[dict] = []
-    for key, schedule in unique_schedule.items():
+    for key, schedule in population_rows:
         stage = stages.get(key) or {}
         if str(stage.get("Подразделение_Key") or "").strip() != DEPARTMENT_KEY:
             skipped_wrong_department += 1
@@ -295,12 +299,13 @@ def _month_row(year: int, month: int) -> dict:
             "department": department,
             "schedule_rows_loaded": len(schedule_rows),
             "unique_stage_refs_from_schedule": len(unique_schedule),
+            "population_schedule_rows": len(population_rows),
             "stage_docs_loaded": len(stages),
             "skipped_wrong_department": skipped_wrong_department,
             "query_protocol": query_protocol,
             "details_sample": details[:100],
             "formula": (
-                "total = уникальные Этап; late = ФактическоеОкончаниеЭтапа > Окончание "
+                "total = строки регистра с непустым Этап; late = ФактическоеОкончаниеЭтапа > Окончание "
                 "или факт пустой и Окончание < ТекущаяДата; on_time = остальные"
             ),
         },

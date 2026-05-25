@@ -2137,7 +2137,10 @@ def _build_universal_payload(
             'PD-M3.1', 'PD-M3.2', 'METD-M3.B', 'METD-M3.F',
         }:
             tile['unit'] = 'руб.'
-        elif kpi.get('kpi_id') in {'PD-M1.2', 'PD-M1.2.M', 'PD-M1.2.W', 'PD-M1.2.T'} or _kid_tile == 'HRD-M1':
+        elif (
+            kpi.get('kpi_id') in {'PD-M1.2', 'PD-M1.2.M', 'PD-M1.2.W', 'PD-M1.2.T'}
+            or _kid_tile in {'HRD-M1', 'METD-M1', 'МЕТ-M1'}
+        ):
             tile['unit'] = 'шт.'
         elif _kid_tile in {'HRD-M4', 'HRD-Q4'}:
             tile['unit'] = '%'
