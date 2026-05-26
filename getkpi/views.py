@@ -440,18 +440,13 @@ CHIEF_METROLOG_TILE_ORDER = (
 
 
 def _required_prod_deputy_kpi_ids(department: str | None) -> set[str]:
-    if _is_production_director_department(department):
-        return {
-            'PD-M3.B1', 'PD-M3.B2',
-            'PD-M3.F1', 'PD-M3.F2',
-            'PD-Q1',
-            'PD-Q3',
-            'PD-Q2.1', 'PD-Q2.2',
-        }
     return {
         *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
+        'PD-M2',
         'PD-M3.B1', 'PD-M3.B2',
         'PD-M3.F1', 'PD-M3.F2',
+        'PD-Q1',
+        'PD-Q3',
         'PD-Q2.1', 'PD-Q2.2',
     }
 
