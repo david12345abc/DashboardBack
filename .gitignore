@@ -28,6 +28,9 @@ staticfiles/
 *.swp
 *.swo
 
+# Local agent workspaces
+agent/
+
 # OS
 .DS_Store
 Thumbs.db
