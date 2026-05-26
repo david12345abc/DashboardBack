@@ -7,3 +7,8 @@ openpyxl>=3.1
 aspose-tasks
 sentence-transformers>=3.0
 numpy>=1.24
+openai>=1.0.0
+watchdog>=4.0.0
+radon>=6.0.0
+networkx>=3.0
+pydantic>=2.0

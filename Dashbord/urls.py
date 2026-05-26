@@ -24,4 +24,6 @@ urlpatterns = [
     path('api/feedback-requests/', include('feedback.urls')),
     path('api/kpi/', include('getkpi.urls')),
     path('api/search/', include('searchengine.urls')),
+    # Потоковый чат AI-ассистента для страницы дашбордов.
+    path('api/assistant/', include('aiassistant.urls')),
 ]

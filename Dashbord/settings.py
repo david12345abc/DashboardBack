@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'autoit',
     'c1auto',
     'tools',
+    'aiassistant',
 ]
 
 MIDDLEWARE = [
@@ -134,6 +135,11 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+AI_ASSISTANT_PROJECT_ROOT = BASE_DIR.parent
+AI_ASSISTANT_AGENT_SRC = BASE_DIR / 'agent' / 'agent' / 'src'
+AI_ASSISTANT_MCP_SRC = BASE_DIR / 'agent' / 'MCP' / 'src'
+AI_ASSISTANT_MCP_CONFIG = BASE_DIR / 'agent' / 'MCP' / 'mcp_config.json'
 
 # CORS: любой origin (с credentials несовместимо — см. django-cors-headers)
 CORS_ALLOW_ALL_ORIGINS = True
