@@ -26,9 +26,21 @@ def chat(request):
     selected_file = str(selected_file_raw).strip() if selected_file_raw else None
     current_user = getattr(request, 'current_user', None)
     user_label = getattr(current_user, 'nickname', '') or getattr(current_user, 'department', '') or ''
+    user_context = {
+        'id': getattr(current_user, 'id', None),
+        'nickname': getattr(current_user, 'nickname', ''),
+        'role': getattr(current_user, 'role', ''),
+        'department': getattr(current_user, 'department', ''),
+        'is_admin': bool(getattr(current_user, 'is_admin', False)),
+    }
 
     response = StreamingHttpResponse(
-        stream_agent_answer(message, selected_file=selected_file, user_label=user_label),
+        stream_agent_answer(
+            message,
+            selected_file=selected_file,
+            user_label=user_label,
+            user_context=user_context,
+        ),
         content_type='application/x-ndjson; charset=utf-8',
     )
     response['Cache-Control'] = 'no-cache'

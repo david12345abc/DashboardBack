@@ -46,11 +46,46 @@ def _json_line(payload: dict[str, Any]) -> bytes:
     return (json.dumps(payload, ensure_ascii=False) + '\n').encode('utf-8')
 
 
+def _format_user_context(user_context: dict[str, Any] | None) -> str:
+    if not user_context:
+        return "- Пользователь: не определён\n"
+    lines = ["- Пользователь, который задал запрос:"]
+    for key, label in (
+        ("id", "ID"),
+        ("nickname", "Логин"),
+        ("role", "Роль"),
+        ("department", "Подразделение"),
+        ("is_admin", "Администратор"),
+    ):
+        value = user_context.get(key)
+        if value not in (None, ""):
+            lines.append(f"  - {label}: {value}")
+    return "\n".join(lines) + "\n"
+
+
+def _augment_message(message: str, user_context: dict[str, Any] | None = None) -> str:
+    return (
+        f"{message}\n\n"
+        "Системный контекст интеграции:\n"
+        f"- Корень доступного проекта: {settings.AI_ASSISTANT_PROJECT_ROOT}\n"
+        f"{_format_user_context(user_context)}"
+        "- Это монорепозиторий dash: DashboardBack, DashboardFrontend, mobile.\n"
+        "- Если вопрос про KPI/плитку/дашборд, ищи не только JSON-конфиги. "
+        "В этом проекте плитки часто описаны и рассчитываются в "
+        "DashboardBack/getkpi/views.py, DashboardBack/getkpi/calc_*.py, "
+        "DashboardBack/getkpi/management/commands/*.py, а визуализация в "
+        "DashboardFrontend/js/pages/dashboard-*.js.\n"
+        "- Для производственных плиток проверяй идентификаторы PD-M*, "
+        "PROD_DEPUTY и файлы calc_prod_deputy*.py."
+    )
+
+
 def stream_agent_answer(
     message: str,
     *,
     selected_file: str | None = None,
     user_label: str = '',
+    user_context: dict[str, Any] | None = None,
 ) -> Iterator[bytes]:
     events: queue.Queue[dict[str, Any] | None] = queue.Queue()
 
@@ -68,7 +103,7 @@ def stream_agent_answer(
             agent = _get_agent()
             with _agent_runtime_lock:
                 answer = agent.ask(
-                    message,
+                    _augment_message(message, user_context),
                     selected_file=selected_file,
                     on_status=lambda text: put('status', message=text),
                     on_plan=lambda text: put('plan', content=text),
