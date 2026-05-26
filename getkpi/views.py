@@ -55,6 +55,24 @@ from qualdir.qd_m1 import (
     qd_m1_tile_cache_path,
     qd_m1_ytd_cache_path,
 )
+from qualdir.qd_m8 import (
+    forma0317_month_cache_path,
+    get_qd_m8_ytd,
+    qd_m8_tile_cache_path,
+    qd_m8_ytd_cache_path,
+)
+from qualdir.qd_m7 import (
+    get_qd_m7_ytd,
+    qd_m7_tile_cache_path,
+    qd_m7_ytd_cache_path,
+    vyhod_kontrol_month_cache_path,
+)
+from qualdir.qd_m6 import (
+    get_qd_m6_ytd,
+    otk_predyavlenie_month_cache_path,
+    qd_m6_tile_cache_path,
+    qd_m6_ytd_cache_path,
+)
 from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
 from qualdir.turnover import (
     _qd_q2_kpi_pct,
@@ -972,9 +990,9 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif kid == 'RD-M3-1':
         color = _rag_higher_better(pct)
-    elif kid in _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS:
+    elif kid in _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS | _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS:
         color = _rag_td_m4_limit(pct)
-    elif kid in _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS:
+    elif kid in _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS | _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS:
         color = _rag_td_m4_limit(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
         color = _rag_td_m4_limit(pct)
@@ -1090,6 +1108,24 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             qd_m5_ytd_cache_path(ref_y, ref_m),
             internal_brak_month_cache_path(ref_y, ref_m),
         ]
+    elif kpi_id == 'QD-M6':
+        cache_files = [
+            qd_m6_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_month_cache_path(ref_y, ref_m),
+            qd_m6_tile_cache_path(ref_y, ref_m),
+        ]
+    elif kpi_id == 'QD-M7':
+        cache_files = [
+            qd_m7_ytd_cache_path(ref_y, ref_m),
+            vyhod_kontrol_month_cache_path(ref_y, ref_m),
+            qd_m7_tile_cache_path(ref_y, ref_m),
+        ]
+    elif kpi_id == 'QD-M8':
+        cache_files = [
+            qd_m8_ytd_cache_path(ref_y, ref_m),
+            forma0317_month_cache_path(ref_y, ref_m),
+            qd_m8_tile_cache_path(ref_y, ref_m),
+        ]
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
         if not cache_files and kpi_id == 'QD-Q2':
@@ -1097,6 +1133,34 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
                 qd_q2_ytd_cache_path(ref_y, ref_m),
                 turnover_month_cache_path(ref_y, ref_m),
             ]
+        if not cache_files and kpi_id in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS:
+            from getkpi.autoit.it_m1_sla import (
+                cache_file_path_for_period as it_m1_cache,
+                monthly_cache_path as it_m1_monthly_cache,
+            )
+
+            cache_files = [
+                it_m1_cache(ref_y, ref_m),
+                it_m1_monthly_cache(ref_y, ref_m),
+            ]
+        if not cache_files and kpi_id in _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS:
+            from getkpi.autoit.it_m3 import cache_file_path_for_period as it_m3_cache
+
+            cache_files = [it_m3_cache(ref_y, ref_m)]
+        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
+            from getkpi.c1auto.c1_m1_sla import (
+                cache_file_path_for_period as c1_m1_cache,
+                monthly_cache_path as c1_m1_monthly_cache,
+            )
+
+            cache_files = [
+                c1_m1_cache(ref_y, ref_m),
+                c1_m1_monthly_cache(ref_y, ref_m),
+            ]
+        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS:
+            from getkpi.c1auto.c1_m3 import cache_file_path_for_period as c1_m3_cache
+
+            cache_files = [c1_m3_cache(ref_y, ref_m)]
         if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS:
             from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1_q5_cache
 
@@ -1191,10 +1255,27 @@ def _build_tile_item(
         tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
     if entry.get('yearly_data') is not None:
         tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
-    if kpi.get('kpi_id') in {'QD-M1', 'QD-M5'}:
+    if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M8'}:
         tile['departments'] = entry.get('departments')
         if entry.get('departments_by_month') is not None:
             tile['departments_by_month'] = entry.get('departments_by_month')
+        if kpi.get('kpi_id') == 'QD-M8':
+            tile['kinds'] = entry.get('kinds')
+            if entry.get('breakdown_by_month') is not None:
+                tile['breakdown_by_month'] = entry.get('breakdown_by_month')
+            lfr = tile.get('last_full_month_row') or {}
+            if lfr.get('kinds') is not None:
+                tile['kinds'] = lfr.get('kinds')
+    if kpi.get('kpi_id') == 'QD-M6':
+        lfr = tile.get('last_full_month_row') or {}
+        for extra_key in ('in_work_today', 'delay_count'):
+            if extra_key in lfr:
+                tile[extra_key] = lfr.get(extra_key)
+    if kpi.get('kpi_id') == 'QD-M7':
+        lfr = tile.get('last_full_month_row') or {}
+        for extra_key in ('accepted_to_work_today', 'checked_otk_today'):
+            if extra_key in lfr:
+                tile[extra_key] = lfr.get(extra_key)
     if entry.get('reference_analytics') is not None:
         tile['reference_analytics'] = entry.get('reference_analytics')
     if entry.get('period_aggregates') is not None:
@@ -2099,6 +2180,19 @@ def _build_universal_payload(
                 tile['project_deviation_rows'] = lm.get('project_deviation_rows')
             if 'max_allowed_delay_workdays' in lm:
                 tile['max_allowed_delay_workdays'] = lm.get('max_allowed_delay_workdays')
+            if kpi.get('kpi_id') == 'QD-M8':
+                if 'departments' in lm:
+                    tile['departments'] = lm.get('departments')
+                if 'kinds' in lm:
+                    tile['kinds'] = lm.get('kinds')
+            if kpi.get('kpi_id') == 'QD-M6':
+                for extra_key in ('in_work_today', 'delay_count'):
+                    if extra_key in lm:
+                        tile[extra_key] = lm.get(extra_key)
+            if kpi.get('kpi_id') == 'QD-M7':
+                for extra_key in ('accepted_to_work_today', 'checked_otk_today'):
+                    if extra_key in lm:
+                        tile[extra_key] = lm.get(extra_key)
         # Не подменять tile['monthly_data'] сырым entry: _build_tile_item уже положил
         # нормализованные строки (QD-Q2 — пересчёт kpi_pct); иначе фронт может снова
         # окрасить плитку по «сырым» kpi_pct и правилу «чем выше % — тем лучше».
@@ -2164,8 +2258,7 @@ def _build_universal_payload(
                     tile['data_granularity'] = 'monthly'
         elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'} or _kid_tile in {'MET-Q4-1', 'METD-Q1', 'METD-Q3'}:
             tile['unit'] = 'шт.'
-
-        elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1'}:
+        elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1', 'QD-M6', 'QD-M7', 'QD-M8'}:
             tile['unit'] = 'шт.'
         elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'
@@ -2177,6 +2270,8 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _kid_tile == 'RD-M3-1':
             tile['unit'] = 'шт.'
+        elif _kid_tile in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS | _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
+            tile['unit'] = '%'
         elif _kid_tile in _autoit_kpi_views.AUTOIT_RUB_KPI_IDS | _c1auto_kpi_views.C1AUTO_RUB_KPI_IDS:
             tile['unit'] = 'руб.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
@@ -2685,8 +2780,14 @@ def _build_kpi_entry(
         entry.update(chief_accountant_entry)
         return entry
 
-    # 1С-*: склейка по коду KPI, независимо от строки department в запросе.
-    if _c1auto_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+    # ИТ-* / 1С-*: склейка по коду KPI с учётом department (IT-M3 — autoit vs c1auto).
+    if _autoit_kpi_views.merge_kpi_entry_if_applicable(
+        kpi_id, entry, year=year, month=month, department=dept_key,
+    ):
+        return entry
+    if _c1auto_kpi_views.merge_kpi_entry_if_applicable(
+        kpi_id, entry, year=year, month=month, department=dept_key,
+    ):
         return entry
 
     if dept_key and dept_dz.is_dz_kpi(kpi_id):
@@ -3242,7 +3343,9 @@ def _build_kpi_entry(
     if _sup_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
-    if _autoit_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+    if _autoit_kpi_views.merge_kpi_entry_if_applicable(
+        kpi_id, entry, year=year, month=month, department=dept_key,
+    ):
         return entry
 
     if kpi_id == 'KD-M1':

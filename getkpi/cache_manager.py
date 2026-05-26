@@ -93,13 +93,29 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from .komdir_claims import fetch_claims_for_month
     from gspp import ol_gspp_monthly as gspp_ol_m2
     from gspp import tkp_lifecycle as gspp_tkp
-    from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4
+    from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
     from sup import hrd_m1
+    from getkpi.autoit.it_m1_sla import (
+        cache_file_path_for_period as autoit_it_m1_cache_path,
+        get_it_m1_sla_monthly,
+        get_it_m1_sla_ytd,
+        monthly_cache_path as autoit_it_m1_monthly_cache_path,
+    )
+    from getkpi.autoit.it_m3 import cache_file_path_for_period as autoit_it_m3_cache_path
+    from getkpi.autoit.it_m3 import get_it_m3_ytd
     from getkpi.autoit.it_m4_fot import cache_file_path_for_period as autoit_it_m4_cache_path
     from getkpi.autoit.it_m4_fot import get_it_m4_fot_ytd
     from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as autoit_it_q2_cache_path
     from getkpi.autoit.it_q2_tekuchest import get_it_q2_tekuchest_ytd
+    from getkpi.c1auto.c1_m1_sla import (
+        cache_file_path_for_period as c1auto_c1_m1_cache_path,
+        get_c1_m1_sla_monthly,
+        get_c1_m1_sla_ytd,
+        monthly_cache_path as c1auto_c1_m1_monthly_cache_path,
+    )
+    from getkpi.c1auto.c1_m3 import cache_file_path_for_period as c1auto_c1_m3_cache_path
+    from getkpi.c1auto.c1_m3 import get_c1_m3_ytd
     from getkpi.c1auto.c1_m4_fot import cache_file_path_for_period as c1auto_c1_m4_cache_path
     from getkpi.c1auto.c1_m4_fot import get_c1_m4_fot_ytd
     from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1auto_it_q5_cache_path
@@ -208,6 +224,22 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'qualdir_qd_m1_tile_{y}_{m}',
          qd_m1.qd_m1_tile_cache_path(y, m),
          lambda yy=y, mm=m: qd_m1.get_qd_m1_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m5_tile_{y}_{m}',
+         qd_m5.qd_m5_tile_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m5.get_qd_m5_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m6_tile_{y}_{m}',
+         qd_m6.qd_m6_tile_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m6.get_qd_m6_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m7_tile_{y}_{m}',
+         qd_m7.qd_m7_tile_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m7.get_qd_m7_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m8_tile_{y}_{m}',
+         qd_m8.qd_m8_tile_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m8.get_qd_m8_ytd(year=yy, month=mm)),
 
         (f'qualdir_qd_q1_tile_{y}_{m}',
          mpp_tasks_report.qd_q1_tile_cache_path(y, m),
@@ -333,6 +365,18 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          hrd_m1.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: hrd_m1.get_hrd_m1_ytd(year=yy, month=mm)),
 
+        (f'autoit_it_m1_sla_monthly_{y}_{m}',
+         autoit_it_m1_monthly_cache_path(y, m),
+         lambda yy=y, mm=m: get_it_m1_sla_monthly(yy, mm)),
+
+        (f'autoit_it_m1_sla_{y}_{m}',
+         autoit_it_m1_cache_path(y, m),
+         lambda yy=y, mm=m: get_it_m1_sla_ytd(year=yy, month=mm)),
+
+        (f'autoit_it_m3_{y}_{m}',
+         autoit_it_m3_cache_path(y, m),
+         lambda yy=y, mm=m: get_it_m3_ytd(year=yy, month=mm)),
+
         (f'autoit_it_m4_fot_{y}_{m}',
          autoit_it_m4_cache_path(y, m),
          lambda yy=y, mm=m: get_it_m4_fot_ytd(year=yy, month=mm)),
@@ -340,6 +384,18 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'autoit_it_q2_tekuchest_{y}_{m}',
          autoit_it_q2_cache_path(y, m),
          lambda yy=y, mm=m: get_it_q2_tekuchest_ytd(year=yy, month=mm)),
+
+        (f'c1auto_c1_m1_sla_monthly_{y}_{m}',
+         c1auto_c1_m1_monthly_cache_path(y, m),
+         lambda yy=y, mm=m: get_c1_m1_sla_monthly(yy, mm)),
+
+        (f'c1auto_c1_m1_sla_{y}_{m}',
+         c1auto_c1_m1_cache_path(y, m),
+         lambda yy=y, mm=m: get_c1_m1_sla_ytd(year=yy, month=mm)),
+
+        (f'c1auto_c1_m3_{y}_{m}',
+         c1auto_c1_m3_cache_path(y, m),
+         lambda yy=y, mm=m: get_c1_m3_ytd(year=yy, month=mm)),
 
         (f'c1auto_c1_m4_fot_{y}_{m}',
          c1auto_c1_m4_cache_path(y, m),
