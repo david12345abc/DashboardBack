@@ -29,6 +29,7 @@ from . import (
     dept_protocol_tables,
     dept_turnover_q5,
     logistics_views,
+    employee_headcount,
     komdir_dashboard,
     komdir_quarterly,
     qualdir_tables,
@@ -3884,7 +3885,12 @@ def get_chairman_for_catalog(request):
 @require_GET
 @login_required
 def get_structure(request):
-    return JsonResponse({'structure': get_structure_data()})
+    structure = get_structure_data()
+    payload = {'structure': structure}
+    include_headcount = str(request.GET.get('include_headcount') or '').strip().lower()
+    if include_headcount in {'1', 'true', 'yes', 'y'}:
+        payload['headcount'] = employee_headcount.get_employee_headcount(structure=structure)
+    return JsonResponse(payload, json_dumps_params={'ensure_ascii': False})
 
 
 @require_GET
