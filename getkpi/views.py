@@ -50,6 +50,24 @@ from qualdir.qd_m1 import (
     qd_m1_tile_cache_path,
     qd_m1_ytd_cache_path,
 )
+from qualdir.qd_m8 import (
+    forma0317_month_cache_path,
+    get_qd_m8_ytd,
+    qd_m8_tile_cache_path,
+    qd_m8_ytd_cache_path,
+)
+from qualdir.qd_m7 import (
+    get_qd_m7_ytd,
+    qd_m7_tile_cache_path,
+    qd_m7_ytd_cache_path,
+    vyhod_kontrol_month_cache_path,
+)
+from qualdir.qd_m6 import (
+    get_qd_m6_ytd,
+    otk_predyavlenie_month_cache_path,
+    qd_m6_tile_cache_path,
+    qd_m6_ytd_cache_path,
+)
 from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
 from qualdir.turnover import (
     _qd_q2_kpi_pct,
@@ -712,6 +730,24 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             qd_m5_ytd_cache_path(ref_y, ref_m),
             internal_brak_month_cache_path(ref_y, ref_m),
         ]
+    elif kpi_id == 'QD-M6':
+        cache_files = [
+            qd_m6_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_month_cache_path(ref_y, ref_m),
+            qd_m6_tile_cache_path(ref_y, ref_m),
+        ]
+    elif kpi_id == 'QD-M7':
+        cache_files = [
+            qd_m7_ytd_cache_path(ref_y, ref_m),
+            vyhod_kontrol_month_cache_path(ref_y, ref_m),
+            qd_m7_tile_cache_path(ref_y, ref_m),
+        ]
+    elif kpi_id == 'QD-M8':
+        cache_files = [
+            qd_m8_ytd_cache_path(ref_y, ref_m),
+            forma0317_month_cache_path(ref_y, ref_m),
+            qd_m8_tile_cache_path(ref_y, ref_m),
+        ]
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
         if not cache_files and kpi_id == 'QD-Q2':
@@ -836,10 +872,27 @@ def _build_tile_item(
         tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
     if entry.get('yearly_data') is not None:
         tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
-    if kpi.get('kpi_id') in {'QD-M1', 'QD-M5'}:
+    if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M8'}:
         tile['departments'] = entry.get('departments')
         if entry.get('departments_by_month') is not None:
             tile['departments_by_month'] = entry.get('departments_by_month')
+        if kpi.get('kpi_id') == 'QD-M8':
+            tile['kinds'] = entry.get('kinds')
+            if entry.get('breakdown_by_month') is not None:
+                tile['breakdown_by_month'] = entry.get('breakdown_by_month')
+            lfr = tile.get('last_full_month_row') or {}
+            if lfr.get('kinds') is not None:
+                tile['kinds'] = lfr.get('kinds')
+    if kpi.get('kpi_id') == 'QD-M6':
+        lfr = tile.get('last_full_month_row') or {}
+        for extra_key in ('in_work_today', 'delay_count'):
+            if extra_key in lfr:
+                tile[extra_key] = lfr.get(extra_key)
+    if kpi.get('kpi_id') == 'QD-M7':
+        lfr = tile.get('last_full_month_row') or {}
+        for extra_key in ('accepted_to_work_today', 'checked_otk_today'):
+            if extra_key in lfr:
+                tile[extra_key] = lfr.get(extra_key)
     if entry.get('reference_analytics') is not None:
         tile['reference_analytics'] = entry.get('reference_analytics')
     if entry.get('period_aggregates') is not None:
@@ -1432,6 +1485,19 @@ def _build_universal_payload(
                 tile['plan_by_dept'] = lm.get('plan_by_dept')
             if 'fact_by_dept' in lm:
                 tile['fact_by_dept'] = lm.get('fact_by_dept')
+            if kpi.get('kpi_id') == 'QD-M8':
+                if 'departments' in lm:
+                    tile['departments'] = lm.get('departments')
+                if 'kinds' in lm:
+                    tile['kinds'] = lm.get('kinds')
+            if kpi.get('kpi_id') == 'QD-M6':
+                for extra_key in ('in_work_today', 'delay_count'):
+                    if extra_key in lm:
+                        tile[extra_key] = lm.get(extra_key)
+            if kpi.get('kpi_id') == 'QD-M7':
+                for extra_key in ('accepted_to_work_today', 'checked_otk_today'):
+                    if extra_key in lm:
+                        tile[extra_key] = lm.get(extra_key)
         # Не подменять tile['monthly_data'] сырым entry: _build_tile_item уже положил
         # нормализованные строки; иначе фронт может снова окрасить плитку по «сырым» kpi_pct.
 
@@ -1460,7 +1526,7 @@ def _build_universal_payload(
                     tile['data_granularity'] = 'monthly'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
-        elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1'}:
+        elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1', 'QD-M6', 'QD-M7', 'QD-M8'}:
             tile['unit'] = 'шт.'
         elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'

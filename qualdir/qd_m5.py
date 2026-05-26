@@ -27,12 +27,12 @@ from qualdir.brak_report import INTERNAL_BRAK_ENTITY, compute_internal_brak_mont
 logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_internal_brak_month_v1"
-CACHE_VERSION = 1
+SOURCE_TAG = "qualdir_internal_brak_month_v3"
+CACHE_VERSION = 3
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
-QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v1"
-QD_M5_YTD_DISK_VERSION = 1
+QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v3"
+QD_M5_YTD_DISK_VERSION = 3
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
@@ -55,6 +55,11 @@ def internal_brak_month_cache_path(year: int, month: int) -> Path:
 def qd_m5_ytd_cache_path(year: int | None = None, month: int | None = None) -> Path:
     ref_y, ref_m = _normalize_period(year, month)
     return ytd_json_cache.cache_path(QD_M5_YTD_CACHE_PREFIX, ref_y, ref_m)
+
+
+def qd_m5_tile_cache_path(year: int, month: int) -> Path:
+    """Алиас YTD-кэша (для cache_manager / warm)."""
+    return qd_m5_ytd_cache_path(year, month)
 
 
 def _month_row_cache_is_perpetual(year: int, month: int) -> bool:

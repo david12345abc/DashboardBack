@@ -41,6 +41,7 @@ KIND_ENTITY = "Catalog_ТД_ВидыНесоответствияПроцессо
 
 INTERNAL_BRAK_ENTITY = "Document_ТД_Форма0318"
 EXTERNAL_BRAK_ENTITY = "Document_ТД_Форма0319"
+FORM_0317_ENTITY = "Document_ТД_Форма0317"
 
 INDUSTRIAL_DEPT = "отк-1"
 HOUSEHOLD_DEPT = "отк-2"
@@ -73,6 +74,12 @@ EXTERNAL_BRAK_CONFIG = ReportConfig(
     doc_entity=EXTERNAL_BRAK_ENTITY,
     title="Внешний брак · ТД_Форма0319",
     description="Внешний брак по документам ТД_Форма0319.",
+)
+
+FORM_0317_CONFIG = ReportConfig(
+    doc_entity=FORM_0317_ENTITY,
+    title="ТД_Форма0317",
+    description="Документы ТД_Форма0317: подразделение поставщика и виды несоответствий.",
 )
 
 
@@ -308,6 +315,27 @@ def departments_payload_by_name(counts: dict[str, int]) -> list[dict[str, Any]]:
     return rows
 
 
+def kinds_payload(counts: dict[str, int]) -> list[dict[str, Any]]:
+    rows = [{"name": name, "count": int(count)} for name, count in counts.items()]
+    rows.sort(key=lambda row: (-row["count"], row["name"].lower()))
+    return rows
+
+
+def count_by_kind(rows: list[dict], kind_names: dict[str, str]) -> dict[str, int]:
+    """Считает строки ТЧ ``Несоответствия`` по ``ВидНесоответствия``."""
+    counts: dict[str, int] = {}
+    for row in rows:
+        for item in row.get("Несоответствия") or []:
+            key = item.get("ВидНесоответствия_Key") or ""
+            name = kind_names.get(key, "").strip()
+            if not name:
+                name = (item.get("ОписаниеНесоответствия") or "").strip()
+            if not name:
+                name = "—"
+            counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
 def departments_payload(counts: dict[str, int]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for direction in ("industrial", "household", "other"):
@@ -424,6 +452,57 @@ def compute_external_brak_month(
         config=EXTERNAL_BRAK_CONFIG,
         group_by="supplier_dept",
     )
+
+
+def compute_forma0317_month(
+    year: int,
+    month: int,
+    *,
+    session: requests.Session | None = None,
+) -> dict[str, Any]:
+    """QD-M8: документы 0317 за месяц — всего, по поставщику, по виду несоответствия."""
+    date_from, date_to = month_bounds(year, month)
+    own_session = session is None
+    if session is None:
+        session = requests.Session()
+        session.auth = AUTH
+
+    try:
+        raw_docs = load_documents(session, FORM_0317_CONFIG, date_from, date_to)
+        kind_keys = {
+            item.get("ВидНесоответствия_Key")
+            for row in raw_docs
+            for item in row.get("Несоответствия") or []
+            if item.get("ВидНесоответствия_Key")
+        }
+        kind_names = load_kind_names(session, kind_keys)
+        docs = normalize_documents(raw_docs, kind_names)
+        departments = departments_payload_by_name(count_by_supplier_dept(docs))
+        kinds = kinds_payload(count_by_kind(raw_docs, kind_names))
+        total = len(docs)
+        return {
+            "year": year,
+            "month": month,
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "total": total,
+            "departments": departments,
+            "kinds": kinds,
+            "has_data": True,
+        }
+    except Exception as exc:
+        return {
+            "year": year,
+            "month": month,
+            "total": None,
+            "departments": [],
+            "kinds": [],
+            "has_data": False,
+            "error": str(exc),
+        }
+    finally:
+        if own_session:
+            session.close()
 
 
 # backward compat
