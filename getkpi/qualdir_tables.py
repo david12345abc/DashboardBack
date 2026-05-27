@@ -1,4 +1,4 @@
-"""Таблицы брака (QD-M1 / QD-M5) в ответе API qualdir."""
+"""Таблицы брака (QD-M1 / QD-M5 / QD-M8) в ответе API qualdir."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 TABLE_ID_EXTERNAL = "QD-T-M1"
 TABLE_ID_INTERNAL = "QD-T-M5"
+TABLE_ID_FORMA0317 = "QD-T-M8"
 
 
 def merge_qualdir_brak_tables(
@@ -25,7 +26,7 @@ def merge_qualdir_brak_tables(
 
 
 def enrich_payload_tables(payload: dict) -> dict:
-    """Добавить таблицы QD-T-M1 и QD-T-M5 в готовый payload qualdir."""
+    """Добавить таблицы QD-T-M1, QD-T-M5 и QD-T-M8 в готовый payload qualdir."""
     tables = payload.get("Таблицы")
     if not isinstance(tables, dict):
         tables = {}

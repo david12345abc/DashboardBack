@@ -1,4 +1,4 @@
-"""Таблицы внешнего (QD-M1) и внутреннего (QD-M5) брака для дашборда qualdir."""
+"""Таблицы внешнего (QD-M1), внутреннего (QD-M5) брака и формы 03-17 (QD-M8) для qualdir."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from qualdir.brak_report import (
     BRAK_TABLE_COLUMNS,
     EXTERNAL_BRAK_CONFIG,
     EXTERNAL_BRAK_ENTITY,
+    FORM_0317_CONFIG,
+    FORM_0317_ENTITY,
     INTERNAL_BRAK_CONFIG,
     INTERNAL_BRAK_ENTITY,
     load_brak_table_rows,
@@ -28,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 TABLE_ID_EXTERNAL = "QD-T-M1"
 TABLE_ID_INTERNAL = "QD-T-M5"
+TABLE_ID_FORMA0317 = "QD-T-M8"
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 TABLE_MONTH_CACHE_VERSION = 2
@@ -279,22 +282,51 @@ def build_internal_brak_table(ref_y: int, ref_m: int) -> dict[str, Any]:
     return payload
 
 
+def build_forma0317_table(ref_y: int, ref_m: int) -> dict[str, Any]:
+    cached = _load_ytd_table_cache("forma0317", ref_y, ref_m)
+    if cached is not None:
+        return cached
+
+    session = requests.Session()
+    session.auth = AUTH
+    try:
+        payload = _assemble_brak_table(
+            table_id=TABLE_ID_FORMA0317,
+            kpi_id="QD-M8",
+            title="Форма 03-17",
+            description="Документы Document_ТД_Форма0317 помесячно с января",
+            source_entity=FORM_0317_ENTITY,
+            table_kind="forma0317",
+            config=FORM_0317_CONFIG,
+            ref_y=ref_y,
+            ref_m=ref_m,
+            session=session,
+        )
+    finally:
+        session.close()
+
+    _save_ytd_table_cache("forma0317", ref_y, ref_m, payload)
+    return payload
+
+
 def merge_qualdir_brak_tables(
     tablitsy: dict,
     *,
     year: int,
     month: int,
 ) -> None:
-    """QD-T-M1 (внешний) и QD-T-M5 (внутренний) — помесячно с января."""
+    """QD-T-M1, QD-T-M5, QD-T-M8 — помесячно с января."""
     ref_y, ref_m = int(year), max(1, min(12, int(month)))
     lock_key = f"qualdir_brak_tables_{ref_y}_{ref_m:02d}"
 
-    def _runner() -> tuple[dict[str, Any], dict[str, Any]]:
+    def _runner() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         return (
             build_external_brak_table(ref_y, ref_m),
             build_internal_brak_table(ref_y, ref_m),
+            build_forma0317_table(ref_y, ref_m),
         )
 
-    external_table, internal_table = locked_call(lock_key, _runner)
+    external_table, internal_table, forma0317_table = locked_call(lock_key, _runner)
     tablitsy[TABLE_ID_EXTERNAL] = external_table
     tablitsy[TABLE_ID_INTERNAL] = internal_table
+    tablitsy[TABLE_ID_FORMA0317] = forma0317_table
