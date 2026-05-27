@@ -314,6 +314,7 @@ def _run_job(
                 on_plan=lambda text: put('plan', content=text),
                 on_tool=lambda name: put('tool', name=name),
                 on_file=lambda path: put('file', path=path),
+                on_progress=lambda text: put('progress', message=text),
             )
             check_cancel()
         _append_job_event(job_id, 'answer', content=answer)
