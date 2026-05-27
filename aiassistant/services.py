@@ -160,6 +160,24 @@ def _format_user_context(user_context: dict[str, Any] | None) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _friendly_agent_error(exc: Exception) -> str:
+    text = str(exc)
+    lowered = text.lower()
+    if 'failed to load model' in lowered or ('model' in lowered and 'loading cancelled' in lowered):
+        return (
+            'LM Studio не смог загрузить модель агента. '
+            'Проверьте, что в LM Studio запущена модель openai/gpt-oss-120b '
+            'и доступен сервер http://192.168.1.157:1234/v1. '
+            'После загрузки модели повторите запрос.'
+        )
+    if 'connection' in lowered or 'connect' in lowered or 'timeout' in lowered:
+        return (
+            'Не удалось подключиться к LM Studio. '
+            'Проверьте, что LM Studio запущен и OpenAI-compatible server доступен.'
+        )
+    return text
+
+
 def _augment_message(message: str, user_context: dict[str, Any] | None = None) -> str:
     return (
         f"{message}\n\n"
@@ -303,7 +321,7 @@ def _run_job(
     except JobCancelled as exc:
         _append_job_event(job_id, 'cancelled', message=str(exc))
     except Exception as exc:
-        _append_job_event(job_id, 'error', message=str(exc))
+        _append_job_event(job_id, 'error', message=_friendly_agent_error(exc), technical=str(exc))
     finally:
         _job_cancel_flags.pop(job_id, None)
 
