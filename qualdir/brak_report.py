@@ -190,13 +190,22 @@ def load_documents(
     config: ReportConfig,
     date_from: date,
     date_to: date,
+    *,
+    extra_select_fields: tuple[str, ...] = (),
 ) -> list[dict]:
     filter_expr = quote(build_filter(date_from, date_to), safe="")
     expand = quote("ПодразделениеПоставщика", safe=",/")
-    select = quote(
-        "Ref_Key,Number,Date,Posted,НаименованиеИзделия,ПодразделениеПоставщика,Несоответствия",
-        safe=",_",
-    )
+    select_fields = [
+        "Ref_Key",
+        "Number",
+        "Date",
+        "Posted",
+        "НаименованиеИзделия",
+        "ПодразделениеПоставщика",
+        "Несоответствия",
+        *extra_select_fields,
+    ]
+    select = quote(",".join(select_fields), safe=",_")
     url = (
         f"{BASE}/{quote(config.doc_entity)}"
         f"?$filter={filter_expr}"
@@ -319,6 +328,11 @@ def kinds_payload(counts: dict[str, int]) -> list[dict[str, Any]]:
     rows = [{"name": name, "count": int(count)} for name, count in counts.items()]
     rows.sort(key=lambda row: (-row["count"], row["name"].lower()))
     return rows
+
+
+def count_significant_forms(rows: list[dict]) -> int:
+    """Документы 0317 с ``ФормаЯвляетсяЗначимой = Истина``."""
+    return sum(1 for row in rows if row.get("ФормаЯвляетсяЗначимой") is True)
 
 
 def count_by_kind(rows: list[dict], kind_names: dict[str, str]) -> dict[str, int]:
@@ -460,7 +474,7 @@ def compute_forma0317_month(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    """QD-M8: документы 0317 за месяц — всего, по поставщику, по виду несоответствия."""
+    """QD-M8: документы 0317 — plan (всего), fact (значимые), поставщик, виды несоответствий."""
     date_from, date_to = month_bounds(year, month)
     own_session = session is None
     if session is None:
@@ -468,7 +482,13 @@ def compute_forma0317_month(
         session.auth = AUTH
 
     try:
-        raw_docs = load_documents(session, FORM_0317_CONFIG, date_from, date_to)
+        raw_docs = load_documents(
+            session,
+            FORM_0317_CONFIG,
+            date_from,
+            date_to,
+            extra_select_fields=("ФормаЯвляетсяЗначимой",),
+        )
         kind_keys = {
             item.get("ВидНесоответствия_Key")
             for row in raw_docs
@@ -480,12 +500,14 @@ def compute_forma0317_month(
         departments = departments_payload_by_name(count_by_supplier_dept(docs))
         kinds = kinds_payload(count_by_kind(raw_docs, kind_names))
         total = len(docs)
+        significant = count_significant_forms(raw_docs)
         return {
             "year": year,
             "month": month,
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "total": total,
+            "significant": significant,
             "departments": departments,
             "kinds": kinds,
             "has_data": True,
@@ -495,6 +517,7 @@ def compute_forma0317_month(
             "year": year,
             "month": month,
             "total": None,
+            "significant": None,
             "departments": [],
             "kinds": [],
             "has_data": False,

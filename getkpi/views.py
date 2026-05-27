@@ -590,7 +590,7 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     ytd = entry.get('ytd') or {}
     kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
 
-    if kid == 'QD-M1' or kid == 'QD-M5':
+    if kid == 'QD-M1' or kid == 'QD-M5' or kid == 'QD-M8':
         pct = ytd.get('kpi_pct')
         if pct is not None:
             pct = float(pct)
@@ -1476,6 +1476,12 @@ def _build_universal_payload(
         )
         if not lm:
             lm = entry.get('last_full_month_row') or {}
+        if kpi.get('kpi_id') == 'QD-M8':
+            lfr = entry.get('last_full_month_row') or {}
+            if lfr.get('plan') is not None and (
+                not lm or (lm.get('plan') is None and lm.get('fact') is not None)
+            ):
+                lm = lfr
         if lm:
             tile['plan'] = lm.get('plan')
             tile['fact'] = lm.get('fact')
@@ -1490,6 +1496,9 @@ def _build_universal_payload(
                     tile['departments'] = lm.get('departments')
                 if 'kinds' in lm:
                     tile['kinds'] = lm.get('kinds')
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _rag_td_m4_limit(float(lm['kpi_pct']))
             if kpi.get('kpi_id') == 'QD-M6':
                 for extra_key in ('in_work_today', 'delay_count'):
                     if extra_key in lm:
