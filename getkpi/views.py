@@ -1476,7 +1476,7 @@ def _build_universal_payload(
         )
         if not lm:
             lm = entry.get('last_full_month_row') or {}
-        if kpi.get('kpi_id') == 'QD-M8':
+        if kpi.get('kpi_id') in {'QD-M1', 'QD-M8'}:
             lfr = entry.get('last_full_month_row') or {}
             if lfr.get('plan') is not None and (
                 not lm or (lm.get('plan') is None and lm.get('fact') is not None)
@@ -1491,10 +1491,10 @@ def _build_universal_payload(
                 tile['plan_by_dept'] = lm.get('plan_by_dept')
             if 'fact_by_dept' in lm:
                 tile['fact_by_dept'] = lm.get('fact_by_dept')
-            if kpi.get('kpi_id') == 'QD-M8':
+            if kpi.get('kpi_id') in {'QD-M1', 'QD-M8'}:
                 if 'departments' in lm:
                     tile['departments'] = lm.get('departments')
-                if 'kinds' in lm:
+                if kpi.get('kpi_id') == 'QD-M8' and 'kinds' in lm:
                     tile['kinds'] = lm.get('kinds')
                 if lm.get('kpi_pct') is not None:
                     tile['kpi_pct'] = lm.get('kpi_pct')
