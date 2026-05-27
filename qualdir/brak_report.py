@@ -445,12 +445,56 @@ def compute_internal_brak_month(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    return compute_brak_month(
-        year,
-        month,
-        session=session,
-        config=INTERNAL_BRAK_CONFIG,
-    )
+    """QD-M5: форма 0318 — plan (всего), fact (значимые), ОТК-1 / ОТК-2."""
+    date_from, date_to = month_bounds(year, month)
+    own_session = session is None
+    if session is None:
+        session = requests.Session()
+        session.auth = AUTH
+
+    try:
+        raw_docs = load_documents(
+            session,
+            INTERNAL_BRAK_CONFIG,
+            date_from,
+            date_to,
+            extra_select_fields=("ФормаЯвляетсяЗначимой",),
+        )
+        kind_keys = {
+            item.get("ВидНесоответствия_Key")
+            for row in raw_docs
+            for item in row.get("Несоответствия") or []
+            if item.get("ВидНесоответствия_Key")
+        }
+        kind_names = load_kind_names(session, kind_keys)
+        docs = normalize_documents(raw_docs, kind_names)
+        counts = count_by_direction(docs)
+        departments = departments_payload(counts)
+        total = len(docs)
+        significant = count_significant_forms(raw_docs)
+        return {
+            "year": year,
+            "month": month,
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "total": total,
+            "significant": significant,
+            "departments": departments,
+            "has_data": True,
+        }
+    except Exception as exc:
+        return {
+            "year": year,
+            "month": month,
+            "total": None,
+            "significant": None,
+            "departments": [],
+            "has_data": False,
+            "error": str(exc),
+        }
+    finally:
+        if own_session:
+            session.close()
 
 
 def compute_external_brak_month(
