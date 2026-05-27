@@ -190,13 +190,22 @@ def load_documents(
     config: ReportConfig,
     date_from: date,
     date_to: date,
+    *,
+    extra_select_fields: tuple[str, ...] = (),
 ) -> list[dict]:
     filter_expr = quote(build_filter(date_from, date_to), safe="")
     expand = quote("ПодразделениеПоставщика", safe=",/")
-    select = quote(
-        "Ref_Key,Number,Date,Posted,НаименованиеИзделия,ПодразделениеПоставщика,Несоответствия",
-        safe=",_",
-    )
+    select_fields = [
+        "Ref_Key",
+        "Number",
+        "Date",
+        "Posted",
+        "НаименованиеИзделия",
+        "ПодразделениеПоставщика",
+        "Несоответствия",
+        *extra_select_fields,
+    ]
+    select = quote(",".join(select_fields), safe=",_")
     url = (
         f"{BASE}/{quote(config.doc_entity)}"
         f"?$filter={filter_expr}"
@@ -286,6 +295,7 @@ def normalize_documents(rows: list[dict], kind_names: dict[str, str]) -> list[di
                 "supplier_dept": supplier or "—",
                 "product": (row.get("НаименованиеИзделия") or "").strip() or "—",
                 "kinds": defect_kinds(row, kind_names),
+                "is_significant": row.get("ФормаЯвляетсяЗначимой") is True,
             }
         )
     return result
@@ -319,6 +329,11 @@ def kinds_payload(counts: dict[str, int]) -> list[dict[str, Any]]:
     rows = [{"name": name, "count": int(count)} for name, count in counts.items()]
     rows.sort(key=lambda row: (-row["count"], row["name"].lower()))
     return rows
+
+
+def count_significant_forms(rows: list[dict]) -> int:
+    """Документы с ``ФормаЯвляетсяЗначимой = Истина`` (0317 / 0319 и др.)."""
+    return sum(1 for row in rows if row.get("ФормаЯвляетсяЗначимой") is True)
 
 
 def count_by_kind(rows: list[dict], kind_names: dict[str, str]) -> dict[str, int]:
@@ -431,12 +446,56 @@ def compute_internal_brak_month(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    return compute_brak_month(
-        year,
-        month,
-        session=session,
-        config=INTERNAL_BRAK_CONFIG,
-    )
+    """QD-M5: форма 0318 — plan (всего), fact (значимые), ОТК-1 / ОТК-2."""
+    date_from, date_to = month_bounds(year, month)
+    own_session = session is None
+    if session is None:
+        session = requests.Session()
+        session.auth = AUTH
+
+    try:
+        raw_docs = load_documents(
+            session,
+            INTERNAL_BRAK_CONFIG,
+            date_from,
+            date_to,
+            extra_select_fields=("ФормаЯвляетсяЗначимой",),
+        )
+        kind_keys = {
+            item.get("ВидНесоответствия_Key")
+            for row in raw_docs
+            for item in row.get("Несоответствия") or []
+            if item.get("ВидНесоответствия_Key")
+        }
+        kind_names = load_kind_names(session, kind_keys)
+        docs = normalize_documents(raw_docs, kind_names)
+        counts = count_by_direction(docs)
+        departments = departments_payload(counts)
+        total = len(docs)
+        significant = count_significant_forms(raw_docs)
+        return {
+            "year": year,
+            "month": month,
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "total": total,
+            "significant": significant,
+            "departments": departments,
+            "has_data": True,
+        }
+    except Exception as exc:
+        return {
+            "year": year,
+            "month": month,
+            "total": None,
+            "significant": None,
+            "departments": [],
+            "has_data": False,
+            "error": str(exc),
+        }
+    finally:
+        if own_session:
+            session.close()
 
 
 def compute_external_brak_month(
@@ -445,13 +504,55 @@ def compute_external_brak_month(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    return compute_brak_month(
-        year,
-        month,
-        session=session,
-        config=EXTERNAL_BRAK_CONFIG,
-        group_by="supplier_dept",
-    )
+    """QD-M1: форма 0319 — plan (всего), fact (значимые), подразделения поставщика."""
+    date_from, date_to = month_bounds(year, month)
+    own_session = session is None
+    if session is None:
+        session = requests.Session()
+        session.auth = AUTH
+
+    try:
+        raw_docs = load_documents(
+            session,
+            EXTERNAL_BRAK_CONFIG,
+            date_from,
+            date_to,
+            extra_select_fields=("ФормаЯвляетсяЗначимой",),
+        )
+        kind_keys = {
+            item.get("ВидНесоответствия_Key")
+            for row in raw_docs
+            for item in row.get("Несоответствия") or []
+            if item.get("ВидНесоответствия_Key")
+        }
+        kind_names = load_kind_names(session, kind_keys)
+        docs = normalize_documents(raw_docs, kind_names)
+        departments = departments_payload_by_name(count_by_supplier_dept(docs))
+        total = len(docs)
+        significant = count_significant_forms(raw_docs)
+        return {
+            "year": year,
+            "month": month,
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "total": total,
+            "significant": significant,
+            "departments": departments,
+            "has_data": True,
+        }
+    except Exception as exc:
+        return {
+            "year": year,
+            "month": month,
+            "total": None,
+            "significant": None,
+            "departments": [],
+            "has_data": False,
+            "error": str(exc),
+        }
+    finally:
+        if own_session:
+            session.close()
 
 
 def compute_forma0317_month(
@@ -460,7 +561,7 @@ def compute_forma0317_month(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    """QD-M8: документы 0317 за месяц — всего, по поставщику, по виду несоответствия."""
+    """QD-M8: документы 0317 — plan (всего), fact (значимые), поставщик, виды несоответствий."""
     date_from, date_to = month_bounds(year, month)
     own_session = session is None
     if session is None:
@@ -468,7 +569,13 @@ def compute_forma0317_month(
         session.auth = AUTH
 
     try:
-        raw_docs = load_documents(session, FORM_0317_CONFIG, date_from, date_to)
+        raw_docs = load_documents(
+            session,
+            FORM_0317_CONFIG,
+            date_from,
+            date_to,
+            extra_select_fields=("ФормаЯвляетсяЗначимой",),
+        )
         kind_keys = {
             item.get("ВидНесоответствия_Key")
             for row in raw_docs
@@ -480,12 +587,14 @@ def compute_forma0317_month(
         departments = departments_payload_by_name(count_by_supplier_dept(docs))
         kinds = kinds_payload(count_by_kind(raw_docs, kind_names))
         total = len(docs)
+        significant = count_significant_forms(raw_docs)
         return {
             "year": year,
             "month": month,
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "total": total,
+            "significant": significant,
             "departments": departments,
             "kinds": kinds,
             "has_data": True,
@@ -495,6 +604,7 @@ def compute_forma0317_month(
             "year": year,
             "month": month,
             "total": None,
+            "significant": None,
             "departments": [],
             "kinds": [],
             "has_data": False,
@@ -513,7 +623,12 @@ BRAK_TABLE_COLUMNS = [
     "Объект несоответствия",
     "Вид несоответствия",
     "Подразделение",
+    "Значимая форма",
 ]
+
+
+def fmt_significant_flag(value: Any) -> str:
+    return "да" if value is True else "нет"
 
 
 def document_table_row(doc: dict[str, Any]) -> dict[str, str]:
@@ -527,6 +642,7 @@ def document_table_row(doc: dict[str, Any]) -> dict[str, str]:
         "Объект несоответствия": str(doc.get("product") or "—"),
         "Вид несоответствия": "; ".join(kinds) if kinds else "—",
         "Подразделение": str(doc.get("supplier_dept") or "—"),
+        "Значимая форма": fmt_significant_flag(doc.get("is_significant")),
     }
 
 
@@ -545,7 +661,13 @@ def load_brak_documents(
         session.auth = AUTH
 
     try:
-        raw_docs = load_documents(session, config, date_from, date_to)
+        raw_docs = load_documents(
+            session,
+            config,
+            date_from,
+            date_to,
+            extra_select_fields=("ФормаЯвляетсяЗначимой",),
+        )
         kind_keys = {
             item.get("ВидНесоответствия_Key")
             for row in raw_docs

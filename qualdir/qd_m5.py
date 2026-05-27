@@ -1,11 +1,15 @@
 """
 QD-M5 — внутренний брак (директор по качеству / qualdir).
 
-Источник: Document_ТД_Форма0318 через ``qualdir.brak_report``.
-На плитке: всего документов за месяц и разбивка по подразделениям (ОТК-1 / ОТК-2).
+Источник: ``Document_ТД_Форма0318`` через ``qualdir.brak_report``.
 
-Кэш: помесячно ``qualdir_internal_brak_<Y>_<MM>.json``; полный YTD —
-``qualdir_qd_m5_ytd_<Y>_<MM>.json``.
+За выбранный месяц:
+  1) ``plan`` — всего форм по ``Date``;
+  2) ``fact`` — значимые (``ФормаЯвляетсяЗначимой = Истина``);
+  3) ``departments`` — ОТК-1 / ОТК-2 / прочие.
+
+Кэш OData: ``qualdir_internal_brak_<Y>_<MM>.json``.
+YTD-файл только для mtime / warm; данные плитки всегда собираются заново из помесячных снимков.
 """
 
 from __future__ import annotations
@@ -22,17 +26,21 @@ from getkpi.cache_manager import locked_call
 from getkpi.devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
-from qualdir.brak_report import INTERNAL_BRAK_ENTITY, compute_internal_brak_month
+from qualdir.brak_report import AUTH, INTERNAL_BRAK_ENTITY, compute_internal_brak_month
+from qualdir.turnover import _qd_q2_kpi_pct
 
 logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_internal_brak_month_v3"
-CACHE_VERSION = 3
+_MONTH_CACHE_META = frozenset({"source", "cache_version", "cache_date"})
+SOURCE_TAG = "qualdir_internal_brak_month_v4"
+SOURCE_TAG_LEGACY = "qualdir_internal_brak_month_v3"
+CACHE_VERSION = 4
+CACHE_VERSION_LEGACY = 3
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
-QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v3"
-QD_M5_YTD_DISK_VERSION = 3
+QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v5"
+QD_M5_YTD_DISK_VERSION = 5
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
@@ -58,13 +66,105 @@ def qd_m5_ytd_cache_path(year: int | None = None, month: int | None = None) -> P
 
 
 def qd_m5_tile_cache_path(year: int, month: int) -> Path:
-    """Алиас YTD-кэша (для cache_manager / warm)."""
     return qd_m5_ytd_cache_path(year, month)
 
 
 def _month_row_cache_is_perpetual(year: int, month: int) -> bool:
     today = date.today()
     return (year, month) < (today.year, today.month)
+
+
+def _unwrap_month_snapshot(data: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in data.items() if key not in _MONTH_CACHE_META}
+
+
+def _month_snapshot_is_valid(snapshot: dict[str, Any] | None) -> bool:
+    if not isinstance(snapshot, dict):
+        return False
+    if not snapshot.get("has_data"):
+        return True
+    if snapshot.get("total") is None:
+        return False
+    return "significant" in snapshot
+
+
+def _month_row_has_plan_fact(row: dict[str, Any]) -> bool:
+    if not row.get("has_data"):
+        return True
+    if row.get("plan") is None and row.get("fact") is not None:
+        return False
+    return row.get("plan") is not None and "kpi_pct" in row
+
+
+def _cached_payload_is_valid(payload: dict[str, Any] | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    row = payload.get("last_full_month_row")
+    if isinstance(row, dict) and not _month_row_has_plan_fact(row):
+        return False
+    for item in payload.get("monthly_data") or []:
+        if isinstance(item, dict) and not _month_row_has_plan_fact(item):
+            return False
+    return True
+
+
+def _payload_has_legacy_plan_fact(payload: dict[str, Any] | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    rows = [payload.get("last_full_month_row"), *(payload.get("monthly_data") or [])]
+    for row in rows:
+        if isinstance(row, dict) and row.get("has_data") and row.get("plan") is None and row.get("fact") is not None:
+            return True
+    return False
+
+
+def _purge_stale_month_cache(year: int, month: int) -> None:
+    path = internal_brak_month_cache_path(year, month)
+    if not path.exists():
+        return
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
+    snapshot = _unwrap_month_snapshot(data)
+    if not _month_snapshot_is_valid(snapshot):
+        try:
+            path.unlink(missing_ok=True)
+            logger.info("QD-M5: удалён устаревший помесячный кэш %s", path.name)
+        except OSError:
+            pass
+
+
+def _purge_invalid_ytd_cache(path: Path) -> None:
+    if not path.exists():
+        return
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
+    payload = raw.get("payload") if isinstance(raw, dict) else None
+    tag = raw.get("cache_source") if isinstance(raw, dict) else None
+    version = raw.get("cache_version") if isinstance(raw, dict) else None
+    if (
+        tag != QD_M5_YTD_DISK_TAG
+        or version != QD_M5_YTD_DISK_VERSION
+        or not _cached_payload_is_valid(payload)
+    ):
+        try:
+            path.unlink(missing_ok=True)
+            logger.info("QD-M5: удалён устаревший YTD-кэш %s", path.name)
+        except OSError:
+            pass
 
 
 def _load_month_cache(year: int, month: int) -> dict[str, Any] | None:
@@ -76,14 +176,23 @@ def _load_month_cache(year: int, month: int) -> dict[str, Any] | None:
             data = json.load(handle)
     except (OSError, json.JSONDecodeError):
         return None
-    if data.get("source") != SOURCE_TAG:
+    source = data.get("source")
+    version = data.get("cache_version")
+    if source not in (SOURCE_TAG, SOURCE_TAG_LEGACY):
         return None
-    if data.get("cache_version") != CACHE_VERSION:
+    if version not in (CACHE_VERSION, CACHE_VERSION_LEGACY):
         return None
     if not _month_row_cache_is_perpetual(year, month):
         if data.get("cache_date") != date.today().isoformat():
             return None
-    return data
+    snapshot = _unwrap_month_snapshot(data)
+    if not _month_snapshot_is_valid(snapshot):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+    return snapshot
 
 
 def _save_month_cache(year: int, month: int, payload: dict[str, Any]) -> None:
@@ -116,12 +225,13 @@ def compute_qd_m5_internal_brak_month(
 
     try:
         snapshot = compute_internal_brak_month(year, month, session=session)
-    except Exception as exc:
-        logger.warning("QD-M5: нет данных за %d-%02d: %s", year, month, exc)
+    except requests.RequestException as exc:
+        logger.warning("QD-M5: OData error %d-%02d: %s", year, month, exc)
         snapshot = {
             "year": year,
             "month": month,
             "total": None,
+            "significant": None,
             "departments": [],
             "has_data": False,
             "error": str(exc),
@@ -133,13 +243,34 @@ def compute_qd_m5_internal_brak_month(
     return snapshot
 
 
+def _month_row_from_snapshot(snapshot: dict[str, Any], y: int, m: int) -> dict[str, Any]:
+    total = snapshot.get("total")
+    significant = snapshot.get("significant")
+    has_data = bool(snapshot.get("has_data")) and total is not None
+    plan = int(total) if has_data else None
+    fact = int(significant) if has_data and significant is not None else None
+    row: dict[str, Any] = {
+        "year": y,
+        "month": m,
+        "month_name": MONTH_RU[m].lower(),
+        "plan": plan,
+        "fact": fact,
+        "kpi_pct": _qd_q2_kpi_pct(plan, fact),
+        "has_data": has_data,
+        "departments": [dict(item) for item in snapshot.get("departments") or []],
+    }
+    if has_data:
+        row["values_unit"] = "шт."
+    return row
+
+
 def _departments_by_month_section(monthly_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "year": row["year"],
             "month": row["month"],
             "month_name": row["month_name"],
-            "total": row.get("fact"),
+            "total": row.get("plan"),
             "has_data": row.get("has_data"),
             "departments": [dict(item) for item in row.get("departments") or []],
         }
@@ -150,8 +281,6 @@ def _departments_by_month_section(monthly_rows: list[dict[str, Any]]) -> list[di
 def _compute_qd_m5_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
     monthly_rows: list[dict[str, Any]] = []
     session = requests.Session()
-    from qualdir.brak_report import AUTH
-
     session.auth = AUTH
 
     try:
@@ -164,26 +293,12 @@ def _compute_qd_m5_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
                     "year": y,
                     "month": m,
                     "total": None,
+                    "significant": None,
                     "departments": [],
                     "has_data": False,
                     "error": str(exc),
                 }
-
-            total = snapshot.get("total")
-            has_data = bool(snapshot.get("has_data")) and total is not None
-            row: dict[str, Any] = {
-                "year": y,
-                "month": m,
-                "month_name": MONTH_RU[m].lower(),
-                "plan": None,
-                "fact": int(total) if has_data else None,
-                "kpi_pct": None,
-                "has_data": has_data,
-                "departments": [dict(item) for item in snapshot.get("departments") or []],
-            }
-            if has_data:
-                row["values_unit"] = "шт."
-            monthly_rows.append(row)
+            monthly_rows.append(_month_row_from_snapshot(snapshot, y, m))
 
         ref_row = next(
             (row for row in monthly_rows if row["year"] == ref_y and row["month"] == ref_m),
@@ -199,9 +314,9 @@ def _compute_qd_m5_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
             "departments": departments_out,
             "departments_by_month": _departments_by_month_section(monthly_rows),
             "ytd": {
-                "total_plan": None,
+                "total_plan": ref_row.get("plan") if ref_row else None,
                 "total_fact": ref_row.get("fact") if ref_row else None,
-                "kpi_pct": None,
+                "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
                 "months_with_data": months_with_data,
                 "months_total": len(monthly_rows),
                 **({"values_unit": "шт."} if ref_row and ref_row.get("has_data") else {}),
@@ -217,7 +332,7 @@ def _compute_qd_m5_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
                 "status": "ok",
                 "kpi_id": "QD-M5",
                 "source": INTERNAL_BRAK_ENTITY,
-                "logic": "qualdir.brak_report",
+                "logic": "qualdir.brak_report.compute_internal_brak_month",
             },
         }
     finally:
@@ -225,23 +340,22 @@ def _compute_qd_m5_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
 
 
 def get_qd_m5_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
-    """QD-M5: внутренний брак — всего документов с разбивкой по подразделениям, помесячно."""
+    """QD-M5: внутренний брак — plan (всего), fact (значимые), разбивка по ОТК."""
     ref_y, ref_m = _normalize_period(year, month)
     disk_path = qd_m5_ytd_cache_path(ref_y, ref_m)
-    perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
     def _runner() -> dict[str, Any]:
-        cached = ytd_json_cache.load_payload(
-            disk_path,
-            source_tag=QD_M5_YTD_DISK_TAG,
-            version=QD_M5_YTD_DISK_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+        _purge_invalid_ytd_cache(disk_path)
+        for y, m in _month_pairs(ref_y, ref_m):
+            _purge_stale_month_cache(y, m)
 
         try:
             payload = _compute_qd_m5_tile(ref_y, ref_m)
+            if _payload_has_legacy_plan_fact(payload):
+                logger.warning("QD-M5: повторный расчёт — обнаружен устаревший plan/fact")
+                for y, m in _month_pairs(ref_y, ref_m):
+                    _purge_stale_month_cache(y, m)
+                payload = _compute_qd_m5_tile(ref_y, ref_m)
         except Exception as exc:
             logger.exception("Ошибка при расчёте QD-M5 (внутренний брак)")
             payload = {

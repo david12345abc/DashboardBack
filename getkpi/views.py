@@ -952,7 +952,7 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_lower_turnover(ratio)
         return pct, color
 
-    if kid == 'QD-M1' or kid == 'QD-M5':
+    if kid == 'QD-M1' or kid == 'QD-M5' or kid == 'QD-M8':
         pct = ytd.get('kpi_pct')
         if pct is not None:
             pct = float(pct)
@@ -2162,6 +2162,21 @@ def _build_universal_payload(
             )
             if not lm:
                 lm = entry.get('last_full_month_row') or {}
+        if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M8'}:
+            lfr = entry.get('last_full_month_row') or {}
+            if lfr.get('plan') is not None and (
+                not lm or (lm.get('plan') is None and lm.get('fact') is not None)
+            ):
+                lm = lfr
+            elif lm.get('plan') is None and lm.get('fact') is not None:
+                ytd_vals = entry.get('ytd') or {}
+                if ytd_vals.get('total_plan') is not None:
+                    lm = {
+                        **lm,
+                        'plan': ytd_vals.get('total_plan'),
+                        'fact': ytd_vals.get('total_fact'),
+                        'kpi_pct': ytd_vals.get('kpi_pct'),
+                    }
         if lm:
             tile['plan'] = lm.get('plan')
             tile['fact'] = lm.get('fact')
@@ -2175,11 +2190,14 @@ def _build_universal_payload(
                 tile['project_deviation_rows'] = lm.get('project_deviation_rows')
             if 'max_allowed_delay_workdays' in lm:
                 tile['max_allowed_delay_workdays'] = lm.get('max_allowed_delay_workdays')
-            if kpi.get('kpi_id') == 'QD-M8':
+            if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M8'}:
                 if 'departments' in lm:
                     tile['departments'] = lm.get('departments')
-                if 'kinds' in lm:
+                if kpi.get('kpi_id') == 'QD-M8' and 'kinds' in lm:
                     tile['kinds'] = lm.get('kinds')
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _rag_td_m4_limit(float(lm['kpi_pct']))
             if kpi.get('kpi_id') == 'QD-M6':
                 for extra_key in ('in_work_today', 'delay_count'):
                     if extra_key in lm:

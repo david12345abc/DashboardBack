@@ -9,16 +9,73 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from pathlib import Path
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 STRUCTURE_FILE = Path(__file__).resolve().parent.parent / "getkpi" / "structure.json"
+
+_PROXY_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+
+
+def _clear_unsupported_proxy_env() -> None:
+    """httpx/huggingface_hub не понимают socks4:// — ломают загрузку модели при VPN."""
+    for key in _PROXY_ENV_KEYS:
+        value = os.environ.get(key, "")
+        if not value:
+            continue
+        lowered = value.lower()
+        if lowered.startswith(("socks4://", "socks5://")):
+            logger.warning(
+                "Отключён прокси %s=%s для загрузки модели embeddings (неподдерживаемая схема)",
+                key,
+                value,
+            )
+            os.environ.pop(key, None)
+
+
+def _configure_hf_http_client() -> None:
+    """Отключить системный/socks-прокси для Hugging Face (VPN на Windows)."""
+    _clear_unsupported_proxy_env()
+    try:
+        import httpx
+        from huggingface_hub import set_client_factory
+        from huggingface_hub.utils._http import hf_request_event_hook
+
+        def _client_factory() -> httpx.Client:
+            return httpx.Client(
+                event_hooks={"request": [hf_request_event_hook]},
+                follow_redirects=True,
+                timeout=None,
+                trust_env=False,
+            )
+
+        set_client_factory(_client_factory)
+    except Exception as exc:
+        logger.debug("HF client factory not configured: %s", exc)
+
+
+_configure_hf_http_client()
+
+from sentence_transformers import SentenceTransformer  # noqa: E402
+
+
+def _load_sentence_transformer() -> SentenceTransformer:
+    local_only = os.getenv("HF_HUB_OFFLINE", "").strip().lower() in {"1", "true", "yes"}
+    return SentenceTransformer(MODEL_NAME, local_files_only=local_only)
+
 
 _lock = threading.Lock()
 _dept_names: list[str] = []
@@ -26,7 +83,7 @@ _dept_embeddings: np.ndarray | None = None
 _structure_mtime: float | None = None
 
 logger.info("Loading embedding model %s …", MODEL_NAME)
-_model = SentenceTransformer(MODEL_NAME)
+_model = _load_sentence_transformer()
 logger.info("Model loaded.")
 
 

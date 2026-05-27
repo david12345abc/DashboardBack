@@ -18,7 +18,9 @@ QUALDIR_TILE_KPI_IDS: frozenset[str] = frozenset({
     'QD-Q2', 'QD-Q1', 'QD-M1', 'QD-M4', 'QD-M3', 'QD-M5', 'QD-M6', 'QD-M7', 'QD-M8',
 })
 
-KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
+KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset(
+    {'QD-M1', 'QD-M3', 'QD-M4', 'QD-M5', 'QD-M8'}
+)
 RUB_UNIT_KPI_IDS: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
 TILE_COLOR_TD_M4_LIMIT_IDS: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
 
@@ -162,7 +164,10 @@ def merge_kpi_entry_if_applicable(
     month: int | None,
 ) -> bool:
     """По ``kpi_id`` заполняет ``entry``. Возвращает True, если надо ``return entry`` в ``getkpi.views``."""
-    merger = _MERGE_BY_ID.get(kpi_id)
+    kid = str(kpi_id or "").strip().upper()
+    for cyr, lat in (("М", "M"), ("С", "C")):
+        kid = kid.replace(cyr, lat)
+    merger = _MERGE_BY_ID.get(kid)
     if merger is None:
         return False
     return merger(entry, year, month)

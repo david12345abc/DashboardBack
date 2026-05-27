@@ -2,13 +2,13 @@
 QD-M8 — документы ``Document_ТД_Форма0317`` (qualdir).
 
 За выбранный месяц:
-За выбранный месяц:
-  1) ``fact`` — количество документов по ``Date``;
-  2) ``departments`` — разбивка по ``ПодразделениеПоставщика``;
-  3) ``kinds`` — строки ТЧ ``Несоответствия`` по ``ВидНесоответствия``.
+  1) ``plan`` — всего форм по ``Date``;
+  2) ``fact`` — значимые (``ФормаЯвляетсяЗначимой = Истина``);
+  3) ``departments`` — ``ПодразделениеПоставщика``;
+  4) ``kinds`` — ``ВидНесоответствия`` из ТЧ ``Несоответствия``.
 
-Кэш: помесячно ``qualdir_forma0317_<Y>_<MM>.json``; YTD —
-``qualdir_qd_m8_ytd_<Y>_<MM>.json``.
+Кэш OData: ``qualdir_forma0317_<Y>_<MM>.json``.
+YTD-файл только для mtime / warm; данные плитки всегда собираются заново из помесячных снимков.
 """
 
 from __future__ import annotations
@@ -26,16 +26,20 @@ from getkpi.devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
 from qualdir.brak_report import AUTH, FORM_0317_ENTITY, compute_forma0317_month
+from qualdir.turnover import _qd_q2_kpi_pct
 
 logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-SOURCE_TAG = "qualdir_forma0317_month_v3"
-CACHE_VERSION = 3
+_MONTH_CACHE_META = frozenset({"source", "cache_version", "cache_date"})
+SOURCE_TAG = "qualdir_forma0317_month_v6"
+SOURCE_TAG_LEGACY = "qualdir_forma0317_month_v5"
+CACHE_VERSION = 6
+CACHE_VERSION_LEGACY = 5
 
 QD_M8_YTD_CACHE_PREFIX = "qualdir_qd_m8_ytd"
-QD_M8_YTD_DISK_TAG = "qualdir_qd_m8_ytd_payload_v3"
-QD_M8_YTD_DISK_VERSION = 3
+QD_M8_YTD_DISK_TAG = "qualdir_qd_m8_ytd_payload_v6"
+QD_M8_YTD_DISK_VERSION = 6
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
@@ -69,6 +73,67 @@ def _month_row_cache_is_perpetual(year: int, month: int) -> bool:
     return (year, month) < (today.year, today.month)
 
 
+def _unwrap_month_snapshot(data: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in data.items() if key not in _MONTH_CACHE_META}
+
+
+def _month_snapshot_is_valid(snapshot: dict[str, Any] | None) -> bool:
+    if not isinstance(snapshot, dict):
+        return False
+    if not snapshot.get("has_data"):
+        return True
+    if snapshot.get("total") is None:
+        return False
+    return "significant" in snapshot
+
+
+def _month_row_has_plan_fact(row: dict[str, Any]) -> bool:
+    if not row.get("has_data"):
+        return True
+    if row.get("plan") is None and row.get("fact") is not None:
+        return False
+    return row.get("plan") is not None and "kpi_pct" in row
+
+
+def _cached_payload_is_valid(payload: dict[str, Any] | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    row = payload.get("last_full_month_row")
+    if isinstance(row, dict) and not _month_row_has_plan_fact(row):
+        return False
+    for item in payload.get("monthly_data") or []:
+        if isinstance(item, dict) and not _month_row_has_plan_fact(item):
+            return False
+    return True
+
+
+def _purge_invalid_ytd_cache(path: Path) -> None:
+    if not path.exists():
+        return
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
+    payload = raw.get("payload") if isinstance(raw, dict) else None
+    tag = raw.get("cache_source") if isinstance(raw, dict) else None
+    version = raw.get("cache_version") if isinstance(raw, dict) else None
+    if (
+        tag != QD_M8_YTD_DISK_TAG
+        or version != QD_M8_YTD_DISK_VERSION
+        or not _cached_payload_is_valid(payload)
+    ):
+        try:
+            path.unlink(missing_ok=True)
+            logger.info("QD-M8: удалён устаревший YTD-кэш %s", path.name)
+        except OSError:
+            pass
+
+
 def _load_month_cache(year: int, month: int) -> dict[str, Any] | None:
     path = forma0317_month_cache_path(year, month)
     if not path.exists():
@@ -78,14 +143,19 @@ def _load_month_cache(year: int, month: int) -> dict[str, Any] | None:
             data = json.load(handle)
     except (OSError, json.JSONDecodeError):
         return None
-    if data.get("source") != SOURCE_TAG:
+    source = data.get("source")
+    version = data.get("cache_version")
+    if source not in (SOURCE_TAG, SOURCE_TAG_LEGACY):
         return None
-    if data.get("cache_version") != CACHE_VERSION:
+    if version not in (CACHE_VERSION, CACHE_VERSION_LEGACY):
         return None
     if not _month_row_cache_is_perpetual(year, month):
         if data.get("cache_date") != date.today().isoformat():
             return None
-    return data
+    snapshot = _unwrap_month_snapshot(data)
+    if not _month_snapshot_is_valid(snapshot):
+        return None
+    return snapshot
 
 
 def _save_month_cache(year: int, month: int, payload: dict[str, Any]) -> None:
@@ -123,14 +193,17 @@ def compute_qd_m8_month(
 
 def _month_row_from_snapshot(snapshot: dict[str, Any], y: int, m: int) -> dict[str, Any]:
     total = snapshot.get("total")
+    significant = snapshot.get("significant")
     has_data = bool(snapshot.get("has_data")) and total is not None
+    plan = int(total) if has_data else None
+    fact = int(significant) if has_data and significant is not None else None
     row: dict[str, Any] = {
         "year": y,
         "month": m,
         "month_name": MONTH_RU[m].lower(),
-        "plan": None,
-        "fact": int(total) if has_data else None,
-        "kpi_pct": None,
+        "plan": plan,
+        "fact": fact,
+        "kpi_pct": _qd_q2_kpi_pct(plan, fact),
         "has_data": has_data,
         "departments": [dict(item) for item in snapshot.get("departments") or []],
         "kinds": [dict(item) for item in snapshot.get("kinds") or []],
@@ -146,7 +219,7 @@ def _breakdown_by_month_section(monthly_rows: list[dict[str, Any]]) -> list[dict
             "year": row["year"],
             "month": row["month"],
             "month_name": row["month_name"],
-            "total": row.get("fact"),
+            "total": row.get("plan"),
             "has_data": row.get("has_data"),
             "departments": [dict(item) for item in row.get("departments") or []],
             "kinds": [dict(item) for item in row.get("kinds") or []],
@@ -170,6 +243,7 @@ def _compute_qd_m8_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
                     "year": y,
                     "month": m,
                     "total": None,
+                    "significant": None,
                     "departments": [],
                     "kinds": [],
                     "has_data": False,
@@ -193,9 +267,9 @@ def _compute_qd_m8_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
             "kinds": kinds_out,
             "breakdown_by_month": _breakdown_by_month_section(monthly_rows),
             "ytd": {
-                "total_plan": None,
+                "total_plan": ref_row.get("plan") if ref_row else None,
                 "total_fact": ref_row.get("fact") if ref_row else None,
-                "kpi_pct": None,
+                "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
                 "months_with_data": months_with_data,
                 "months_total": len(monthly_rows),
                 **({"values_unit": "шт."} if ref_row and ref_row.get("has_data") else {}),
@@ -221,17 +295,9 @@ def _compute_qd_m8_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
 def get_qd_m8_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = _normalize_period(year, month)
     disk_path = qd_m8_ytd_cache_path(ref_y, ref_m)
-    perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
     def _runner() -> dict[str, Any]:
-        cached = ytd_json_cache.load_payload(
-            disk_path,
-            source_tag=QD_M8_YTD_DISK_TAG,
-            version=QD_M8_YTD_DISK_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+        _purge_invalid_ytd_cache(disk_path)
 
         try:
             payload = _compute_qd_m8_tile(ref_y, ref_m)
