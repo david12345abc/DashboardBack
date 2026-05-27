@@ -30,9 +30,9 @@ TABLE_ID_EXTERNAL = "QD-T-M1"
 TABLE_ID_INTERNAL = "QD-T-M5"
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-TABLE_MONTH_CACHE_VERSION = 1
-TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v1"
-TABLE_YTD_DISK_VERSION = 1
+TABLE_MONTH_CACHE_VERSION = 2
+TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v2"
+TABLE_YTD_DISK_VERSION = 2
 
 
 def _month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
@@ -71,7 +71,11 @@ def _load_month_table_cache(table_kind: str, year: int, month: int) -> list[dict
         if data.get("cache_date") != date.today().isoformat():
             return None
     rows = data.get("rows")
-    return rows if isinstance(rows, list) else None
+    if not isinstance(rows, list):
+        return None
+    if rows and isinstance(rows[0], dict) and "Значимая форма" not in rows[0]:
+        return None
+    return rows
 
 
 def _save_month_table_cache(

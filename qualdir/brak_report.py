@@ -295,6 +295,7 @@ def normalize_documents(rows: list[dict], kind_names: dict[str, str]) -> list[di
                 "supplier_dept": supplier or "—",
                 "product": (row.get("НаименованиеИзделия") or "").strip() or "—",
                 "kinds": defect_kinds(row, kind_names),
+                "is_significant": row.get("ФормаЯвляетсяЗначимой") is True,
             }
         )
     return result
@@ -622,7 +623,12 @@ BRAK_TABLE_COLUMNS = [
     "Объект несоответствия",
     "Вид несоответствия",
     "Подразделение",
+    "Значимая форма",
 ]
+
+
+def fmt_significant_flag(value: Any) -> str:
+    return "да" if value is True else "нет"
 
 
 def document_table_row(doc: dict[str, Any]) -> dict[str, str]:
@@ -636,6 +642,7 @@ def document_table_row(doc: dict[str, Any]) -> dict[str, str]:
         "Объект несоответствия": str(doc.get("product") or "—"),
         "Вид несоответствия": "; ".join(kinds) if kinds else "—",
         "Подразделение": str(doc.get("supplier_dept") or "—"),
+        "Значимая форма": fmt_significant_flag(doc.get("is_significant")),
     }
 
 
@@ -654,7 +661,13 @@ def load_brak_documents(
         session.auth = AUTH
 
     try:
-        raw_docs = load_documents(session, config, date_from, date_to)
+        raw_docs = load_documents(
+            session,
+            config,
+            date_from,
+            date_to,
+            extra_select_fields=("ФормаЯвляетсяЗначимой",),
+        )
         kind_keys = {
             item.get("ВидНесоответствия_Key")
             for row in raw_docs
