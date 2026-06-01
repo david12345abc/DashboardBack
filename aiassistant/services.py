@@ -178,10 +178,34 @@ def _friendly_agent_error(exc: Exception) -> str:
     return text
 
 
+def _is_simple_greeting(message: str) -> bool:
+    clean = ' '.join(str(message or '').lower().replace('!', ' ').replace('?', ' ').replace(',', ' ').replace('.', ' ').split())
+    return clean in {
+        'привет',
+        'здравствуй',
+        'здравствуйте',
+        'добрый день',
+        'доброе утро',
+        'добрый вечер',
+        'хай',
+        'hello',
+        'hi',
+    }
+
+
+def _greeting_answer(user_context: dict[str, Any] | None = None) -> str:
+    name = ''
+    if user_context:
+        name = str(user_context.get('nickname') or '').strip()
+    return f"Здравствуйте{', ' + name if name else ''}. Чем помочь по дашборду, KPI или файлам проекта?"
+
+
 def _augment_message(message: str, user_context: dict[str, Any] | None = None) -> str:
     return (
         f"{message}\n\n"
         "Системный контекст интеграции:\n"
+        "- Отвечай исключительно на русском языке. Не используй английские фразы в итоговом ответе, "
+        "кроме имён файлов, путей, идентификаторов KPI, названий функций, классов и технических ключей из кода.\n"
         f"- Корень доступного проекта: {settings.AI_ASSISTANT_PROJECT_ROOT}\n"
         f"{_format_user_context(user_context)}"
         "- Это монорепозиторий dash: DashboardBack, DashboardFrontend, mobile.\n"
@@ -297,6 +321,10 @@ def _run_job(
         _append_job_event(job_id, event_type, **payload)
 
     try:
+        if _is_simple_greeting(message):
+            _append_job_event(job_id, 'answer', content=_greeting_answer(user_context))
+            _append_job_event(job_id, 'done')
+            return
         put(
             'status',
             message='Запускаю AI-ассистента…',

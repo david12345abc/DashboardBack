@@ -17,8 +17,8 @@
       "year": 2026,
       "month": 2,
       "month_name": "февраль",
-      "plan": 54,
-      "fact": 54,
+      "plan": 56,
+      "fact": 56,
       "delays": 0,
       "deviation_count": 0,
       "kpi_pct": 100.0,
@@ -28,8 +28,8 @@
       "year": 2026,
       "month": 3,
       "month_name": "март",
-      "plan": 50,
-      "fact": 49,
+      "plan": 51,
+      "fact": 50,
       "delays": 1,
       "deviation_count": 1,
       "kpi_pct": 98.0,
@@ -47,6 +47,6 @@
       "has_data": true
     }
   ],
-  "cache_date": "2026-05-22",
+  "cache_date": "2026-05-29",
   "source_tag": "svoevremennaya_monthly_v4_npo_timely_fact"
 }

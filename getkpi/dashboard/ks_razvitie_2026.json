@@ -84,7 +84,7 @@
       },
       "Закладки в проекты@@unit:руб.": {
         "plan": 2.0,
-        "fact": 1.0,
+        "fact": 0.0,
         "unit": "шт./руб."
       },
       "Закладки в проекты@@unit:шт.": {
@@ -295,7 +295,7 @@
       },
       "Развитие холдингов@@unit:%": {
         "plan": 100.0,
-        "fact": 86.0465,
+        "fact": 84.0909,
         "unit": "%"
       },
       "Развитие холдингов@@unit:шт.": {
@@ -939,14 +939,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -987,8 +987,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -997,7 +997,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -1054,14 +1054,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -1102,8 +1102,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -1112,7 +1112,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -1169,14 +1169,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -1217,8 +1217,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -1227,7 +1227,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -1284,14 +1284,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -1332,8 +1332,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -1342,7 +1342,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -1428,14 +1428,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -1476,8 +1476,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -1486,7 +1486,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -1543,14 +1543,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -1591,8 +1591,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -1601,7 +1601,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -1658,14 +1658,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -1706,8 +1706,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -1716,7 +1716,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -1773,14 +1773,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -1821,8 +1821,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -1831,7 +1831,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -1888,14 +1888,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -1936,8 +1936,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -1946,7 +1946,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -2003,14 +2003,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -2051,8 +2051,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -2061,7 +2061,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -2118,14 +2118,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -2166,8 +2166,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -2176,7 +2176,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -2233,14 +2233,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -2281,8 +2281,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -2291,7 +2291,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -2355,14 +2355,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -2403,8 +2403,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -2413,7 +2413,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -2455,14 +2455,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -2503,8 +2503,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -2513,7 +2513,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -2555,14 +2555,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -2603,8 +2603,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -2613,7 +2613,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -2655,14 +2655,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -2703,8 +2703,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -2713,7 +2713,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -2784,14 +2784,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -2832,8 +2832,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -2842,7 +2842,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -2884,14 +2884,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -2932,8 +2932,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -2942,7 +2942,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -2984,14 +2984,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -3032,8 +3032,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -3042,7 +3042,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -3084,14 +3084,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -3132,8 +3132,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -3142,7 +3142,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -3184,14 +3184,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -3232,8 +3232,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -3242,7 +3242,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -3284,14 +3284,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -3332,8 +3332,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -3342,7 +3342,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -3384,14 +3384,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -3432,8 +3432,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -3442,7 +3442,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -3484,14 +3484,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -3532,8 +3532,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -3542,7 +3542,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             }
@@ -4287,7 +4287,7 @@
           },
           "Развитие холдингов@@unit:%": {
             "plan": 100.0,
-            "fact": 86.0465,
+            "fact": 84.0909,
             "unit": "%"
           },
           "Развитие холдингов@@unit:шт.": {
@@ -4545,7 +4545,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 100.0,
-              "fact": 86.0465,
+              "fact": 84.0909,
               "unit": "%"
             },
             {
@@ -4712,7 +4712,7 @@
         "2": {
           "Закладки в проекты@@unit:руб.": {
             "plan": 1.0,
-            "fact": 1.0,
+            "fact": 0.0,
             "unit": "шт."
           }
         },
@@ -4803,7 +4803,7 @@
               "month": 2,
               "month_name": "февраль",
               "plan": 1.0,
-              "fact": 1.0,
+              "fact": 0.0,
               "unit": "шт."
             },
             {
@@ -5458,14 +5458,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -5506,8 +5506,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -5516,7 +5516,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -5573,14 +5573,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -5621,8 +5621,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -5631,7 +5631,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -5688,14 +5688,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -5736,8 +5736,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -5746,7 +5746,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -5803,14 +5803,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -5851,8 +5851,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -5861,7 +5861,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -5947,14 +5947,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -5995,8 +5995,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -6005,7 +6005,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -6062,14 +6062,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -6110,8 +6110,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -6120,7 +6120,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -6177,14 +6177,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -6225,8 +6225,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -6235,7 +6235,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -6292,14 +6292,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -6340,8 +6340,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -6350,7 +6350,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -6407,14 +6407,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -6455,8 +6455,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -6465,7 +6465,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -6522,14 +6522,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -6570,8 +6570,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -6580,7 +6580,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -6637,14 +6637,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -6685,8 +6685,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -6695,7 +6695,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -6752,14 +6752,14 @@
                 "value_target": "Дилер",
                 "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                 "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                "rows_total": 2095,
+                "rows_total": 2102,
                 "value_counts": {
-                  "Конечный потребитель": 1103,
-                  "Инжиниринговая компания": 277,
+                  "Конечный потребитель": 1107,
+                  "Инжиниринговая компания": 278,
                   "Проектная организация (высокие сети)": 82,
                   "Оптовик": 29,
                   "Торговая компания (пром)": 234,
-                  "Торговая компания (быт)": 269,
+                  "Торговая компания (быт)": 271,
                   "Проектная организация (низкие сети)": 36,
                   "Оптовик неактивный": 12,
                   "Дилер": 28,
@@ -6800,8 +6800,8 @@
                 "Статус in published execution statuses",
                 "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
               ],
-              "lines_loaded": 78,
-              "orders_loaded": 51,
+              "lines_loaded": 76,
+              "orders_loaded": 50,
               "matched_lines": 2,
               "matched_orders": 2,
               "skipped": {
@@ -6810,7 +6810,7 @@
                 "not_posted_or_deleted": 1,
                 "outside_year": 38,
                 "wrong_status": 6,
-                "not_dealer_segment": 8
+                "not_dealer_segment": 6
               }
             }
           },
@@ -6874,14 +6874,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -6922,8 +6922,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -6932,7 +6932,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -6974,14 +6974,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7022,8 +7022,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7032,7 +7032,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7074,14 +7074,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7122,8 +7122,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7132,7 +7132,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7174,14 +7174,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7222,8 +7222,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7232,7 +7232,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7303,14 +7303,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7351,8 +7351,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7361,7 +7361,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7403,14 +7403,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7451,8 +7451,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7461,7 +7461,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7503,14 +7503,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7551,8 +7551,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7561,7 +7561,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7603,14 +7603,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7651,8 +7651,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7661,7 +7661,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7703,14 +7703,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7751,8 +7751,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7761,7 +7761,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7803,14 +7803,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7851,8 +7851,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7861,7 +7861,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -7903,14 +7903,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -7951,8 +7951,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -7961,7 +7961,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             },
@@ -8003,14 +8003,14 @@
                   "value_target": "Дилер",
                   "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
                   "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-                  "rows_total": 2095,
+                  "rows_total": 2102,
                   "value_counts": {
-                    "Конечный потребитель": 1103,
-                    "Инжиниринговая компания": 277,
+                    "Конечный потребитель": 1107,
+                    "Инжиниринговая компания": 278,
                     "Проектная организация (высокие сети)": 82,
                     "Оптовик": 29,
                     "Торговая компания (пром)": 234,
-                    "Торговая компания (быт)": 269,
+                    "Торговая компания (быт)": 271,
                     "Проектная организация (низкие сети)": 36,
                     "Оптовик неактивный": 12,
                     "Дилер": 28,
@@ -8051,8 +8051,8 @@
                   "Статус in published execution statuses",
                   "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
                 ],
-                "lines_loaded": 78,
-                "orders_loaded": 51,
+                "lines_loaded": 76,
+                "orders_loaded": 50,
                 "matched_lines": 2,
                 "matched_orders": 2,
                 "skipped": {
@@ -8061,7 +8061,7 @@
                   "not_posted_or_deleted": 1,
                   "outside_year": 38,
                   "wrong_status": 6,
-                  "not_dealer_segment": 8
+                  "not_dealer_segment": 6
                 }
               }
             }
@@ -8619,7 +8619,7 @@
           },
           "Развитие холдингов@@unit:%": {
             "plan": 100.0,
-            "fact": 86.0465,
+            "fact": 84.0909,
             "unit": "%"
           },
           "Развитие холдингов@@unit:шт.": {
@@ -8877,7 +8877,7 @@
               "month": 5,
               "month_name": "май",
               "plan": 100.0,
-              "fact": 86.0465,
+              "fact": 84.0909,
               "unit": "%"
             },
             {
@@ -9044,7 +9044,7 @@
         "2": {
           "Закладки в проекты@@unit:руб.": {
             "plan": 1.0,
-            "fact": 1.0,
+            "fact": 0.0,
             "unit": "шт."
           }
         },
@@ -9135,7 +9135,7 @@
               "month": 2,
               "month_name": "февраль",
               "plan": 1.0,
-              "fact": 1.0,
+              "fact": 0.0,
               "unit": "шт."
             },
             {
@@ -9719,14 +9719,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -9767,8 +9767,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -9777,7 +9777,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -9819,14 +9819,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -9867,8 +9867,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -9877,7 +9877,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -9919,14 +9919,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -9967,8 +9967,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -9977,7 +9977,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10019,14 +10019,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10067,8 +10067,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10077,7 +10077,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10148,14 +10148,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10196,8 +10196,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10206,7 +10206,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10248,14 +10248,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10296,8 +10296,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10306,7 +10306,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10348,14 +10348,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10396,8 +10396,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10406,7 +10406,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10448,14 +10448,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10496,8 +10496,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10506,7 +10506,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10548,14 +10548,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10596,8 +10596,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10606,7 +10606,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10648,14 +10648,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10696,8 +10696,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10706,7 +10706,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10748,14 +10748,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10796,8 +10796,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10806,7 +10806,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         },
@@ -10848,14 +10848,14 @@
               "value_target": "Дилер",
               "property_key": "84e71636-08b9-11f1-979f-6cb31113810e",
               "rows_filter": "Свойство_Key eq guid'84e71636-08b9-11f1-979f-6cb31113810e'",
-              "rows_total": 2095,
+              "rows_total": 2102,
               "value_counts": {
-                "Конечный потребитель": 1103,
-                "Инжиниринговая компания": 277,
+                "Конечный потребитель": 1107,
+                "Инжиниринговая компания": 278,
                 "Проектная организация (высокие сети)": 82,
                 "Оптовик": 29,
                 "Торговая компания (пром)": 234,
-                "Торговая компания (быт)": 269,
+                "Торговая компания (быт)": 271,
                 "Проектная организация (низкие сети)": 36,
                 "Оптовик неактивный": 12,
                 "Дилер": 28,
@@ -10896,8 +10896,8 @@
               "Статус in published execution statuses",
               "Партнер_Key has additional property «Сегмент партнера» = «Дилер»"
             ],
-            "lines_loaded": 78,
-            "orders_loaded": 51,
+            "lines_loaded": 76,
+            "orders_loaded": 50,
             "matched_lines": 2,
             "matched_orders": 2,
             "skipped": {
@@ -10906,7 +10906,7 @@
               "not_posted_or_deleted": 1,
               "outside_year": 38,
               "wrong_status": 6,
-              "not_dealer_segment": 8
+              "not_dealer_segment": 6
             }
           }
         }
@@ -11502,7 +11502,7 @@
           "month": 5,
           "month_name": "май",
           "plan": 100.0,
-          "fact": 86.0465,
+          "fact": 84.0909,
           "unit": "%"
         },
         {
@@ -11665,7 +11665,7 @@
           "month": 2,
           "month_name": "февраль",
           "plan": 1.0,
-          "fact": 1.0,
+          "fact": 0.0,
           "unit": "шт."
         },
         {
@@ -11929,34 +11929,34 @@
   ],
   "fact_debug": {
     "new_service_customers": {
-      "partners_total": 129,
-      "current_shipment_rows": 283,
-      "current_service_events": 272,
-      "candidate_partners": 129,
-      "history_shipment_rows": 4133,
-      "history_service_events": 4028
+      "partners_total": 130,
+      "current_shipment_rows": 295,
+      "current_service_events": 283,
+      "candidate_partners": 130,
+      "history_shipment_rows": 4155,
+      "history_service_events": 4049
     },
     "project_bookmarks": {
-      "docs_total": 5,
-      "managers_loaded": 3,
+      "docs_total": 4,
+      "managers_loaded": 2,
       "docs_by_dept": {
         "34497ef7-810f-11e4-80d6-001e67112509": 0,
         "639ec87b-67b6-11eb-8523-ac1f6b05524d": 0,
         "bd7b5184-9f9c-11e4-80da-001e67112509": 4,
-        "9edaa7d4-37a5-11ee-93d3-6cb31113810e": 1
+        "9edaa7d4-37a5-11ee-93d3-6cb31113810e": 0
       },
       "skipped_no_manager_dept": 0
     },
     "key_clients": {
-      "docs_loaded": 1987,
-      "docs_for_dept": 526,
+      "docs_loaded": 2043,
+      "docs_for_dept": 552,
       "managers_loaded": 31,
-      "customers_total": 113,
-      "shipments_loaded": 83,
+      "customers_total": 114,
+      "shipments_loaded": 84,
       "history_start": "2024-01-01T00:00:00",
       "history_end": "2027-01-01T00:00:00"
     }
   },
-  "cached_at": "2026-05-27",
+  "cached_at": "2026-06-01",
   "source_tag": "ks_razvitie_units_v14_dealer_ufgh_orders"
 }

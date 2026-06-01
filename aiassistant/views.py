@@ -28,6 +28,18 @@ def _current_user_context(request) -> tuple[str, dict]:
     return user_label, user_context
 
 
+def _merge_frontend_user_context(user_context: dict, payload: dict) -> dict:
+    frontend_context = payload.get('user_context')
+    if not isinstance(frontend_context, dict):
+        return user_context
+    merged = dict(user_context)
+    for key in ('id', 'nickname', 'role', 'department', 'is_admin'):
+        value = frontend_context.get(key)
+        if merged.get(key) in (None, '') and value not in (None, ''):
+            merged[key] = value
+    return merged
+
+
 @require_POST
 @login_required
 def chat(request):
@@ -45,6 +57,8 @@ def chat(request):
     room_id_raw = payload.get('room_id')
     conversation_id = str(room_id_raw).strip() if room_id_raw else None
     user_label, user_context = _current_user_context(request)
+    user_context = _merge_frontend_user_context(user_context, payload)
+    user_label = user_context.get('nickname') or user_context.get('department') or user_label
     job = create_assistant_job(
         message,
         selected_file=selected_file,
