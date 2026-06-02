@@ -466,8 +466,10 @@ def _is_budget_limit_m3_kpi(kpi_id: str) -> bool:
 
 
 def _is_turnover_style_tile(kpi: dict) -> bool:
-    kid = kpi.get('kpi_id') or ''
+    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
     nm = (kpi.get('name') or '').lower()
+    if kid == 'TD-Q2' or _is_gspp_q5_tile(kpi):
+        return True
     if 'текучесть' in nm:
         return True
     if kid.endswith('-Q5') or kid in {'ZKD-Q2', 'TD-Q2', 'QD-Q2', 'RD-Q2', 'IT-Q2', '1C-Q5'}:
@@ -1439,6 +1441,13 @@ def _build_universal_payload(
     else:
         ref_y, ref_m = _lfm(today)
 
+    gspp_memo_key: str | None = None
+    if _is_gspp_department(dept) and not include_debug:
+        gspp_memo_key = f"gspp_dashboard:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
+        if cached_payload is not None:
+            return cached_payload
+
     for kpi in tiles_meta:
         entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
         entries_by_id[kpi['kpi_id']] = entry
@@ -1562,6 +1571,9 @@ def _build_universal_payload(
             tile['unit'] = 'руб.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
             tile['unit'] = 'руб.'
+
+        if _kid_tile == 'TD-Q2' or _is_gspp_q5_tile(kpi):
+            tile['unit'] = '%'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
         if period_label:
@@ -1728,7 +1740,7 @@ def _build_universal_payload(
 
     dept_protocol_tables.merge_protocol_overdue_table(tablitsy, dept, year=ref_y, month=ref_m)
 
-    return {
+    result = {
         'month': ref_m,
         'year': ref_y,
         'kpi_ref_month': ref_m,
@@ -1736,6 +1748,9 @@ def _build_universal_payload(
         'Графики': grafiki,
         'Таблицы': tablitsy,
     }
+    if gspp_memo_key:
+        cache_manager.set_memoized_dashboard_payload(gspp_memo_key, result)
+    return result
 
 
 MONTH_NAMES = {

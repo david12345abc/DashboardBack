@@ -64,6 +64,10 @@ GSPP_Q4_CACHE_PREFIX = "gspp_q4_ytd"
 GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v8"
 GSPP_Q4_DISK_VERSION = 8
 
+GSPP_Q4_DEVIATION_CACHE_PREFIX = "gspp_q4_deviation_tables"
+GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v1"
+GSPP_Q4_DEVIATION_DISK_VERSION = 1
+
 
 def _project_display_name(details: dict[str, Any], summary_item: dict[str, Any]) -> str:
     meta = details.get("project") or {}
@@ -489,6 +493,11 @@ def gspp_q4_ytd_cache_path(year: int | None = None, month: int | None = None) ->
     return ytd_json_cache.cache_path(GSPP_Q4_CACHE_PREFIX, ry, rm)
 
 
+def gspp_q4_deviation_tables_cache_path(year: int | None = None, month: int | None = None) -> Path:
+    ry, rm = normalize_rd_tile_period(year, month)
+    return ytd_json_cache.cache_path(GSPP_Q4_DEVIATION_CACHE_PREFIX, ry, rm)
+
+
 def get_gspp_q4_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any] | None:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     c_path = ytd_json_cache.cache_path(GSPP_Q4_CACHE_PREFIX, ref_y, ref_m)
@@ -625,11 +634,36 @@ def _build_gspp_q4_deviation_table_payload(
     }
 
 
+def _compute_gspp_q4_deviation_tables(ref_y: int, ref_m: int) -> dict[str, Any]:
+    fallback = {
+        "GSPP-T-Q4-DEVIATIONS": _empty_gspp_deviation_table(
+            ref_y, ref_m, hint="(внутренняя ошибка расчёта таблицы)",
+        ),
+    }
+    try:
+        session = requests.Session()
+        token = _login(session)
+        item, details, err = _find_target_project(session, token)
+        if details is None:
+            return {
+                "GSPP-T-Q4-DEVIATIONS": _empty_gspp_deviation_table(
+                    ref_y, ref_m, hint=f"({err or 'проект не найден'})",
+                ),
+            }
+        tbl = _build_gspp_q4_deviation_table_payload(ref_y, ref_m, item, details)
+        return {"GSPP-T-Q4-DEVIATIONS": tbl}
+    except Exception:
+        logger.exception("ГСП-Q4: ошибка таблицы отклонений по вехам")
+        return dict(fallback)
+
+
 def get_gspp_q4_deviation_tables(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     """Таблица всех отклонившихся вех для дашборда ГСПП (ключ ``GSPP-T-Q4-DEVIATIONS``).
 
     Всегда возвращает словарь с этим ключом (при ошибке — пустые ``rows`` и пояснение в ``description``),
     чтобы блок попадал в JSON ``Таблицы`` универсального билдера.
+
+    Файловый кэш: ``getkpi/dashboard/gspp_q4_deviation_tables_<год>_<месяц>.json``.
     """
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     fallback = {
@@ -637,23 +671,27 @@ def get_gspp_q4_deviation_tables(year: int | None = None, month: int | None = No
             ref_y, ref_m, hint="(внутренняя ошибка расчёта таблицы)",
         ),
     }
+    cache_path = gspp_q4_deviation_tables_cache_path(ref_y, ref_m)
+    perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
     def _runner() -> dict[str, Any]:
-        try:
-            session = requests.Session()
-            token = _login(session)
-            item, details, err = _find_target_project(session, token)
-            if details is None:
-                return {
-                    "GSPP-T-Q4-DEVIATIONS": _empty_gspp_deviation_table(
-                        ref_y, ref_m, hint=f"({err or 'проект не найден'})",
-                    ),
-                }
-            tbl = _build_gspp_q4_deviation_table_payload(ref_y, ref_m, item, details)
-            return {"GSPP-T-Q4-DEVIATIONS": tbl}
-        except Exception:
-            logger.exception("ГСП-Q4: ошибка таблицы отклонений по вехам")
-            return dict(fallback)
+        cached = ytd_json_cache.load_payload(
+            cache_path,
+            source_tag=GSPP_Q4_DEVIATION_DISK_TAG,
+            version=GSPP_Q4_DEVIATION_DISK_VERSION,
+            perpetual=perpetual,
+        )
+        if cached is not None:
+            return cached
+        result = _compute_gspp_q4_deviation_tables(ref_y, ref_m)
+        if isinstance(result, dict):
+            ytd_json_cache.save_payload(
+                cache_path,
+                result,
+                source_tag=GSPP_Q4_DEVIATION_DISK_TAG,
+                version=GSPP_Q4_DEVIATION_DISK_VERSION,
+            )
+        return result
 
     try:
         out = locked_call(f"gspp_q4_deviation_tables_{ref_y}_{ref_m:02d}", _runner)

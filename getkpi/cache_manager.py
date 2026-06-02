@@ -13,17 +13,22 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
 MAX_AGE_SECONDS = 86400  # 1 день
+DASHBOARD_PAYLOAD_MEM_TTL = 3600  # 1 час — повторные запросы дашборда ГСПП
 
 _locks: dict[str, threading.Lock] = {}
 _meta = threading.Lock()
 _warming = False
+_payload_mem_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_payload_mem_lock = threading.Lock()
 
 
 def _get_lock(key: str) -> threading.Lock:
@@ -54,6 +59,30 @@ def locked_call(key: str, fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
 
+def get_memoized_dashboard_payload(key: str) -> dict[str, Any] | None:
+    """In-memory кэш собранного JSON дашборда (TTL см. ``DASHBOARD_PAYLOAD_MEM_TTL``)."""
+    now = time.monotonic()
+    with _payload_mem_lock:
+        entry = _payload_mem_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, payload = entry
+        if now >= expires_at:
+            del _payload_mem_cache[key]
+            return None
+        return payload
+
+
+def set_memoized_dashboard_payload(
+    key: str,
+    payload: dict[str, Any],
+    *,
+    ttl_seconds: int = DASHBOARD_PAYLOAD_MEM_TTL,
+) -> None:
+    with _payload_mem_lock:
+        _payload_mem_cache[key] = (time.monotonic() + ttl_seconds, payload)
+
+
 def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     """Список (key, cache_path, compute_fn) для всех источников данных."""
     from . import (
@@ -74,7 +103,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         turboproject_projects_by_resources,
     )
     from .komdir_claims import fetch_claims_for_month
+    from gspp import m3 as gspp_m3
+    from gspp import m5 as gspp_m5
     from gspp import ol_gspp_monthly as gspp_ol_m2
+    from gspp import q5 as gspp_q5
     from gspp import tkp_lifecycle as gspp_tkp
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
@@ -263,6 +295,22 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'gspp_m2_ol_{y}_{m}',
          gspp_ol_m2.gspp_m2_ytd_cache_path(y, m),
          lambda yy=y, mm=m: gspp_ol_m2.get_gspp_m2_ytd(year=yy, month=mm)),
+
+        (f'gspp_m3_ytd_{y}_{m}',
+         gspp_m3.gspp_m3_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: gspp_m3.get_gspp_m3_ytd(year=yy, month=mm)),
+
+        (f'gspp_m5_ytd_{y}_{m}',
+         gspp_m5.gspp_m5_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: gspp_m5.get_gspp_m5_ytd(year=yy, month=mm)),
+
+        (f'gspp_q5_tekuchest_{y}_{m}',
+         gspp_q5.gspp_q5_ytd_cache_path(y, m),
+         lambda yy=y, mm=m: gspp_q5.get_gspp_q5_ytd(year=yy, month=mm)),
+
+        (f'gspp_q4_deviation_{y}_{m}',
+         gspp_q4.gspp_q4_deviation_tables_cache_path(y, m),
+         lambda yy=y, mm=m: gspp_q4.get_gspp_q4_deviation_tables(year=yy, month=mm)),
 
         (f'sup_hrd_m1_{y}_{m}',
          hrd_m1.cache_file_path_for_period(y, m),
