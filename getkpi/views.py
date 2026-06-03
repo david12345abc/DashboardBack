@@ -314,6 +314,9 @@ def _is_devdir_department(dept: str | None) -> bool:
     }
 
 
+QUALDIR_BAR_TILE_IDS = frozenset({'QD-M1', 'QD-M5', 'QD-M8'})
+
+
 def _is_qualdir_department(dept: str | None) -> bool:
     """Дашборд службы качества (QD-*): одна роль, разные подписи в оргструктуре и БД.
 
@@ -321,13 +324,56 @@ def _is_qualdir_department(dept: str | None) -> bool:
     это один контур для KPI; опорный месяц в API — календарный (не last_full_month).
     Ключ ``qualdir`` — служебное имя отдела в настройках.
     """
-    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower())
+    normalized = re.sub(r'\s+', ' ', (dept or '').strip().lower()).replace('ё', 'е')
     return normalized in {
         'директор по качеству',
         'qualdir',
         'заместитель тех. директора по качеству',
+        'заместитель технического директора по качеству',
         'зам. технического директора по качеству',
     }
+
+
+def _is_qualdir_dashboard(dept: str | None, all_kpis: list[dict] | None = None) -> bool:
+    """Qualdir по имени отдела или по наличию QD-* плиток в метаданных."""
+    if _is_qualdir_department(dept):
+        return True
+    if not all_kpis:
+        return False
+    tile_ids = {
+        _normalize_dashboard_kpi_id(k.get('kpi_id'))
+        for k in all_kpis
+        if k.get('block', 'плитка') == 'плитка'
+    }
+    return bool(tile_ids & (QUALDIR_BAR_TILE_IDS | {'QD-M3', 'QD-M4'}))
+
+
+def _entry_by_kpi_id(entries_by_id: dict[str, dict], kpi_id: str) -> dict:
+    kid = _normalize_dashboard_kpi_id(kpi_id)
+    direct = entries_by_id.get(kid)
+    if direct is not None:
+        return direct
+    for raw_key, entry in entries_by_id.items():
+        if _normalize_dashboard_kpi_id(raw_key) == kid:
+            return entry
+    return {}
+
+
+def _qualdir_monthly_rows_for_chart(entry: dict, ref_y: int, ref_m: int) -> list[dict]:
+    """Помесячные строки QD-M1/M5/M8: с января ref_y по выбранный ref_m."""
+    rows: list[dict] = []
+    for row in entry.get('monthly_data') or []:
+        if not isinstance(row, dict):
+            continue
+        y = row.get('year')
+        m = row.get('month')
+        if y is None or m is None:
+            continue
+        yi, mi = int(y), int(m)
+        if yi == ref_y and 1 <= mi <= ref_m:
+            rows.append(row)
+    rows.sort(key=lambda r: (int(r.get('year', 0)), int(r.get('month', 0))))
+    return rows
 
 
 def _is_prod_deputy_department(dept: str | None) -> bool:
@@ -1059,13 +1105,12 @@ def _build_opdir_charts(
 def _build_qualdir_charts(
     tiles_meta: list[dict],
     entries_by_id: dict[str, dict],
-    tile_values_by_id: dict[str, dict],
     ref_y: int,
     ref_m: int,
 ) -> dict:
     """
     Графики дашборда «директор по качеству»: линия — ФОТ (QD-M4) и бюджет (QD-M3),
-    столбцы — за выбранный месяц: QD-M1 и QD-Q1 (как TD-C1/TD-C2 у техдира).
+    столбцы — факт (и план) по месяцам для форм 03-17 / 03-18 / 03-19.
     """
     by_id = {k['kpi_id']: k for k in tiles_meta}
     charts: dict = {}
@@ -1075,7 +1120,7 @@ def _build_qualdir_charts(
     series: list[dict] = []
     for kid in line_kpis:
         kpi_meta = by_id.get(kid, {})
-        entry = entries_by_id.get(kid) or {}
+        entry = _entry_by_kpi_id(entries_by_id, kid)
         monthly = entry.get('monthly_data') or []
         points = [
             {
@@ -1111,58 +1156,67 @@ def _build_qualdir_charts(
             'series': series,
         }
 
-    bar_kpis = ['QD-M1', 'QD-Q1']
-    bar_categories: list[str] = []
-    bar_plan_values: list[float | None] = []
-    bar_fact_values: list[float | None] = []
-    bar_points: list[dict] = []
-    for kid in bar_kpis:
-        kpi_meta = by_id.get(kid, {})
-        entry = entries_by_id.get(kid) or {}
-        tile_vals = tile_values_by_id.get(kid) or {}
-        point = {
-            'plan': tile_vals.get('plan'),
-            'fact': tile_vals.get('fact'),
-            'kpi_pct': tile_vals.get('kpi_pct'),
-        }
-        if point['plan'] is None and point['fact'] is None:
-            point = (
-                entry.get('last_full_month_row')
-                or pick_monthly_row_for_period(entry.get('monthly_data') or [], ref_y, ref_m)
-                or {}
-            )
-        display_name = kpi_meta.get('name', kid)
-        bar_categories.append(display_name)
-        bar_plan_values.append(point.get('plan'))
-        bar_fact_values.append(point.get('fact'))
-        bar_points.append({
+    bar_specs: list[tuple[str, str]] = [
+        ('QD-M8', 'Форма 03-17'),
+        ('QD-M5', 'Форма 03-18'),
+        ('QD-M1', 'Форма 03-19'),
+    ]
+    month_names = {
+        1: 'январь', 2: 'февраль', 3: 'март', 4: 'апрель',
+        5: 'май', 6: 'июнь', 7: 'июль', 8: 'август',
+        9: 'сентябрь', 10: 'октябрь', 11: 'ноябрь', 12: 'декабрь',
+    }
+    bar_series: list[dict] = []
+    for kid, form_label in bar_specs:
+        entry = _entry_by_kpi_id(entries_by_id, kid)
+        monthly_rows = _qualdir_monthly_rows_for_chart(entry, ref_y, ref_m)
+        categories = [
+            str(row.get('month_name') or month_names.get(int(row.get('month', 0)), ''))
+            for row in monthly_rows
+        ]
+        plan_values = [row.get('plan') for row in monthly_rows]
+        fact_values = [row.get('fact') for row in monthly_rows]
+        points = [
+            {
+                'kpi_id': kid,
+                'name': form_label,
+                'form': form_label,
+                'month': row.get('month'),
+                'year': row.get('year'),
+                'month_name': row.get('month_name'),
+                'plan': row.get('plan'),
+                'fact': row.get('fact'),
+                'kpi_pct': row.get('kpi_pct'),
+                'has_data': row.get('has_data'),
+                'values_unit': 'шт.',
+            }
+            for row in monthly_rows
+        ]
+        bar_series.append({
             'kpi_id': kid,
-            'name': display_name,
-            'month': ref_m,
-            'year': ref_y,
-            'plan': point.get('plan'),
-            'fact': point.get('fact'),
-            'kpi_pct': point.get('kpi_pct'),
+            'name': form_label,
+            'form': form_label,
+            'chart_type': 'column_plan_fact_monthly',
+            'chart_type_label': 'Столбцы',
+            'categories': categories,
+            'plan': plan_values,
+            'fact': fact_values,
+            'points': points,
         })
 
-    if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
-        charts['QD-C2'] = {
-            'kpi_id': 'QD-C2',
-            'name': 'За месяц: внешний брак и задачи (MPP)',
-            'periodicity': 'ежемесячно',
-            'chart_type': 'column_plan_fact_monthly',
-            'chart_type_label': 'Столбцы: план/факт за месяц',
-            'series': [{
-                'kpi_id': 'QD-C2',
-                'name': 'План/факт за месяц',
-                'chart_type': 'column_plan_fact_monthly',
-                'chart_type_label': 'Столбцы',
-                'categories': bar_categories,
-                'plan': bar_plan_values,
-                'fact': bar_fact_values,
-                'points': bar_points,
-            }],
-        }
+    charts['QD-C2'] = {
+        'kpi_id': 'QD-C2',
+        'name': 'Формы 03-17, 03-18, 03-19',
+        'periodicity': 'ежемесячно',
+        'chart_type': 'column_plan_fact_monthly',
+        'chart_type_label': 'Столбцы: факт по формам по месяцам',
+        'period': {
+            'year': ref_y,
+            'month': ref_m,
+            'month_name': month_names[ref_m],
+        },
+        'series': bar_series,
+    }
 
     return charts
 
@@ -1416,7 +1470,7 @@ def _build_universal_payload(
         techdir_dashboard.is_techdir_department(dept)
         or str(dept).strip().lower() == 'операционный директор'
         or _is_prod_deputy_department(dept)
-        or _is_qualdir_department(dept)
+        or _is_qualdir_dashboard(dept, all_kpis)
         or _is_devdir_department(dept)
         or _is_gspp_department(dept)
         or _is_sup_department(dept)
@@ -1425,7 +1479,7 @@ def _build_universal_payload(
     ):
         if year is not None and month is None:
             ref_y = int(year)
-            if _is_qualdir_department(dept):
+            if _is_qualdir_dashboard(dept, all_kpis):
                 # Не ставить december по умолчанию при ref_y≠today.year —
                 # электрон может слать только year без month: «висящий» 12-й тянул «Декабрь» в середине календаря.
                 if ref_y <= today.year:
@@ -1611,18 +1665,9 @@ def _build_universal_payload(
         grafiki.update(
             techdir_dashboard.build_charts(tiles_meta, entries_by_id, techdir_tile_values, ref_y, ref_m),
         )
-    if _is_qualdir_department(dept):
-        qualdir_tile_values = {
-            item['kpi_id']: {
-                'plan': item.get('plan'),
-                'fact': item.get('fact'),
-                'kpi_pct': item.get('kpi_pct'),
-            }
-            for item in plitki_items
-            if item.get('kpi_id') in {'QD-M1', 'QD-Q1'}
-        }
+    if _is_qualdir_dashboard(dept, all_kpis):
         grafiki.update(
-            _build_qualdir_charts(tiles_meta, entries_by_id, qualdir_tile_values, ref_y, ref_m),
+            _build_qualdir_charts(tiles_meta, entries_by_id, ref_y, ref_m),
         )
         techdir_dashboard.strip_external_orders_budget_from_grafiki(grafiki)
     if _is_devdir_department(dept):
@@ -1642,7 +1687,7 @@ def _build_universal_payload(
         and not _is_devdir_department(dept)
         and not _is_gspp_department(dept)
         and not _is_sup_department(dept)
-        and not _is_qualdir_department(dept)
+        and not _is_qualdir_dashboard(dept, all_kpis)
         and not _is_autoit_department(dept)
         and not _is_c1auto_department(dept)
     ):
@@ -1690,7 +1735,7 @@ def _build_universal_payload(
             },
         })
 
-    if _is_qualdir_department(dept):
+    if _is_qualdir_dashboard(dept, all_kpis):
         qualdir_tables.merge_qualdir_brak_tables(tablitsy, year=ref_y, month=ref_m)
 
     if techdir_dashboard.is_techdir_department(dept):

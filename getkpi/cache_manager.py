@@ -284,34 +284,6 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          turboproject_projects_by_resources.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: turboproject_projects_by_resources.get_rd_m3_1_ytd(year=yy, month=mm)),
 
-        (f'gspp_q4_ytd_{y}_{m}',
-         gspp_q4.gspp_q4_ytd_cache_path(y, m),
-         lambda yy=y, mm=m: gspp_q4.get_gspp_q4_ytd(year=yy, month=mm)),
-
-        (f'gspp_m1_tkp_{y}_{m}',
-         gspp_tkp.gspp_m1_ytd_cache_path(y, m),
-         lambda yy=y, mm=m: gspp_tkp.get_gspp_m1_ytd(year=yy, month=mm)),
-
-        (f'gspp_m2_ol_{y}_{m}',
-         gspp_ol_m2.gspp_m2_ytd_cache_path(y, m),
-         lambda yy=y, mm=m: gspp_ol_m2.get_gspp_m2_ytd(year=yy, month=mm)),
-
-        (f'gspp_m3_ytd_{y}_{m}',
-         gspp_m3.gspp_m3_ytd_cache_path(y, m),
-         lambda yy=y, mm=m: gspp_m3.get_gspp_m3_ytd(year=yy, month=mm)),
-
-        (f'gspp_m5_ytd_{y}_{m}',
-         gspp_m5.gspp_m5_ytd_cache_path(y, m),
-         lambda yy=y, mm=m: gspp_m5.get_gspp_m5_ytd(year=yy, month=mm)),
-
-        (f'gspp_q5_tekuchest_{y}_{m}',
-         gspp_q5.gspp_q5_ytd_cache_path(y, m),
-         lambda yy=y, mm=m: gspp_q5.get_gspp_q5_ytd(year=yy, month=mm)),
-
-        (f'gspp_q4_deviation_{y}_{m}',
-         gspp_q4.gspp_q4_deviation_tables_cache_path(y, m),
-         lambda yy=y, mm=m: gspp_q4.get_gspp_q4_deviation_tables(year=yy, month=mm)),
-
         (f'sup_hrd_m1_{y}_{m}',
          hrd_m1.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: hrd_m1.get_hrd_m1_ytd(year=yy, month=mm)),
@@ -359,6 +331,8 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
 
     from getkpi import dept_protocol_tables
 
+    _append_gspp_warm_tasks(tasks, y, m, gspp_q4, gspp_tkp, gspp_ol_m2, gspp_m3, gspp_m5, gspp_q5)
+
     tasks.append((
         "dept_protocol_overdue_warm_all",
         dept_protocol_tables.warm_stamp_path(),
@@ -366,6 +340,58 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     ))
 
     return tasks
+
+
+def _append_gspp_warm_tasks(
+    tasks: list[tuple[str, Path, object]],
+    ref_y: int,
+    ref_m: int,
+    gspp_q4_mod: object,
+    gspp_tkp_mod: object,
+    gspp_ol_m2_mod: object,
+    gspp_m3_mod: object,
+    gspp_m5_mod: object,
+    gspp_q5_mod: object,
+) -> None:
+    """Прогреть файловые кэши ГСПП за все месяцы 1..ref_m текущего года."""
+    for warm_m in range(1, ref_m + 1):
+        tasks.extend([
+            (
+                f"gspp_q4_ytd_{ref_y}_{warm_m:02d}",
+                gspp_q4_mod.gspp_q4_ytd_cache_path(ref_y, warm_m),
+                lambda yy=ref_y, mm=warm_m: gspp_q4_mod.get_gspp_q4_ytd(year=yy, month=mm),
+            ),
+            (
+                f"gspp_m1_tkp_{ref_y}_{warm_m:02d}",
+                gspp_tkp_mod.gspp_m1_ytd_cache_path(ref_y, warm_m),
+                lambda yy=ref_y, mm=warm_m: gspp_tkp_mod.get_gspp_m1_ytd(year=yy, month=mm),
+            ),
+            (
+                f"gspp_m2_ol_{ref_y}_{warm_m:02d}",
+                gspp_ol_m2_mod.gspp_m2_ytd_cache_path(ref_y, warm_m),
+                lambda yy=ref_y, mm=warm_m: gspp_ol_m2_mod.get_gspp_m2_ytd(year=yy, month=mm),
+            ),
+            (
+                f"gspp_m3_ytd_{ref_y}_{warm_m:02d}",
+                gspp_m3_mod.gspp_m3_ytd_cache_path(ref_y, warm_m),
+                lambda yy=ref_y, mm=warm_m: gspp_m3_mod.get_gspp_m3_ytd(year=yy, month=mm),
+            ),
+            (
+                f"gspp_m5_ytd_{ref_y}_{warm_m:02d}",
+                gspp_m5_mod.gspp_m5_ytd_cache_path(ref_y, warm_m),
+                lambda yy=ref_y, mm=warm_m: gspp_m5_mod.get_gspp_m5_ytd(year=yy, month=mm),
+            ),
+            (
+                f"gspp_q5_tekuchest_{ref_y}_{warm_m:02d}",
+                gspp_q5_mod.gspp_q5_ytd_cache_path(ref_y, warm_m),
+                lambda yy=ref_y, mm=warm_m: gspp_q5_mod.get_gspp_q5_ytd(year=yy, month=mm),
+            ),
+            (
+                f"gspp_q4_deviation_{ref_y}_{warm_m:02d}",
+                gspp_q4_mod.gspp_q4_deviation_tables_cache_path(ref_y, warm_m),
+                lambda yy=ref_y, mm=warm_m: gspp_q4_mod.get_gspp_q4_deviation_tables(year=yy, month=mm),
+            ),
+        ])
 
 
 def warm_all_caches():
@@ -379,6 +405,13 @@ def warm_all_caches():
     tasks = _build_warm_tasks(ref_y, ref_m)
 
     logger.info("cache_manager: warming %d cache tasks for %d-%02d", len(tasks), ref_y, ref_m)
+
+    try:
+        from getkpi import gspp_q4
+        gspp_q4.get_manager_project_pairs()
+        logger.info("cache_manager: prefetched GSPP TurboProject projects")
+    except Exception:
+        logger.exception("cache_manager: GSPP TurboProject prefetch failed")
 
     for key, cache_path, fn in tasks:
         if is_cache_fresh(cache_path):
