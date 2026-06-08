@@ -1,8 +1,10 @@
 """HRD-M1 — критические вакансии типа A, закрытые в срок.
 
-Источник: ``sup/SUP_data.xlsx``, лист ``Вакансии``.
-План месяца — закрытые фактом вакансии типа A без исключений.
-Факт месяца — часть плана, закрытая не позже плановой даты.
+Источник: ``HC_сводный_{year}_{Месяц}.xls`` из каталога HR-отчётов, лист ``Вакансии``.
+Для месяца *m* читается файл этого месяца; в расчёт попадают строки, у которых
+«Месяц закрытия план» совпадает с месяцем файла.
+План месяца — число таких вакансий типа A (дата закрытия факт может быть пустой).
+Факт — в срок: «Месяц закрытия факт» заполнен и не позже «Месяц закрытия план».
 """
 from __future__ import annotations
 
@@ -13,20 +15,34 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
-from openpyxl.utils.datetime import from_excel
+import xlrd
 
 from getkpi.cache_manager import locked_call
 from getkpi.devdir import ytd_json_cache
 from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
 
 logger = logging.getLogger(__name__)
 
-SOURCE_FILE = Path(__file__).resolve().parent / "SUP_data.xlsx"
 SHEET_NAME = "Вакансии"
 CACHE_PREFIX = "sup_hrd_m1_vacancies"
-CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v1"
-CACHE_VERSION = 3
+CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v5_hc_plan_month"
+CACHE_VERSION = 7
+
+MONTH_NAME_TO_NUM: dict[str, int] = {
+    "январь": 1,
+    "февраль": 2,
+    "март": 3,
+    "апрель": 4,
+    "май": 5,
+    "июнь": 6,
+    "июль": 7,
+    "август": 8,
+    "сентябрь": 9,
+    "октябрь": 10,
+    "ноябрь": 11,
+    "декабрь": 12,
+}
 
 EXCLUSION_PHRASES = (
     "снята заказчиком",
@@ -63,17 +79,18 @@ def _normalize_type(value: Any) -> str:
     return str(value or "").strip().upper().replace("А", "A")
 
 
-def _parse_date(value: Any) -> date | None:
+def _parse_date(value: Any, *, book: xlrd.Book | None = None) -> date | None:
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
         return value
-    if isinstance(value, (int, float)) and value > 20_000:
+    if isinstance(value, (int, float)) and value > 20_000 and book is not None:
         try:
-            return from_excel(value).date()
-        except (TypeError, ValueError):
+            parts = xlrd.xldate_as_tuple(value, book.datemode)
+            return date(parts[0], parts[1], parts[2])
+        except (TypeError, ValueError, xlrd.XLDateError):
             return None
     raw = str(value).strip()
     if not raw:
@@ -91,27 +108,22 @@ def _parse_date(value: Any) -> date | None:
     return None
 
 
-def _safe_float(value: Any) -> float | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, str):
-        value = value.strip().replace("\xa0", "").replace(" ", "").replace(",", ".")
-        if not value:
-            return None
-    try:
-        num = float(value)
-    except (TypeError, ValueError):
-        return None
-    return num if num == num else None
-
-
 def _format_date(value: date | None) -> str:
     return value.isoformat() if value is not None else ""
 
 
-def _find_header_row(ws) -> tuple[int, dict[str, int]]:
-    required = {"авс", "датазакрытияфакт"}
-    for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+def _open_vacancies_sheet(book: xlrd.Book):
+    target = SHEET_NAME.strip().lower().replace("ё", "е")
+    for name in book.sheet_names():
+        if name.strip().lower().replace("ё", "е") == target:
+            return book.sheet_by_name(name)
+    raise KeyError(f"Лист {SHEET_NAME!r} не найден")
+
+
+def _find_header_row(sheet: xlrd.sheet.Sheet) -> tuple[int, dict[str, int]]:
+    required = {"авс", "месяцзакрытияплан", "месяцзакрытияфакт"}
+    for row_idx in range(sheet.nrows):
+        row = sheet.row_values(row_idx)
         headers = {
             _normalize_header(value): idx
             for idx, value in enumerate(row)
@@ -119,7 +131,7 @@ def _find_header_row(ws) -> tuple[int, dict[str, int]]:
         }
         if required.issubset(headers):
             return row_idx, headers
-    raise RuntimeError("Не найдена строка заголовков листа 'Вакансии'")
+    raise RuntimeError(f"Не найдена строка заголовков листа {SHEET_NAME!r}")
 
 
 def _row_value(row: tuple[Any, ...], headers: dict[str, int], header_key: str) -> Any:
@@ -131,7 +143,7 @@ def _row_value(row: tuple[Any, ...], headers: dict[str, int], header_key: str) -
 
 def _exclusion_reason(row: tuple[Any, ...], headers: dict[str, int]) -> str | None:
     text_parts: list[str] = []
-    for key in ("кандидатфио", "комментарии"):
+    for key in ("кандидат(фио)", "кандидатфио", "комментарии"):
         value = _row_value(row, headers, key)
         if value is not None:
             text_parts.append(str(value))
@@ -145,67 +157,123 @@ def _exclusion_reason(row: tuple[Any, ...], headers: dict[str, int]) -> str | No
     return None
 
 
-def _closed_on_time(
-    fact_date: date,
-    plan_date: date | None,
-    deviation_value: Any,
-) -> bool:
-    if plan_date is not None:
-        return fact_date <= plan_date
-    deviation = _safe_float(deviation_value)
-    return deviation is not None and deviation >= 0
+def _parse_month_name(value: Any) -> int | None:
+    """Номер месяца 1–12 из подписи «Январь», «февраль» и т.п."""
+    text = _normalize_text(value)
+    if not text:
+        return None
+    for name, num in MONTH_NAME_TO_NUM.items():
+        if text == name or text.startswith(name):
+            return num
+    return None
 
 
-def _load_vacancy_rows() -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    wb = load_workbook(SOURCE_FILE, read_only=True, data_only=True)
-    ws = wb[SHEET_NAME]
-    header_row, headers = _find_header_row(ws)
+def _closed_on_time(plan_month_raw: Any, fact_month_raw: Any) -> bool:
+    """
+    В срок: в «Месяц закрытия факт» указан месяц и он не позже «Месяц закрытия план».
+    Не в срок: факт-пусто или месяц факта > месяца плана.
+    """
+    plan_m = _parse_month_name(plan_month_raw)
+    if plan_m is None:
+        return False
+    fact_m = _parse_month_name(fact_month_raw)
+    if fact_m is None:
+        return False
+    return fact_m <= plan_m
+
+
+def _load_vacancies_for_report_month(
+    ref_y: int,
+    report_month: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    path = hc_report_path(ref_y, report_month)
+    debug: dict[str, Any] = {
+        "month": report_month,
+        "source_file": str(path),
+        "sheet": SHEET_NAME,
+        "report_plan_close_month": report_month,
+    }
+
+    if not path.exists():
+        debug["status"] = "missing_file"
+        return [], debug
+
+    try:
+        book = xlrd.open_workbook(str(path))
+        sheet = _open_vacancies_sheet(book)
+        header_row, headers = _find_header_row(sheet)
+    except Exception as exc:
+        logger.warning("HRD-M1: не удалось прочитать %s: %s", path, exc)
+        debug["status"] = "read_error"
+        debug["error"] = str(exc)
+        return [], debug
 
     included: list[dict[str, Any]] = []
-    excluded_by_month: dict[int, int] = {m: 0 for m in range(1, 13)}
-    excluded_reasons: dict[str, int] = {}
-    skipped_no_fact = 0
+    excluded_count = 0
     skipped_non_a = 0
+    skipped_plan_month = 0
 
-    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+    for row_idx in range(header_row + 1, sheet.nrows):
+        row = tuple(sheet.row_values(row_idx))
         vacancy_type = _normalize_type(_row_value(row, headers, "авс"))
         if vacancy_type != "A":
             skipped_non_a += 1
             continue
 
-        fact_date = _parse_date(_row_value(row, headers, "датазакрытияфакт"))
-        if fact_date is None:
-            skipped_no_fact += 1
+        plan_month_raw = _row_value(row, headers, "месяцзакрытияплан")
+        plan_month = _parse_month_name(plan_month_raw)
+        if plan_month != report_month:
+            skipped_plan_month += 1
             continue
 
         reason = _exclusion_reason(row, headers)
         if reason:
-            excluded_by_month[fact_date.month] += 1
-            excluded_reasons[reason] = excluded_reasons.get(reason, 0) + 1
+            excluded_count += 1
             continue
 
-        plan_date = _parse_date(_row_value(row, headers, "датазакрытияплановая"))
+        fact_month_raw = _row_value(row, headers, "месяцзакрытияфакт")
+        fact_date = _parse_date(_row_value(row, headers, "датазакрытияфакт"), book=book)
+        plan_date = _parse_date(_row_value(row, headers, "датазакрытияплановая"), book=book)
         included.append({
             "company": str(_row_value(row, headers, "компания") or "").strip(),
             "department": str(_row_value(row, headers, "подразделение") or "").strip(),
             "vacancy": str(_row_value(row, headers, "вакансия") or "").strip(),
             "fact_date": fact_date,
             "plan_date": plan_date,
-            "on_time": _closed_on_time(
-                fact_date,
-                plan_date,
-                _row_value(row, headers, "отклоненияотсрока"),
-            ),
+            "plan_close_month": str(plan_month_raw or "").strip(),
+            "fact_close_month": str(fact_month_raw or "").strip(),
+            "on_time": _closed_on_time(plan_month_raw, fact_month_raw),
         })
 
-    return included, {
-        "source_file": str(SOURCE_FILE),
-        "sheet": SHEET_NAME,
-        "header_row": header_row,
+    debug.update({
+        "status": "ok",
+        "header_row": header_row + 1,
         "included_total": len(included),
         "skipped_non_a": skipped_non_a,
-        "skipped_no_fact": skipped_no_fact,
-        "excluded_total": sum(excluded_by_month.values()),
+        "skipped_plan_month": skipped_plan_month,
+        "excluded_total": excluded_count,
+    })
+    return included, debug
+
+
+def _load_monthly_vacancies(
+    ref_y: int,
+    ref_m: int,
+) -> tuple[dict[int, list[dict[str, Any]]], dict[str, Any]]:
+    by_month: dict[int, list[dict[str, Any]]] = {}
+    sources: list[dict[str, Any]] = []
+    excluded_by_month = {m: 0 for m in range(1, 13)}
+    excluded_reasons: dict[str, int] = {}
+
+    for month in range(1, ref_m + 1):
+        items, source_debug = _load_vacancies_for_report_month(ref_y, month)
+        by_month[month] = items
+        sources.append(source_debug)
+        excluded_by_month[month] = source_debug.get("excluded_total", 0)
+
+    return by_month, {
+        "reports_dir": str(HC_REPORTS_DIR),
+        "report_sources": sources,
         "excluded_by_month": excluded_by_month,
         "excluded_reasons": excluded_reasons,
     }
@@ -217,13 +285,7 @@ def _late_vacancy_rows(
     ref_m: int,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    late_items = [
-        item
-        for item in vacancies
-        if item["fact_date"].year == ref_y
-        and item["fact_date"].month == ref_m
-        and not item["on_time"]
-    ]
+    late_items = [item for item in vacancies if not item["on_time"]]
     late_items.sort(
         key=lambda item: (
             item.get("fact_date") or date.max,
@@ -253,8 +315,8 @@ def _late_vacancies_table(
         "name": f"HRD-M1: вакансии, закрытые не в срок за {MONTH_NAMES[ref_m]} {ref_y}",
         "periodicity": "ежемесячно",
         "description": (
-            "Разница между планом и фактом HRD-M1: критические вакансии типа A, "
-            "закрытые в выбранном месяце позже плановой даты."
+            "Разница между планом и фактом HRD-M1: критические вакансии типа A "
+            f"с плановым месяцем закрытия {MONTH_NAMES[ref_m]}, закрытые не в срок."
         ),
         "period": {
             "year": ref_y,
@@ -274,15 +336,11 @@ def _late_vacancies_table(
 
 def _build_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
-    vacancies, debug = _load_vacancy_rows()
+    vacancies_by_month, debug = _load_monthly_vacancies(ref_y, ref_m)
 
     monthly_rows: list[dict[str, Any]] = []
     for m in range(1, ref_m + 1):
-        month_items = [
-            item
-            for item in vacancies
-            if item["fact_date"].year == ref_y and item["fact_date"].month == m
-        ]
+        month_items = vacancies_by_month.get(m, [])
         plan = len(month_items)
         fact = sum(1 for item in month_items if item["on_time"])
         monthly_rows.append({
@@ -297,6 +355,7 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
         })
 
     ref_row = monthly_rows[-1] if monthly_rows else None
+    ref_vacancies = vacancies_by_month.get(ref_m, [])
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
@@ -316,7 +375,7 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
             "values_unit": "шт.",
         },
         "reference_analytics": {
-            "excluded_total": debug["excluded_total"],
+            "excluded_total": sum(debug["excluded_by_month"].get(m, 0) for m in range(1, ref_m + 1)),
             "excluded_by_month": {
                 m: debug["excluded_by_month"].get(m, 0)
                 for m in range(1, ref_m + 1)
@@ -325,12 +384,16 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
             "note": "Исключённые вакансии не входят в план/факт HRD-M1.",
         },
         "tables": {
-            "HRD-T-M1-LATE-VACANCIES": _late_vacancies_table(vacancies, ref_y, ref_m),
+            "HRD-T-M1-LATE-VACANCIES": _late_vacancies_table(ref_vacancies, ref_y, ref_m),
         },
         "debug": {
             "kpi_id": "HRD-M1",
             "status": "ok",
-            "rule": "type A vacancies closed by fact date; fact = closed on or before plan date",
+            "rule": (
+                "HC_сводный_{year}_{Month}.xls / sheet Вакансии; "
+                "plan close month = report file month; type A; "
+                "plan = count; fact = on-time if fact close month is set and not after plan close month"
+            ),
             **debug,
         },
     }
@@ -388,12 +451,7 @@ def get_hrd_m1_ytd(year: int | None = None, month: int | None = None) -> dict[st
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
     def _runner() -> dict[str, Any] | None:
-        try:
-            source_mtime_ns = SOURCE_FILE.stat().st_mtime_ns
-        except OSError:
-            logger.exception("HRD-M1: не найден источник %s", SOURCE_FILE)
-            return None
-
+        source_mtime_ns = reports_mtime_ns(ref_y, ref_m)
         cached = _load_cache(cache_path, source_mtime_ns=source_mtime_ns, perpetual=perpetual)
         if cached is not None:
             return cached
