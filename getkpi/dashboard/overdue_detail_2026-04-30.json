@@ -1,8 +1,8 @@
 {
   "na_datu": "2026-04-30",
-  "cache_date": "2026-06-01",
+  "cache_date": "2026-06-08",
   "dept_alias_source": "commercial_department_aliases_v2",
-  "total_overdue": 147402663.66,
+  "total_overdue": 147262015.32,
   "rows": [
     {
       "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
@@ -111,14 +111,14 @@
       "order_key": "eaf630a4-34c5-11f1-97de-6cb31113810e",
       "order_num": "АЛ00-001953",
       "order_date": "2025-12-16",
-      "amount": 2140648.34,
-      "dz_total": 2140648.34,
+      "amount": 2000000.0,
+      "dz_total": 2000000.0,
       "days_overdue": 135,
       "installments_count": 1,
       "installments": [
         {
           "planned_date": "2025-12-16",
-          "amount": 2140648.34,
+          "amount": 2000000.0,
           "days_overdue": 135,
           "bucket": "60-179 дн."
         }

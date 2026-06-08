@@ -1,470 +1,6 @@
 {
   "projects": [
     {
-      "file_id": 195,
-      "project_name": "Выполнение шефмонтажных работ газоизмерительной системы СПУ ПГ - 018",
-      "project_manager": "Щербина Владимир Ильич",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/БМИ/2024/50",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "ВнешнийЗаказ",
-      "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-      "status_proekta": "Приостановлен",
-      "start_date": "2024-05-27T09:00:00",
-      "finish_date": "2026-06-16T09:30:00",
-      "baseline_start": "2024-05-27T09:00:00",
-      "baseline_finish": "2025-04-04T10:00:00",
-      "data_nachala": "2024-05-27",
-      "planovaya_data_nachala": "2024-05-27",
-      "planovaya_data_okonchaniya": "2025-06-30",
-      "data_okonchaniya": "2025-12-30",
-      "overdue_milestones_count": 1,
-      "project_progress_pct": 96.6,
-      "milestone_months": [
-        "2024-05",
-        "2024-06",
-        "2024-07",
-        "2024-08",
-        "2024-09",
-        "2024-10",
-        "2024-11",
-        "2024-12",
-        "2025-01",
-        "2025-02",
-        "2025-03",
-        "2025-04",
-        "2025-05",
-        "2025-06",
-        "2025-07",
-        "2025-08",
-        "2025-09",
-        "2025-10",
-        "2025-11",
-        "2026-02",
-        "2026-03",
-        "2026-04",
-        "2026-06"
-      ],
-      "overdue_milestone_months": [
-        "2024-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "Коректировка схем",
-          "start_date": "2024-05-27T09:00:00",
-          "finish_date": "2024-05-27T09:00:00",
-          "percent_complete": 0.0
-        }
-      ],
-      "byudzhet_plan": 29505416.33,
-      "byudzhet_fakt": 0.0
-    },
-    {
-      "file_id": 188,
-      "project_name": "Система оценки удовлетворенности заказчиков",
-      "project_manager": "Гайфулин Денис Александрович",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/СС/2026/43",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Сервисная служба",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-01-23T09:00:00",
-      "finish_date": "2026-07-31T09:30:00",
-      "baseline_start": "2026-01-23T09:00:00",
-      "baseline_finish": "2026-07-31T09:30:00",
-      "data_nachala": "2026-01-23",
-      "planovaya_data_nachala": "2026-01-23",
-      "planovaya_data_okonchaniya": "2026-05-29",
-      "data_okonchaniya": "2026-07-31",
-      "overdue_milestones_count": 2,
-      "project_progress_pct": 50.6,
-      "milestone_months": [
-        "2026-01",
-        "2026-02",
-        "2026-03",
-        "2026-05",
-        "2026-06",
-        "2026-07"
-      ],
-      "overdue_milestone_months": [
-        "2026-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "План выполнения согласован, даты назначены",
-          "start_date": "2026-05-25T15:00:00",
-          "finish_date": "2026-05-25T15:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Совет по качеству",
-          "start_date": "2026-05-27T15:00:00",
-          "finish_date": "2026-05-27T15:00:00",
-          "percent_complete": 0.0
-        }
-      ],
-      "byudzhet_plan": 0.0,
-      "byudzhet_fakt": 0.0
-    },
-    {
-      "file_id": 185,
-      "project_name": "Система обработки обращений",
-      "project_manager": "Орлов Александр Николаевич",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/СС/2026/42",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Сервисная служба",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-01-23T09:00:00",
-      "finish_date": "2026-07-30T13:30:00",
-      "baseline_start": "2026-01-23T09:00:00",
-      "baseline_finish": "2026-07-30T13:30:00",
-      "data_nachala": "2026-01-23",
-      "planovaya_data_nachala": "2026-01-23",
-      "planovaya_data_okonchaniya": "2026-07-30",
-      "data_okonchaniya": "2026-07-30",
-      "overdue_milestones_count": 4,
-      "project_progress_pct": 32.5,
-      "milestone_months": [
-        "2026-01",
-        "2026-02",
-        "2026-03",
-        "2026-05",
-        "2026-06",
-        "2026-07"
-      ],
-      "overdue_milestone_months": [
-        "2026-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "ТЗ согласовано",
-          "start_date": "2026-05-14T11:00:00",
-          "finish_date": "2026-05-14T11:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "План выполнения согласован, даты назначены",
-          "start_date": "2026-05-14T11:30:00",
-          "finish_date": "2026-05-14T11:30:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Совет по качеству",
-          "start_date": "2026-05-14T16:30:00",
-          "finish_date": "2026-05-14T16:30:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Совет по качеству",
-          "start_date": "2026-05-26T16:30:00",
-          "finish_date": "2026-05-26T16:30:00",
-          "percent_complete": 0.0
-        }
-      ],
-      "byudzhet_plan": 0.0,
-      "byudzhet_fakt": 0.0
-    },
-    {
-      "file_id": 135,
-      "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
-      "project_manager": "Арсуноев Михаил Магомедович",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/СК/2026/35",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-02-02T08:00:00",
-      "finish_date": "2026-10-14T12:00:00",
-      "baseline_start": "2026-02-02T08:00:00",
-      "baseline_finish": "2026-10-27T17:00:00",
-      "data_nachala": "2026-02-18",
-      "planovaya_data_nachala": "2026-02-18",
-      "planovaya_data_okonchaniya": "2026-10-30",
-      "data_okonchaniya": "2026-10-30",
-      "overdue_milestones_count": 1,
-      "project_progress_pct": 32.9,
-      "milestone_months": [
-        "2026-02",
-        "2026-03",
-        "2026-04",
-        "2026-05",
-        "2026-06",
-        "2026-07",
-        "2026-08",
-        "2026-09",
-        "2026-10"
-      ],
-      "overdue_milestone_months": [
-        "2026-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "Система 8D описана и готова к ОПЭ",
-          "start_date": "2026-05-27T13:44:48",
-          "finish_date": "2026-05-27T13:44:48",
-          "percent_complete": 0.0
-        }
-      ],
-      "byudzhet_plan": 0.0,
-      "byudzhet_fakt": 0.0
-    },
-    {
-      "file_id": 187,
-      "project_name": "Выполнение условия договора на поставку блоков резервирования импульсного газа для нужд ООО «Газпром трансгаз Санкт-Петербург»",
-      "project_manager": "Зайцев Гордей Николаевич",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/БМИ/2025/279",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "ВнешнийЗаказ",
-      "podrazdelenie": "Цех БМИ",
-      "status_proekta": "ВРаботе",
-      "start_date": "2025-09-01T08:00:00",
-      "finish_date": "2026-08-31T10:30:00",
-      "baseline_start": "2025-09-01T08:00:00",
-      "baseline_finish": "2026-08-31T17:00:00",
-      "data_nachala": "2025-09-24",
-      "planovaya_data_nachala": "2025-09-24",
-      "planovaya_data_okonchaniya": "2026-08-30",
-      "data_okonchaniya": "2026-08-30",
-      "overdue_milestones_count": 24,
-      "project_progress_pct": 67.1,
-      "milestone_months": [
-        "2025-09",
-        "2025-10",
-        "2025-11",
-        "2025-12",
-        "2026-01",
-        "2026-02",
-        "2026-03",
-        "2026-04",
-        "2026-05",
-        "2026-06",
-        "2026-07",
-        "2026-08"
-      ],
-      "overdue_milestone_months": [
-        "2025-09",
-        "2026-01",
-        "2026-02",
-        "2026-03",
-        "2026-04",
-        "2026-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "металлопрокат подготовлен",
-          "start_date": "2025-09-01T12:00:00",
-          "finish_date": "2025-09-01T12:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Металлопрофиль подготовлен",
-          "start_date": "2025-09-01T16:00:00",
-          "finish_date": "2025-09-01T16:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Первая партия отгружена",
-          "start_date": "2025-09-01T17:00:00",
-          "finish_date": "2025-09-01T17:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Каркас изготовлен",
-          "start_date": "2025-09-03T11:00:00",
-          "finish_date": "2025-09-03T11:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Емкость готова",
-          "start_date": "2025-09-04T15:05:30",
-          "finish_date": "2025-09-04T15:05:30",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "БРИГ собран",
-          "start_date": "2025-09-09T09:05:30",
-          "finish_date": "2025-09-09T09:05:30",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "металлопрокат подготовлен",
-          "start_date": "2026-01-16T11:00:00",
-          "finish_date": "2026-01-16T11:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Металлопрофиль подготовлен",
-          "start_date": "2026-02-19T08:57:06",
-          "finish_date": "2026-02-19T08:57:06",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Вторая партия отгружена",
-          "start_date": "2026-03-17T15:37:06",
-          "finish_date": "2026-03-17T15:37:06",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Каркас изготовлен",
-          "start_date": "2026-03-27T08:17:06",
-          "finish_date": "2026-03-27T08:17:06",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Емкость готова",
-          "start_date": "2026-04-06T13:47:54",
-          "finish_date": "2026-04-06T13:47:54",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "металлопрокат подготовлен",
-          "start_date": "2026-04-07T14:47:54",
-          "finish_date": "2026-04-07T14:47:54",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Металлопрофиль подготовлен",
-          "start_date": "2026-04-08T08:17:54",
-          "finish_date": "2026-04-08T08:17:54",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Каркас изготовлен",
-          "start_date": "2026-04-10T11:53:54",
-          "finish_date": "2026-04-10T11:53:54",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "БРИГ50 собран",
-          "start_date": "2026-04-13T16:47:54",
-          "finish_date": "2026-04-13T16:47:54",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Емкость готова",
-          "start_date": "2026-04-16T10:23:24",
-          "finish_date": "2026-04-16T10:23:24",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Третья партия отгружена",
-          "start_date": "2026-04-22T17:00:00",
-          "finish_date": "2026-04-22T17:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Четвертая партия отгружена",
-          "start_date": "2026-04-23T17:00:00",
-          "finish_date": "2026-04-23T17:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "БРИГ собран",
-          "start_date": "2026-04-27T15:23:24",
-          "finish_date": "2026-04-27T15:23:24",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Вторая партия готова",
-          "start_date": "2026-04-27T15:23:24",
-          "finish_date": "2026-04-27T15:23:24",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Металлопрофиль подготовлен",
-          "start_date": "2026-04-28T11:00:00",
-          "finish_date": "2026-04-28T11:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "металлопрокат подготовлен",
-          "start_date": "2026-04-29T11:00:00",
-          "finish_date": "2026-04-29T11:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Металлопрофиль подготовлен",
-          "start_date": "2026-05-05T12:00:00",
-          "finish_date": "2026-05-05T12:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "металлопрокат подготовлен",
-          "start_date": "2026-05-06T12:00:00",
-          "finish_date": "2026-05-06T12:00:00",
-          "percent_complete": 0.0
-        }
-      ],
-      "byudzhet_plan": 31072877.21,
-      "byudzhet_fakt": 0.0
-    },
-    {
-      "file_id": 184,
-      "project_name": "Выполнение пусконаладочных работ газоизмерительной системы СПУ ПГ-018",
-      "project_manager": "Щербина Владимир Ильич",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/БМИ/2024/95/Портфель УРМЦ",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "ВнешнийЗаказ",
-      "podrazdelenie": "Цех БМИ",
-      "status_proekta": "ВРаботе",
-      "start_date": "2024-09-09T08:00:00",
-      "finish_date": "2026-09-04T13:15:00",
-      "baseline_start": "2024-09-09T09:00:00",
-      "baseline_finish": "2025-12-30T21:00:00",
-      "data_nachala": "2024-11-01",
-      "planovaya_data_nachala": "2024-11-01",
-      "planovaya_data_okonchaniya": "2025-02-14",
-      "data_okonchaniya": "2025-12-30",
-      "overdue_milestones_count": 1,
-      "project_progress_pct": 89.4,
-      "milestone_months": [
-        "2024-09",
-        "2024-10",
-        "2024-11",
-        "2024-12",
-        "2025-01",
-        "2025-02",
-        "2025-03",
-        "2025-04",
-        "2025-05",
-        "2025-06",
-        "2025-07",
-        "2025-08",
-        "2025-09",
-        "2025-10",
-        "2025-11",
-        "2025-12",
-        "2026-01",
-        "2026-02",
-        "2026-03",
-        "2026-04",
-        "2026-05",
-        "2026-06",
-        "2026-07",
-        "2026-08",
-        "2026-09"
-      ],
-      "overdue_milestone_months": [
-        "2024-12"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "ПНР Каналов УСО БКК выполнено",
-          "start_date": "2024-12-19T15:00:00",
-          "finish_date": "2024-12-19T15:00:00",
-          "percent_complete": 0.0
-        }
-      ],
-      "byudzhet_plan": 32836775.46,
-      "byudzhet_fakt": 1168722.29
-    },
-    {
       "file_id": 266,
       "project_name": "Изготовление УИРГ для ПАО Дорогобуж",
       "project_manager": "Мещерюк Вадим Владимирович",
@@ -472,8 +8,8 @@
       "project_code": "НПО/БМИ/2026/103",
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "ВнешнийЗаказ",
-      "podrazdelenie": "Цех БМИ",
-      "status_proekta": "Планирование",
+      "podrazdelenie": "Производство несерийных изделий",
+      "status_proekta": "ВРаботе",
       "start_date": "2026-04-14T08:00:00",
       "finish_date": "2026-12-29T14:30:00",
       "baseline_start": null,
@@ -482,8 +18,8 @@
       "planovaya_data_nachala": "2026-04-15",
       "planovaya_data_okonchaniya": "2026-11-10",
       "data_okonchaniya": null,
-      "overdue_milestones_count": 1,
-      "project_progress_pct": 10.7,
+      "overdue_milestones_count": 2,
+      "project_progress_pct": 11.2,
       "milestone_months": [
         "2026-04",
         "2026-05",
@@ -496,18 +32,25 @@
         "2026-12"
       ],
       "overdue_milestone_months": [
-        "2026-05"
+        "2026-05",
+        "2026-06"
       ],
       "overdue_milestones": [
         {
-          "name": "Резка металопрофиля для основания160х160х4 выполнена",
-          "start_date": "2026-05-27T16:04:48",
-          "finish_date": "2026-05-27T16:04:48",
+          "name": "выполнено ",
+          "start_date": "2026-05-08T09:16:12",
+          "finish_date": "2026-05-08T09:16:12",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Поставка товара ",
+          "start_date": "2026-06-04T15:43:48",
+          "finish_date": "2026-06-04T15:43:48",
           "percent_complete": 0.0
         }
       ],
-      "byudzhet_plan": 0.0,
-      "byudzhet_fakt": 2525795.23
+      "byudzhet_plan": 117788305.94,
+      "byudzhet_fakt": 2761791.34
     },
     {
       "file_id": 181,
@@ -517,8 +60,8 @@
       "project_code": "НПО/БМИ/2025/288",
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "ВнешнийЗаказ",
-      "podrazdelenie": "Цех БМИ",
-      "status_proekta": "ВРаботе",
+      "podrazdelenie": "Производство несерийных изделий",
+      "status_proekta": "Планирование",
       "start_date": "2025-10-01T08:00:00",
       "finish_date": "2026-06-30T14:00:00",
       "baseline_start": "2025-10-01T08:00:00",
@@ -528,7 +71,7 @@
       "planovaya_data_okonchaniya": "2026-07-01",
       "data_okonchaniya": "2026-07-01",
       "overdue_milestones_count": 0,
-      "project_progress_pct": 92.7,
+      "project_progress_pct": 94.1,
       "milestone_months": [
         "2025-10",
         "2025-11",
@@ -543,40 +86,30 @@
       "overdue_milestone_months": [],
       "overdue_milestones": [],
       "byudzhet_plan": 25543874.71,
-      "byudzhet_fakt": 94440.0
+      "byudzhet_fakt": 391300.0
     },
     {
-      "file_id": 244,
-      "project_name": "Выполнение условий договора №МПГ00010434 от 06.03.2025 г. для м/р Западный Тузколь",
+      "file_id": 178,
+      "project_name": "Выполнение условий договора №МПГ00012390 от 30.12.25  НЭВЗ",
       "project_manager": "Гутин Константин Игоревич",
       "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/БМИ/2025/202",
+      "project_code": "НПО/БМИ/2026/85",
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "ВнешнийЗаказ",
-      "podrazdelenie": "Цех БМИ",
+      "podrazdelenie": "Производство несерийных изделий",
       "status_proekta": "ВРаботе",
-      "start_date": "2025-03-29T08:00:00",
-      "finish_date": "2026-09-03T16:30:00",
-      "baseline_start": "2025-03-29T08:00:00",
-      "baseline_finish": "2026-09-03T16:30:00",
-      "data_nachala": "2025-03-25",
-      "planovaya_data_nachala": "2025-03-25",
-      "planovaya_data_okonchaniya": "2026-03-06",
-      "data_okonchaniya": "2026-06-30",
-      "overdue_milestones_count": 1,
-      "project_progress_pct": 91.4,
+      "start_date": "2025-12-30T09:00:00",
+      "finish_date": "2026-12-30T10:00:00",
+      "baseline_start": "2025-12-30T09:00:00",
+      "baseline_finish": "2026-12-30T12:00:00",
+      "data_nachala": "2025-12-30",
+      "planovaya_data_nachala": "2025-12-30",
+      "planovaya_data_okonchaniya": "2026-12-30",
+      "data_okonchaniya": "2026-12-30",
+      "overdue_milestones_count": 2,
+      "project_progress_pct": 51.9,
       "milestone_months": [
-        "2025-03",
-        "2025-04",
-        "2025-05",
-        "2025-06",
-        "2025-07",
-        "2025-08",
-        "2025-09",
-        "2025-10",
-        "2025-11",
         "2025-12",
-        "2026-01",
         "2026-02",
         "2026-03",
         "2026-04",
@@ -584,154 +117,30 @@
         "2026-06",
         "2026-07",
         "2026-08",
-        "2026-09"
+        "2026-09",
+        "2026-10",
+        "2026-11",
+        "2026-12"
       ],
       "overdue_milestone_months": [
-        "2026-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "Выезд организован",
-          "start_date": "2026-05-27T17:00:00",
-          "finish_date": "2026-05-27T17:00:00",
-          "percent_complete": 0.0
-        }
-      ],
-      "byudzhet_plan": 70245802.62,
-      "byudzhet_fakt": 964857.77
-    },
-    {
-      "file_id": 204,
-      "project_name": "Выполнение условий договора поставки МПГ00008562 от 24.06.2024 на поставку УИРГ для Тас-Юряхского месторождения",
-      "project_manager": "Мещерюк Вадим Владимирович",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/БМИ/2024/60",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "ВнешнийЗаказ",
-      "podrazdelenie": "Цех БМИ",
-      "status_proekta": "ВРаботе",
-      "start_date": "2024-06-24T08:00:00",
-      "finish_date": "2026-07-08T10:00:00",
-      "baseline_start": "2024-07-26T08:00:00",
-      "baseline_finish": "2026-06-30T17:00:00",
-      "data_nachala": "2024-09-06",
-      "planovaya_data_nachala": "2024-09-06",
-      "planovaya_data_okonchaniya": "2025-04-18",
-      "data_okonchaniya": "2026-06-30",
-      "overdue_milestones_count": 3,
-      "project_progress_pct": 83.6,
-      "milestone_months": [
-        "2024-06",
-        "2024-07",
-        "2024-08",
-        "2024-09",
-        "2024-10",
-        "2024-11",
-        "2024-12",
-        "2025-01",
-        "2025-02",
-        "2025-03",
-        "2025-04",
-        "2025-05",
-        "2025-06",
-        "2025-08",
-        "2025-09",
-        "2025-10",
-        "2026-02",
-        "2026-03",
-        "2026-04",
-        "2026-05",
-        "2026-06",
-        "2026-07"
-      ],
-      "overdue_milestone_months": [
-        "2026-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "Счет оплачен",
-          "start_date": "2026-05-15T12:00:00",
-          "finish_date": "2026-05-15T12:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Совет по качеству ",
-          "start_date": "2026-05-15T16:30:00",
-          "finish_date": "2026-05-15T16:30:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Электромонтажные работы окончены ",
-          "start_date": "2026-05-15T16:30:00",
-          "finish_date": "2026-05-15T16:30:00",
-          "percent_complete": 0.0
-        }
-      ],
-      "byudzhet_plan": 123747424.11,
-      "byudzhet_fakt": 2318663.49
-    },
-    {
-      "file_id": 126,
-      "project_name": "Внедрение системы контроля качества разработки",
-      "project_manager": "Арсуноев Михаил Магомедович",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/ТехДир/2026/40",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-02-03T08:00:00",
-      "finish_date": "2026-05-29T16:00:00",
-      "baseline_start": "2026-02-03T08:00:00",
-      "baseline_finish": "2026-05-29T15:00:00",
-      "data_nachala": "2026-02-03",
-      "planovaya_data_nachala": "2026-02-03",
-      "planovaya_data_okonchaniya": "2026-05-30",
-      "data_okonchaniya": "2026-05-30",
-      "overdue_milestones_count": 0,
-      "project_progress_pct": 96.6,
-      "milestone_months": [
-        "2026-02",
-        "2026-03",
-        "2026-04",
-        "2026-05"
-      ],
-      "overdue_milestone_months": [],
-      "overdue_milestones": [],
-      "byudzhet_plan": 0.0,
-      "byudzhet_fakt": 0.0
-    },
-    {
-      "file_id": 123,
-      "project_name": "Внедрение планшетов на входном контроле ОТК",
-      "project_manager": "Егоров Александр Сергеевич",
-      "kurator": "Улановский Константин Владимирович",
-      "project_code": "НПО/СК/2026/36",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Сервисная служба",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-01-19T08:00:00",
-      "finish_date": "2026-06-30T15:00:00",
-      "baseline_start": "2026-01-19T08:00:00",
-      "baseline_finish": "2026-06-30T12:00:00",
-      "data_nachala": "2026-02-17",
-      "planovaya_data_nachala": "2026-02-17",
-      "planovaya_data_okonchaniya": "2026-06-30",
-      "data_okonchaniya": "2026-06-30",
-      "overdue_milestones_count": 0,
-      "project_progress_pct": 64.1,
-      "milestone_months": [
-        "2026-01",
-        "2026-02",
-        "2026-04",
-        "2026-05",
         "2026-06"
       ],
-      "overdue_milestone_months": [],
-      "overdue_milestones": [],
-      "byudzhet_plan": 396550.0,
-      "byudzhet_fakt": 131996.0
+      "overdue_milestones": [
+        {
+          "name": "Поступление товара ",
+          "start_date": "2026-06-03T09:00:00",
+          "finish_date": "2026-06-03T09:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "ТМЦ на складе",
+          "start_date": "2026-06-03T11:00:00",
+          "finish_date": "2026-06-03T11:00:00",
+          "percent_complete": 0.0
+        }
+      ],
+      "byudzhet_plan": 6516138.96,
+      "byudzhet_fakt": 439198.88
     },
     {
       "file_id": 177,
@@ -741,7 +150,7 @@
       "project_code": "НПО/БМИ/2026/97",
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "ВнешнийЗаказ",
-      "podrazdelenie": "Цех БМИ",
+      "podrazdelenie": "Производство несерийных изделий",
       "status_proekta": "ВРаботе",
       "start_date": "2025-11-25T09:00:00",
       "finish_date": "2026-10-01T09:00:00",
@@ -752,7 +161,7 @@
       "planovaya_data_okonchaniya": "2026-10-01",
       "data_okonchaniya": "2026-10-01",
       "overdue_milestones_count": 6,
-      "project_progress_pct": 41.2,
+      "project_progress_pct": 43.3,
       "milestone_months": [
         "2025-11",
         "2026-03",
@@ -808,6 +217,52 @@
       ],
       "byudzhet_plan": 127765306.95,
       "byudzhet_fakt": 1423281.2
+    },
+    {
+      "file_id": 244,
+      "project_name": "Выполнение условий договора №МПГ00010434 от 06.03.2025 для мр Западный Тузколь»,",
+      "project_manager": "Гутин Константин Игоревич",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/БМИ/2025/202",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "ВнешнийЗаказ",
+      "podrazdelenie": "Цех БМИ",
+      "status_proekta": "ВРаботе",
+      "start_date": "2025-03-29T08:00:00",
+      "finish_date": "2026-09-03T16:30:00",
+      "baseline_start": "2025-03-29T08:00:00",
+      "baseline_finish": "2026-09-03T16:30:00",
+      "data_nachala": "2025-03-25",
+      "planovaya_data_nachala": "2025-03-25",
+      "planovaya_data_okonchaniya": "2026-03-06",
+      "data_okonchaniya": "2026-06-30",
+      "overdue_milestones_count": 0,
+      "project_progress_pct": 92.5,
+      "milestone_months": [
+        "2025-03",
+        "2025-04",
+        "2025-05",
+        "2025-06",
+        "2025-07",
+        "2025-08",
+        "2025-09",
+        "2025-10",
+        "2025-11",
+        "2025-12",
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+        "2026-07",
+        "2026-08",
+        "2026-09"
+      ],
+      "overdue_milestone_months": [],
+      "overdue_milestones": [],
+      "byudzhet_plan": 70245802.62,
+      "byudzhet_fakt": 1594257.77
     },
     {
       "file_id": 176,
@@ -931,8 +386,8 @@
       "planovaya_data_nachala": "2024-08-23",
       "planovaya_data_okonchaniya": "2025-03-31",
       "data_okonchaniya": "2026-12-31",
-      "overdue_milestones_count": 2,
-      "project_progress_pct": 85.1,
+      "overdue_milestones_count": 0,
+      "project_progress_pct": 84.9,
       "milestone_months": [
         "2024-08",
         "2024-09",
@@ -964,23 +419,8 @@
         "2026-11",
         "2026-12"
       ],
-      "overdue_milestone_months": [
-        "2026-05"
-      ],
-      "overdue_milestones": [
-        {
-          "name": "Завершено",
-          "start_date": "2026-05-18T10:00:00",
-          "finish_date": "2026-05-18T10:00:00",
-          "percent_complete": 0.0
-        },
-        {
-          "name": "Оплата получена",
-          "start_date": "2026-05-18T10:00:00",
-          "finish_date": "2026-05-18T10:00:00",
-          "percent_complete": 0.0
-        }
-      ],
+      "overdue_milestone_months": [],
+      "overdue_milestones": [],
       "byudzhet_plan": 80319524.5,
       "byudzhet_fakt": 611194.96
     },
@@ -1060,8 +500,8 @@
       "planovaya_data_nachala": "2024-04-02",
       "planovaya_data_okonchaniya": "2024-08-02",
       "data_okonchaniya": "2026-05-29",
-      "overdue_milestones_count": 3,
-      "project_progress_pct": 95.4,
+      "overdue_milestones_count": 0,
+      "project_progress_pct": 96.5,
       "milestone_months": [
         "2024-04",
         "2024-05",
@@ -1091,31 +531,586 @@
         "2026-05",
         "2026-06"
       ],
+      "overdue_milestone_months": [],
+      "overdue_milestones": [],
+      "byudzhet_plan": 14223637.28,
+      "byudzhet_fakt": 38716.46
+    },
+    {
+      "file_id": 204,
+      "project_name": "Выполнение условий договора поставки МПГ00008562 от 24.06.2024 на поставку УИРГ для Тас-Юряхского месторождения",
+      "project_manager": "Мещерюк Вадим Владимирович",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/БМИ/2024/60",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "ВнешнийЗаказ",
+      "podrazdelenie": "Производство несерийных изделий",
+      "status_proekta": "ВРаботе",
+      "start_date": "2024-06-24T08:00:00",
+      "finish_date": "2026-07-15T14:00:00",
+      "baseline_start": "2024-07-26T08:00:00",
+      "baseline_finish": "2026-06-30T17:00:00",
+      "data_nachala": "2024-09-06",
+      "planovaya_data_nachala": "2024-09-06",
+      "planovaya_data_okonchaniya": "2025-04-18",
+      "data_okonchaniya": "2026-06-30",
+      "overdue_milestones_count": 2,
+      "project_progress_pct": 87.2,
+      "milestone_months": [
+        "2024-06",
+        "2024-07",
+        "2024-08",
+        "2024-09",
+        "2024-10",
+        "2024-11",
+        "2024-12",
+        "2025-01",
+        "2025-02",
+        "2025-03",
+        "2025-04",
+        "2025-05",
+        "2025-06",
+        "2025-08",
+        "2025-09",
+        "2025-10",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+        "2026-07"
+      ],
       "overdue_milestone_months": [
-        "2026-05"
+        "2026-06"
       ],
       "overdue_milestones": [
         {
-          "name": "Установлена",
-          "start_date": "2026-05-26T10:00:00",
-          "finish_date": "2026-05-26T10:00:00",
+          "name": "Закупка материалов для взрывозащищенного оборудования (Ризур) завершина",
+          "start_date": "2026-06-03T15:30:00",
+          "finish_date": "2026-06-03T15:30:00",
           "percent_complete": 0.0
         },
         {
-          "name": "Завершено",
-          "start_date": "2026-05-27T12:00:00",
-          "finish_date": "2026-05-27T12:00:00",
+          "name": "Совет по качеству ",
+          "start_date": "2026-06-03T15:30:00",
+          "finish_date": "2026-06-03T15:30:00",
+          "percent_complete": 0.0
+        }
+      ],
+      "byudzhet_plan": 123747424.11,
+      "byudzhet_fakt": 1717030.0
+    },
+    {
+      "file_id": 126,
+      "project_name": "Внедрение системы контроля качества разработки",
+      "project_manager": "Арсуноев Михаил Магомедович",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/ТехДир/2026/40",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+      "status_proekta": "Планирование",
+      "start_date": "2026-02-03T08:00:00",
+      "finish_date": "2026-05-29T16:00:00",
+      "baseline_start": "2026-02-03T08:00:00",
+      "baseline_finish": "2026-05-29T16:00:00",
+      "data_nachala": "2026-02-03",
+      "planovaya_data_nachala": "2026-02-03",
+      "planovaya_data_okonchaniya": "2026-05-30",
+      "data_okonchaniya": "2026-05-30",
+      "overdue_milestones_count": 0,
+      "project_progress_pct": 100.0,
+      "milestone_months": [
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05"
+      ],
+      "overdue_milestone_months": [],
+      "overdue_milestones": [],
+      "byudzhet_plan": 0.0,
+      "byudzhet_fakt": 0.0
+    },
+    {
+      "file_id": 123,
+      "project_name": "Внедрение планшетов на входном контроле ОТК",
+      "project_manager": "Егоров Александр Сергеевич",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/СК/2026/36",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Сервисная служба",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-01-19T08:00:00",
+      "finish_date": "2026-06-30T15:00:00",
+      "baseline_start": "2026-01-19T08:00:00",
+      "baseline_finish": "2026-06-30T12:00:00",
+      "data_nachala": "2026-02-17",
+      "planovaya_data_nachala": "2026-02-17",
+      "planovaya_data_okonchaniya": "2026-06-30",
+      "data_okonchaniya": "2026-06-30",
+      "overdue_milestones_count": 0,
+      "project_progress_pct": 65.6,
+      "milestone_months": [
+        "2026-01",
+        "2026-02",
+        "2026-04",
+        "2026-05",
+        "2026-06"
+      ],
+      "overdue_milestone_months": [],
+      "overdue_milestones": [],
+      "byudzhet_plan": 396550.0,
+      "byudzhet_fakt": 131996.0
+    },
+    {
+      "file_id": 195,
+      "project_name": "Выполнение шефмонтажных работ газоизмерительной системы СПУ ПГ - 018",
+      "project_manager": "Щербина Владимир Ильич",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/БМИ/2024/50",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "ВнешнийЗаказ",
+      "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+      "status_proekta": "Приостановлен",
+      "start_date": "2024-05-27T09:00:00",
+      "finish_date": "2026-06-16T09:30:00",
+      "baseline_start": "2024-05-27T09:00:00",
+      "baseline_finish": "2025-04-04T10:00:00",
+      "data_nachala": "2024-05-27",
+      "planovaya_data_nachala": "2024-05-27",
+      "planovaya_data_okonchaniya": "2025-06-30",
+      "data_okonchaniya": "2025-12-30",
+      "overdue_milestones_count": 1,
+      "project_progress_pct": 96.6,
+      "milestone_months": [
+        "2024-05",
+        "2024-06",
+        "2024-07",
+        "2024-08",
+        "2024-09",
+        "2024-10",
+        "2024-11",
+        "2024-12",
+        "2025-01",
+        "2025-02",
+        "2025-03",
+        "2025-04",
+        "2025-05",
+        "2025-06",
+        "2025-07",
+        "2025-08",
+        "2025-09",
+        "2025-10",
+        "2025-11",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-06"
+      ],
+      "overdue_milestone_months": [
+        "2024-05"
+      ],
+      "overdue_milestones": [
+        {
+          "name": "Коректировка схем",
+          "start_date": "2024-05-27T09:00:00",
+          "finish_date": "2024-05-27T09:00:00",
+          "percent_complete": 0.0
+        }
+      ],
+      "byudzhet_plan": 29505416.33,
+      "byudzhet_fakt": 0.0
+    },
+    {
+      "file_id": 188,
+      "project_name": "Система оценки удовлетворенности заказчиков",
+      "project_manager": "Гайфулин Денис Александрович",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/СС/2026/43",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Сервисная служба",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-01-23T09:00:00",
+      "finish_date": "2026-07-31T09:30:00",
+      "baseline_start": "2026-01-23T09:00:00",
+      "baseline_finish": "2026-07-31T09:30:00",
+      "data_nachala": "2026-01-23",
+      "planovaya_data_nachala": "2026-01-23",
+      "planovaya_data_okonchaniya": "2026-05-29",
+      "data_okonchaniya": "2026-07-31",
+      "overdue_milestones_count": 3,
+      "project_progress_pct": 50.6,
+      "milestone_months": [
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-05",
+        "2026-06",
+        "2026-07"
+      ],
+      "overdue_milestone_months": [
+        "2026-05",
+        "2026-06"
+      ],
+      "overdue_milestones": [
+        {
+          "name": "План выполнения согласован, даты назначены",
+          "start_date": "2026-05-25T15:00:00",
+          "finish_date": "2026-05-25T15:00:00",
           "percent_complete": 0.0
         },
         {
           "name": "Совет по качеству",
-          "start_date": "2026-05-27T12:00:00",
-          "finish_date": "2026-05-27T12:00:00",
+          "start_date": "2026-05-27T15:00:00",
+          "finish_date": "2026-05-27T15:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Совет по качеству",
+          "start_date": "2026-06-02T15:00:00",
+          "finish_date": "2026-06-02T15:00:00",
           "percent_complete": 0.0
         }
       ],
-      "byudzhet_plan": 14223637.28,
-      "byudzhet_fakt": 37838.67
+      "byudzhet_plan": 0.0,
+      "byudzhet_fakt": 0.0
+    },
+    {
+      "file_id": 185,
+      "project_name": "Система обработки обращений",
+      "project_manager": "Орлов Александр Николаевич",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/СС/2026/42",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Сервисная служба",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-01-23T09:00:00",
+      "finish_date": "2026-07-30T13:30:00",
+      "baseline_start": "2026-01-23T09:00:00",
+      "baseline_finish": "2026-07-30T13:30:00",
+      "data_nachala": "2026-01-23",
+      "planovaya_data_nachala": "2026-01-23",
+      "planovaya_data_okonchaniya": "2026-07-30",
+      "data_okonchaniya": "2026-07-30",
+      "overdue_milestones_count": 6,
+      "project_progress_pct": 32.5,
+      "milestone_months": [
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-05",
+        "2026-06",
+        "2026-07"
+      ],
+      "overdue_milestone_months": [
+        "2026-05",
+        "2026-06"
+      ],
+      "overdue_milestones": [
+        {
+          "name": "ТЗ согласовано",
+          "start_date": "2026-05-14T11:00:00",
+          "finish_date": "2026-05-14T11:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "План выполнения согласован, даты назначены",
+          "start_date": "2026-05-14T11:30:00",
+          "finish_date": "2026-05-14T11:30:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Совет по качеству",
+          "start_date": "2026-05-14T16:30:00",
+          "finish_date": "2026-05-14T16:30:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Совет по качеству",
+          "start_date": "2026-05-26T16:30:00",
+          "finish_date": "2026-05-26T16:30:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Совет по качеству",
+          "start_date": "2026-06-01T16:30:00",
+          "finish_date": "2026-06-01T16:30:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Совет по качеству",
+          "start_date": "2026-06-04T11:30:00",
+          "finish_date": "2026-06-04T11:30:00",
+          "percent_complete": 0.0
+        }
+      ],
+      "byudzhet_plan": 0.0,
+      "byudzhet_fakt": 0.0
+    },
+    {
+      "file_id": 135,
+      "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
+      "project_manager": "Арсуноев Михаил Магомедович",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/СК/2026/35",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-02-02T08:00:00",
+      "finish_date": "2026-10-14T12:00:00",
+      "baseline_start": "2026-02-02T08:00:00",
+      "baseline_finish": "2026-10-27T17:00:00",
+      "data_nachala": "2026-02-18",
+      "planovaya_data_nachala": "2026-02-18",
+      "planovaya_data_okonchaniya": "2026-10-30",
+      "data_okonchaniya": "2026-10-30",
+      "overdue_milestones_count": 0,
+      "project_progress_pct": 35.4,
+      "milestone_months": [
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+        "2026-07",
+        "2026-08",
+        "2026-09",
+        "2026-10"
+      ],
+      "overdue_milestone_months": [],
+      "overdue_milestones": [],
+      "byudzhet_plan": 0.0,
+      "byudzhet_fakt": 0.0
+    },
+    {
+      "file_id": 187,
+      "project_name": "Выполнение условия договора на поставку блоков резервирования импульсного газа для нужд ООО «Газпром трансгаз Санкт-Петербург»",
+      "project_manager": "Зайцев Гордей Николаевич",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/БМИ/2025/279",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "ВнешнийЗаказ",
+      "podrazdelenie": "Производство несерийных изделий",
+      "status_proekta": "Планирование",
+      "start_date": "2025-09-01T08:00:00",
+      "finish_date": "2026-08-31T10:30:00",
+      "baseline_start": "2025-09-01T08:00:00",
+      "baseline_finish": "2026-08-31T17:00:00",
+      "data_nachala": "2025-09-24",
+      "planovaya_data_nachala": "2025-09-24",
+      "planovaya_data_okonchaniya": "2026-08-30",
+      "data_okonchaniya": "2026-08-30",
+      "overdue_milestones_count": 21,
+      "project_progress_pct": 67.4,
+      "milestone_months": [
+        "2025-09",
+        "2025-10",
+        "2025-11",
+        "2025-12",
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+        "2026-07",
+        "2026-08",
+        "2026-09"
+      ],
+      "overdue_milestone_months": [
+        "2025-09",
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05"
+      ],
+      "overdue_milestones": [
+        {
+          "name": "металлопрокат подготовлен",
+          "start_date": "2025-09-01T12:00:00",
+          "finish_date": "2025-09-01T12:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Металлопрофиль подготовлен",
+          "start_date": "2025-09-01T16:00:00",
+          "finish_date": "2025-09-01T16:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Каркас изготовлен",
+          "start_date": "2025-09-03T11:00:00",
+          "finish_date": "2025-09-03T11:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Емкость готова",
+          "start_date": "2025-09-04T15:05:30",
+          "finish_date": "2025-09-04T15:05:30",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "БРИГ собран",
+          "start_date": "2025-09-09T09:05:30",
+          "finish_date": "2025-09-09T09:05:30",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "металлопрокат подготовлен",
+          "start_date": "2026-01-16T11:00:00",
+          "finish_date": "2026-01-16T11:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Металлопрофиль подготовлен",
+          "start_date": "2026-02-19T08:57:06",
+          "finish_date": "2026-02-19T08:57:06",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Каркас изготовлен",
+          "start_date": "2026-03-27T08:17:06",
+          "finish_date": "2026-03-27T08:17:06",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Емкость готова",
+          "start_date": "2026-04-06T13:47:54",
+          "finish_date": "2026-04-06T13:47:54",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "металлопрокат подготовлен",
+          "start_date": "2026-04-07T14:47:54",
+          "finish_date": "2026-04-07T14:47:54",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Металлопрофиль подготовлен",
+          "start_date": "2026-04-08T08:17:54",
+          "finish_date": "2026-04-08T08:17:54",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Каркас изготовлен",
+          "start_date": "2026-04-10T11:53:54",
+          "finish_date": "2026-04-10T11:53:54",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "БРИГ50 собран",
+          "start_date": "2026-04-13T16:47:54",
+          "finish_date": "2026-04-13T16:47:54",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Емкость готова",
+          "start_date": "2026-04-16T10:23:24",
+          "finish_date": "2026-04-16T10:23:24",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "БРИГ собран",
+          "start_date": "2026-04-27T15:23:24",
+          "finish_date": "2026-04-27T15:23:24",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Вторая партия готова",
+          "start_date": "2026-04-27T15:23:24",
+          "finish_date": "2026-04-27T15:23:24",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Вторая партия отгружена",
+          "start_date": "2026-04-28T10:23:24",
+          "finish_date": "2026-04-28T10:23:24",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Металлопрофиль подготовлен",
+          "start_date": "2026-04-28T11:00:00",
+          "finish_date": "2026-04-28T11:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "металлопрокат подготовлен",
+          "start_date": "2026-04-29T11:00:00",
+          "finish_date": "2026-04-29T11:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "Металлопрофиль подготовлен",
+          "start_date": "2026-05-05T12:00:00",
+          "finish_date": "2026-05-05T12:00:00",
+          "percent_complete": 0.0
+        },
+        {
+          "name": "металлопрокат подготовлен",
+          "start_date": "2026-05-06T12:00:00",
+          "finish_date": "2026-05-06T12:00:00",
+          "percent_complete": 0.0
+        }
+      ],
+      "byudzhet_plan": 31072877.21,
+      "byudzhet_fakt": 0.0
+    },
+    {
+      "file_id": 184,
+      "project_name": "Выполнение пусконаладочных работ газоизмерительной системы СПУ ПГ-018",
+      "project_manager": "Щербина Владимир Ильич",
+      "kurator": "Улановский Константин Владимирович",
+      "project_code": "НПО/БМИ/2024/95/Портфель УРМЦ",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "ВнешнийЗаказ",
+      "podrazdelenie": "Производство несерийных изделий",
+      "status_proekta": "ВРаботе",
+      "start_date": "2024-09-09T08:00:00",
+      "finish_date": "2026-09-04T13:15:00",
+      "baseline_start": "2024-09-09T09:00:00",
+      "baseline_finish": "2025-12-30T21:00:00",
+      "data_nachala": "2024-11-01",
+      "planovaya_data_nachala": "2024-11-01",
+      "planovaya_data_okonchaniya": "2025-02-14",
+      "data_okonchaniya": "2025-12-30",
+      "overdue_milestones_count": 0,
+      "project_progress_pct": 79.1,
+      "milestone_months": [
+        "2024-09",
+        "2024-10",
+        "2024-11",
+        "2024-12",
+        "2025-01",
+        "2025-02",
+        "2025-03",
+        "2025-04",
+        "2025-05",
+        "2025-06",
+        "2025-07",
+        "2025-08",
+        "2025-09",
+        "2025-10",
+        "2025-11",
+        "2025-12",
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+        "2026-07",
+        "2026-08",
+        "2026-09"
+      ],
+      "overdue_milestone_months": [],
+      "overdue_milestones": [],
+      "byudzhet_plan": 32836775.46,
+      "byudzhet_fakt": 1281122.29
     }
   ],
   "debug": {
@@ -1128,470 +1123,6 @@
     "filter_td_q1": "tip_proekta='РазвитияИУлучшений', rukovoditel==owner OR kurator==owner",
     "target_projects": [
       {
-        "file_id": 195,
-        "project_name": "Выполнение шефмонтажных работ газоизмерительной системы СПУ ПГ - 018",
-        "project_manager": "Щербина Владимир Ильич",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/БМИ/2024/50",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "ВнешнийЗаказ",
-        "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-        "status_proekta": "Приостановлен",
-        "start_date": "2024-05-27T09:00:00",
-        "finish_date": "2026-06-16T09:30:00",
-        "baseline_start": "2024-05-27T09:00:00",
-        "baseline_finish": "2025-04-04T10:00:00",
-        "data_nachala": "2024-05-27",
-        "planovaya_data_nachala": "2024-05-27",
-        "planovaya_data_okonchaniya": "2025-06-30",
-        "data_okonchaniya": "2025-12-30",
-        "overdue_milestones_count": 1,
-        "project_progress_pct": 96.6,
-        "milestone_months": [
-          "2024-05",
-          "2024-06",
-          "2024-07",
-          "2024-08",
-          "2024-09",
-          "2024-10",
-          "2024-11",
-          "2024-12",
-          "2025-01",
-          "2025-02",
-          "2025-03",
-          "2025-04",
-          "2025-05",
-          "2025-06",
-          "2025-07",
-          "2025-08",
-          "2025-09",
-          "2025-10",
-          "2025-11",
-          "2026-02",
-          "2026-03",
-          "2026-04",
-          "2026-06"
-        ],
-        "overdue_milestone_months": [
-          "2024-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "Коректировка схем",
-            "start_date": "2024-05-27T09:00:00",
-            "finish_date": "2024-05-27T09:00:00",
-            "percent_complete": 0.0
-          }
-        ],
-        "byudzhet_plan": 29505416.33,
-        "byudzhet_fakt": 0.0
-      },
-      {
-        "file_id": 188,
-        "project_name": "Система оценки удовлетворенности заказчиков",
-        "project_manager": "Гайфулин Денис Александрович",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/СС/2026/43",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Сервисная служба",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-01-23T09:00:00",
-        "finish_date": "2026-07-31T09:30:00",
-        "baseline_start": "2026-01-23T09:00:00",
-        "baseline_finish": "2026-07-31T09:30:00",
-        "data_nachala": "2026-01-23",
-        "planovaya_data_nachala": "2026-01-23",
-        "planovaya_data_okonchaniya": "2026-05-29",
-        "data_okonchaniya": "2026-07-31",
-        "overdue_milestones_count": 2,
-        "project_progress_pct": 50.6,
-        "milestone_months": [
-          "2026-01",
-          "2026-02",
-          "2026-03",
-          "2026-05",
-          "2026-06",
-          "2026-07"
-        ],
-        "overdue_milestone_months": [
-          "2026-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "План выполнения согласован, даты назначены",
-            "start_date": "2026-05-25T15:00:00",
-            "finish_date": "2026-05-25T15:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Совет по качеству",
-            "start_date": "2026-05-27T15:00:00",
-            "finish_date": "2026-05-27T15:00:00",
-            "percent_complete": 0.0
-          }
-        ],
-        "byudzhet_plan": 0.0,
-        "byudzhet_fakt": 0.0
-      },
-      {
-        "file_id": 185,
-        "project_name": "Система обработки обращений",
-        "project_manager": "Орлов Александр Николаевич",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/СС/2026/42",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Сервисная служба",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-01-23T09:00:00",
-        "finish_date": "2026-07-30T13:30:00",
-        "baseline_start": "2026-01-23T09:00:00",
-        "baseline_finish": "2026-07-30T13:30:00",
-        "data_nachala": "2026-01-23",
-        "planovaya_data_nachala": "2026-01-23",
-        "planovaya_data_okonchaniya": "2026-07-30",
-        "data_okonchaniya": "2026-07-30",
-        "overdue_milestones_count": 4,
-        "project_progress_pct": 32.5,
-        "milestone_months": [
-          "2026-01",
-          "2026-02",
-          "2026-03",
-          "2026-05",
-          "2026-06",
-          "2026-07"
-        ],
-        "overdue_milestone_months": [
-          "2026-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "ТЗ согласовано",
-            "start_date": "2026-05-14T11:00:00",
-            "finish_date": "2026-05-14T11:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "План выполнения согласован, даты назначены",
-            "start_date": "2026-05-14T11:30:00",
-            "finish_date": "2026-05-14T11:30:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Совет по качеству",
-            "start_date": "2026-05-14T16:30:00",
-            "finish_date": "2026-05-14T16:30:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Совет по качеству",
-            "start_date": "2026-05-26T16:30:00",
-            "finish_date": "2026-05-26T16:30:00",
-            "percent_complete": 0.0
-          }
-        ],
-        "byudzhet_plan": 0.0,
-        "byudzhet_fakt": 0.0
-      },
-      {
-        "file_id": 135,
-        "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
-        "project_manager": "Арсуноев Михаил Магомедович",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/СК/2026/35",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-02-02T08:00:00",
-        "finish_date": "2026-10-14T12:00:00",
-        "baseline_start": "2026-02-02T08:00:00",
-        "baseline_finish": "2026-10-27T17:00:00",
-        "data_nachala": "2026-02-18",
-        "planovaya_data_nachala": "2026-02-18",
-        "planovaya_data_okonchaniya": "2026-10-30",
-        "data_okonchaniya": "2026-10-30",
-        "overdue_milestones_count": 1,
-        "project_progress_pct": 32.9,
-        "milestone_months": [
-          "2026-02",
-          "2026-03",
-          "2026-04",
-          "2026-05",
-          "2026-06",
-          "2026-07",
-          "2026-08",
-          "2026-09",
-          "2026-10"
-        ],
-        "overdue_milestone_months": [
-          "2026-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "Система 8D описана и готова к ОПЭ",
-            "start_date": "2026-05-27T13:44:48",
-            "finish_date": "2026-05-27T13:44:48",
-            "percent_complete": 0.0
-          }
-        ],
-        "byudzhet_plan": 0.0,
-        "byudzhet_fakt": 0.0
-      },
-      {
-        "file_id": 187,
-        "project_name": "Выполнение условия договора на поставку блоков резервирования импульсного газа для нужд ООО «Газпром трансгаз Санкт-Петербург»",
-        "project_manager": "Зайцев Гордей Николаевич",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/БМИ/2025/279",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "ВнешнийЗаказ",
-        "podrazdelenie": "Цех БМИ",
-        "status_proekta": "ВРаботе",
-        "start_date": "2025-09-01T08:00:00",
-        "finish_date": "2026-08-31T10:30:00",
-        "baseline_start": "2025-09-01T08:00:00",
-        "baseline_finish": "2026-08-31T17:00:00",
-        "data_nachala": "2025-09-24",
-        "planovaya_data_nachala": "2025-09-24",
-        "planovaya_data_okonchaniya": "2026-08-30",
-        "data_okonchaniya": "2026-08-30",
-        "overdue_milestones_count": 24,
-        "project_progress_pct": 67.1,
-        "milestone_months": [
-          "2025-09",
-          "2025-10",
-          "2025-11",
-          "2025-12",
-          "2026-01",
-          "2026-02",
-          "2026-03",
-          "2026-04",
-          "2026-05",
-          "2026-06",
-          "2026-07",
-          "2026-08"
-        ],
-        "overdue_milestone_months": [
-          "2025-09",
-          "2026-01",
-          "2026-02",
-          "2026-03",
-          "2026-04",
-          "2026-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "металлопрокат подготовлен",
-            "start_date": "2025-09-01T12:00:00",
-            "finish_date": "2025-09-01T12:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Металлопрофиль подготовлен",
-            "start_date": "2025-09-01T16:00:00",
-            "finish_date": "2025-09-01T16:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Первая партия отгружена",
-            "start_date": "2025-09-01T17:00:00",
-            "finish_date": "2025-09-01T17:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Каркас изготовлен",
-            "start_date": "2025-09-03T11:00:00",
-            "finish_date": "2025-09-03T11:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Емкость готова",
-            "start_date": "2025-09-04T15:05:30",
-            "finish_date": "2025-09-04T15:05:30",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "БРИГ собран",
-            "start_date": "2025-09-09T09:05:30",
-            "finish_date": "2025-09-09T09:05:30",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "металлопрокат подготовлен",
-            "start_date": "2026-01-16T11:00:00",
-            "finish_date": "2026-01-16T11:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Металлопрофиль подготовлен",
-            "start_date": "2026-02-19T08:57:06",
-            "finish_date": "2026-02-19T08:57:06",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Вторая партия отгружена",
-            "start_date": "2026-03-17T15:37:06",
-            "finish_date": "2026-03-17T15:37:06",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Каркас изготовлен",
-            "start_date": "2026-03-27T08:17:06",
-            "finish_date": "2026-03-27T08:17:06",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Емкость готова",
-            "start_date": "2026-04-06T13:47:54",
-            "finish_date": "2026-04-06T13:47:54",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "металлопрокат подготовлен",
-            "start_date": "2026-04-07T14:47:54",
-            "finish_date": "2026-04-07T14:47:54",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Металлопрофиль подготовлен",
-            "start_date": "2026-04-08T08:17:54",
-            "finish_date": "2026-04-08T08:17:54",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Каркас изготовлен",
-            "start_date": "2026-04-10T11:53:54",
-            "finish_date": "2026-04-10T11:53:54",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "БРИГ50 собран",
-            "start_date": "2026-04-13T16:47:54",
-            "finish_date": "2026-04-13T16:47:54",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Емкость готова",
-            "start_date": "2026-04-16T10:23:24",
-            "finish_date": "2026-04-16T10:23:24",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Третья партия отгружена",
-            "start_date": "2026-04-22T17:00:00",
-            "finish_date": "2026-04-22T17:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Четвертая партия отгружена",
-            "start_date": "2026-04-23T17:00:00",
-            "finish_date": "2026-04-23T17:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "БРИГ собран",
-            "start_date": "2026-04-27T15:23:24",
-            "finish_date": "2026-04-27T15:23:24",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Вторая партия готова",
-            "start_date": "2026-04-27T15:23:24",
-            "finish_date": "2026-04-27T15:23:24",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Металлопрофиль подготовлен",
-            "start_date": "2026-04-28T11:00:00",
-            "finish_date": "2026-04-28T11:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "металлопрокат подготовлен",
-            "start_date": "2026-04-29T11:00:00",
-            "finish_date": "2026-04-29T11:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Металлопрофиль подготовлен",
-            "start_date": "2026-05-05T12:00:00",
-            "finish_date": "2026-05-05T12:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "металлопрокат подготовлен",
-            "start_date": "2026-05-06T12:00:00",
-            "finish_date": "2026-05-06T12:00:00",
-            "percent_complete": 0.0
-          }
-        ],
-        "byudzhet_plan": 31072877.21,
-        "byudzhet_fakt": 0.0
-      },
-      {
-        "file_id": 184,
-        "project_name": "Выполнение пусконаладочных работ газоизмерительной системы СПУ ПГ-018",
-        "project_manager": "Щербина Владимир Ильич",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/БМИ/2024/95/Портфель УРМЦ",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "ВнешнийЗаказ",
-        "podrazdelenie": "Цех БМИ",
-        "status_proekta": "ВРаботе",
-        "start_date": "2024-09-09T08:00:00",
-        "finish_date": "2026-09-04T13:15:00",
-        "baseline_start": "2024-09-09T09:00:00",
-        "baseline_finish": "2025-12-30T21:00:00",
-        "data_nachala": "2024-11-01",
-        "planovaya_data_nachala": "2024-11-01",
-        "planovaya_data_okonchaniya": "2025-02-14",
-        "data_okonchaniya": "2025-12-30",
-        "overdue_milestones_count": 1,
-        "project_progress_pct": 89.4,
-        "milestone_months": [
-          "2024-09",
-          "2024-10",
-          "2024-11",
-          "2024-12",
-          "2025-01",
-          "2025-02",
-          "2025-03",
-          "2025-04",
-          "2025-05",
-          "2025-06",
-          "2025-07",
-          "2025-08",
-          "2025-09",
-          "2025-10",
-          "2025-11",
-          "2025-12",
-          "2026-01",
-          "2026-02",
-          "2026-03",
-          "2026-04",
-          "2026-05",
-          "2026-06",
-          "2026-07",
-          "2026-08",
-          "2026-09"
-        ],
-        "overdue_milestone_months": [
-          "2024-12"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "ПНР Каналов УСО БКК выполнено",
-            "start_date": "2024-12-19T15:00:00",
-            "finish_date": "2024-12-19T15:00:00",
-            "percent_complete": 0.0
-          }
-        ],
-        "byudzhet_plan": 32836775.46,
-        "byudzhet_fakt": 1168722.29
-      },
-      {
         "file_id": 266,
         "project_name": "Изготовление УИРГ для ПАО Дорогобуж",
         "project_manager": "Мещерюк Вадим Владимирович",
@@ -1599,8 +1130,8 @@
         "project_code": "НПО/БМИ/2026/103",
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "ВнешнийЗаказ",
-        "podrazdelenie": "Цех БМИ",
-        "status_proekta": "Планирование",
+        "podrazdelenie": "Производство несерийных изделий",
+        "status_proekta": "ВРаботе",
         "start_date": "2026-04-14T08:00:00",
         "finish_date": "2026-12-29T14:30:00",
         "baseline_start": null,
@@ -1609,8 +1140,8 @@
         "planovaya_data_nachala": "2026-04-15",
         "planovaya_data_okonchaniya": "2026-11-10",
         "data_okonchaniya": null,
-        "overdue_milestones_count": 1,
-        "project_progress_pct": 10.7,
+        "overdue_milestones_count": 2,
+        "project_progress_pct": 11.2,
         "milestone_months": [
           "2026-04",
           "2026-05",
@@ -1623,18 +1154,25 @@
           "2026-12"
         ],
         "overdue_milestone_months": [
-          "2026-05"
+          "2026-05",
+          "2026-06"
         ],
         "overdue_milestones": [
           {
-            "name": "Резка металопрофиля для основания160х160х4 выполнена",
-            "start_date": "2026-05-27T16:04:48",
-            "finish_date": "2026-05-27T16:04:48",
+            "name": "выполнено ",
+            "start_date": "2026-05-08T09:16:12",
+            "finish_date": "2026-05-08T09:16:12",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Поставка товара ",
+            "start_date": "2026-06-04T15:43:48",
+            "finish_date": "2026-06-04T15:43:48",
             "percent_complete": 0.0
           }
         ],
-        "byudzhet_plan": 0.0,
-        "byudzhet_fakt": 2525795.23
+        "byudzhet_plan": 117788305.94,
+        "byudzhet_fakt": 2761791.34
       },
       {
         "file_id": 181,
@@ -1644,8 +1182,8 @@
         "project_code": "НПО/БМИ/2025/288",
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "ВнешнийЗаказ",
-        "podrazdelenie": "Цех БМИ",
-        "status_proekta": "ВРаботе",
+        "podrazdelenie": "Производство несерийных изделий",
+        "status_proekta": "Планирование",
         "start_date": "2025-10-01T08:00:00",
         "finish_date": "2026-06-30T14:00:00",
         "baseline_start": "2025-10-01T08:00:00",
@@ -1655,7 +1193,7 @@
         "planovaya_data_okonchaniya": "2026-07-01",
         "data_okonchaniya": "2026-07-01",
         "overdue_milestones_count": 0,
-        "project_progress_pct": 92.7,
+        "project_progress_pct": 94.1,
         "milestone_months": [
           "2025-10",
           "2025-11",
@@ -1670,40 +1208,30 @@
         "overdue_milestone_months": [],
         "overdue_milestones": [],
         "byudzhet_plan": 25543874.71,
-        "byudzhet_fakt": 94440.0
+        "byudzhet_fakt": 391300.0
       },
       {
-        "file_id": 244,
-        "project_name": "Выполнение условий договора №МПГ00010434 от 06.03.2025 г. для м/р Западный Тузколь",
+        "file_id": 178,
+        "project_name": "Выполнение условий договора №МПГ00012390 от 30.12.25  НЭВЗ",
         "project_manager": "Гутин Константин Игоревич",
         "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/БМИ/2025/202",
+        "project_code": "НПО/БМИ/2026/85",
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "ВнешнийЗаказ",
-        "podrazdelenie": "Цех БМИ",
+        "podrazdelenie": "Производство несерийных изделий",
         "status_proekta": "ВРаботе",
-        "start_date": "2025-03-29T08:00:00",
-        "finish_date": "2026-09-03T16:30:00",
-        "baseline_start": "2025-03-29T08:00:00",
-        "baseline_finish": "2026-09-03T16:30:00",
-        "data_nachala": "2025-03-25",
-        "planovaya_data_nachala": "2025-03-25",
-        "planovaya_data_okonchaniya": "2026-03-06",
-        "data_okonchaniya": "2026-06-30",
-        "overdue_milestones_count": 1,
-        "project_progress_pct": 91.4,
+        "start_date": "2025-12-30T09:00:00",
+        "finish_date": "2026-12-30T10:00:00",
+        "baseline_start": "2025-12-30T09:00:00",
+        "baseline_finish": "2026-12-30T12:00:00",
+        "data_nachala": "2025-12-30",
+        "planovaya_data_nachala": "2025-12-30",
+        "planovaya_data_okonchaniya": "2026-12-30",
+        "data_okonchaniya": "2026-12-30",
+        "overdue_milestones_count": 2,
+        "project_progress_pct": 51.9,
         "milestone_months": [
-          "2025-03",
-          "2025-04",
-          "2025-05",
-          "2025-06",
-          "2025-07",
-          "2025-08",
-          "2025-09",
-          "2025-10",
-          "2025-11",
           "2025-12",
-          "2026-01",
           "2026-02",
           "2026-03",
           "2026-04",
@@ -1711,154 +1239,30 @@
           "2026-06",
           "2026-07",
           "2026-08",
-          "2026-09"
+          "2026-09",
+          "2026-10",
+          "2026-11",
+          "2026-12"
         ],
         "overdue_milestone_months": [
-          "2026-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "Выезд организован",
-            "start_date": "2026-05-27T17:00:00",
-            "finish_date": "2026-05-27T17:00:00",
-            "percent_complete": 0.0
-          }
-        ],
-        "byudzhet_plan": 70245802.62,
-        "byudzhet_fakt": 964857.77
-      },
-      {
-        "file_id": 204,
-        "project_name": "Выполнение условий договора поставки МПГ00008562 от 24.06.2024 на поставку УИРГ для Тас-Юряхского месторождения",
-        "project_manager": "Мещерюк Вадим Владимирович",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/БМИ/2024/60",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "ВнешнийЗаказ",
-        "podrazdelenie": "Цех БМИ",
-        "status_proekta": "ВРаботе",
-        "start_date": "2024-06-24T08:00:00",
-        "finish_date": "2026-07-08T10:00:00",
-        "baseline_start": "2024-07-26T08:00:00",
-        "baseline_finish": "2026-06-30T17:00:00",
-        "data_nachala": "2024-09-06",
-        "planovaya_data_nachala": "2024-09-06",
-        "planovaya_data_okonchaniya": "2025-04-18",
-        "data_okonchaniya": "2026-06-30",
-        "overdue_milestones_count": 3,
-        "project_progress_pct": 83.6,
-        "milestone_months": [
-          "2024-06",
-          "2024-07",
-          "2024-08",
-          "2024-09",
-          "2024-10",
-          "2024-11",
-          "2024-12",
-          "2025-01",
-          "2025-02",
-          "2025-03",
-          "2025-04",
-          "2025-05",
-          "2025-06",
-          "2025-08",
-          "2025-09",
-          "2025-10",
-          "2026-02",
-          "2026-03",
-          "2026-04",
-          "2026-05",
-          "2026-06",
-          "2026-07"
-        ],
-        "overdue_milestone_months": [
-          "2026-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "Счет оплачен",
-            "start_date": "2026-05-15T12:00:00",
-            "finish_date": "2026-05-15T12:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Совет по качеству ",
-            "start_date": "2026-05-15T16:30:00",
-            "finish_date": "2026-05-15T16:30:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Электромонтажные работы окончены ",
-            "start_date": "2026-05-15T16:30:00",
-            "finish_date": "2026-05-15T16:30:00",
-            "percent_complete": 0.0
-          }
-        ],
-        "byudzhet_plan": 123747424.11,
-        "byudzhet_fakt": 2318663.49
-      },
-      {
-        "file_id": 126,
-        "project_name": "Внедрение системы контроля качества разработки",
-        "project_manager": "Арсуноев Михаил Магомедович",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/ТехДир/2026/40",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-02-03T08:00:00",
-        "finish_date": "2026-05-29T16:00:00",
-        "baseline_start": "2026-02-03T08:00:00",
-        "baseline_finish": "2026-05-29T15:00:00",
-        "data_nachala": "2026-02-03",
-        "planovaya_data_nachala": "2026-02-03",
-        "planovaya_data_okonchaniya": "2026-05-30",
-        "data_okonchaniya": "2026-05-30",
-        "overdue_milestones_count": 0,
-        "project_progress_pct": 96.6,
-        "milestone_months": [
-          "2026-02",
-          "2026-03",
-          "2026-04",
-          "2026-05"
-        ],
-        "overdue_milestone_months": [],
-        "overdue_milestones": [],
-        "byudzhet_plan": 0.0,
-        "byudzhet_fakt": 0.0
-      },
-      {
-        "file_id": 123,
-        "project_name": "Внедрение планшетов на входном контроле ОТК",
-        "project_manager": "Егоров Александр Сергеевич",
-        "kurator": "Улановский Константин Владимирович",
-        "project_code": "НПО/СК/2026/36",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Сервисная служба",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-01-19T08:00:00",
-        "finish_date": "2026-06-30T15:00:00",
-        "baseline_start": "2026-01-19T08:00:00",
-        "baseline_finish": "2026-06-30T12:00:00",
-        "data_nachala": "2026-02-17",
-        "planovaya_data_nachala": "2026-02-17",
-        "planovaya_data_okonchaniya": "2026-06-30",
-        "data_okonchaniya": "2026-06-30",
-        "overdue_milestones_count": 0,
-        "project_progress_pct": 64.1,
-        "milestone_months": [
-          "2026-01",
-          "2026-02",
-          "2026-04",
-          "2026-05",
           "2026-06"
         ],
-        "overdue_milestone_months": [],
-        "overdue_milestones": [],
-        "byudzhet_plan": 396550.0,
-        "byudzhet_fakt": 131996.0
+        "overdue_milestones": [
+          {
+            "name": "Поступление товара ",
+            "start_date": "2026-06-03T09:00:00",
+            "finish_date": "2026-06-03T09:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "ТМЦ на складе",
+            "start_date": "2026-06-03T11:00:00",
+            "finish_date": "2026-06-03T11:00:00",
+            "percent_complete": 0.0
+          }
+        ],
+        "byudzhet_plan": 6516138.96,
+        "byudzhet_fakt": 439198.88
       },
       {
         "file_id": 177,
@@ -1868,7 +1272,7 @@
         "project_code": "НПО/БМИ/2026/97",
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "ВнешнийЗаказ",
-        "podrazdelenie": "Цех БМИ",
+        "podrazdelenie": "Производство несерийных изделий",
         "status_proekta": "ВРаботе",
         "start_date": "2025-11-25T09:00:00",
         "finish_date": "2026-10-01T09:00:00",
@@ -1879,7 +1283,7 @@
         "planovaya_data_okonchaniya": "2026-10-01",
         "data_okonchaniya": "2026-10-01",
         "overdue_milestones_count": 6,
-        "project_progress_pct": 41.2,
+        "project_progress_pct": 43.3,
         "milestone_months": [
           "2025-11",
           "2026-03",
@@ -1935,6 +1339,52 @@
         ],
         "byudzhet_plan": 127765306.95,
         "byudzhet_fakt": 1423281.2
+      },
+      {
+        "file_id": 244,
+        "project_name": "Выполнение условий договора №МПГ00010434 от 06.03.2025 для мр Западный Тузколь»,",
+        "project_manager": "Гутин Константин Игоревич",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/БМИ/2025/202",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "ВнешнийЗаказ",
+        "podrazdelenie": "Цех БМИ",
+        "status_proekta": "ВРаботе",
+        "start_date": "2025-03-29T08:00:00",
+        "finish_date": "2026-09-03T16:30:00",
+        "baseline_start": "2025-03-29T08:00:00",
+        "baseline_finish": "2026-09-03T16:30:00",
+        "data_nachala": "2025-03-25",
+        "planovaya_data_nachala": "2025-03-25",
+        "planovaya_data_okonchaniya": "2026-03-06",
+        "data_okonchaniya": "2026-06-30",
+        "overdue_milestones_count": 0,
+        "project_progress_pct": 92.5,
+        "milestone_months": [
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08",
+          "2026-09"
+        ],
+        "overdue_milestone_months": [],
+        "overdue_milestones": [],
+        "byudzhet_plan": 70245802.62,
+        "byudzhet_fakt": 1594257.77
       },
       {
         "file_id": 176,
@@ -2058,8 +1508,8 @@
         "planovaya_data_nachala": "2024-08-23",
         "planovaya_data_okonchaniya": "2025-03-31",
         "data_okonchaniya": "2026-12-31",
-        "overdue_milestones_count": 2,
-        "project_progress_pct": 85.1,
+        "overdue_milestones_count": 0,
+        "project_progress_pct": 84.9,
         "milestone_months": [
           "2024-08",
           "2024-09",
@@ -2091,23 +1541,8 @@
           "2026-11",
           "2026-12"
         ],
-        "overdue_milestone_months": [
-          "2026-05"
-        ],
-        "overdue_milestones": [
-          {
-            "name": "Завершено",
-            "start_date": "2026-05-18T10:00:00",
-            "finish_date": "2026-05-18T10:00:00",
-            "percent_complete": 0.0
-          },
-          {
-            "name": "Оплата получена",
-            "start_date": "2026-05-18T10:00:00",
-            "finish_date": "2026-05-18T10:00:00",
-            "percent_complete": 0.0
-          }
-        ],
+        "overdue_milestone_months": [],
+        "overdue_milestones": [],
         "byudzhet_plan": 80319524.5,
         "byudzhet_fakt": 611194.96
       },
@@ -2187,8 +1622,8 @@
         "planovaya_data_nachala": "2024-04-02",
         "planovaya_data_okonchaniya": "2024-08-02",
         "data_okonchaniya": "2026-05-29",
-        "overdue_milestones_count": 3,
-        "project_progress_pct": 95.4,
+        "overdue_milestones_count": 0,
+        "project_progress_pct": 96.5,
         "milestone_months": [
           "2024-04",
           "2024-05",
@@ -2218,35 +1653,590 @@
           "2026-05",
           "2026-06"
         ],
+        "overdue_milestone_months": [],
+        "overdue_milestones": [],
+        "byudzhet_plan": 14223637.28,
+        "byudzhet_fakt": 38716.46
+      },
+      {
+        "file_id": 204,
+        "project_name": "Выполнение условий договора поставки МПГ00008562 от 24.06.2024 на поставку УИРГ для Тас-Юряхского месторождения",
+        "project_manager": "Мещерюк Вадим Владимирович",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/БМИ/2024/60",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "ВнешнийЗаказ",
+        "podrazdelenie": "Производство несерийных изделий",
+        "status_proekta": "ВРаботе",
+        "start_date": "2024-06-24T08:00:00",
+        "finish_date": "2026-07-15T14:00:00",
+        "baseline_start": "2024-07-26T08:00:00",
+        "baseline_finish": "2026-06-30T17:00:00",
+        "data_nachala": "2024-09-06",
+        "planovaya_data_nachala": "2024-09-06",
+        "planovaya_data_okonchaniya": "2025-04-18",
+        "data_okonchaniya": "2026-06-30",
+        "overdue_milestones_count": 2,
+        "project_progress_pct": 87.2,
+        "milestone_months": [
+          "2024-06",
+          "2024-07",
+          "2024-08",
+          "2024-09",
+          "2024-10",
+          "2024-11",
+          "2024-12",
+          "2025-01",
+          "2025-02",
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07"
+        ],
         "overdue_milestone_months": [
-          "2026-05"
+          "2026-06"
         ],
         "overdue_milestones": [
           {
-            "name": "Установлена",
-            "start_date": "2026-05-26T10:00:00",
-            "finish_date": "2026-05-26T10:00:00",
+            "name": "Закупка материалов для взрывозащищенного оборудования (Ризур) завершина",
+            "start_date": "2026-06-03T15:30:00",
+            "finish_date": "2026-06-03T15:30:00",
             "percent_complete": 0.0
           },
           {
-            "name": "Завершено",
-            "start_date": "2026-05-27T12:00:00",
-            "finish_date": "2026-05-27T12:00:00",
+            "name": "Совет по качеству ",
+            "start_date": "2026-06-03T15:30:00",
+            "finish_date": "2026-06-03T15:30:00",
+            "percent_complete": 0.0
+          }
+        ],
+        "byudzhet_plan": 123747424.11,
+        "byudzhet_fakt": 1717030.0
+      },
+      {
+        "file_id": 126,
+        "project_name": "Внедрение системы контроля качества разработки",
+        "project_manager": "Арсуноев Михаил Магомедович",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/ТехДир/2026/40",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+        "status_proekta": "Планирование",
+        "start_date": "2026-02-03T08:00:00",
+        "finish_date": "2026-05-29T16:00:00",
+        "baseline_start": "2026-02-03T08:00:00",
+        "baseline_finish": "2026-05-29T16:00:00",
+        "data_nachala": "2026-02-03",
+        "planovaya_data_nachala": "2026-02-03",
+        "planovaya_data_okonchaniya": "2026-05-30",
+        "data_okonchaniya": "2026-05-30",
+        "overdue_milestones_count": 0,
+        "project_progress_pct": 100.0,
+        "milestone_months": [
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05"
+        ],
+        "overdue_milestone_months": [],
+        "overdue_milestones": [],
+        "byudzhet_plan": 0.0,
+        "byudzhet_fakt": 0.0
+      },
+      {
+        "file_id": 123,
+        "project_name": "Внедрение планшетов на входном контроле ОТК",
+        "project_manager": "Егоров Александр Сергеевич",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/СК/2026/36",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Сервисная служба",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-01-19T08:00:00",
+        "finish_date": "2026-06-30T15:00:00",
+        "baseline_start": "2026-01-19T08:00:00",
+        "baseline_finish": "2026-06-30T12:00:00",
+        "data_nachala": "2026-02-17",
+        "planovaya_data_nachala": "2026-02-17",
+        "planovaya_data_okonchaniya": "2026-06-30",
+        "data_okonchaniya": "2026-06-30",
+        "overdue_milestones_count": 0,
+        "project_progress_pct": 65.6,
+        "milestone_months": [
+          "2026-01",
+          "2026-02",
+          "2026-04",
+          "2026-05",
+          "2026-06"
+        ],
+        "overdue_milestone_months": [],
+        "overdue_milestones": [],
+        "byudzhet_plan": 396550.0,
+        "byudzhet_fakt": 131996.0
+      },
+      {
+        "file_id": 195,
+        "project_name": "Выполнение шефмонтажных работ газоизмерительной системы СПУ ПГ - 018",
+        "project_manager": "Щербина Владимир Ильич",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/БМИ/2024/50",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "ВнешнийЗаказ",
+        "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+        "status_proekta": "Приостановлен",
+        "start_date": "2024-05-27T09:00:00",
+        "finish_date": "2026-06-16T09:30:00",
+        "baseline_start": "2024-05-27T09:00:00",
+        "baseline_finish": "2025-04-04T10:00:00",
+        "data_nachala": "2024-05-27",
+        "planovaya_data_nachala": "2024-05-27",
+        "planovaya_data_okonchaniya": "2025-06-30",
+        "data_okonchaniya": "2025-12-30",
+        "overdue_milestones_count": 1,
+        "project_progress_pct": 96.6,
+        "milestone_months": [
+          "2024-05",
+          "2024-06",
+          "2024-07",
+          "2024-08",
+          "2024-09",
+          "2024-10",
+          "2024-11",
+          "2024-12",
+          "2025-01",
+          "2025-02",
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-06"
+        ],
+        "overdue_milestone_months": [
+          "2024-05"
+        ],
+        "overdue_milestones": [
+          {
+            "name": "Коректировка схем",
+            "start_date": "2024-05-27T09:00:00",
+            "finish_date": "2024-05-27T09:00:00",
+            "percent_complete": 0.0
+          }
+        ],
+        "byudzhet_plan": 29505416.33,
+        "byudzhet_fakt": 0.0
+      },
+      {
+        "file_id": 188,
+        "project_name": "Система оценки удовлетворенности заказчиков",
+        "project_manager": "Гайфулин Денис Александрович",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/СС/2026/43",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Сервисная служба",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-01-23T09:00:00",
+        "finish_date": "2026-07-31T09:30:00",
+        "baseline_start": "2026-01-23T09:00:00",
+        "baseline_finish": "2026-07-31T09:30:00",
+        "data_nachala": "2026-01-23",
+        "planovaya_data_nachala": "2026-01-23",
+        "planovaya_data_okonchaniya": "2026-05-29",
+        "data_okonchaniya": "2026-07-31",
+        "overdue_milestones_count": 3,
+        "project_progress_pct": 50.6,
+        "milestone_months": [
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-05",
+          "2026-06",
+          "2026-07"
+        ],
+        "overdue_milestone_months": [
+          "2026-05",
+          "2026-06"
+        ],
+        "overdue_milestones": [
+          {
+            "name": "План выполнения согласован, даты назначены",
+            "start_date": "2026-05-25T15:00:00",
+            "finish_date": "2026-05-25T15:00:00",
             "percent_complete": 0.0
           },
           {
             "name": "Совет по качеству",
-            "start_date": "2026-05-27T12:00:00",
-            "finish_date": "2026-05-27T12:00:00",
+            "start_date": "2026-05-27T15:00:00",
+            "finish_date": "2026-05-27T15:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Совет по качеству",
+            "start_date": "2026-06-02T15:00:00",
+            "finish_date": "2026-06-02T15:00:00",
             "percent_complete": 0.0
           }
         ],
-        "byudzhet_plan": 14223637.28,
-        "byudzhet_fakt": 37838.67
+        "byudzhet_plan": 0.0,
+        "byudzhet_fakt": 0.0
+      },
+      {
+        "file_id": 185,
+        "project_name": "Система обработки обращений",
+        "project_manager": "Орлов Александр Николаевич",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/СС/2026/42",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Сервисная служба",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-01-23T09:00:00",
+        "finish_date": "2026-07-30T13:30:00",
+        "baseline_start": "2026-01-23T09:00:00",
+        "baseline_finish": "2026-07-30T13:30:00",
+        "data_nachala": "2026-01-23",
+        "planovaya_data_nachala": "2026-01-23",
+        "planovaya_data_okonchaniya": "2026-07-30",
+        "data_okonchaniya": "2026-07-30",
+        "overdue_milestones_count": 6,
+        "project_progress_pct": 32.5,
+        "milestone_months": [
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-05",
+          "2026-06",
+          "2026-07"
+        ],
+        "overdue_milestone_months": [
+          "2026-05",
+          "2026-06"
+        ],
+        "overdue_milestones": [
+          {
+            "name": "ТЗ согласовано",
+            "start_date": "2026-05-14T11:00:00",
+            "finish_date": "2026-05-14T11:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "План выполнения согласован, даты назначены",
+            "start_date": "2026-05-14T11:30:00",
+            "finish_date": "2026-05-14T11:30:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Совет по качеству",
+            "start_date": "2026-05-14T16:30:00",
+            "finish_date": "2026-05-14T16:30:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Совет по качеству",
+            "start_date": "2026-05-26T16:30:00",
+            "finish_date": "2026-05-26T16:30:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Совет по качеству",
+            "start_date": "2026-06-01T16:30:00",
+            "finish_date": "2026-06-01T16:30:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Совет по качеству",
+            "start_date": "2026-06-04T11:30:00",
+            "finish_date": "2026-06-04T11:30:00",
+            "percent_complete": 0.0
+          }
+        ],
+        "byudzhet_plan": 0.0,
+        "byudzhet_fakt": 0.0
+      },
+      {
+        "file_id": 135,
+        "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
+        "project_manager": "Арсуноев Михаил Магомедович",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/СК/2026/35",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-02-02T08:00:00",
+        "finish_date": "2026-10-14T12:00:00",
+        "baseline_start": "2026-02-02T08:00:00",
+        "baseline_finish": "2026-10-27T17:00:00",
+        "data_nachala": "2026-02-18",
+        "planovaya_data_nachala": "2026-02-18",
+        "planovaya_data_okonchaniya": "2026-10-30",
+        "data_okonchaniya": "2026-10-30",
+        "overdue_milestones_count": 0,
+        "project_progress_pct": 35.4,
+        "milestone_months": [
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08",
+          "2026-09",
+          "2026-10"
+        ],
+        "overdue_milestone_months": [],
+        "overdue_milestones": [],
+        "byudzhet_plan": 0.0,
+        "byudzhet_fakt": 0.0
+      },
+      {
+        "file_id": 187,
+        "project_name": "Выполнение условия договора на поставку блоков резервирования импульсного газа для нужд ООО «Газпром трансгаз Санкт-Петербург»",
+        "project_manager": "Зайцев Гордей Николаевич",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/БМИ/2025/279",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "ВнешнийЗаказ",
+        "podrazdelenie": "Производство несерийных изделий",
+        "status_proekta": "Планирование",
+        "start_date": "2025-09-01T08:00:00",
+        "finish_date": "2026-08-31T10:30:00",
+        "baseline_start": "2025-09-01T08:00:00",
+        "baseline_finish": "2026-08-31T17:00:00",
+        "data_nachala": "2025-09-24",
+        "planovaya_data_nachala": "2025-09-24",
+        "planovaya_data_okonchaniya": "2026-08-30",
+        "data_okonchaniya": "2026-08-30",
+        "overdue_milestones_count": 21,
+        "project_progress_pct": 67.4,
+        "milestone_months": [
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08",
+          "2026-09"
+        ],
+        "overdue_milestone_months": [
+          "2025-09",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05"
+        ],
+        "overdue_milestones": [
+          {
+            "name": "металлопрокат подготовлен",
+            "start_date": "2025-09-01T12:00:00",
+            "finish_date": "2025-09-01T12:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Металлопрофиль подготовлен",
+            "start_date": "2025-09-01T16:00:00",
+            "finish_date": "2025-09-01T16:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Каркас изготовлен",
+            "start_date": "2025-09-03T11:00:00",
+            "finish_date": "2025-09-03T11:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Емкость готова",
+            "start_date": "2025-09-04T15:05:30",
+            "finish_date": "2025-09-04T15:05:30",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "БРИГ собран",
+            "start_date": "2025-09-09T09:05:30",
+            "finish_date": "2025-09-09T09:05:30",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "металлопрокат подготовлен",
+            "start_date": "2026-01-16T11:00:00",
+            "finish_date": "2026-01-16T11:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Металлопрофиль подготовлен",
+            "start_date": "2026-02-19T08:57:06",
+            "finish_date": "2026-02-19T08:57:06",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Каркас изготовлен",
+            "start_date": "2026-03-27T08:17:06",
+            "finish_date": "2026-03-27T08:17:06",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Емкость готова",
+            "start_date": "2026-04-06T13:47:54",
+            "finish_date": "2026-04-06T13:47:54",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "металлопрокат подготовлен",
+            "start_date": "2026-04-07T14:47:54",
+            "finish_date": "2026-04-07T14:47:54",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Металлопрофиль подготовлен",
+            "start_date": "2026-04-08T08:17:54",
+            "finish_date": "2026-04-08T08:17:54",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Каркас изготовлен",
+            "start_date": "2026-04-10T11:53:54",
+            "finish_date": "2026-04-10T11:53:54",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "БРИГ50 собран",
+            "start_date": "2026-04-13T16:47:54",
+            "finish_date": "2026-04-13T16:47:54",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Емкость готова",
+            "start_date": "2026-04-16T10:23:24",
+            "finish_date": "2026-04-16T10:23:24",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "БРИГ собран",
+            "start_date": "2026-04-27T15:23:24",
+            "finish_date": "2026-04-27T15:23:24",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Вторая партия готова",
+            "start_date": "2026-04-27T15:23:24",
+            "finish_date": "2026-04-27T15:23:24",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Вторая партия отгружена",
+            "start_date": "2026-04-28T10:23:24",
+            "finish_date": "2026-04-28T10:23:24",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Металлопрофиль подготовлен",
+            "start_date": "2026-04-28T11:00:00",
+            "finish_date": "2026-04-28T11:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "металлопрокат подготовлен",
+            "start_date": "2026-04-29T11:00:00",
+            "finish_date": "2026-04-29T11:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "Металлопрофиль подготовлен",
+            "start_date": "2026-05-05T12:00:00",
+            "finish_date": "2026-05-05T12:00:00",
+            "percent_complete": 0.0
+          },
+          {
+            "name": "металлопрокат подготовлен",
+            "start_date": "2026-05-06T12:00:00",
+            "finish_date": "2026-05-06T12:00:00",
+            "percent_complete": 0.0
+          }
+        ],
+        "byudzhet_plan": 31072877.21,
+        "byudzhet_fakt": 0.0
+      },
+      {
+        "file_id": 184,
+        "project_name": "Выполнение пусконаладочных работ газоизмерительной системы СПУ ПГ-018",
+        "project_manager": "Щербина Владимир Ильич",
+        "kurator": "Улановский Константин Владимирович",
+        "project_code": "НПО/БМИ/2024/95/Портфель УРМЦ",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "ВнешнийЗаказ",
+        "podrazdelenie": "Производство несерийных изделий",
+        "status_proekta": "ВРаботе",
+        "start_date": "2024-09-09T08:00:00",
+        "finish_date": "2026-09-04T13:15:00",
+        "baseline_start": "2024-09-09T09:00:00",
+        "baseline_finish": "2025-12-30T21:00:00",
+        "data_nachala": "2024-11-01",
+        "planovaya_data_nachala": "2024-11-01",
+        "planovaya_data_okonchaniya": "2025-02-14",
+        "data_okonchaniya": "2025-12-30",
+        "overdue_milestones_count": 0,
+        "project_progress_pct": 79.1,
+        "milestone_months": [
+          "2024-09",
+          "2024-10",
+          "2024-11",
+          "2024-12",
+          "2025-01",
+          "2025-02",
+          "2025-03",
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08",
+          "2026-09"
+        ],
+        "overdue_milestone_months": [],
+        "overdue_milestones": [],
+        "byudzhet_plan": 32836775.46,
+        "byudzhet_fakt": 1281122.29
       }
     ]
   },
-  "cache_date": "2026-05-29",
+  "cache_date": "2026-06-05",
   "cache_version": 13,
   "od_overdue_milestones_schema": "zero_duration_milestones_v1"
 }
