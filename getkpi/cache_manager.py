@@ -110,7 +110,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from gspp import tkp_lifecycle as gspp_tkp
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
-    from sup import hrd_m1
+    from sup import hrd_m1, hrd_m4, hrd_q4
     from getkpi.autoit.it_m1_sla import (
         cache_file_path_for_period as autoit_it_m1_cache_path,
         get_it_m1_sla_monthly,
@@ -287,6 +287,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'sup_hrd_m1_{y}_{m}',
          hrd_m1.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: hrd_m1.get_hrd_m1_ytd(year=yy, month=mm)),
+
+        (f'sup_hrd_m4_{y}_{m}',
+         hrd_m4.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: hrd_m4.get_hrd_m4_ytd(year=yy, month=mm)),
+
+        (f'sup_hrd_q4_{y}_{m}',
+         hrd_q4.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: hrd_q4.get_hrd_q4_ytd(year=yy, month=mm)),
 
         (f'autoit_it_m1_sla_monthly_{y}_{m}',
          autoit_it_m1_monthly_cache_path(y, m),

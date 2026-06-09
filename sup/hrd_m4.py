@@ -1,7 +1,8 @@
 """HRD-M4 — текучесть персонала по компании.
 
-Источник: ``sup/SUP_data.xlsx``, лист ``Текучесть``.
-Факт — строка 10, план — строка 11. Месяцы идут с января по колонкам H, K, N...
+Источник: ``HC_сводный_{year}_{Месяц}.xls`` из каталога HR-отчётов, лист ``Текучесть``.
+Для месяца *m* открывается файл этого месяца; факт — строка 10, план — строка 11,
+колонка месяца *m* (H, K, N…, шаг 3) — как в ``SUP_data.xlsx``.
 """
 from __future__ import annotations
 
@@ -11,19 +12,19 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
+import xlrd
 
 from getkpi.cache_manager import locked_call
 from getkpi.devdir import ytd_json_cache
 from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
 
 logger = logging.getLogger(__name__)
 
-SOURCE_FILE = Path(__file__).resolve().parent / "SUP_data.xlsx"
 SHEET_NAME = "Текучесть"
 CACHE_PREFIX = "sup_hrd_m4_turnover"
-CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v2"
-CACHE_VERSION = 2
+CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v3_hc"
+CACHE_VERSION = 3
 
 FACT_ROW = 10
 PLAN_ROW = 11
@@ -33,6 +34,14 @@ MONTH_COLUMN_STEP = 3
 
 def _month_column(month: int) -> int:
     return FIRST_MONTH_COLUMN + (month - 1) * MONTH_COLUMN_STEP
+
+
+def _column_letter(column: int) -> str:
+    letters = ""
+    while column:
+        column, rem = divmod(column - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
 
 
 def _safe_percent(value: Any) -> float | None:
@@ -64,20 +73,66 @@ def _safe_percent(value: Any) -> float | None:
     return round(num, 2)
 
 
-def _load_turnover_months(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    wb = load_workbook(SOURCE_FILE, read_only=True, data_only=True)
-    ws = wb[SHEET_NAME]
+def _open_tekuchest_sheet(book: xlrd.Book):
+    target = SHEET_NAME.strip().lower().replace("ё", "е")
+    for name in book.sheet_names():
+        if name.strip().lower().replace("ё", "е") == target:
+            return book.sheet_by_name(name)
+    raise KeyError(f"Лист {SHEET_NAME!r} не найден")
 
+
+def _read_turnover_for_month(
+    ref_y: int,
+    report_month: int,
+) -> tuple[float | None, float | None, dict[str, Any]]:
+    path = hc_report_path(ref_y, report_month)
+    column = _month_column(report_month)
+    coord = f"{_column_letter(column)}{FACT_ROW}"
+    plan_coord = f"{_column_letter(column)}{PLAN_ROW}"
+    debug: dict[str, Any] = {
+        "month": report_month,
+        "source_file": str(path),
+        "sheet": SHEET_NAME,
+        "fact_row": FACT_ROW,
+        "plan_row": PLAN_ROW,
+        "month_column": _column_letter(column),
+        "fact_cell": coord,
+        "plan_cell": plan_coord,
+    }
+
+    if not path.exists():
+        debug["status"] = "missing_file"
+        return None, None, debug
+
+    try:
+        book = xlrd.open_workbook(str(path))
+        sheet = _open_tekuchest_sheet(book)
+    except Exception as exc:
+        logger.warning("HRD-M4: не удалось прочитать %s: %s", path, exc)
+        debug["status"] = "read_error"
+        debug["error"] = str(exc)
+        return None, None, debug
+
+    raw_fact = sheet.cell_value(FACT_ROW - 1, column - 1)
+    raw_plan = sheet.cell_value(PLAN_ROW - 1, column - 1)
+    fact = _safe_percent(raw_fact)
+    plan = _safe_percent(raw_plan)
+    debug.update({
+        "status": "ok",
+        "raw_fact": raw_fact,
+        "raw_plan": raw_plan,
+        "fact": fact,
+        "plan": plan,
+    })
+    return fact, plan, debug
+
+
+def _load_turnover_months(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     monthly_rows: list[dict[str, Any]] = []
-    raw_cells: list[dict[str, Any]] = []
+    sources: list[dict[str, Any]] = []
 
     for month in range(1, ref_m + 1):
-        column = _month_column(month)
-        fact_cell = ws.cell(FACT_ROW, column)
-        plan_cell = ws.cell(PLAN_ROW, column)
-        fact = _safe_percent(fact_cell.value)
-        plan = _safe_percent(plan_cell.value)
-
+        fact, plan, source_debug = _read_turnover_for_month(ref_y, month)
         monthly_rows.append({
             "month": month,
             "year": ref_y,
@@ -88,24 +143,13 @@ def _load_turnover_months(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]],
             "has_data": fact is not None or plan is not None,
             "values_unit": "%",
         })
-        raw_cells.append({
-            "month": month,
-            "fact_cell": fact_cell.coordinate,
-            "plan_cell": plan_cell.coordinate,
-            "raw_fact": fact_cell.value,
-            "raw_plan": plan_cell.value,
-            "fact": fact,
-            "plan": plan,
-        })
+        sources.append(source_debug)
 
     return monthly_rows, {
-        "source_file": str(SOURCE_FILE),
-        "sheet": SHEET_NAME,
-        "fact_row": FACT_ROW,
-        "plan_row": PLAN_ROW,
+        "reports_dir": str(HC_REPORTS_DIR),
         "first_month_column": "H",
         "month_column_step": MONTH_COLUMN_STEP,
-        "raw_cells": raw_cells,
+        "report_sources": sources,
     }
 
 
@@ -135,7 +179,11 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
         "debug": {
             "kpi_id": "HRD-M4",
             "status": "ok",
-            "rule": "fact row 10, plan row 11; month columns H, K, N...; Excel percent values converted to percent points",
+            "rule": (
+                "HC_сводный_{year}_{Month}.xls / sheet Текучесть; "
+                "for month m read file m, fact row 10, plan row 11, "
+                "column H/K/N... (step 3); Excel percent values converted to percent points"
+            ),
             **debug,
         },
     }
@@ -193,12 +241,7 @@ def get_hrd_m4_ytd(year: int | None = None, month: int | None = None) -> dict[st
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
     def _runner() -> dict[str, Any] | None:
-        try:
-            source_mtime_ns = SOURCE_FILE.stat().st_mtime_ns
-        except OSError:
-            logger.exception("HRD-M4: не найден источник %s", SOURCE_FILE)
-            return None
-
+        source_mtime_ns = reports_mtime_ns(ref_y, ref_m)
         cached = _load_cache(cache_path, source_mtime_ns=source_mtime_ns, perpetual=perpetual)
         if cached is not None:
             return cached
