@@ -101,6 +101,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         rd_m4_fot,
         rd_q2_tekuchest,
         turboproject_projects_by_resources,
+        turboproject_ope_projects,
     )
     from .komdir_claims import fetch_claims_for_month
     from gspp import m3 as gspp_m3
@@ -280,9 +281,17 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          turboproject_projects_by_resources.CACHE_PATH,
          turboproject_projects_by_resources.get_projects_snapshot),
 
+        ('devdir_turboproject_ope_projects',
+         turboproject_ope_projects.CACHE_PATH,
+         turboproject_ope_projects.get_ope_projects_snapshot),
+
         (f'devdir_rd_m3_1_projects_{y}_{m}',
          turboproject_projects_by_resources.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: turboproject_projects_by_resources.get_rd_m3_1_ytd(year=yy, month=mm)),
+
+        (f'devdir_rd_m2_1_ope_{y}_{m}',
+         turboproject_ope_projects.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: turboproject_ope_projects.get_rd_m2_1_ytd(year=yy, month=mm)),
 
         (f'sup_hrd_m1_{y}_{m}',
          hrd_m1.cache_file_path_for_period(y, m),

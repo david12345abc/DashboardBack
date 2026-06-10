@@ -20,6 +20,8 @@ from getkpi.devdir.rd_monthly_period import MONTH_NAMES
 DEVDIR_KPI_IDS: frozenset[str] = frozenset(
     {'RD-M1', 'RD-M2-1', 'RD-M3', 'RD-M3-1', 'RD-M4', 'RD-Q2'},
 )
+DEVDIR_PIECE_UNIT_KPI_IDS: frozenset[str] = frozenset({'RD-M1', 'RD-M2-1', 'RD-M3-1'})
+DEVDIR_RUB_UNIT_KPI_IDS: frozenset[str] = frozenset({'RD-M3', 'RD-M4'})
 
 
 def merge_kpi_entry_if_applicable(
