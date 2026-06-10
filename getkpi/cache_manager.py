@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
 MAX_AGE_SECONDS = 86400  # 1 день
 DASHBOARD_PAYLOAD_MEM_TTL = 3600  # 1 час — повторные запросы дашборда ГСПП
+WARM_TASK_DELAY_SECONDS = float(os.getenv('CACHE_WARM_TASK_DELAY_SECONDS', '1.0'))
 
 _locks: dict[str, threading.Lock] = {}
 _meta = threading.Lock()
@@ -63,6 +64,12 @@ def is_cache_fresh(path: Path | str) -> bool:
         with p.open('r', encoding='utf-8') as f:
             data = json.load(f)
         if isinstance(data, dict):
+            if p.name.startswith('dengi_') and data.get('cache_version') != 3:
+                return False
+            if p.name.startswith('dengi_monthly_') and data.get('cache_version') != 3:
+                return False
+            if p.name.startswith('rashody_') and data.get('cache_version') != 2:
+                return False
             cache_date = data.get('cache_date') or data.get('cached_at')
             if cache_date:
                 return str(cache_date)[:10] == date.today().isoformat()
@@ -528,18 +535,48 @@ def _prefetch_gspp_projects() -> None:
 
 
 def _run_warm_tasks(tasks: list[tuple[str, Path, object]], *, force: bool = False) -> None:
-    """Последовательно выполнить список задач прогрева."""
+    """Последовательно выполнить список задач прогрева.
+
+    На время долгого прогрева включаем OData guard: если 1С возвращает
+    401/402/403, текущий цикл останавливается, чтобы не добивать учётку
+    повторными запросами к недоступным объектам.
+    """
+    from . import odata_http
+
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    for key, cache_path, fn in tasks:
-        if not force and is_cache_fresh(cache_path):
-            logger.info("cache_manager: [%s] fresh, skip", key)
-            continue
-        try:
-            logger.info("cache_manager: [%s] computing...", key)
-            locked_call(key, fn)
-            logger.info("cache_manager: [%s] done", key)
-        except Exception:
-            logger.exception("cache_manager: [%s] error", key)
+    odata_http.reset_access_guard(enabled=True)
+    try:
+        for key, cache_path, fn in tasks:
+            if odata_http.is_access_guard_open():
+                logger.warning(
+                    "cache_manager: stop warming before [%s], OData access guard: %s",
+                    key,
+                    odata_http.access_guard_reason(),
+                )
+                break
+
+            if not force and is_cache_fresh(cache_path):
+                logger.info("cache_manager: [%s] fresh, skip", key)
+                continue
+            try:
+                logger.info("cache_manager: [%s] computing...", key)
+                locked_call(key, fn)
+                logger.info("cache_manager: [%s] done", key)
+            except Exception:
+                logger.exception("cache_manager: [%s] error", key)
+
+            if odata_http.is_access_guard_open():
+                logger.warning(
+                    "cache_manager: stop warming after [%s], OData access guard: %s",
+                    key,
+                    odata_http.access_guard_reason(),
+                )
+                break
+
+            if WARM_TASK_DELAY_SECONDS > 0:
+                time.sleep(WARM_TASK_DELAY_SECONDS)
+    finally:
+        odata_http.disable_access_guard()
 
 
 def _append_gspp_warm_tasks(

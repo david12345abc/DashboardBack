@@ -19,6 +19,7 @@ from __future__ import annotations
 import calendar
 import json
 import logging
+import os
 import sys
 import time
 from datetime import date
@@ -33,8 +34,11 @@ from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
 
-BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
-AUTH = HTTPBasicAuth("odata.user", "npo852456")
+BASE = os.getenv("ONEC_BASE_URL", "http://192.168.2.229:81/erp_pm/odata/standard.odata")
+AUTH = HTTPBasicAuth(
+    os.getenv("ODATA_USER", "odata.user"),
+    os.getenv("ODATA_PASSWORD", "npo852456"),
+)
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
 DEPARTMENTS = {
@@ -47,7 +51,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -105,7 +109,11 @@ def _load_stale_monthly_cache(year: int, month: int) -> dict | None:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
         first_m = (data.get("months") or [{}])[0]
-        if "by_dept" in first_m and _has_nonzero_months(data):
+        if (
+            data.get("cache_version") == CACHE_VERSION
+            and "by_dept" in first_m
+            and _has_nonzero_months(data)
+        ):
             return data
     except (OSError, json.JSONDecodeError):
         pass
@@ -168,7 +176,7 @@ def _period_month(row: dict) -> int | None:
 # ═══════════════════════════════════════════════════════
 
 def _load_ds_register(session: requests.Session,
-                      year: int, max_month: int) -> list[dict]:
+                      year: int, max_month: int) -> list[dict] | None:
     last_day = calendar.monthrange(year, max_month)[1]
     d_from = f"{year}-01-01T00:00:00"
     d_to = f"{year}-{max_month:02d}-{last_day}T23:59:59"
@@ -192,10 +200,10 @@ def _load_ds_register(session: requests.Session,
         r = request_with_retry(session, url, timeout=120, retries=4, label="DS/register")
         if r is None:
             logger.error("DS register: request dropped after retries")
-            break
+            return None
         if not r.ok:
             logger.error("DS register HTTP %d", r.status_code)
-            break
+            return None
         batch = r.json().get("value", [])
         rows.extend(batch)
         if len(batch) < 5000:
@@ -206,7 +214,7 @@ def _load_ds_register(session: requests.Session,
 
 
 def _load_kk_register(session: requests.Session,
-                      year: int, max_month: int) -> list[dict]:
+                      year: int, max_month: int) -> list[dict] | None:
     probe = request_with_retry(
         session, f"{BASE}/{REG_KK}?$format=json&$top=1",
         timeout=20, retries=3, label="KK/probe",
@@ -234,8 +242,12 @@ def _load_kk_register(session: requests.Session,
         url = (f"{BASE}/{REG_KK}?$format=json&$top=5000&$skip={skip}"
                f"&$filter={flt}&$select={sel}")
         r = request_with_retry(session, url, timeout=120, retries=4, label="KK/register")
-        if r is None or not r.ok:
-            break
+        if r is None:
+            logger.error("KK register: request dropped after retries")
+            return None
+        if not r.ok:
+            logger.error("KK register HTTP %d", r.status_code)
+            return None
         batch = r.json().get("value", [])
         rows.extend(batch)
         if len(batch) < 5000:
@@ -300,6 +312,110 @@ def _batch_load_orders(session: requests.Session,
     return result
 
 
+def _scan_orders_by_object_keys(
+    session: requests.Session,
+    object_keys: set[str],
+) -> dict[str, list[dict]]:
+    """Найти заказы по ``ОбъектРасчетов_Key``.
+
+    Платёж в регистре ДДС ссылается на объект расчётов. В 1С один объект
+    расчётов может соответствовать заказу клиента, но прямой фильтр OData по
+    ``ОбъектРасчетов_Key`` работает нестабильно, поэтому сканируем заказы
+    страницами и оставляем только нужные ключи.
+    """
+    needed = {str(k).lower() for k in object_keys if k and k != EMPTY}
+    if not needed:
+        return {}
+
+    select_order = quote(
+        "Ref_Key,Подразделение_Key,Партнер_Key,Соглашение_Key,"
+        "ТД_СопровождениеПродажи,ТД_НеУчитыватьВПланФакте,"
+        "ОбъектРасчетов_Key,DeletionMark",
+        safe=",_",
+    )
+    orders_by_obj: dict[str, list[dict]] = {}
+    skip = 0
+    page = 500
+    while True:
+        url = (
+            f"{BASE}/Document_ЗаказКлиента"
+            f"?$format=json&$select={select_order}"
+            f"&$orderby=Ref_Key&$top={page}&$skip={skip}"
+        )
+        r = request_with_retry(session, url, timeout=120, retries=3, label="DS/OrdersByObject")
+        if r is None:
+            logger.error("DS orders scan: request dropped after retries")
+            break
+        if not r.ok:
+            logger.error("DS orders scan HTTP %d", r.status_code)
+            break
+
+        rows = r.json().get("value", [])
+        if not rows:
+            break
+
+        for item in rows:
+            if item.get("DeletionMark"):
+                continue
+            obj_key = item.get("ОбъектРасчетов_Key")
+            obj_key_norm = str(obj_key or "").lower()
+            if obj_key_norm not in needed:
+                continue
+            order = {
+                "ref": item.get("Ref_Key", ""),
+                "dept": normalize_commercial_dept_guid(item.get("Подразделение_Key", "")),
+                "partner": item.get("Партнер_Key", ""),
+                "agreement": item.get("Соглашение_Key", ""),
+                "soprovozhd": item.get("ТД_СопровождениеПродажи", False),
+                "ne_uchit": item.get("ТД_НеУчитыватьВПланФакте", False),
+            }
+            bucket = orders_by_obj.setdefault(obj_key_norm, [])
+            if not any(existing.get("ref") == order["ref"] for existing in bucket):
+                bucket.append(order)
+
+        if all(k in orders_by_obj for k in needed):
+            break
+        skip += len(rows)
+        if len(rows) < page:
+            break
+
+    missing = len(needed) - sum(1 for k in needed if k in orders_by_obj)
+    if missing:
+        logger.warning("DS orders scan: no customer order for %d settlement objects", missing)
+    return orders_by_obj
+
+
+def _resolve_order_for_object(
+    orders_by_obj: dict[str, list[dict]],
+    obj_key: str,
+    partner_key: str | None,
+) -> dict | None:
+    candidates = orders_by_obj.get(str(obj_key or "").lower())
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    partner_key = partner_key or EMPTY
+    for candidate in candidates:
+        if candidate.get("partner") == partner_key:
+            return candidate
+    return candidates[0]
+
+
+def _order_passes_plan_fact(order: dict, excl_full: set, excl_no_mgs: set) -> bool:
+    dept = normalize_commercial_dept_guid(order.get("dept", ""))
+    if _is_empty_ref(dept) or dept not in DEPT_SET:
+        return False
+    if _is_empty_ref(order.get("agreement")):
+        return False
+    if order.get("ne_uchit"):
+        return False
+    partner = order.get("partner", "")
+    if dept == OPBO_DEPT:
+        return partner not in excl_no_mgs
+    return partner not in excl_full or bool(order.get("soprovozhd"))
+
+
 def _batch_load_partners(session: requests.Session,
                          partner_keys: set[str]) -> dict[str, str]:
     result: dict[str, str] = {}
@@ -323,7 +439,7 @@ def _batch_load_partners(session: requests.Session,
 # Расчёт трёх веток
 # ═══════════════════════════════════════════════════════
 
-def _calc_branch1(ds_rows: list[dict], catalog: dict, orders: dict,
+def _calc_branch1(ds_rows: list[dict], orders_by_obj: dict[str, list[dict]],
                   excl_full: set, excl_no_mgs: set,
                   max_month: int) -> dict[str, dict[int, float]]:
     """Ветка 1: Клиентские оплаты (СуммаОплатыРегл). Возвращает by_dept."""
@@ -339,33 +455,10 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict, orders: dict,
         obj_key = row.get("ОбъектРасчетов", "")
         if _is_empty_ref(obj_key):
             continue
-        cat = catalog.get(obj_key)
-        if not cat:
+        order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key"))
+        if not order or not _order_passes_plan_fact(order, excl_full, excl_no_mgs):
             continue
-        cat_dept = normalize_commercial_dept_guid(cat["dept"])
-        if _is_empty_ref(cat_dept) or cat_dept not in DEPT_SET:
-            continue
-        if _is_empty_ref(cat["agreement"]):
-            continue
-        if ORDER_TYPE_MARKER not in (cat.get("obj_type") or ""):
-            continue
-
-        order = orders.get(cat.get("obj", ""))
-        if not order:
-            continue
-        if order["ne_uchit"] or order["soprovozhd"]:
-            continue
-
-        order_dept = normalize_commercial_dept_guid(order.get("dept", ""))
-        cat_partner = cat.get("partner", "")
-        if order_dept == OPBO_DEPT:
-            if cat_partner in excl_no_mgs:
-                continue
-        else:
-            if cat_partner in excl_full and not order["soprovozhd"]:
-                continue
-
-        effective_dept = order_dept if order_dept in DEPT_SET else cat_dept
+        effective_dept = normalize_commercial_dept_guid(order.get("dept", ""))
 
         amt = float(row.get("СуммаОплатыРегл") or row.get("СуммаОплаты") or 0)
         if not amt:
@@ -378,7 +471,7 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict, orders: dict,
     return monthly
 
 
-def _calc_branch2(ds_rows: list[dict], catalog: dict, orders: dict,
+def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, list[dict]],
                   excl_full: set,
                   max_month: int) -> dict[str, dict[int, float]]:
     """Ветка 2: Комиссия (СуммаПостоплатыРегл). Возвращает by_dept."""
@@ -405,19 +498,16 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders: dict,
         reg_dept = normalize_commercial_dept_guid(row.get("Подразделение_Key", ""))
         if _is_empty_ref(reg_dept) or reg_dept not in DEPT_SET:
             obj_key = row.get("ОбъектРасчетов", "")
-            cat = catalog.get(obj_key) if obj_key else None
-            if cat:
-                order = orders.get(cat.get("obj", ""))
-                order_dept = normalize_commercial_dept_guid(order["dept"]) if order else ""
-                cat_dept = normalize_commercial_dept_guid(cat["dept"])
-                if order_dept in DEPT_SET:
-                    reg_dept = order_dept
-                elif cat_dept in DEPT_SET:
+            order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key")) if obj_key else None
+            if order and normalize_commercial_dept_guid(order.get("dept", "")) in DEPT_SET:
+                reg_dept = normalize_commercial_dept_guid(order.get("dept", ""))
+            else:
+                cat = catalog.get(obj_key) if obj_key else None
+                cat_dept = normalize_commercial_dept_guid(cat["dept"]) if cat else ""
+                if cat_dept in DEPT_SET:
                     reg_dept = cat_dept
                 else:
                     continue
-            else:
-                continue
 
         amt = float(row.get("СуммаПостоплатыРегл") or row.get("СуммаПостоплаты") or 0)
         if not amt:
@@ -428,8 +518,8 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders: dict,
     return monthly
 
 
-def _calc_branch3(kk_rows: list[dict], catalog: dict, orders: dict,
-                  excl_full: set,
+def _calc_branch3(kk_rows: list[dict], orders_by_obj: dict[str, list[dict]],
+                  excl_full: set, excl_no_mgs: set,
                   max_month: int) -> dict[str, dict[int, float]]:
     """Ветка 3: Взаимозачёты (СуммаРегл). Возвращает by_dept."""
     monthly: dict[str, dict[int, float]] = {
@@ -444,28 +534,10 @@ def _calc_branch3(kk_rows: list[dict], catalog: dict, orders: dict,
         obj_key = row.get("ОбъектРасчетов", "")
         if _is_empty_ref(obj_key):
             continue
-        cat = catalog.get(obj_key)
-        if not cat:
+        order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key"))
+        if not order or not _order_passes_plan_fact(order, excl_full, excl_no_mgs):
             continue
-        cat_dept = normalize_commercial_dept_guid(cat["dept"])
-        if _is_empty_ref(cat_dept) or cat_dept not in DEPT_SET:
-            continue
-        if _is_empty_ref(cat["agreement"]):
-            continue
-        if cat.get("partner", "") in excl_full:
-            continue
-        if ORDER_TYPE_MARKER not in (cat.get("obj_type") or ""):
-            continue
-
-        order = orders.get(cat.get("obj", ""))
-        if not order:
-            continue
-        if order["ne_uchit"] or order["soprovozhd"]:
-            continue
-
         effective_dept = normalize_commercial_dept_guid(order.get("dept", ""))
-        if effective_dept not in DEPT_SET:
-            effective_dept = cat_dept
 
         amt = float(row.get("СуммаРегл") or row.get("Сумма") or 0)
         if not amt:
@@ -555,6 +627,11 @@ def get_dengi_monthly(year: int | None = None,
     logger.info("calc_dengi_fact: loading registers for %d months 1-%d", ref_y, ref_m)
     ds_rows = _load_ds_register(session, ref_y, ref_m)
     kk_rows = _load_kk_register(session, ref_y, ref_m)
+    if ds_rows is None or kk_rows is None:
+        fallback = _load_stale_monthly_cache(ref_y, ref_m)
+        if fallback is not None:
+            return _slice_payload(fallback, dept_guid)
+        return _slice_payload({"year": ref_y, "ref_month": ref_m, "months": []}, dept_guid)
     if not ds_rows and not kk_rows:
         fallback = _load_stale_monthly_cache(ref_y, ref_m)
         if fallback is not None:
@@ -572,33 +649,26 @@ def get_dengi_monthly(year: int | None = None,
             obj_keys.add(ok)
 
     catalog = _batch_load_catalog(session, obj_keys)
-
-    order_guids: set[str] = set()
-    for cat_entry in catalog.values():
-        if ORDER_TYPE_MARKER in (cat_entry.get("obj_type") or ""):
-            og = cat_entry.get("obj", "")
-            if og and og != EMPTY:
-                order_guids.add(og)
-
-    orders = _batch_load_orders(session, order_guids)
+    orders_by_obj = _scan_orders_by_object_keys(session, obj_keys)
 
     all_partner_keys: set[str] = set()
     for c in catalog.values():
         pk = c.get("partner", "")
         if pk and pk != EMPTY:
             all_partner_keys.add(pk)
-    for o in orders.values():
-        pk = o.get("partner", "")
-        if pk and pk != EMPTY:
-            all_partner_keys.add(pk)
+    for orders in orders_by_obj.values():
+        for order in orders:
+            pk = order.get("partner", "")
+            if pk and pk != EMPTY:
+                all_partner_keys.add(pk)
 
     partners_map = _batch_load_partners(session, all_partner_keys)
     excl_full = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES}
     excl_no_mgs = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS}
 
-    b1 = _calc_branch1(ds_rows, catalog, orders, excl_full, excl_no_mgs, ref_m)
-    b2 = _calc_branch2(ds_rows, catalog, orders, excl_full, ref_m)
-    b3 = _calc_branch3(kk_rows, catalog, orders, excl_full, ref_m)
+    b1 = _calc_branch1(ds_rows, orders_by_obj, excl_full, excl_no_mgs, ref_m)
+    b2 = _calc_branch2(ds_rows, catalog, orders_by_obj, excl_full, ref_m)
+    b3 = _calc_branch3(kk_rows, orders_by_obj, excl_full, excl_no_mgs, ref_m)
 
     merged = _merge_by_dept(b1, b2, b3, ref_m)
 

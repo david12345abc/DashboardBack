@@ -137,6 +137,18 @@ def _tile_rag(kpi_id: str, pct: float | None) -> str:
     return _rag_higher_better(pct)
 
 
+def _plan_fact_higher_better_rag(plan, fact, pct: float | None) -> str:
+    """KD-M1/M2/M3: факт выше плана — всегда зелёный."""
+    try:
+        plan_value = float(plan)
+        fact_value = float(fact)
+    except (TypeError, ValueError):
+        return _rag_higher_better(pct)
+    if fact_value > plan_value:
+        return 'green'
+    return _rag_higher_better(pct)
+
+
 def _thresholds_block(kpi: dict) -> dict:
     return {
         "green": kpi.get("green_threshold"),
@@ -192,6 +204,14 @@ def _prorate_if_current(plan: float | None, year: int, month: int) -> float | No
     return plan
 
 
+def _plan_values(plan_raw: float | None, year: int, month: int) -> tuple[float | None, float | None]:
+    """(план на текущий момент, полный план за месяц)."""
+    if plan_raw is None:
+        return None, None
+    full_plan = float(plan_raw)
+    return _prorate_if_current(full_plan, year, month), full_plan
+
+
 def _generate_tile_monthly_data(kpi_id: str, plan: float,
                                 pairs: list[tuple[int, int]]) -> list[dict]:
     """Генерирует помесячные точки для плитки (синтетика)."""
@@ -226,7 +246,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
         m = row.get('month')
         y = row.get('year', ref_y)
         fact = row.get('fact')
-        plan = _prorate_if_current(plans_by_month.get(m) or 0, y, m)
+        plan, plan_full = _plan_values(plans_by_month.get(m) or 0, y, m)
         expected_plan = expected_by_month.get(m) or 0
         pct = round(fact / plan * 100, 1) if plan and fact is not None else None
         mrow = {
@@ -234,6 +254,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             'year': y,
             'month_name': MONTH_NAMES_RU.get(m, ''),
             'plan': plan,
+            'plan_full': plan_full,
             'fact': fact,
             'expected_plan': expected_plan,
             'kpi_pct': pct,
@@ -418,7 +439,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         for row in raw_months:
             m = row.get('month')
             y = row.get('year', ref_y)
-            plan = _prorate_if_current(row.get('plan'), y, m)
+            plan, plan_full = _plan_values(row.get('plan'), y, m)
             fact = row.get('fact')
             pct = round(fact / plan * 100, 1) if plan and fact is not None else None
             mrow = {
@@ -426,6 +447,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
                 'year': y,
                 'month_name': MONTH_NAMES_RU.get(m, ''),
                 'plan': plan,
+                'plan_full': plan_full,
                 'fact': fact,
                 'kpi_pct': pct,
                 'has_data': fact is not None and fact != 0,
@@ -465,7 +487,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         for row in raw_months:
             m = row.get('month')
             y = row.get('year', ref_y)
-            p = _prorate_if_current(row.get('plan'), y, m)
+            p, plan_full = _plan_values(row.get('plan'), y, m)
             f = row.get('fact')
             pct = round(f / p * 100, 1) if p and f is not None else None
             mrow = {
@@ -473,6 +495,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
                 'year': y,
                 'month_name': MONTH_NAMES_RU.get(m, ''),
                 'plan': p,
+                'plan_full': plan_full,
                 'fact': f,
                 'kpi_pct': pct,
                 'has_data': f is not None and f != 0 or p is not None and p != 0,
@@ -512,7 +535,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         for row in raw_months:
             m = row.get('month')
             y = row.get('year', ref_y)
-            plan = _prorate_if_current(row.get('plan'), y, m)
+            plan, plan_full = _plan_values(row.get('plan'), y, m)
             fact = row.get('fact', 0)
             pct = round(fact / plan * 100, 1) if plan and fact is not None else None
             mrow = {
@@ -520,6 +543,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
                 'year': y,
                 'month_name': MONTH_NAMES_RU.get(m, ''),
                 'plan': plan,
+                'plan_full': plan_full,
                 'fact': fact,
                 'kpi_pct': pct,
                 'has_data': fact != 0,
@@ -1370,8 +1394,11 @@ def build_komdir_payload(kpi_list: list[dict],
         pct = td['ytd'].get('kpi_pct')
         if pct is not None:
             pct = float(pct)
-        color = _tile_rag(kid, pct)
         lm = td.get('last_full_month_row')
+        if kid in {'KD-M1', 'KD-M2', 'KD-M3'} and lm:
+            color = _plan_fact_higher_better_rag(lm.get('plan'), lm.get('fact'), pct)
+        else:
+            color = _tile_rag(kid, pct)
         tile_item = {
             "kpi_id": kid,
             "name": meta["name"],
@@ -1387,7 +1414,11 @@ def build_komdir_payload(kpi_list: list[dict],
             "plan": lm.get("plan") if lm else None,
             "fact": lm.get("fact") if lm else None,
             "expected_plan": lm.get("expected_plan") if lm else None,
-            "has_data": lm.get("has_data", True) if lm else False,
+            "has_data": (
+                (lm.get("fact") is not None if lm else False)
+                if kid in {"KD-M1", "KD-M2", "KD-M3"}
+                else (lm.get("has_data", True) if lm else False)
+            ),
             "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
             "cache_updated_at": _tile_cache_updated_at(kid, ref_y, series_m),
             "monthly_data": td.get("monthly_data") or [],
