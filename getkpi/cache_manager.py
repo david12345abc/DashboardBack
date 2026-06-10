@@ -118,6 +118,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         rd_m4_fot,
         rd_q2_tekuchest,
         turboproject_projects_by_resources,
+        turboproject_ope_projects,
     )
     from .komdir_claims import fetch_claims_for_month
     from gspp import m3 as gspp_m3
@@ -127,7 +128,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from gspp import tkp_lifecycle as gspp_tkp
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
-    from sup import hrd_m1
+    from sup import hrd_m1, hrd_m4, hrd_q4
     from getkpi.autoit.it_m1_sla import (
         cache_file_path_for_period as autoit_it_m1_cache_path,
         get_it_m1_sla_monthly,
@@ -377,13 +378,29 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          turboproject_projects_by_resources.CACHE_PATH,
          turboproject_projects_by_resources.get_projects_snapshot),
 
+        ('devdir_turboproject_ope_projects',
+         turboproject_ope_projects.CACHE_PATH,
+         turboproject_ope_projects.get_ope_projects_snapshot),
+
         (f'devdir_rd_m3_1_projects_{y}_{m}',
          turboproject_projects_by_resources.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: turboproject_projects_by_resources.get_rd_m3_1_ytd(year=yy, month=mm)),
 
+        (f'devdir_rd_m2_1_ope_{y}_{m}',
+         turboproject_ope_projects.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: turboproject_ope_projects.get_rd_m2_1_ytd(year=yy, month=mm)),
+
         (f'sup_hrd_m1_{y}_{m}',
          hrd_m1.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: hrd_m1.get_hrd_m1_ytd(year=yy, month=mm)),
+
+        (f'sup_hrd_m4_{y}_{m}',
+         hrd_m4.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: hrd_m4.get_hrd_m4_ytd(year=yy, month=mm)),
+
+        (f'sup_hrd_q4_{y}_{m}',
+         hrd_q4.cache_file_path_for_period(y, m),
+         lambda yy=y, mm=m: hrd_q4.get_hrd_q4_ytd(year=yy, month=mm)),
 
         (f'autoit_it_m1_sla_monthly_{y}_{m}',
          autoit_it_m1_monthly_cache_path(y, m),

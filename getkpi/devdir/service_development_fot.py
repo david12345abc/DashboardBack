@@ -1,7 +1,7 @@
 """Факт ФОТ контура директора по развитию: 5 п/п, счёт 26, две статьи НПО АУП (ТЗ).
 
 Считается здесь же: регистр ``AccountingRegister_Хозрасчетный`` / ``RecordsWithExtDimensions``.
-Используется плитками RD-M2-1 и RD-M4 (``service_development_fot_fact``).
+Используется плиткой RD-M4 (``service_development_fot_fact``).
 """
 
 from __future__ import annotations

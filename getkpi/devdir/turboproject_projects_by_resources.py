@@ -47,12 +47,12 @@ TARGET_RESOURCES_DEPARTMENT = (
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
 CACHE_PATH = CACHE_DIR / "devdir_turboproject_projects_by_resources_snapshot.json"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 TABLE_CACHE_PREFIX = "devdir_turboproject_projects_by_resources_deviations"
-TABLE_CACHE_VERSION = 6
+TABLE_CACHE_VERSION = 8
 TILE_CACHE_PREFIX = "devdir_rd_m3_1_turboproject_projects_by_resources"
 TILE_CACHE_SOURCE_TAG = "devdir_rd_m3_1_turboproject_projects_by_resources_ytd"
-TILE_CACHE_VERSION = 5
+TILE_CACHE_VERSION = 7
 
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
@@ -329,21 +329,29 @@ def _overdue_milestone_rows(
     return rows
 
 
-def _project_progress_pct(tasks: list[dict[str, Any]]) -> float | None:
+def _project_progress_pct(
+    tasks: list[dict[str, Any]],
+    project_meta: dict[str, Any] | None = None,
+) -> float | None:
+    """Прогресс как в TurboProject UI: корневая summary-задача / project.percent_complete."""
+    for raw in (
+        (project_meta or {}).get("percent_complete"),
+        next((task.get("percent_complete") for task in tasks or [] if task.get("is_summary")), None),
+    ):
+        frac = _milestone_progress_as_fraction(raw)
+        if frac is not None:
+            return round(frac * 100, 1)
+
     task_total = 0
     task_done = 0
     for task in tasks or []:
         if task.get("is_summary"):
             continue
-        try:
-            pct = float(task.get("percent_complete"))
-        except (TypeError, ValueError):
-            continue
-        if pct != pct:
+        frac = _milestone_progress_as_fraction(task.get("percent_complete"))
+        if frac is None:
             continue
         task_total += 1
-        pct_value = pct * 100 if abs(pct) <= 1 else pct
-        if pct_value >= 100:
+        if frac >= 1.0 - 1e-9:
             task_done += 1
     if not task_total:
         return None
@@ -364,7 +372,7 @@ def _project_summary(
     project_meta = details.get("project") or {}
     data_1c = details.get("data_1c") or {}
     tasks = details.get("tasks") or []
-    project_progress_pct = _project_progress_pct(tasks)
+    project_progress_pct = _project_progress_pct(tasks, project_meta)
     max_delay_workdays = max((int(row.get("delay_workdays") or 0) for row in overdue_milestones), default=0)
     is_fact = not overdue_milestones
     return {
@@ -418,6 +426,43 @@ def _project_status_label(project: dict[str, Any]) -> str:
     return status_map.get(raw, raw)
 
 
+def _project_actual_completion_date(project: dict[str, Any]) -> date | None:
+    """Фактическая дата закрытия проекта из 1С (data_okonchaniya)."""
+    completion = _parse_real_project_date(project.get("data_okonchaniya"))
+    if completion is not None:
+        return completion
+    status = str(project.get("status_proekta") or "").strip()
+    if status in {"Завершен", "Закрыт"}:
+        return (
+            _parse_real_project_date(project.get("finish_date"))
+            or _parse_real_project_date(project.get("planovaya_data_okonchaniya"))
+        )
+    return None
+
+
+def _project_is_fully_complete(project: dict[str, Any]) -> bool:
+    progress = project.get("project_progress_pct")
+    if progress is not None and float(progress) >= 100.0 - 1e-9:
+        return True
+    status = str(project.get("status_proekta") or "").strip()
+    return status in {"Завершен", "Закрыт"}
+
+
+def _project_exempt_from_month_deviations(
+    project: dict[str, Any],
+    ref_y: int,
+    ref_m: int,
+) -> bool:
+    """100% выполнение на конец месяца — отклонения по вехам не показываем."""
+    if not _project_is_fully_complete(project):
+        return False
+    completion = _project_actual_completion_date(project)
+    if completion is None:
+        return True
+    _, month_end = _month_start_end(ref_y, ref_m)
+    return completion <= month_end
+
+
 def _project_overdue_milestones_in_month(
     project: dict[str, Any],
     ref_y: int,
@@ -425,6 +470,9 @@ def _project_overdue_milestones_in_month(
     *,
     as_of_date: date,
 ) -> list[dict[str, Any]]:
+    if _project_exempt_from_month_deviations(project, ref_y, ref_m):
+        return []
+
     month_start, month_end = _month_start_end(ref_y, ref_m)
     rows: list[dict[str, Any]] = []
     for milestone in project.get("milestone_deviations") or []:
@@ -452,10 +500,12 @@ def _build_projects_deviation_table(
     ref_y: int,
     ref_m: int,
     *,
+    projects: list[dict[str, Any]] | None = None,
     table_name: str = "Проекты с отклонениями по вехам",
 ) -> dict[str, Any]:
-    snapshot = get_projects_snapshot()
-    projects = list(snapshot.get("projects") or [])
+    if projects is None:
+        snapshot = get_projects_snapshot()
+        projects = list(snapshot.get("projects") or [])
     month_end = _month_start_end(ref_y, ref_m)[1]
     as_of_date = min(month_end, date.today())
     month_projects = [
@@ -526,11 +576,14 @@ def _build_projects_deviation_table(
 def _build_projects_monthly_payload(
     year: int | None = None,
     month: int | None = None,
+    *,
+    projects: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
-    snapshot = get_projects_snapshot()
-    projects = list(snapshot.get("projects") or [])
+    if projects is None:
+        snapshot = get_projects_snapshot()
+        projects = list(snapshot.get("projects") or [])
 
     monthly_rows: list[dict[str, Any]] = []
     ref_row: dict[str, Any] | None = None
@@ -730,12 +783,19 @@ def _compute_projects_snapshot() -> dict:
             continue
 
         tasks = details.get("tasks") or []
+        project_meta = details.get("project") or {}
         overdue_milestones = _overdue_milestone_rows(
             _api_overdue_milestones(details),
             tasks,
             as_of_date=as_of_date,
         )
-        target_projects.append(_project_summary(item, details, overdue_milestones, resources))
+        summary_row = _project_summary(item, details, overdue_milestones, resources)
+        if _project_is_fully_complete(summary_row):
+            summary_row["milestone_deviations"] = []
+            summary_row["overdue_milestones_count"] = 0
+            summary_row["max_delay_workdays"] = 0
+            summary_row["is_fact"] = True
+        target_projects.append(summary_row)
 
     fact_projects = [project for project in target_projects if project.get("is_fact")]
     payload = {

@@ -38,6 +38,7 @@ from . import (
     valovaya_pribyl,
 )
 from getkpi.devdir import turboproject_projects_by_resources as _devdir_turboproject_projects
+from getkpi.devdir import turboproject_ope_projects as _devdir_turboproject_ope
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
 from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter, pick_monthly_row_for_period
@@ -2343,15 +2344,13 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
             tile['unit'] = 'руб.'
-        elif _kid_tile == 'RD-M1':
-            tile['unit'] = 'шт.'
-        elif _kid_tile == 'RD-M3-1':
+        elif _kid_tile in _devdir_kpi_views.DEVDIR_PIECE_UNIT_KPI_IDS:
             tile['unit'] = 'шт.'
         elif _kid_tile in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS | _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
             tile['unit'] = '%'
         elif _kid_tile in _autoit_kpi_views.AUTOIT_RUB_KPI_IDS | _c1auto_kpi_views.C1AUTO_RUB_KPI_IDS:
             tile['unit'] = 'руб.'
-        elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_KPI_IDS:
+        elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_RUB_UNIT_KPI_IDS:
             tile['unit'] = 'руб.'
 
         if _kid_tile == 'TD-Q2' or _is_gspp_q5_tile(kpi):
@@ -2577,6 +2576,25 @@ def _build_universal_payload(
             devdir_table = None
         if devdir_table and (devdir_table.get('rows') or []):
             tablitsy['DEVDIR-T-PROJECTS-DEVIATIONS'] = devdir_table
+
+        try:
+            rd_m2_1_period = (entries_by_id.get('RD-M2-1') or {}).get('kpi_period') or {}
+            ope_table_y, ope_table_m = ref_y, ref_m
+            if (
+                isinstance(rd_m2_1_period, dict)
+                and rd_m2_1_period.get('year') is not None
+                and rd_m2_1_period.get('month') is not None
+            ):
+                ope_table_y = int(rd_m2_1_period['year'])
+                ope_table_m = max(1, min(12, int(rd_m2_1_period['month'])))
+            ope_table = _devdir_turboproject_ope.get_ope_projects_deviation_table(
+                year=ope_table_y,
+                month=ope_table_m,
+            )
+        except Exception:
+            ope_table = None
+        if ope_table and (ope_table.get('rows') or []):
+            tablitsy['DEVDIR-T-OPE-PROJECTS-DEVIATIONS'] = ope_table
 
     if _is_gspp_department(dept):
         _gspp_kpi_views.merge_gspp_tables_into_universal_payload(tablitsy, ref_y, ref_m)
