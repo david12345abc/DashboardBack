@@ -15,7 +15,7 @@ import os
 import json
 import threading
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -28,8 +28,20 @@ DASHBOARD_PAYLOAD_MEM_TTL = 3600  # 1 час — повторные запрос
 _locks: dict[str, threading.Lock] = {}
 _meta = threading.Lock()
 _warming = False
+_warm_cycle_lock = threading.Lock()
 _payload_mem_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _payload_mem_lock = threading.Lock()
+
+# Задачи без помесячного суффикса в ключе — выполняются один раз за цикл прогрева.
+_GLOBAL_WARM_TASK_KEYS = frozenset({
+    'dz_limits',
+    'vp',
+    'techdir_projects',
+    'devdir_turboproject_projects_by_resources',
+    'devdir_turboproject_ope_projects',
+    'dept_protocol_overdue_warm_all',
+    'prod_deputy_projects',
+})
 
 
 def _get_lock(key: str) -> threading.Lock:
@@ -467,6 +479,69 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     return tasks
 
 
+def _task_identity(task: tuple[str, Path, object]) -> tuple[str, str]:
+    key, cache_path, _ = task
+    return key, str(cache_path)
+
+
+def _collect_warm_tasks(*, all_months: bool = False) -> list[tuple[str, Path, object]]:
+    """Собрать задачи прогрева: только текущий месяц или все месяцы с 2026-01."""
+    today = date.today()
+    ref_y, ref_m = today.year, today.month
+    if not all_months:
+        return _build_warm_tasks(ref_y, ref_m)
+
+    from tools.dept_protocol.dashboard_table import month_pairs_from_start
+
+    pairs = month_pairs_from_start(ref_y, ref_m)
+    if not pairs:
+        pairs = [(ref_y, ref_m)]
+
+    seen: set[tuple[str, str]] = set()
+    global_keys_done: set[str] = set()
+    tasks: list[tuple[str, Path, object]] = []
+
+    for y, m in pairs:
+        for task in _build_warm_tasks(y, m):
+            key = task[0]
+            identity = _task_identity(task)
+            if identity in seen:
+                continue
+            if key in _GLOBAL_WARM_TASK_KEYS and key in global_keys_done:
+                continue
+
+            tasks.append(task)
+            seen.add(identity)
+            if key in _GLOBAL_WARM_TASK_KEYS:
+                global_keys_done.add(key)
+
+    return tasks
+
+
+def _prefetch_gspp_projects() -> None:
+    try:
+        from getkpi import gspp_q4
+        gspp_q4.get_manager_project_pairs()
+        logger.info("cache_manager: prefetched GSPP TurboProject projects")
+    except Exception:
+        logger.exception("cache_manager: GSPP TurboProject prefetch failed")
+
+
+def _run_warm_tasks(tasks: list[tuple[str, Path, object]], *, force: bool = False) -> None:
+    """Последовательно выполнить список задач прогрева."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    for key, cache_path, fn in tasks:
+        if not force and is_cache_fresh(cache_path):
+            logger.info("cache_manager: [%s] fresh, skip", key)
+            continue
+        try:
+            logger.info("cache_manager: [%s] computing...", key)
+            locked_call(key, fn)
+            logger.info("cache_manager: [%s] done", key)
+        except Exception:
+            logger.exception("cache_manager: [%s] error", key)
+
+
 def _append_gspp_warm_tasks(
     tasks: list[tuple[str, Path, object]],
     ref_y: int,
@@ -519,38 +594,71 @@ def _append_gspp_warm_tasks(
         ])
 
 
-def warm_all_caches():
-    """Проверить все кэши и пересчитать просроченные / отсутствующие."""
+def _run_warm_cycle(
+    *,
+    all_months: bool = False,
+    force: bool = False,
+    label: str = 'startup',
+) -> None:
+    """Один цикл прогрева (текущий месяц или все месяцы с 2026-01)."""
     global _warming
+
+    if not _warm_cycle_lock.acquire(blocking=False):
+        logger.warning("cache_manager: warm cycle already running, skip (%s)", label)
+        return
+
     _warming = True
-    today = date.today()
-    ref_y, ref_m = today.year, today.month
-
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    tasks = _build_warm_tasks(ref_y, ref_m)
-
-    logger.info("cache_manager: warming %d cache tasks for %d-%02d", len(tasks), ref_y, ref_m)
-
     try:
-        from getkpi import gspp_q4
-        gspp_q4.get_manager_project_pairs()
-        logger.info("cache_manager: prefetched GSPP TurboProject projects")
-    except Exception:
-        logger.exception("cache_manager: GSPP TurboProject prefetch failed")
+        today = date.today()
+        tasks = _collect_warm_tasks(all_months=all_months)
+        scope = 'all months' if all_months else f'{today.year}-{today.month:02d}'
+        logger.info(
+            "cache_manager: warming %d cache tasks (%s, %s)",
+            len(tasks),
+            scope,
+            label,
+        )
+        _prefetch_gspp_projects()
+        _run_warm_tasks(tasks, force=force)
+        logger.info("cache_manager: warming complete (%s)", label)
+    finally:
+        _warming = False
+        _warm_cycle_lock.release()
 
-    for key, cache_path, fn in tasks:
-        if is_cache_fresh(cache_path):
-            logger.info("cache_manager: [%s] fresh, skip", key)
-            continue
+
+def warm_all_caches(*, force: bool = False):
+    """Проверить кэши текущего месяца и пересчитать просроченные / отсутствующие."""
+    _run_warm_cycle(all_months=False, force=force, label='startup')
+
+
+def warm_all_caches_all_months(*, force: bool = False):
+    """Прогреть кэши всех реализованных отделов за каждый месяц с 2026-01."""
+    _run_warm_cycle(all_months=True, force=force, label='all-months')
+
+
+def _seconds_until_next_midnight() -> float:
+    now = datetime.now()
+    next_midnight = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    )
+    return max(1.0, (next_midnight - now).total_seconds())
+
+
+def _midnight_cache_scheduler_loop() -> None:
+    """В полночь запускать полный помесячный прогрев кэшей."""
+    while True:
+        delay = _seconds_until_next_midnight()
+        logger.info(
+            "cache_manager: next midnight warm in %.0f s (%.1f h)",
+            delay,
+            delay / 3600,
+        )
+        time.sleep(delay)
+        logger.info("cache_manager: midnight warm started")
         try:
-            logger.info("cache_manager: [%s] computing...", key)
-            locked_call(key, fn)
-            logger.info("cache_manager: [%s] done", key)
+            warm_all_caches_all_months(force=True)
         except Exception:
-            logger.exception("cache_manager: [%s] error", key)
-
-    _warming = False
-    logger.info("cache_manager: warming complete")
+            logger.exception("cache_manager: midnight warm failed")
 
 
 def start_warming():
@@ -560,3 +668,16 @@ def start_warming():
     t = threading.Thread(target=warm_all_caches, name='cache-warmer', daemon=True)
     t.start()
     logger.info("cache_manager: warming thread started")
+
+
+def start_midnight_cache_scheduler():
+    """Запустить планировщик полночного прогрева (вызывается из AppConfig.ready)."""
+    if os.environ.get('RUN_MAIN') != 'true':
+        return
+    t = threading.Thread(
+        target=_midnight_cache_scheduler_loop,
+        name='midnight-cache-scheduler',
+        daemon=True,
+    )
+    t.start()
+    logger.info("cache_manager: midnight cache scheduler started")

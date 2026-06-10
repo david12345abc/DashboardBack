@@ -7,3 +7,4 @@ class GetkpiConfig(AppConfig):
     def ready(self):
         from . import cache_manager
         cache_manager.start_warming()
+        cache_manager.start_midnight_cache_scheduler()
