@@ -1,10 +1,9 @@
 """
-ГСП-M5 — бюджет план/факт проекта TurboProject «номенклатур*».
+ГСП-M5 — суммарный бюджет план/факт по проектам TurboProject (та же когорта, что ГСП-Q4).
 
-Целевой проект ищется теми же правилами, что и ГСП-Q4:
-название содержит ``номенклатур`` и руководитель берется из актуальной оргструктуры.
-План и факт берутся из 1С-части карточки TurboProject:
-``data_1c.byudzhet_plan`` и ``data_1c.byudzhet_fakt``.
+Берутся все проекты ``has_1c``, где РП совпадает с актуальным «Руководителем отдела» ГСПП.
+План и факт — из ``data_1c.byudzhet_plan`` / ``data_1c.byudzhet_fakt``, суммируются по проектам,
+«живым» в опорном месяце (пересечение сроков проекта с календарным месяцем).
 """
 from __future__ import annotations
 
@@ -16,18 +15,16 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-import requests
-
 from .cache_manager import locked_call
 from .devdir import ytd_json_cache
 from .devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from .gspp_q4 import _find_target_project, _login, _project_display_name
+from .gspp_q4 import get_manager_project_pairs, _project_display_name
 
 logger = logging.getLogger(__name__)
 
 GSPP_M5_CACHE_PREFIX = "gspp_m5_ytd"
-GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v2"
-GSPP_M5_DISK_VERSION = 2
+GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v5"
+GSPP_M5_DISK_VERSION = 5
 
 
 def _safe_float(value: Any) -> float | None:
@@ -94,6 +91,7 @@ def _project_date_bounds(details: dict[str, Any]) -> tuple[date | None, date | N
 
 
 def _project_alive_in_month(details: dict[str, Any], year: int, month: int) -> bool:
+    """Проект «жив» в месяце: пересечение [start, finish] с календарным месяцем."""
     period_start, period_end = _month_start_end(year, month)
     start, finish = _project_date_bounds(details)
     if start is not None and start > period_end:
@@ -122,53 +120,87 @@ def _empty_month_row(year: int, month: int) -> dict[str, Any]:
     }
 
 
+def _budget_totals_for_month(
+    project_pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+    year: int,
+    month: int,
+) -> tuple[float | None, float | None]:
+    """Сумма plan/fact по проектам Q4-когорты, активным в месяце."""
+    plan_sum = 0.0
+    fact_sum = 0.0
+    has_plan = False
+    has_fact = False
+    any_alive = False
+    for _item, details in project_pairs:
+        if not _project_alive_in_month(details, year, month):
+            continue
+        any_alive = True
+        data_1c = details.get("data_1c") or {}
+        plan = _safe_float(data_1c.get("byudzhet_plan"))
+        fact = _safe_float(data_1c.get("byudzhet_fakt"))
+        if plan is not None:
+            plan_sum += plan
+            has_plan = True
+        if fact is not None:
+            fact_sum += fact
+            has_fact = True
+    if not any_alive:
+        return None, None
+    return (
+        round(plan_sum, 2) if has_plan else None,
+        round(fact_sum, 2) if has_fact else None,
+    )
+
+
 def _build_gspp_m5_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     monthly_rows = [_empty_month_row(ref_y, m) for m in range(1, ref_m + 1)]
     debug: dict[str, Any] = {
         "kpi_id": "ГСП-M5",
         "source": "getkpi/gspp_m5.py (TurboProject)",
-        "project_filter": "name contains 'номенклатур', rukovoditel == current ГСПП руководитель отдела",
+        "project_filter": "same as GSPP-Q4: all has_1c projects where rukovoditel matches org structure",
         "plan_field": "data_1c.byudzhet_plan",
         "fact_field": "data_1c.byudzhet_fakt",
+        "aggregation": "sum by active projects per month",
         "status": "no_project",
     }
 
     try:
-        session = requests.Session()
-        token = _login(session)
-        item, details, err = _find_target_project(session, token)
-        if details is None:
+        project_pairs, err = get_manager_project_pairs()
+        if not project_pairs:
             debug["hint"] = err
         else:
-            data_1c = details.get("data_1c") or {}
-            plan = _safe_float(data_1c.get("byudzhet_plan"))
-            fact = _safe_float(data_1c.get("byudzhet_fakt"))
             debug.update({
                 "status": "ok",
-                "file_id": item.get("id") if item else None,
-                "project_name": _project_display_name(details, item or {}),
-                "project_code": data_1c.get("nomer_proekta"),
-                "project_manager": data_1c.get("rukovoditel"),
-                "raw_plan": data_1c.get("byudzhet_plan"),
-                "raw_fact": data_1c.get("byudzhet_fakt"),
+                "projects_count": len(project_pairs),
+                "projects": [
+                    {
+                        "file_id": item.get("id"),
+                        "project_name": _project_display_name(details, item),
+                        "project_code": (details.get("data_1c") or {}).get("nomer_proekta"),
+                        "project_manager": (details.get("data_1c") or {}).get("rukovoditel"),
+                        "raw_plan": (details.get("data_1c") or {}).get("byudzhet_plan"),
+                        "raw_fact": (details.get("data_1c") or {}).get("byudzhet_fakt"),
+                    }
+                    for item, details in project_pairs
+                ],
             })
             monthly_rows = []
             for m in range(1, ref_m + 1):
-                if not _project_alive_in_month(details, ref_y, m):
+                plan, fact = _budget_totals_for_month(project_pairs, ref_y, m)
+                if plan is None and fact is None:
                     monthly_rows.append(_empty_month_row(ref_y, m))
                     continue
-                row = {
+                monthly_rows.append({
                     "month": m,
                     "year": ref_y,
                     "month_name": MONTH_NAMES[m],
-                    "plan": round(plan, 2) if plan is not None else None,
-                    "fact": round(fact, 2) if fact is not None else None,
+                    "plan": plan,
+                    "fact": fact,
                     "kpi_pct": _budget_pct(plan, fact),
                     "has_data": plan is not None or fact is not None,
                     "values_unit": "руб.",
-                }
-                monthly_rows.append(row)
+                })
     except Exception as exc:
         logger.exception("ГСП-M5: сбой TurboProject")
         debug["status"] = "error"

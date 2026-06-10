@@ -1,5 +1,5 @@
 {
-  "cache_date": "2026-05-29",
+  "cache_date": "2026-06-10",
   "cache_version": 6,
   "year": 2026,
   "ref_month": 4,
@@ -14,22 +14,6 @@
       "otgruzki_expected": 20593893.73,
       "dogovory_expected": 13333028.5,
       "by_dept": {
-        "34497ef7-810f-11e4-80d6-001e67112509": {
-          "dengi": 6880255.0,
-          "otgruzki": 4546142.0,
-          "dogovory": 3186585.0,
-          "dengi_expected": 594128.62,
-          "otgruzki_expected": 5541995.0,
-          "dogovory_expected": 0.0
-        },
-        "49480c10-e401-11e8-8283-ac1f6b05524d": {
-          "dengi": 4237138.0,
-          "otgruzki": 0.0,
-          "dogovory": 3624537.0,
-          "dengi_expected": 0.0,
-          "otgruzki_expected": 0.0,
-          "dogovory_expected": 8485184.0
-        },
         "bd7b5184-9f9c-11e4-80da-001e67112509": {
           "dengi": 30000000.0,
           "otgruzki": 8770000.0,
@@ -44,6 +28,14 @@
           "dogovory": 15669144.0,
           "dengi_expected": 77061.37,
           "otgruzki_expected": 831026.39,
+          "dogovory_expected": 0.0
+        },
+        "34497ef7-810f-11e4-80d6-001e67112509": {
+          "dengi": 6880255.0,
+          "otgruzki": 4546142.0,
+          "dogovory": 3186585.0,
+          "dengi_expected": 594128.62,
+          "otgruzki_expected": 5541995.0,
           "dogovory_expected": 0.0
         },
         "9edaa7d4-37a5-11ee-93d3-6cb31113810e": {
@@ -61,6 +53,14 @@
           "dengi_expected": 694522.0,
           "otgruzki_expected": 14220872.34,
           "dogovory_expected": 1341268.41
+        },
+        "49480c10-e401-11e8-8283-ac1f6b05524d": {
+          "dengi": 4237138.0,
+          "otgruzki": 0.0,
+          "dogovory": 3624537.0,
+          "dengi_expected": 0.0,
+          "otgruzki_expected": 0.0,
+          "dogovory_expected": 8485184.0
         }
       }
     },
@@ -74,22 +74,6 @@
       "otgruzki_expected": 110162069.11,
       "dogovory_expected": 59333837.83,
       "by_dept": {
-        "34497ef7-810f-11e4-80d6-001e67112509": {
-          "dengi": 8916276.0,
-          "otgruzki": 7442014.0,
-          "dogovory": 7668056.0,
-          "dengi_expected": 236127.0,
-          "otgruzki_expected": 10423627.98,
-          "dogovory_expected": 0.0
-        },
-        "49480c10-e401-11e8-8283-ac1f6b05524d": {
-          "dengi": 2775229.0,
-          "otgruzki": 38519060.0,
-          "dogovory": 5697149.0,
-          "dengi_expected": 0.0,
-          "otgruzki_expected": 0.0,
-          "dogovory_expected": 0.0
-        },
         "bd7b5184-9f9c-11e4-80da-001e67112509": {
           "dengi": 35000000.0,
           "otgruzki": 59000000.0,
@@ -106,6 +90,14 @@
           "otgruzki_expected": 24524089.28,
           "dogovory_expected": 22155172.61
         },
+        "34497ef7-810f-11e4-80d6-001e67112509": {
+          "dengi": 8916276.0,
+          "otgruzki": 7442014.0,
+          "dogovory": 7668056.0,
+          "dengi_expected": 236127.0,
+          "otgruzki_expected": 10423627.98,
+          "dogovory_expected": 0.0
+        },
         "9edaa7d4-37a5-11ee-93d3-6cb31113810e": {
           "dengi": 0.0,
           "otgruzki": 0.0,
@@ -121,6 +113,14 @@
           "dengi_expected": 316268.1,
           "otgruzki_expected": 15138569.62,
           "dogovory_expected": 4695283.27
+        },
+        "49480c10-e401-11e8-8283-ac1f6b05524d": {
+          "dengi": 2775229.0,
+          "otgruzki": 38519060.0,
+          "dogovory": 5697149.0,
+          "dengi_expected": 0.0,
+          "otgruzki_expected": 0.0,
+          "dogovory_expected": 0.0
         }
       }
     },
@@ -134,22 +134,6 @@
       "otgruzki_expected": 107597082.82,
       "dogovory_expected": 56909863.99,
       "by_dept": {
-        "34497ef7-810f-11e4-80d6-001e67112509": {
-          "dengi": 4991392.0,
-          "otgruzki": 7392879.0,
-          "dogovory": 15283109.0,
-          "dengi_expected": 530762.14,
-          "otgruzki_expected": 7903570.21,
-          "dogovory_expected": 0.0
-        },
-        "49480c10-e401-11e8-8283-ac1f6b05524d": {
-          "dengi": 39178087.0,
-          "otgruzki": 26126672.0,
-          "dogovory": 55400046.0,
-          "dengi_expected": 0.0,
-          "otgruzki_expected": 9858452.0,
-          "dogovory_expected": 7297998.38
-        },
         "bd7b5184-9f9c-11e4-80da-001e67112509": {
           "dengi": 80000000.0,
           "otgruzki": 117230000.0,
@@ -164,6 +148,14 @@
           "dogovory": 13400000.0,
           "dengi_expected": 0.0,
           "otgruzki_expected": 11877447.24,
+          "dogovory_expected": 0.0
+        },
+        "34497ef7-810f-11e4-80d6-001e67112509": {
+          "dengi": 4991392.0,
+          "otgruzki": 7392879.0,
+          "dogovory": 15283109.0,
+          "dengi_expected": 530762.14,
+          "otgruzki_expected": 7903570.21,
           "dogovory_expected": 0.0
         },
         "9edaa7d4-37a5-11ee-93d3-6cb31113810e": {
@@ -181,6 +173,14 @@
           "dengi_expected": 754715.0,
           "otgruzki_expected": 28354083.42,
           "dogovory_expected": 16992819.35
+        },
+        "49480c10-e401-11e8-8283-ac1f6b05524d": {
+          "dengi": 39178087.0,
+          "otgruzki": 26126672.0,
+          "dogovory": 55400046.0,
+          "dengi_expected": 0.0,
+          "otgruzki_expected": 9858452.0,
+          "dogovory_expected": 7297998.38
         }
       }
     },
@@ -190,26 +190,10 @@
       "dengi": 216518334.0,
       "otgruzki": 209456620.0,
       "dogovory": 190973318.0,
-      "dengi_expected": 107435519.37,
+      "dengi_expected": 107294871.03,
       "otgruzki_expected": 161549308.42,
       "dogovory_expected": 80650525.74,
       "by_dept": {
-        "34497ef7-810f-11e4-80d6-001e67112509": {
-          "dengi": 6526959.0,
-          "otgruzki": 9602359.0,
-          "dogovory": 9827719.0,
-          "dengi_expected": 0.1,
-          "otgruzki_expected": 8030718.26,
-          "dogovory_expected": 0.0
-        },
-        "49480c10-e401-11e8-8283-ac1f6b05524d": {
-          "dengi": 9904020.0,
-          "otgruzki": 809950.0,
-          "dogovory": 8743946.0,
-          "dengi_expected": 24050.0,
-          "otgruzki_expected": 0.0,
-          "dogovory_expected": 0.0
-        },
         "bd7b5184-9f9c-11e4-80da-001e67112509": {
           "dengi": 80000000.0,
           "otgruzki": 150000000.0,
@@ -226,6 +210,14 @@
           "otgruzki_expected": 24951219.0,
           "dogovory_expected": 44060689.4
         },
+        "34497ef7-810f-11e4-80d6-001e67112509": {
+          "dengi": 6526959.0,
+          "otgruzki": 9602359.0,
+          "dogovory": 9827719.0,
+          "dengi_expected": 0.1,
+          "otgruzki_expected": 8030718.26,
+          "dogovory_expected": 0.0
+        },
         "9edaa7d4-37a5-11ee-93d3-6cb31113810e": {
           "dengi": 52976360.0,
           "otgruzki": 0.0,
@@ -238,9 +230,17 @@
           "dengi": 32459111.0,
           "otgruzki": 32459111.0,
           "dogovory": 32459111.0,
-          "dengi_expected": 2890267.83,
+          "dengi_expected": 2749619.49,
           "otgruzki_expected": 27425221.72,
           "dogovory_expected": 8565851.15
+        },
+        "49480c10-e401-11e8-8283-ac1f6b05524d": {
+          "dengi": 9904020.0,
+          "otgruzki": 809950.0,
+          "dogovory": 8743946.0,
+          "dengi_expected": 24050.0,
+          "otgruzki_expected": 0.0,
+          "dogovory_expected": 0.0
         }
       }
     }

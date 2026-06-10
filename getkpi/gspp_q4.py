@@ -1,5 +1,5 @@
 """
-ГСП-Q4 — вехи проекта TurboProject «номенклатур*», руководитель из актуальной оргструктуры.
+ГСП-Q4 — вехи проектов TurboProject, где РП совпадает с актуальным «Руководителем отдела» ГСПП.
 
 **Когорта месяца (план):** все «живые» вехи опорного месяца — плановая дата (baseline и др.)
 попадает в месяц **или** дата окончания в графике (``finish_date``) попадает в месяц.
@@ -12,6 +12,7 @@
     завершённая веха не считается отклонившейся, см. ``debug.milestones_without_baseline``).
 
 **Факт:** план минус число отклонившихся (остальные — без отклонения за месяц).
+План/факт по плитке — **сумма по всем** подходящим проектам.
 
 Веха — задача с флагом ``is_milestone`` и нулевой длительностью по **календарным** датам
 (``start_date``/``finish_date`` в т.ч. ``дд.мм.гггг`` из Turbo), плюс обход вложенных
@@ -25,6 +26,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -61,8 +64,20 @@ TARGET_MANAGER_POSITION = "Руководитель отдела"
 PROJECT_NAME_SUBSTR = "номенклатур"
 
 GSPP_Q4_CACHE_PREFIX = "gspp_q4_ytd"
-GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v8"
-GSPP_Q4_DISK_VERSION = 8
+GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v9"
+GSPP_Q4_DISK_VERSION = 9
+
+GSPP_Q4_DEVIATION_CACHE_PREFIX = "gspp_q4_deviation_tables"
+GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v2"
+GSPP_Q4_DEVIATION_DISK_VERSION = 2
+
+_MANAGER_PROJECTS_TTL = 3600
+_manager_projects_cache: tuple[
+    float,
+    list[tuple[dict[str, Any], dict[str, Any]]],
+    str | None,
+] | None = None
+_manager_projects_lock = threading.Lock()
 
 
 def _project_display_name(details: dict[str, Any], summary_item: dict[str, Any]) -> str:
@@ -313,9 +328,14 @@ def _count_zero_duration_milestones(tasks: list[dict[str, Any]]) -> int:
     return n
 
 
-def _find_target_project(session: requests.Session, token: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str | None]:
+def _load_manager_project_pairs(
+    session: requests.Session,
+    token: str,
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[str]]:
+    """Все проекты TurboProject (``has_1c``), где РП совпадает с оргструктурой ГСПП."""
     summary = _api_get(session, "/api/projects/files", token)
     items = summary.get("items") or []
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     errors: list[str] = []
     for item in items:
         if not item.get("has_1c"):
@@ -331,12 +351,77 @@ def _find_target_project(session: requests.Session, token: str) -> tuple[dict[st
         data_1c = details.get("data_1c") or {}
         if not _manager_matches(data_1c):
             continue
+        pairs.append((item, details))
+    return pairs, errors
+
+
+def get_manager_project_pairs() -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None]:
+    """Список проектов TurboProject для Q4/M5/таблицы — один login/API на TTL (см. ``_MANAGER_PROJECTS_TTL``)."""
+    now = time.monotonic()
+    with _manager_projects_lock:
+        entry = _manager_projects_cache
+        if entry is not None and now < entry[0]:
+            return entry[1], entry[2]
+
+    def _fetch() -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None]:
+        global _manager_projects_cache
+        with _manager_projects_lock:
+            entry = _manager_projects_cache
+            if entry is not None and time.monotonic() < entry[0]:
+                return entry[1], entry[2]
+        session = requests.Session()
+        token = _login(session)
+        pairs, err = _find_manager_projects(session, token)
+        with _manager_projects_lock:
+            _manager_projects_cache = (time.monotonic() + _MANAGER_PROJECTS_TTL, pairs, err)
+        return pairs, err
+
+    return locked_call("gspp_turbo_manager_projects", _fetch)
+
+
+def _find_manager_projects(
+    session: requests.Session,
+    token: str,
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None]:
+    pairs, errors = _load_manager_project_pairs(session, token)
+    if pairs:
+        return pairs, None
+    if errors:
+        return [], "; ".join(errors[:3])
+    return [], "нет проектов has_1c с подходящим руководителем"
+
+
+def _find_target_project(
+    session: requests.Session,
+    token: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str | None]:
+    """Первый проект «номенклатур*» с подходящим РП — для ГСП-M5 (логика M5 не менялась)."""
+    pairs, err = _find_manager_projects(session, token)
+    for item, details in pairs:
         pname = _project_display_name(details, item)
-        if not _name_matches_nomenclature(pname):
-            continue
-        return item, details, None
-    hint = "; ".join(errors[:3]) if errors else "нет проектов has_1c с подходящим руководителем и названием"
+        if _name_matches_nomenclature(pname):
+            return item, details, None
+    hint = err or "нет проектов has_1c с подходящим руководителем и названием «номенклатур*»"
     return None, None, hint
+
+
+def _count_milestones_for_projects(
+    project_pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+    ref_y: int,
+    ref_m: int,
+) -> tuple[int, int, int, list[str]]:
+    """Сумма plan/fact/deviated по всем проектам."""
+    without_baseline: list[str] = []
+    plan_n = 0
+    deviated_n = 0
+    for _item, details in project_pairs:
+        tasks = _flatten_tasks_tree(details.get("tasks") or [])
+        pn, _fn, dn, wob_m = _count_milestones_for_month(tasks, ref_y, ref_m)
+        plan_n += pn
+        deviated_n += dn
+        without_baseline.extend(wob_m)
+    fact_n = plan_n - deviated_n
+    return plan_n, fact_n, deviated_n, without_baseline
 
 
 def _count_milestones_for_month(
@@ -386,7 +471,6 @@ def _gspp_q4_stub_monthly_rows(ref_y: int, ref_m: int) -> list[dict[str, Any]]:
 
 def _build_gspp_q4_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
-    session = requests.Session()
     plan_val: float = 0.0
     fact_val: float = 0.0
     monthly_rows: list[dict[str, Any]] = _gspp_q4_stub_monthly_rows(ref_y, ref_m)
@@ -396,22 +480,21 @@ def _build_gspp_q4_payload(year: int | None = None, month: int | None = None) ->
         "target_manager_department": TARGET_MANAGER_DEPARTMENT,
         "target_manager_position": TARGET_MANAGER_POSITION,
         "target_managers": list(_target_manager_names()),
-        "project_name_substr": PROJECT_NAME_SUBSTR,
+        "project_filter": "all has_1c projects where rukovoditel matches org structure",
         "status": "no_project",
     }
     try:
-        token = _login(session)
-        item, details, err = _find_target_project(session, token)
-        if details is None:
+        project_pairs, err = get_manager_project_pairs()
+        if not project_pairs:
             dbg["status"] = "no_project"
             dbg["hint"] = err
         else:
-            tasks = _flatten_tasks_tree(details.get("tasks") or [])
             monthly_rows = []
             plan_n = fact_n = deviated_n = 0
             wob: list[str] = []
+            milestones_total = 0
             for m in range(1, ref_m + 1):
-                pn, fn, dn, wob_m = _count_milestones_for_month(tasks, ref_y, m)
+                pn, fn, dn, wob_m = _count_milestones_for_projects(project_pairs, ref_y, m)
                 if m == ref_m:
                     plan_n, fact_n, deviated_n, wob = pn, fn, dn, wob_m
                 pct_m = round(fn / pn * 100, 1) if pn > 0 else None
@@ -426,12 +509,22 @@ def _build_gspp_q4_payload(year: int | None = None, month: int | None = None) ->
                     "values_unit": "шт.",
                 }
                 monthly_rows.append(row_m)
+            for _item, details in project_pairs:
+                tasks = _flatten_tasks_tree(details.get("tasks") or [])
+                milestones_total += _count_zero_duration_milestones(tasks)
             dbg = {
                 **dbg,
                 "status": "ok",
-                "file_id": item.get("id") if item else None,
-                "project_name": _project_display_name(details, item or {}),
-                "milestones_zero_duration_in_project": _count_zero_duration_milestones(tasks),
+                "projects_count": len(project_pairs),
+                "projects": [
+                    {
+                        "file_id": item.get("id"),
+                        "project_name": _project_display_name(details, item),
+                        "project_code": (details.get("data_1c") or {}).get("nomer_proekta"),
+                    }
+                    for item, details in project_pairs
+                ],
+                "milestones_zero_duration_in_projects": milestones_total,
                 "milestones_in_month_plan": plan_n,
                 "milestones_in_month_deviated": deviated_n,
                 "milestones_in_month_without_deviation": fact_n,
@@ -487,6 +580,11 @@ def _build_gspp_q4_payload(year: int | None = None, month: int | None = None) ->
 def gspp_q4_ytd_cache_path(year: int | None = None, month: int | None = None) -> Path:
     ry, rm = normalize_rd_tile_period(year, month)
     return ytd_json_cache.cache_path(GSPP_Q4_CACHE_PREFIX, ry, rm)
+
+
+def gspp_q4_deviation_tables_cache_path(year: int | None = None, month: int | None = None) -> Path:
+    ry, rm = normalize_rd_tile_period(year, month)
+    return ytd_json_cache.cache_path(GSPP_Q4_DEVIATION_CACHE_PREFIX, ry, rm)
 
 
 def get_gspp_q4_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any] | None:
@@ -550,13 +648,13 @@ def _gspp_project_row_for_deviation(
 
 def _empty_gspp_deviation_table(ref_y: int, ref_m: int, *, hint: str | None = None) -> dict[str, Any]:
     desc = (
-        "Проект TurboProject «номенклатур*», руководитель из оргструктуры ГСПП — вехи с отклонением "
+        "Проекты TurboProject с РП из оргструктуры ГСПП — вехи с отклонением "
         f"за {MONTH_NAMES[ref_m]} {ref_y} (структура как у TD-T-*-DEVIATIONS)."
     )
     if hint:
         desc = f"{desc} {hint}"
     return {
-        "name": "Отклонения по вехам: ГСП-Q4 (номенклатура)",
+        "name": "Отклонения по вехам: ГСП-Q4",
         "periodicity": "ежемесячно",
         "description": desc,
         "period": {
@@ -569,16 +667,18 @@ def _empty_gspp_deviation_table(ref_y: int, ref_m: int, *, hint: str | None = No
     }
 
 
-def _build_gspp_q4_deviation_table_payload(
+def _deviation_row_for_project(
     ref_y: int,
     ref_m: int,
     item: dict[str, Any],
     details: dict[str, Any],
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     tasks_flat = _flatten_tasks_tree(details.get("tasks") or [])
     project_row = _gspp_project_row_for_deviation(item, details, tasks_flat)
     as_of_date = _deviation_as_of_date(ref_y, ref_m)
     deviated_tasks = _collect_gspp_q4_deviated_milestones(tasks_flat, ref_y, ref_m)
+    if not deviated_tasks:
+        return None
     deviated_tasks.sort(
         key=lambda t: (
             -_gspp_delay_days_for_deviated(t, ref_y, ref_m, as_of_date),
@@ -588,30 +688,42 @@ def _build_gspp_q4_deviation_table_payload(
     milestone_details = _gspp_milestone_deviation_details(
         deviated_tasks, ref_y, ref_m, as_of_date,
     )
-    rows: list[dict[str, Any]] = []
-    if milestone_details:
-        max_delay_days = max(
-            (int(m.get("delay_days") or 0) for m in milestone_details),
-            default=0,
-        )
-        rows.append({
-            "number": 1,
-            "project_code": str(project_row.get("project_code") or ""),
-            "project_name": str(project_row.get("project_name") or ""),
-            "project_manager": str(project_row.get("project_manager") or ""),
-            "timeline": _project_timeline_label(project_row),
-            "deviation": f"{len(milestone_details)} вех., {max_delay_days} дн.",
-            "delay_days": max_delay_days,
-            "status": _project_status_label(project_row),
-            "progress_pct": project_row.get("project_progress_pct"),
-            "overdue_milestones_count": len(milestone_details),
-            "milestone_deviations": milestone_details,
-        })
+    max_delay_days = max(
+        (int(m.get("delay_days") or 0) for m in milestone_details),
+        default=0,
+    )
     return {
-        "name": "Отклонения по вехам: ГСП-Q4 (номенклатура)",
+        "project_code": str(project_row.get("project_code") or ""),
+        "project_name": str(project_row.get("project_name") or ""),
+        "project_manager": str(project_row.get("project_manager") or ""),
+        "timeline": _project_timeline_label(project_row),
+        "deviation": f"{len(milestone_details)} вех., {max_delay_days} дн.",
+        "delay_days": max_delay_days,
+        "status": _project_status_label(project_row),
+        "progress_pct": project_row.get("project_progress_pct"),
+        "overdue_milestones_count": len(milestone_details),
+        "milestone_deviations": milestone_details,
+    }
+
+
+def _build_gspp_q4_deviation_table_payload(
+    ref_y: int,
+    ref_m: int,
+    project_pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for item, details in project_pairs:
+        row = _deviation_row_for_project(ref_y, ref_m, item, details)
+        if row is not None:
+            rows.append(row)
+    rows.sort(key=lambda r: (-int(r.get("delay_days") or 0), str(r.get("project_name") or "").lower()))
+    for index, row in enumerate(rows, start=1):
+        row["number"] = index
+    return {
+        "name": "Отклонения по вехам: ГСП-Q4",
         "periodicity": "ежемесячно",
         "description": (
-            "Проект TurboProject «номенклатур*», руководитель из оргструктуры ГСПП — все вехи с отклонением "
+            "Проекты TurboProject с РП из оргструктуры ГСПП — все вехи с отклонением "
             f"за {MONTH_NAMES[ref_m]} {ref_y} (логика как у плитки ГСП-Q4). Структура вложенности вех — как у "
             "технического директора (TD-T-M1-DEVIATIONS / TD-T-Q1-DEVIATIONS)."
         ),
@@ -625,11 +737,34 @@ def _build_gspp_q4_deviation_table_payload(
     }
 
 
+def _compute_gspp_q4_deviation_tables(ref_y: int, ref_m: int) -> dict[str, Any]:
+    fallback = {
+        "GSPP-T-Q4-DEVIATIONS": _empty_gspp_deviation_table(
+            ref_y, ref_m, hint="(внутренняя ошибка расчёта таблицы)",
+        ),
+    }
+    try:
+        project_pairs, err = get_manager_project_pairs()
+        if not project_pairs:
+            return {
+                "GSPP-T-Q4-DEVIATIONS": _empty_gspp_deviation_table(
+                    ref_y, ref_m, hint=f"({err or 'проекты не найдены'})",
+                ),
+            }
+        tbl = _build_gspp_q4_deviation_table_payload(ref_y, ref_m, project_pairs)
+        return {"GSPP-T-Q4-DEVIATIONS": tbl}
+    except Exception:
+        logger.exception("ГСП-Q4: ошибка таблицы отклонений по вехам")
+        return dict(fallback)
+
+
 def get_gspp_q4_deviation_tables(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     """Таблица всех отклонившихся вех для дашборда ГСПП (ключ ``GSPP-T-Q4-DEVIATIONS``).
 
     Всегда возвращает словарь с этим ключом (при ошибке — пустые ``rows`` и пояснение в ``description``),
     чтобы блок попадал в JSON ``Таблицы`` универсального билдера.
+
+    Файловый кэш: ``getkpi/dashboard/gspp_q4_deviation_tables_<год>_<месяц>.json``.
     """
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     fallback = {
@@ -637,23 +772,27 @@ def get_gspp_q4_deviation_tables(year: int | None = None, month: int | None = No
             ref_y, ref_m, hint="(внутренняя ошибка расчёта таблицы)",
         ),
     }
+    cache_path = gspp_q4_deviation_tables_cache_path(ref_y, ref_m)
+    perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
     def _runner() -> dict[str, Any]:
-        try:
-            session = requests.Session()
-            token = _login(session)
-            item, details, err = _find_target_project(session, token)
-            if details is None:
-                return {
-                    "GSPP-T-Q4-DEVIATIONS": _empty_gspp_deviation_table(
-                        ref_y, ref_m, hint=f"({err or 'проект не найден'})",
-                    ),
-                }
-            tbl = _build_gspp_q4_deviation_table_payload(ref_y, ref_m, item, details)
-            return {"GSPP-T-Q4-DEVIATIONS": tbl}
-        except Exception:
-            logger.exception("ГСП-Q4: ошибка таблицы отклонений по вехам")
-            return dict(fallback)
+        cached = ytd_json_cache.load_payload(
+            cache_path,
+            source_tag=GSPP_Q4_DEVIATION_DISK_TAG,
+            version=GSPP_Q4_DEVIATION_DISK_VERSION,
+            perpetual=perpetual,
+        )
+        if cached is not None:
+            return cached
+        result = _compute_gspp_q4_deviation_tables(ref_y, ref_m)
+        if isinstance(result, dict):
+            ytd_json_cache.save_payload(
+                cache_path,
+                result,
+                source_tag=GSPP_Q4_DEVIATION_DISK_TAG,
+                version=GSPP_Q4_DEVIATION_DISK_VERSION,
+            )
+        return result
 
     try:
         out = locked_call(f"gspp_q4_deviation_tables_{ref_y}_{ref_m:02d}", _runner)

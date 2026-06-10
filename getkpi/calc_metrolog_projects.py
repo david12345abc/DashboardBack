@@ -40,14 +40,16 @@ TARGET_OWNER = "Хозуян"
 CERTIFICATION_DEPARTMENT_MARKERS = ("сертификац", "омис")
 
 
-def _load_cache() -> dict | None:
+def _load_cache(allow_stale: bool = False) -> dict | None:
     if not CACHE_PATH.exists():
         return None
     try:
         data = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if data.get("cache_date") == date.today().isoformat() and data.get("cache_version") == CACHE_VERSION:
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
+    if allow_stale or data.get("cache_date") == date.today().isoformat():
         return data
     return None
 
@@ -181,17 +183,35 @@ def _compute_projects_snapshot() -> dict:
         return cached
 
     session = requests.Session()
-    token = _login(session)
-    summary = _api_get(session, "/api/projects/files", token)
+    try:
+        token = _login(session)
+        summary = _api_get(session, "/api/projects/files", token)
+    except requests.RequestException:
+        stale = _load_cache(allow_stale=True)
+        if stale is not None:
+            logger.warning("TurboProject недоступен для проектов метролога, используем устаревший кэш")
+            return stale
+        raise
+
     items = summary.get("items") or []
     projects: list[dict[str, Any]] = []
     certification_projects: list[dict[str, Any]] = []
+    failed_projects: list[Any] = []
 
     for item in items:
         file_id = item.get("id")
         if not file_id:
             continue
-        details = _api_get(session, f"/api/projects/files/{file_id}", token)
+        try:
+            details = _api_get(session, f"/api/projects/files/{file_id}", token)
+        except requests.RequestException as exc:
+            failed_projects.append(file_id)
+            logger.warning(
+                "Пропускаем проект метролога %s: TurboProject не ответил (%s)",
+                file_id,
+                exc,
+            )
+            continue
         data_1c = details.get("data_1c") or {}
         is_owner_project = _is_target_owner_project(data_1c)
         is_certification_project = _is_certification_department_project(data_1c)
@@ -214,10 +234,13 @@ def _compute_projects_snapshot() -> dict:
             "all_projects_count": len(items),
             "target_projects_count": len(projects),
             "certification_projects_count": len(certification_projects),
+            "failed_projects_count": len(failed_projects),
+            "failed_project_ids": failed_projects[:20],
             "timeout": TIMEOUT,
         },
     }
-    _save_cache(payload)
+    if not failed_projects:
+        _save_cache(payload)
     return payload
 
 
