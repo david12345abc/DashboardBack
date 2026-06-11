@@ -60,6 +60,30 @@ def load_payload(
     return None
 
 
+def load_stale_payload(
+    path: Path,
+    *,
+    source_tag: str,
+    version: int,
+) -> dict[str, Any] | None:
+    """Payload из файла без проверки ``cache_date`` — fallback при ошибке OData."""
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if raw.get("cache_source") != source_tag:
+        return None
+    if raw.get("cache_version") != version:
+        return None
+    payload = raw.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    return dict(payload)
+
+
 def save_payload(
     path: Path,
     payload: dict[str, Any],
