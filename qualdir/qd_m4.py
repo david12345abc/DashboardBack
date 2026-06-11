@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
+from devdir import ytd_json_cache
 
 from qualdir.qd_m4_fact import compute_qd_m4_fact_monthly
 

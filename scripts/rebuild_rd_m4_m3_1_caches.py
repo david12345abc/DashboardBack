@@ -13,8 +13,8 @@ import django
 
 django.setup()
 
-from getkpi.devdir import rd_m4_fot
-from getkpi.devdir.turboproject_projects_by_resources import (
+from devdir import rd_m4_fot
+from devdir.turboproject_projects_by_resources import (
     CACHE_PATH as M3_SNAPSHOT_PATH,
     get_projects_deviation_table,
     get_rd_m3_1_ytd,

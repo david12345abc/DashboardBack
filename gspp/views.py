@@ -120,7 +120,7 @@ def merge_kpi_entry_if_applicable(
     if payload is None:
         # Иначе в ``getkpi.views`` сработает синтетика по полю «Ежеквартально» из БД:
         # неверные план/факт и снова «ежеквартально» на плитке.
-        from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+        from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
         ref_y, ref_m = normalize_rd_tile_period(year, month)
         mn = MONTH_NAMES[ref_m]

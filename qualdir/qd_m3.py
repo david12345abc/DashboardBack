@@ -17,7 +17,7 @@ from typing import Any
 import requests
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
+from devdir import ytd_json_cache
 from getkpi.fot_techdir_fact import AUTH
 
 from qualdir.qd_m3_fact import compute_qd_m3_fact_monthly

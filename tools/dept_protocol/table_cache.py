@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 CACHE_SUBDIR = CACHE_DIR / "dept_protocol_overdue"
 SOURCE_TAG = "dept_protocol_overdue_month_v1"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
+LEGACY_CACHE_VERSIONS = frozenset({2, 3})
 
 
 def _digest_for_department(department: str) -> str | None:
@@ -80,7 +81,7 @@ def _read_month_file(path: Path, *, require_today: bool) -> dict[str, Any] | Non
         return None
     if raw.get("cache_source") != SOURCE_TAG:
         return None
-    if raw.get("cache_version") != CACHE_VERSION:
+    if raw.get("cache_version") not in LEGACY_CACHE_VERSIONS:
         return None
     year = raw.get("year")
     month = raw.get("month")
@@ -109,6 +110,10 @@ def load_month_block(
         if block is not None:
             block = dict(block)
             block["cache_stale"] = True
+    if block is not None:
+        from tools.dept_protocol.dashboard_table import sanitize_month_block
+
+        block = sanitize_month_block(block)
     return block
 
 

@@ -1,17 +1,23 @@
-"""KPI RD-M3 (бюджет): план из rd_m3_budget_plan; факт временно синтетический (до подключения БДР / 1С).
+"""KPI RD-M3 (бюджет): план из rd_m3_budget_plan; факт из calc_budj_dev_service_fact.
 
 Кэш: ``getkpi/dashboard/devdir_rd_m3_budget_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from pathlib import Path
 from typing import Any
 
-from ..cache_manager import locked_call
+from getkpi.cache_manager import locked_call
+from qualdir.turnover import _qd_q2_kpi_pct
+
 from . import ytd_json_cache
+from .calc_budj_dev_service_fact import (
+    compute_dev_service_budget_fact_monthly,
+    load_dev_service_department_keys,
+    open_budget_fact_session,
+)
 from .rd_m3_budget_plan import RD_M3_BUDGET_PLAN_BY_MONTH
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
@@ -19,62 +25,77 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "devdir_rd_m3_budget"
 CACHE_SOURCE_TAG = "devdir_rd_m3_budget_ytd"
-CACHE_VERSION = 1
-
-# Доля плана → «факт»: детерминированно от (год, месяц), одинаково на всех воркерах.
-_SYNTH_FACT_RATIO_MIN = 0.88
-_SYNTH_FACT_RATIO_MAX = 1.06
+CACHE_VERSION = 2
 
 
-def _synthetic_budget_fact_rub(plan: float, *, year: int, month: int) -> float:
-    h = hashlib.sha256(f"RD-M3|synth_fact|{year}|{month}|v1".encode()).digest()
-    u = int.from_bytes(h[:8], "big") / (2**64)
-    ratio = _SYNTH_FACT_RATIO_MIN + u * (_SYNTH_FACT_RATIO_MAX - _SYNTH_FACT_RATIO_MIN)
-    return round(float(plan) * ratio, 2)
+def _prior_monthly_rows_from_cache(ref_y: int, ref_m: int) -> list[dict[str, Any]]:
+    if ref_m <= 1:
+        return []
+    prev_path = ytd_json_cache.cache_path(CACHE_FILE_PREFIX, ref_y, ref_m - 1)
+    prev_payload = ytd_json_cache.load_payload(
+        prev_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=True,
+    )
+    if not prev_payload:
+        return []
+    rows = prev_payload.get("monthly_data") or []
+    if not isinstance(rows, list) or len(rows) != ref_m - 1:
+        return []
+    for idx, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            return []
+        if row.get("month") != idx or row.get("year") != ref_y:
+            return []
+    return [dict(row) for row in rows]
 
 
 def _build_rd_m3_budget_monthly_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
-    pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
+    monthly_rows: list[dict[str, Any]] = _prior_monthly_rows_from_cache(ref_y, ref_m)
+    first_month_to_compute = len(monthly_rows) + 1
 
-    monthly_rows: list[dict[str, Any]] = []
     ref_row: dict[str, Any] | None = None
+    ref_fact_debug: dict[str, Any] | None = None
 
-    for y, m in pairs:
+    session = open_budget_fact_session()
+    dept_keys = load_dev_service_department_keys(session)
+
+    for m in range(first_month_to_compute, ref_m + 1):
         plan_value = RD_M3_BUDGET_PLAN_BY_MONTH.get(m)
         plan_float = float(plan_value) if plan_value is not None else None
-        fact_value = (
-            _synthetic_budget_fact_rub(plan_float, year=y, month=m)
-            if plan_float is not None
-            else None
+        fact_payload = compute_dev_service_budget_fact_monthly(
+            ref_y,
+            m,
+            session=session,
+            dept_keys=dept_keys,
         )
-        has_data = plan_value is not None
-        kpi_pct = (
-            round(fact_value / plan_float * 100, 1)
-            if plan_float and plan_float > 0 and fact_value is not None
-            else None
-        )
+        fact_raw = fact_payload.get("total_fact")
+        fact_value = float(fact_raw) if fact_raw is not None else None
+        has_data = plan_float is not None and fact_value is not None
+        kpi_pct = _qd_q2_kpi_pct(plan_float, fact_value) if has_data else None
 
         row = {
             "month": m,
-            "year": y,
+            "year": ref_y,
             "month_name": MONTH_NAMES[m],
             "plan": plan_float,
-            "fact": fact_value,
+            "fact": round(fact_value, 2) if fact_value is not None else None,
             "kpi_pct": kpi_pct,
             "has_data": has_data,
             "values_unit": "руб.",
         }
         monthly_rows.append(row)
-        if (y, m) == (ref_y, ref_m):
+        if m == ref_m:
             ref_row = row
+            ref_fact_debug = fact_payload.get("debug")
+
+    if not ref_row and monthly_rows:
+        ref_row = monthly_rows[-1]
 
     plan_sum = sum(float(r["plan"]) for r in monthly_rows if r.get("plan") is not None)
-    fact_sum = sum(
-        float(r["fact"])
-        for r in monthly_rows
-        if r.get("fact") is not None
-    )
+    fact_sum = sum(float(r["fact"]) for r in monthly_rows if r.get("fact") is not None)
 
     return {
         "data_granularity": "monthly",
@@ -93,6 +114,13 @@ def _build_rd_m3_budget_monthly_payload(year: int | None = None, month: int | No
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
             "values_unit": "руб.",
+        },
+        "debug": {
+            "status": "ok" if ref_row and ref_row.get("has_data") else "partial_or_no_data",
+            "kpi_id": "RD-M3",
+            "plan_source": "devdir/rd_m3_budget_plan.py (БЮДЖЕТ ПЛАН)",
+            "fact_source": "devdir/calc_budj_dev_service_fact.py (заявки, Служба развития + поддерево)",
+            "last_month_fact_debug": ref_fact_debug,
         },
     }
 

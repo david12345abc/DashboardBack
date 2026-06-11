@@ -95,7 +95,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         techdir_m3, techdir_m4, techdir_m5, techdir_projects, techdir_tekuchet,
     )
     from . import gspp_q4
-    from .devdir import (
+    from devdir import (
         rd_m1_zpr,
         rd_m3_budget,
         rd_m4_fot,

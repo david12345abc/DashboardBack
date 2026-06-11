@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ..cache_manager import locked_call
+from getkpi.cache_manager import locked_call
 from . import ytd_json_cache
 from .rd_m4_fot_plan import RD_M4_FOT_PLAN_BY_MONTH
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period

@@ -13,7 +13,7 @@ import django
 
 django.setup()
 
-from getkpi.devdir.turboproject_projects_by_resources import (
+from devdir.turboproject_projects_by_resources import (
     CACHE_DIR,
     CACHE_PATH,
     TABLE_CACHE_PREFIX,

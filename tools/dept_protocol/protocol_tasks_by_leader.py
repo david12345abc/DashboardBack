@@ -48,6 +48,7 @@ log = functools.partial(print, flush=True, file=sys.stderr)
 
 REGISTER_ENTITY = "InformationRegister_ТД_ЗадачиПротоколов"
 EMPTY_DATE = "0001-01-01T00:00:00"
+PROTOCOL_SCOPE_START = date(2026, 1, 1)
 
 COLUMNS = (
     ("Протокол", "Протокол"),
@@ -111,6 +112,83 @@ def parse_as_of(value: str | None) -> date:
 
 def odata_datetime_start(day: date) -> str:
     return f"{day.isoformat()}T00:00:00"
+
+
+def parse_date_value(value: Any) -> date | None:
+    if is_empty_date(value):
+        return None
+    text = str(value)
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def protocol_date_from_raw(row: dict[str, Any]) -> date | None:
+    protocol = row.get("Протокол")
+    if isinstance(protocol, dict):
+        return parse_date_value(protocol.get("Date"))
+    label = fmt_protocol(row)
+    match = re.search(r"от\s+(\d{2}\.\d{2}\.\d{4})", label, flags=re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%d.%m.%Y").date()
+    except ValueError:
+        return None
+
+
+def parse_display_date(value: str) -> date | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%d.%m.%Y").date()
+    except ValueError:
+        return None
+
+
+def raw_task_in_scope(
+    row: dict[str, Any],
+    as_of: date,
+    *,
+    protocol_since: date = PROTOCOL_SCOPE_START,
+) -> bool:
+    """Задача в зоне отчёта: протокол с 2026-01, указан срок, срок < as_of."""
+    deadline = parse_date_value(row.get("СрокИсполнения"))
+    if deadline is None or deadline >= as_of:
+        return False
+    protocol_date = protocol_date_from_raw(row)
+    if protocol_date is None or protocol_date < protocol_since:
+        return False
+    return True
+
+
+def normalized_task_in_scope(
+    row: dict[str, str],
+    as_of: date,
+    *,
+    protocol_since: date = PROTOCOL_SCOPE_START,
+) -> bool:
+    deadline = parse_display_date(row.get("СрокИсполнения", ""))
+    if deadline is None or deadline >= as_of:
+        return False
+    match = re.search(r"от\s+(\d{2}\.\d{2}\.\d{4})", row.get("Протокол", ""), flags=re.IGNORECASE)
+    if not match:
+        return False
+    try:
+        protocol_date = datetime.strptime(match.group(1), "%d.%m.%Y").date()
+    except ValueError:
+        return False
+    return protocol_date >= protocol_since
+
+
+def task_deadline_in_month(row: dict[str, str], year: int, month: int) -> bool:
+    """Срок исполнения попадает в отчётный календарный месяц."""
+    deadline = parse_display_date(row.get("СрокИсполнения", ""))
+    if deadline is None:
+        return False
+    return deadline.year == year and deadline.month == month
 
 
 def is_empty_date(value: Any) -> bool:
@@ -312,6 +390,7 @@ def load_tasks(
         raise RuntimeError(f"{entity}: HTTP {probe.status_code}: {probe.text[:500]}")
 
     rows = _fetch_register_all(session, url, page=500, timeout=read_timeout)
+    rows = [row for row in rows if raw_task_in_scope(row, as_of)]
     return entity, rows
 
 

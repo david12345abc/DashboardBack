@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-from ..fot_techdir_fact import (
+from getkpi.fot_techdir_fact import (
     AUTH,
     FOT_SPEC_ARTICLES,
     MONTH_RU,
@@ -88,7 +88,7 @@ def _compute_service_development_fot_payload(year: int, month: int) -> dict[str,
             "article_totals": dict(article_totals),
             "debug": {
                 "status": "ok",
-                "component": "getkpi.devdir.service_development_fot._compute_service_development_fot_payload",
+                "component": "devdir.service_development_fot._compute_service_development_fot_payload",
                 "register": "AccountingRegister_Хозрасчетный/RecordsWithExtDimensions",
                 "movement": "дебет счёта 26, поле Сумма (сторно инвертируется)",
                 "cost_articles": list(FOT_SPEC_ARTICLES),
@@ -110,7 +110,7 @@ def _compute_service_development_fot_payload(year: int, month: int) -> dict[str,
             "article_totals": {},
             "debug": {
                 "status": "error",
-                "component": "getkpi.devdir.service_development_fot",
+                "component": "devdir.service_development_fot",
                 "error": str(exc),
             },
         }

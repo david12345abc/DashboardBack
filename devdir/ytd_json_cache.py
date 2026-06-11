@@ -15,7 +15,7 @@ from typing import Any
 
 from .rd_monthly_period import normalize_rd_tile_period
 
-CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
+CACHE_DIR = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 
 
 def is_ref_period_fully_past(ref_y: int, ref_m: int) -> bool:

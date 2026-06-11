@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
+from devdir import ytd_json_cache
 
 from .it_m1_sla_data import compute_it_m1_sla_monthly
 from .it_monthly_period import MONTH_NAMES, normalize_it_tile_period

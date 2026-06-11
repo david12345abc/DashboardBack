@@ -15,7 +15,7 @@ from typing import Any
 from getkpi.techdir_tekuchet import TURNOVER_VALUES_UNIT, build_turnover_month_payload
 from getkpi.turnover_hr_scope import TurnoverHrScope
 
-from ..cache_manager import locked_call
+from getkpi.cache_manager import locked_call
 from . import ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from .rd_q2_tekuchest_plan import plan_for_month as rd_q2_plan_for_month

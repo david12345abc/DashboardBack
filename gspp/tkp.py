@@ -30,8 +30,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
-from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from devdir import ytd_json_cache
+from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
 logger = logging.getLogger(__name__)
 

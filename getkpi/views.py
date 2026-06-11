@@ -32,8 +32,8 @@ from . import (
     techdir_projects,
     valovaya_pribyl,
 )
-from getkpi.devdir import turboproject_projects_by_resources as _devdir_turboproject_projects
-from getkpi.devdir import turboproject_ope_projects as _devdir_turboproject_ope
+from devdir import turboproject_projects_by_resources as _devdir_turboproject_projects
+from devdir import turboproject_ope_projects as _devdir_turboproject_ope
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
 from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter, pick_monthly_row_for_period

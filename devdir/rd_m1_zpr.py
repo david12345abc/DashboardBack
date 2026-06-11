@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-from ..cache_manager import locked_call
+from getkpi.cache_manager import locked_call
 from . import calc_zpr_fact, calc_zpr_plan, ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 

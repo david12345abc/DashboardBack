@@ -11,7 +11,7 @@ from typing import Any
 
 from getkpi.cache_manager import locked_call
 from getkpi.autoit.it_monthly_period import MONTH_NAMES, normalize_it_tile_period
-from getkpi.devdir import ytd_json_cache
+from devdir import ytd_json_cache
 from qualdir.turnover import _qd_q2_kpi_pct
 
 from .c1_m3_fact import compute_c1_m3_fact_monthly
