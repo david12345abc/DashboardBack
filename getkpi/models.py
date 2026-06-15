@@ -48,6 +48,7 @@ class KpiDefinition(models.Model):
             'formula': self.formula,
             'unit': self.unit,
             'source': self.source,
+            'description': self.description or '',
             'monthly_target': self.monthly_target,
             'quarterly_target': self.quarterly_target,
             'yearly_target': self.yearly_target,

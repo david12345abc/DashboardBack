@@ -37,7 +37,12 @@ from devdir import turboproject_ope_projects as _devdir_turboproject_ope
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key, is_komdir_child
 from .calc_sudy_by_dept import get_sudy_by_department
 from .kpi_periods import last_full_month, last_full_quarter, pick_monthly_row_for_period
-from .models import KpiDefinition
+from .kpi_definitions_cache import (
+    get_all_department_names,
+    get_department_names,
+    get_kpi_dicts_for_department,
+    lookup_kpi_dicts_for_department,
+)
 import devdir.views as _devdir_kpi_views
 import gspp.views as _gspp_kpi_views
 import qualdir.views as _qualdir_kpi_views
@@ -98,15 +103,12 @@ def get_structure_data() -> dict:
     return _structure_cache
 
 def _get_departments() -> list[str]:
-    return list(
-        KpiDefinition.objects.values_list('department', flat=True)
-        .distinct().order_by('department')
-    )
+    return get_department_names()
 
 
 def _get_kpi_dicts(department: str) -> list[dict]:
-    """Все KPI подразделения из БД в формате dict (как был kpi_data.json)."""
-    rows = [obj.to_dict() for obj in KpiDefinition.objects.filter(department=department)]
+    """Все KPI подразделения в формате dict (как был kpi_data.json)."""
+    rows = get_kpi_dicts_for_department(department)
     if _is_prod_deputy_department(department):
         has_new_pd = any(str(row.get('kpi_id') or '').startswith('PD-') for row in rows)
         if not has_new_pd:
@@ -125,11 +127,9 @@ def _get_kpi_dicts(department: str) -> list[dict]:
 
 
 def _lookup_kpi_data(department: str) -> list[dict] | None:
-    """Case-insensitive lookup в таблице kpi_definition."""
-    qs = KpiDefinition.objects.filter(department=department)
-    if not qs.exists():
-        qs = KpiDefinition.objects.filter(department__iexact=department)
-    if not qs.exists():
+    """Case-insensitive lookup в справочнике kpi_definition."""
+    rows = lookup_kpi_dicts_for_department(department)
+    if rows is None:
         if _is_prod_deputy_department(department):
             try:
                 from .management.commands.import_prod_deputy_kpi import PD_KPI_DEFINITIONS
@@ -137,7 +137,6 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
                 return None
             return [{**dict(item), 'department': department} for item in PD_KPI_DEFINITIONS]
         return None
-    rows = [obj.to_dict() for obj in qs]
     if _is_prod_deputy_department(department):
         has_new_pd = any(str(row.get('kpi_id') or '').startswith('PD-') for row in rows)
         if not has_new_pd:
@@ -150,10 +149,8 @@ def _lookup_kpi_data(department: str) -> list[dict] | None:
 
 
 def _all_department_names() -> set[str]:
-    """Множество всех уникальных department из БД."""
-    return set(
-        KpiDefinition.objects.values_list('department', flat=True).distinct()
-    )
+    """Множество всех уникальных department из справочника KPI."""
+    return get_all_department_names()
 
 
 def _normalize_department_name(value: str | None) -> str:
@@ -872,6 +869,7 @@ def _build_tile_item(
         'formula': kpi.get('formula'),
         'unit': kpi.get('unit'),
         'source': kpi.get('source'),
+        'description': kpi.get('description'),
         'frequency': kpi.get('frequency'),
     }
     tile.update(_extract_tile_plan_fact(entry))
@@ -1924,6 +1922,7 @@ def _build_kpi_entry(
         'formula': kpi['formula'],
         'unit': kpi['unit'],
         'source': kpi['source'],
+        'description': kpi.get('description'),
         'monthly_target': kpi['monthly_target'],
         'quarterly_target': kpi['quarterly_target'],
         'yearly_target': kpi['yearly_target'],
