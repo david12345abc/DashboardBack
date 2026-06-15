@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from ..techdir_projects import _api_get, _login
+from getkpi.techdir_projects import _api_get, _login
 
 logger = logging.getLogger(__name__)
 

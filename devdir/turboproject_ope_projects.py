@@ -14,7 +14,7 @@ from typing import Any
 
 import requests
 
-from ..cache_manager import locked_call
+from getkpi.cache_manager import locked_call
 from . import ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from .turboproject_projects_by_resources import (

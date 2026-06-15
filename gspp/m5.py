@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
-from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from devdir import ytd_json_cache
+from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from getkpi.gspp_q4 import get_manager_project_pairs, _project_display_name
 
 logger = logging.getLogger(__name__)

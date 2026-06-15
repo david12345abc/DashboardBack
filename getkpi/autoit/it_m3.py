@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
+from devdir import ytd_json_cache
 from qualdir.turnover import _qd_q2_kpi_pct
 
 from .it_m3_fact import compute_it_m3_fact_monthly

@@ -39,8 +39,8 @@ if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
-from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from devdir import ytd_json_cache
+from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)

@@ -1,13 +1,13 @@
 """Точки входа дашборда «директор по развитию»: сборка KPI для общего ``getkpi.views``.
 
-Расчёты данных — в пакете ``getkpi.devdir``; здесь только склейка полей записи KPI.
+Расчёты данных — в пакете ``devdir``; здесь только склейка полей записи KPI.
 """
 from __future__ import annotations
 
 from datetime import date
 from typing import Any
 
-from getkpi.devdir import (
+from . import (
     rd_m1_zpr,
     rd_m2_1,
     rd_m3_budget,
@@ -15,7 +15,7 @@ from getkpi.devdir import (
     rd_q2_tekuchest,
     turboproject_projects_by_resources,
 )
-from getkpi.devdir.rd_monthly_period import MONTH_NAMES
+from .rd_monthly_period import MONTH_NAMES
 
 DEVDIR_KPI_IDS: frozenset[str] = frozenset(
     {'RD-M1', 'RD-M2-1', 'RD-M3', 'RD-M3-1', 'RD-M4', 'RD-Q2'},

@@ -34,7 +34,7 @@ from typing import Any, Iterable, Iterator
 import aspose.tasks as tasks
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
+from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
 from qualdir.turnover import _qd_q2_kpi_pct

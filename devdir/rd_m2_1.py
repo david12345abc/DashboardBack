@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from getkpi.devdir.turboproject_ope_projects import (
+from devdir.turboproject_ope_projects import (
     cache_file_path_for_period,
     get_ope_projects_deviation_table,
     get_rd_m2_1_ytd,

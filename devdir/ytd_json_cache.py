@@ -15,7 +15,7 @@ from typing import Any
 
 from .rd_monthly_period import normalize_rd_tile_period
 
-CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
+CACHE_DIR = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 
 
 def is_ref_period_fully_past(ref_y: int, ref_m: int) -> bool:
@@ -58,6 +58,30 @@ def load_payload(
     if raw.get("cache_date") == date.today().isoformat():
         return payload
     return None
+
+
+def load_stale_payload(
+    path: Path,
+    *,
+    source_tag: str,
+    version: int,
+) -> dict[str, Any] | None:
+    """Payload из файла без проверки ``cache_date`` — fallback при ошибке OData."""
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if raw.get("cache_source") != source_tag:
+        return None
+    if raw.get("cache_version") != version:
+        return None
+    payload = raw.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    return dict(payload)
 
 
 def save_payload(

@@ -36,8 +36,8 @@ from typing import Any
 import requests
 
 from .cache_manager import locked_call
-from .devdir import ytd_json_cache
-from .devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from devdir import ytd_json_cache
+from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from .list_enterprise_positions import employees_by_position
 from .techdir_projects import (
     _api_get,

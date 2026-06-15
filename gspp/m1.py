@@ -29,8 +29,8 @@ from getkpi.calc_tkp_sla import (
     _load_paginated,
     _parse_dt,
 )
-from getkpi.devdir import ytd_json_cache
-from getkpi.devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from devdir import ytd_json_cache
+from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
 logger = logging.getLogger(__name__)
 

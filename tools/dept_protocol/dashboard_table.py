@@ -31,6 +31,8 @@ from protocol_tasks_by_department import find_holders_live  # type: ignore[impor
 from protocol_tasks_by_leader import (  # type: ignore[import-untyped]
     load_tasks,
     normalize_row,
+    normalized_task_in_scope,
+    task_deadline_in_month,
 )
 from tools.dept_protocol.table_cache import (
     load_month_block,
@@ -127,6 +129,8 @@ def normalize_ref_period(
     ref_y = int(year) if year is not None else today.year
     ref_m = int(month) if month is not None else today.month
     ref_m = max(1, min(12, ref_m))
+    if (ref_y, ref_m) > (today.year, today.month):
+        ref_y, ref_m = today.year, today.month
     return ref_y, ref_m
 
 
@@ -154,6 +158,30 @@ def month_as_of(year: int, month: int, *, today: date | None = None) -> date | N
     if (year, month) == (today.year, today.month):
         return today
     return date(year, month, monthrange(year, month)[1])
+
+
+def sanitize_month_block(block: dict[str, Any]) -> dict[str, Any]:
+    """Отсечь чужие месяцы, протоколы до 2026 и задачи без срока."""
+    year = block.get("year")
+    month = block.get("month")
+    if not isinstance(year, int) or not isinstance(month, int):
+        return block
+    as_of_date = month_as_of(year, month)
+    if as_of_date is None:
+        return block
+    rows = block.get("rows") or []
+    filtered = [
+        row for row in rows
+        if isinstance(row, dict)
+        and normalized_task_in_scope(row, as_of_date)
+        and task_deadline_in_month(row, year, month)
+    ]
+    if filtered == rows:
+        return block
+    out = dict(block)
+    out["rows"] = filtered
+    out["row_count"] = len(filtered)
+    return out
 
 
 def _resolve_department_entry(department: str) -> dict | None:
@@ -225,6 +253,8 @@ def fetch_overdue_protocol_task_rows(
             _entity, raw_rows = load_tasks(ctx.session, leader_key, as_of_date)
             for raw in raw_rows:
                 row = normalize_row(raw, ctx.users_by_key)
+                if not normalized_task_in_scope(row, as_of_date):
+                    continue
                 dedupe_key = (
                     row.get("Протокол", ""),
                     row.get("НомерПунктаПротокола", ""),
@@ -271,7 +301,7 @@ def build_month_block(
     if rows is None:
         return None
 
-    block = {
+    block = sanitize_month_block({
         "year": year,
         "month": month,
         "month_name": MONTH_NAMES[month],
@@ -280,7 +310,7 @@ def build_month_block(
         "row_count": len(rows),
         "has_data": True,
         "columns": TABLE_COLUMNS,
-    }
+    })
     save_month_block(department, year, month, block)
     return block
 
@@ -309,8 +339,10 @@ def assemble_ytd_table(
         "periodicity": "ежемесячно",
         "data_granularity": "monthly",
         "description": (
-            "Незавершённые задачи протоколов 1С (InformationRegister_ТД_ЗадачиПротоколов) "
-            "на конец каждого месяца (или на сегодня для текущего месяца)."
+            "Незавершённые просроченные задачи протоколов 1С: протокол не ранее "
+            f"{PROTOCOL_START_YEAR}-{PROTOCOL_START_MONTH:02d}, срок исполнения "
+            "внутри отчётного месяца; снимок на конец месяца (или на сегодня "
+            "для текущего месяца)."
         ),
         "monthly_data": monthly_data,
         "period": {
@@ -346,6 +378,11 @@ def build_from_cached_months(
             monthly_data.append(block)
     if not monthly_data:
         return None
+    if not any(
+        block.get("year") == ref_y and block.get("month") == ref_m
+        for block in monthly_data
+    ):
+        return None
     return assemble_ytd_table(entry, department, monthly_data, ref_y, ref_m)
 
 
@@ -368,7 +405,9 @@ def build_protocol_overdue_table(
         return None
 
     if not force:
-        cached_table = build_from_cached_months(department, ref_y, ref_m)
+        cached_table = build_from_cached_months(
+            department, ref_y, ref_m, allow_stale=True,
+        )
         if cached_table is not None and cached_table.get("months_total") == len(pairs):
             return cached_table
 

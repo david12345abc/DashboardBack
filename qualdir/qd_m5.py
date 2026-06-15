@@ -23,7 +23,7 @@ from typing import Any
 import requests
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
+from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
 from qualdir.brak_report import AUTH, INTERNAL_BRAK_ENTITY, compute_internal_brak_month

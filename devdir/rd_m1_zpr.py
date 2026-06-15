@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-from ..cache_manager import locked_call
+from getkpi.cache_manager import locked_call
 from . import calc_zpr_fact, calc_zpr_plan, ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
@@ -74,8 +74,8 @@ def _build_rd_m1_zpr_monthly_payload(year: int | None = None, month: int | None 
             "values_unit": "шт.",
         },
         "debug": {
-            "plan_source": "getkpi/devdir/calc_zpr_plan.py",
-            "fact_source": "getkpi/devdir/calc_zpr_fact.py",
+            "plan_source": "devdir/calc_zpr_plan.py",
+            "fact_source": "devdir/calc_zpr_fact.py",
             "kpi_route": "devdir_rd_m1_zpr",
         },
     }
@@ -101,8 +101,24 @@ def get_rd_m1_zpr_ytd(year: int | None = None, month: int | None = None) -> dict
             return cached
         try:
             payload = _build_rd_m1_zpr_monthly_payload(year=year, month=month)
-        except Exception:
+        except Exception as exc:
             logger.exception("Ошибка при расчёте RD-M1 (ЗПР)")
+            stale = ytd_json_cache.load_stale_payload(
+                c_path,
+                source_tag=CACHE_SOURCE_TAG,
+                version=CACHE_VERSION,
+            )
+            if stale is not None:
+                debug = dict(stale.get("debug") or {})
+                debug.update(
+                    {
+                        "status": "stale_cache",
+                        "odata_error": str(exc)[:500],
+                        "cache_date_fallback": True,
+                    }
+                )
+                stale["debug"] = debug
+                return stale
             return None
         if payload is not None:
             ytd_json_cache.save_payload(

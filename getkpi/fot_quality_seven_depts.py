@@ -6,7 +6,7 @@
 две статьи из ``fot_techdir_fact.FOT_SPEC_ARTICLES``, сумма по семи п/п.
 
 Оболочка плитки — ``qualdir.qd_m4_fact``. Факт RD-M*/devdir по развитию —
-``getkpi.devdir.service_development_fot``.
+``devdir.service_development_fot``.
 """
 
 from __future__ import annotations

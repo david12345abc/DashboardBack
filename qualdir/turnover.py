@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from getkpi.cache_manager import locked_call
-from getkpi.devdir import ytd_json_cache
+from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU, TURNOVER_VALUES_UNIT, build_turnover_month_payload
 from getkpi.turnover_hr_scope import TurnoverHrScope
 
