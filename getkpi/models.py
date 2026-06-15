@@ -7,6 +7,7 @@ class KpiDefinition(models.Model):
     department = models.CharField('Подразделение', max_length=255, db_index=True)
     kpi_id = models.CharField('Код KPI', max_length=50, db_index=True)
     name = models.CharField('Наименование', max_length=500)
+    description = models.TextField('Описание', blank=True, null=True)
     block = models.CharField('Блок дашборда', max_length=50, default='плитка')
     frequency = models.CharField('Периодичность', max_length=100, blank=True, default='')
     perspective = models.CharField('Перспектива', max_length=100, blank=True, default='')
