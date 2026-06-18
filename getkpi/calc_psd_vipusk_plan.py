@@ -26,6 +26,8 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from .odata_http import request_with_retry
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
@@ -54,7 +56,55 @@ PAGE = 5000
 BATCH = 20
 TIMEOUT = 120
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "psd_vipusk_fact_movement_products_v4"
+CACHE_VERSION = 5
+SOURCE_TAG = "psd_vipusk_fact_movement_products_v5"
+
+
+def _period_end(month_arg: str) -> date:
+    y, m = map(int, month_arg.split("-"))
+    return date(y, m, monthrange(y, m)[1])
+
+
+def _cache_date_from_payload(payload: dict | None) -> date | None:
+    if not payload:
+        return None
+    raw = payload.get("cache_date") or payload.get("generated")
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(str(raw)[:10])
+    except ValueError:
+        return None
+
+
+def _snapshot_is_fresh(month_arg: str, snap: dict | None) -> bool:
+    """Снимок месяца валиден, если не собран раньше окончания закрытого месяца."""
+    if not snap or snap.get("source") != SOURCE_TAG:
+        return False
+    if snap.get("cache_version") != CACHE_VERSION:
+        return False
+    cache_day = _cache_date_from_payload(snap)
+    if cache_day is None:
+        return False
+
+    today = date.today()
+    end = _period_end(month_arg)
+    y, m = map(int, month_arg.split("-"))
+
+    if today > end and cache_day < end:
+        return False
+    if today.year == y and today.month == m:
+        return cache_day == today
+    return cache_day >= end
+
+
+def _effective_last_month(year: int, ref_month: int) -> int:
+    today = date.today()
+    if year > today.year:
+        return 0
+    if year < today.year:
+        return ref_month
+    return min(ref_month, today.month)
 
 
 def parse_month_arg(value: str) -> tuple[date, date]:
@@ -87,7 +137,9 @@ def fetch_all_paged(session: requests.Session, base_url: str, page: int = PAGE) 
     sep = "&" if "?" in base_url else "?"
     while True:
         url = f"{base_url}{sep}$top={page}&$skip={skip}"
-        r = session.get(url, timeout=TIMEOUT)
+        r = request_with_retry(session, url, timeout=TIMEOUT, retries=3, label="psd_vipusk")
+        if r is None:
+            raise RuntimeError(f"psd_vipusk: no response for {base_url[:180]}")
         r.raise_for_status()
         chunk = r.json().get("value", [])
         rows.extend(chunk)
@@ -414,6 +466,8 @@ def _calculate_month_result(month_arg: str) -> dict:
         "period_from": m_start.isoformat(),
         "period_to": m_end.isoformat(),
         "generated": datetime.now().isoformat(timespec="seconds"),
+        "cache_date": date.today().isoformat(),
+        "cache_version": CACHE_VERSION,
         "source": SOURCE_TAG,
         "algorithm": (
             "Document_ДвижениеПродукцииИМатериалов: АЛМАЗ qty from Товары; "
@@ -439,10 +493,30 @@ def _calculate_month_result(month_arg: str) -> dict:
     }
 
 
+def _monthly_is_fresh(cached: dict | None, year: int, ref_month: int) -> bool:
+    if not cached or cached.get("source") != SOURCE_TAG:
+        return False
+    if cached.get("cache_version") != CACHE_VERSION:
+        return False
+    last_m = _effective_last_month(year, ref_month)
+    if last_m <= 0:
+        return True
+    cached_months = {int(row.get("month") or 0) for row in cached.get("months", [])}
+    if not set(range(1, last_m + 1)).issubset(cached_months):
+        return False
+    cache_day = _cache_date_from_payload(cached)
+    if cache_day is None:
+        return False
+    today = date.today()
+    if year == today.year and ref_month == today.month:
+        return cache_day == today
+    return True
+
+
 def get_psd_vipusk_plan_snapshot(month_arg: str) -> dict:
     cache_path = _cache_path_snapshot(month_arg)
     cached = _load_json(cache_path)
-    if cached is not None and cached.get("source") == SOURCE_TAG:
+    if _snapshot_is_fresh(month_arg, cached):
         return cached
 
     payload = _calculate_month_result(month_arg)
@@ -453,14 +527,12 @@ def get_psd_vipusk_plan_snapshot(month_arg: str) -> dict:
 def get_psd_vipusk_plan_monthly(year: int, ref_month: int) -> dict:
     cache_path = _cache_path_monthly(year, ref_month)
     cached = _load_json(cache_path)
-    if cached is not None and cached.get("source") == SOURCE_TAG:
+    if _monthly_is_fresh(cached, year, ref_month):
         return cached
 
-    today = date.today()
+    last_m = _effective_last_month(year, ref_month)
     rows_out: list[dict] = []
-    for mm in range(1, ref_month + 1):
-        if year > today.year or (year == today.year and mm > today.month):
-            break
+    for mm in range(1, last_m + 1):
         month_arg = f"{year}-{mm:02d}"
         snap = get_psd_vipusk_plan_snapshot(month_arg)
         rows_out.append({
@@ -478,6 +550,8 @@ def get_psd_vipusk_plan_monthly(year: int, ref_month: int) -> dict:
     payload = {
         "year": year,
         "ref_month": ref_month,
+        "cache_date": date.today().isoformat(),
+        "cache_version": CACHE_VERSION,
         "source": SOURCE_TAG,
         "months": rows_out,
     }

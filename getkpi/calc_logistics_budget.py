@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,9 @@ import requests
 from . import calc_budget_limit
 from .cache_manager import CACHE_DIR
 from .calc_budget_limit import AUTH, EMPTY, period_bounds
+from .odata_http import request_with_retry
+
+logger = logging.getLogger(__name__)
 
 SOURCE_TAG = "logistics_budget_v9_request_month_paid_fact_budget_plan"
 REQUEST_DOC_ENTITY = "Document_ЗаявкаНаРасходованиеДенежныхСредств"
@@ -100,9 +104,22 @@ def _plan_by_month() -> list[int]:
 def _fetch_all(session: requests.Session, url: str, page: int = 5000) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     skip = 0
+    has_top = "$top=" in url.lower()
     while True:
         sep = "&" if "?" in url else "?"
-        response = session.get(f"{url}{sep}$top={page}&$skip={skip}", timeout=120)
+        if has_top:
+            page_url = f"{url}{sep}$skip={skip}" if skip else url
+        else:
+            page_url = f"{url}{sep}$top={page}&$skip={skip}"
+        response = request_with_retry(
+            session,
+            page_url,
+            timeout=120,
+            retries=3,
+            label="logistics_budget",
+        )
+        if response is None:
+            raise RuntimeError(f"logistics_budget: no OData response for {page_url[:200]}")
         response.raise_for_status()
         batch = response.json().get("value", []) or []
         rows.extend(batch)
@@ -195,9 +212,9 @@ def _request_cfo_values(
 def _load_logistics_cfo_context(session: requests.Session) -> tuple[dict[str, dict], set[str]]:
     url = (
         f"{calc_budget_limit.BASE}/{quote('Catalog_ТД_ЦФО')}"
-        "?$format=json&$select=Ref_Key,Description,DeletionMark&$top=1000"
+        "?$format=json&$select=Ref_Key,Description,DeletionMark"
     )
-    rows = _fetch_all(session, url)
+    rows = _fetch_all(session, url, page=1000)
     cfo_by_key = {str(row.get("Ref_Key")): row for row in rows if row.get("Ref_Key")}
     target = _normalize_name(LOGISTICS_CFO_NAME)
     keys = {
@@ -328,6 +345,35 @@ def _month_row(
     }
 
 
+def _plans_only_payload(ref_year: int, ref_month: int) -> dict:
+    """Пустой payload с планами, если OData недоступен и кэша нет."""
+    today = date.today()
+    plans = _plan_by_month()
+    total_plan = sum(plans)
+    months = [
+        _month_row(ref_year, mm, plans[mm - 1], None, None, total_plan)
+        for mm in range(1, 13)
+    ]
+    return {
+        "cache_date": today.isoformat(),
+        "source": SOURCE_TAG,
+        "year": ref_year,
+        "ref_month": ref_month,
+        "months": months,
+        "last_full_month_row": months[ref_month - 1],
+        "ytd": {
+            "total_plan": round(total_plan, 2),
+            "total_fact": None,
+            "kpi_pct": None,
+            "months_with_data": 0,
+            "months_total": 12,
+            "values_unit": "руб.",
+        },
+        "kpi_period": {"type": "year", "year": ref_year},
+        "odata_error": True,
+    }
+
+
 def get_logistics_budget_monthly(year: int | None = None, month: int | None = None) -> dict:
     today = date.today()
     ref_year, ref_month = _normalize_period(year, month)
@@ -340,9 +386,20 @@ def get_logistics_budget_monthly(year: int | None = None, month: int | None = No
     facts_by_month: dict[int, float] = {}
     session = requests.Session()
     session.auth = AUTH
-    cfo_by_key, cfo_keys = _load_logistics_cfo_context(session)
-    for mm in range(1, ref_month + 1):
-        facts_by_month[mm] = _budget_fact_paid_requests(session, ref_year, mm, cfo_by_key, cfo_keys)
+    try:
+        cfo_by_key, cfo_keys = _load_logistics_cfo_context(session)
+        for mm in range(1, ref_month + 1):
+            facts_by_month[mm] = _budget_fact_paid_requests(session, ref_year, mm, cfo_by_key, cfo_keys)
+    except (requests.RequestException, RuntimeError) as exc:
+        logger.warning(
+            "calc_logistics_budget: OData failed for %d-%02d: %s",
+            ref_year,
+            ref_month,
+            exc,
+        )
+        if cached and cached.get("source") == SOURCE_TAG:
+            return cached
+        return _plans_only_payload(ref_year, ref_month)
 
     total_plan = sum(plans)
     running_fact = 0.0

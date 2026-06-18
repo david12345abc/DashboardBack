@@ -2,15 +2,17 @@
   "month": "2026-04",
   "period_from": "2026-04-01",
   "period_to": "2026-04-30",
-  "generated": "2026-05-05T14:49:23",
-  "source": "psd_vipusk_fact_movement_products_v4",
+  "generated": "2026-06-15T16:54:04",
+  "cache_date": "2026-06-15",
+  "cache_version": 5,
+  "source": "psd_vipusk_fact_movement_products_v5",
   "algorithm": "Document_ДвижениеПродукцииИМатериалов: АЛМАЗ qty from Товары; НПО amount via ЭтапПроизводства2_2 -> ЗаказНаПроизводство2_2 -> ЗаказКлиента",
   "organizations": [
     "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
     "Турбулентность-Дон ООО",
     "АЛМАЗ ООО"
   ],
-  "fact_rub_total": 169962882.22,
+  "fact_rub_total": 169962882.21,
   "fact_qty_total": 8447.0,
   "by_org": {
     "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 53.0,
@@ -18,7 +20,7 @@
     "АЛМАЗ ООО": 8394.0
   },
   "by_org_rub": {
-    "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 157609545.62,
+    "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 157609545.61,
     "Турбулентность-Дон ООО": 0.0,
     "АЛМАЗ ООО": 12353336.6
   },
@@ -2829,7 +2831,7 @@
       "doc_date": "2026-04-29T16:22:38",
       "line": "1",
       "qty": 1.0,
-      "amount_rub": 4150000.0,
+      "amount_rub": 4149999.99,
       "org_key": "fbca2148-6cfd-11e7-812d-001e67112509",
       "nomenclature_key": "7a02305c-a81d-11e7-8266-ac1f6b05524d",
       "characteristic_key": "c41ee9d7-c9da-11f0-974a-6cb31113810e",
@@ -2837,7 +2839,7 @@
       "production_order_ref": "cbfb2233-2385-11f1-97ce-6cb3111380be",
       "customer_order_ref": "206b2461-2137-11f1-97c4-6cb31113810e",
       "customer_order_qty": 1.0,
-      "customer_order_amount": 4150000.0
+      "customer_order_amount": 4149999.99
     },
     {
       "mode": "npo_customer_order_amount",

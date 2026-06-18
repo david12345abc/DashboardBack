@@ -2,8 +2,10 @@
   "month": "2026-01",
   "period_from": "2026-01-01",
   "period_to": "2026-01-31",
-  "generated": "2026-05-05T14:48:55",
-  "source": "psd_vipusk_fact_movement_products_v4",
+  "generated": "2026-06-15T16:53:12",
+  "cache_date": "2026-06-15",
+  "cache_version": 5,
+  "source": "psd_vipusk_fact_movement_products_v5",
   "algorithm": "Document_ДвижениеПродукцииИМатериалов: АЛМАЗ qty from Товары; НПО amount via ЭтапПроизводства2_2 -> ЗаказНаПроизводство2_2 -> ЗаказКлиента",
   "organizations": [
     "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",

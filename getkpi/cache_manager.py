@@ -70,6 +70,8 @@ def is_cache_fresh(path: Path | str) -> bool:
                 return False
             if p.name.startswith('rashody_') and data.get('cache_version') != 2:
                 return False
+            if p.name.startswith('psd_vipusk_plan_') and data.get('cache_version') != 5:
+                return False
             cache_date = data.get('cache_date') or data.get('cached_at')
             if cache_date:
                 return str(cache_date)[:10] == date.today().isoformat()
@@ -118,7 +120,8 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_debitorka, calc_dengi_fact, calc_dogovory_fact,
         calc_logistics_price_deviation, calc_logistics_supplier_share, calc_logistics_tmc_on_time,
         calc_dz_limits, calc_fot, calc_komdir_active_dealers, calc_kp_price, calc_ks_razvitie,
-        calc_otgruzki_fact, calc_otif_vypusk_zam_proizvodstva, calc_plan,
+        calc_otgruzki_fact, calc_otif_vypusk_zam_proizvodstva,         calc_plan,
+        calc_psd_vipusk_plan,
         calc_prod_deputy_output, calc_prod_deputy_pc, calc_prod_deputy_projects,
         calc_prod_deputy_turnover, calc_rashody,
         calc_reclamations,
@@ -192,6 +195,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'plans_{y}_{m}',
          cd / f'plans_monthly_{y}_{m:02d}.json',
          lambda: calc_plan.get_plans_monthly(year=y, month=m)),
+
+        (f'psd_vipusk_{y}_{m}',
+         calc_psd_vipusk_plan._cache_path_monthly(y, m),
+         lambda: calc_psd_vipusk_plan.get_psd_vipusk_plan_monthly(year=y, ref_month=m)),
 
         (f'debitorka_{y}_{m}',
          cd / f'debitorka_monthly_{y}_{m:02d}.json',
