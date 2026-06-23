@@ -156,8 +156,12 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         get_it_m1_sla_ytd,
         monthly_cache_path as autoit_it_m1_monthly_cache_path,
     )
-    from getkpi.autoit.it_m3 import cache_file_path_for_period as autoit_it_m3_cache_path
-    from getkpi.autoit.it_m3 import get_it_m3_ytd
+    from getkpi.autoit.it_m3 import (
+        cache_file_path_for_period as autoit_it_m3_cache_path,
+        get_it_m3_fact_monthly,
+        get_it_m3_ytd,
+        monthly_cache_path as autoit_it_m3_monthly_cache_path,
+    )
     from getkpi.autoit.it_m4_fot import cache_file_path_for_period as autoit_it_m4_cache_path
     from getkpi.autoit.it_m4_fot import get_it_m4_fot_ytd
     from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as autoit_it_q2_cache_path
@@ -434,6 +438,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'autoit_it_m1_sla_{y}_{m}',
          autoit_it_m1_cache_path(y, m),
          lambda yy=y, mm=m: get_it_m1_sla_ytd(year=yy, month=mm)),
+
+        (f'autoit_it_m3_fact_monthly_{y}_{m}',
+         autoit_it_m3_monthly_cache_path(y, m),
+         lambda yy=y, mm=m: get_it_m3_fact_monthly(yy, mm)),
 
         (f'autoit_it_m3_{y}_{m}',
          autoit_it_m3_cache_path(y, m),

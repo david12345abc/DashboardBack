@@ -33,9 +33,9 @@ TABLE_ID_INTERNAL = "QD-T-M5"
 TABLE_ID_FORMA0317 = "QD-T-M8"
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-TABLE_MONTH_CACHE_VERSION = 2
-TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v2"
-TABLE_YTD_DISK_VERSION = 2
+TABLE_MONTH_CACHE_VERSION = 3
+TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v3"
+TABLE_YTD_DISK_VERSION = 3
 
 
 def _month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:

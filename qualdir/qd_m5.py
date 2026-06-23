@@ -4,7 +4,7 @@ QD-M5 — внутренний брак (директор по качеству 
 Источник: ``Document_ТД_Форма0318`` через ``qualdir.brak_report``.
 
 За выбранный месяц:
-  1) ``plan`` — всего форм по ``Date``;
+  1) ``plan`` — согласованные формы по ``Date`` (исключены черновики/отказ/отмена);
   2) ``fact`` — значимые (``ФормаЯвляетсяЗначимой = Истина``);
   3) ``departments`` — ОТК-1 / ОТК-2 / прочие.
 
@@ -33,14 +33,12 @@ logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 _MONTH_CACHE_META = frozenset({"source", "cache_version", "cache_date"})
-SOURCE_TAG = "qualdir_internal_brak_month_v4"
-SOURCE_TAG_LEGACY = "qualdir_internal_brak_month_v3"
-CACHE_VERSION = 4
-CACHE_VERSION_LEGACY = 3
+SOURCE_TAG = "qualdir_internal_brak_month_v5"
+CACHE_VERSION = 5
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
-QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v5"
-QD_M5_YTD_DISK_VERSION = 5
+QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v7"
+QD_M5_YTD_DISK_VERSION = 7
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
@@ -178,9 +176,7 @@ def _load_month_cache(year: int, month: int) -> dict[str, Any] | None:
         return None
     source = data.get("source")
     version = data.get("cache_version")
-    if source not in (SOURCE_TAG, SOURCE_TAG_LEGACY):
-        return None
-    if version not in (CACHE_VERSION, CACHE_VERSION_LEGACY):
+    if source != SOURCE_TAG or version != CACHE_VERSION:
         return None
     if not _month_row_cache_is_perpetual(year, month):
         if data.get("cache_date") != date.today().isoformat():
