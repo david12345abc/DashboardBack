@@ -82,13 +82,16 @@ FORM_0317_CONFIG = ReportConfig(
     description="Документы ТД_Форма0317: подразделение поставщика и виды несоответствий.",
 )
 
-# Формы без завершённого согласования или снятые с учёта — не входят в plan/fact.
+# Черновики и отменённые формы — только для опциональной фильтрации (таблицы/CLI).
 EXCLUDED_APPROVAL_STATUSES = frozenset({
     "НеСогласовано",
     "Подготовлен",
     "НаСогласовании",
     "Отменена",
 })
+EXECUTED_APPROVAL_STATUS = "Выполнено"
+# В plan не входят отклонённые, отменённые и ещё не согласованные заявки.
+PLAN_EXCLUDED_APPROVAL_STATUSES = frozenset({"НеСогласовано", "Отменена", "НаСогласовании"})
 
 
 def normalize_text(value: str | None) -> str:
@@ -186,11 +189,24 @@ def build_filter(date_from: date, date_to: date) -> str:
 
 
 def is_countable_brak_document(row: dict) -> bool:
-    """Форма участвует в plan/fact только после согласования (не черновик/отказ/отмена)."""
+    """Форма после согласования (не черновик/отказ/отмена) — для таблиц и CLI."""
     status = (row.get("Статус") or "").strip()
     if not status:
         return False
     return status not in EXCLUDED_APPROVAL_STATUSES
+
+
+def is_plan_brak_document(row: dict) -> bool:
+    """Заявка в plan: документ месяца, кроме ``НеСогласовано``, ``Отменена``, ``НаСогласовании``."""
+    status = (row.get("Статус") or "").strip()
+    if not status:
+        return False
+    return status not in PLAN_EXCLUDED_APPROVAL_STATUSES
+
+
+def is_executed_brak_document(row: dict) -> bool:
+    """Исполненная заявка: ``Статус = Выполнено``."""
+    return (row.get("Статус") or "").strip() == EXECUTED_APPROVAL_STATUS
 
 
 def ref_name(value: Any) -> str:
@@ -208,6 +224,7 @@ def load_documents(
     date_to: date,
     *,
     extra_select_fields: tuple[str, ...] = (),
+    countable_only: bool = False,
 ) -> list[dict]:
     filter_expr = quote(build_filter(date_from, date_to), safe="")
     expand = quote("ПодразделениеПоставщика", safe=",/")
@@ -232,9 +249,14 @@ def load_documents(
     )
     log(f"Загрузка {config.doc_entity} …")
     rows = fetch_all(session, url)
-    accepted = [row for row in rows if is_countable_brak_document(row)]
+    if countable_only:
+        accepted = [row for row in rows if is_countable_brak_document(row)]
+        skipped = len(rows) - len(accepted)
+        log(f"  Документов: {len(accepted)}" + (f" (исключено по Статус: {skipped})" if skipped else ""))
+        return accepted
+    accepted = [row for row in rows if is_plan_brak_document(row)]
     skipped = len(rows) - len(accepted)
-    log(f"  Документов: {len(accepted)}" + (f" (исключено по Статус: {skipped})" if skipped else ""))
+    log(f"  Документов: {len(accepted)}" + (f" (исключено из plan: {skipped})" if skipped else ""))
     return accepted
 
 
@@ -356,6 +378,11 @@ def count_significant_forms(rows: list[dict]) -> int:
     return sum(1 for row in rows if row.get("ФормаЯвляетсяЗначимой") is True)
 
 
+def count_executed_forms(rows: list[dict]) -> int:
+    """Исполненные заявки: ``Статус = Выполнено``."""
+    return sum(1 for row in rows if is_executed_brak_document(row))
+
+
 def count_by_kind(rows: list[dict], kind_names: dict[str, str]) -> dict[str, int]:
     """Считает строки ТЧ ``Несоответствия`` по ``ВидНесоответствия``."""
     counts: dict[str, int] = {}
@@ -466,7 +493,7 @@ def compute_internal_brak_month(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    """QD-M5: форма 0318 — plan (всего), fact (значимые), ОТК-1 / ОТК-2."""
+    """QD-M5: форма 0318 — plan (все заявки), fact (исполненные), ОТК-1 / ОТК-2."""
     date_from, date_to = month_bounds(year, month)
     own_session = session is None
     if session is None:
@@ -492,6 +519,7 @@ def compute_internal_brak_month(
         counts = count_by_direction(docs)
         departments = departments_payload(counts)
         total = len(docs)
+        executed = count_executed_forms(raw_docs)
         significant = count_significant_forms(raw_docs)
         return {
             "year": year,
@@ -499,6 +527,7 @@ def compute_internal_brak_month(
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "total": total,
+            "executed": executed,
             "significant": significant,
             "departments": departments,
             "has_data": True,
@@ -508,6 +537,7 @@ def compute_internal_brak_month(
             "year": year,
             "month": month,
             "total": None,
+            "executed": None,
             "significant": None,
             "departments": [],
             "has_data": False,
@@ -524,7 +554,7 @@ def compute_external_brak_month(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    """QD-M1: форма 0319 — plan (всего), fact (значимые), подразделения поставщика."""
+    """QD-M1: форма 0319 — plan (все заявки), fact (исполненные), подразделения поставщика."""
     date_from, date_to = month_bounds(year, month)
     own_session = session is None
     if session is None:
@@ -549,6 +579,7 @@ def compute_external_brak_month(
         docs = normalize_documents(raw_docs, kind_names)
         departments = departments_payload_by_name(count_by_supplier_dept(docs))
         total = len(docs)
+        executed = count_executed_forms(raw_docs)
         significant = count_significant_forms(raw_docs)
         return {
             "year": year,
@@ -556,6 +587,7 @@ def compute_external_brak_month(
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "total": total,
+            "executed": executed,
             "significant": significant,
             "departments": departments,
             "has_data": True,
@@ -565,6 +597,7 @@ def compute_external_brak_month(
             "year": year,
             "month": month,
             "total": None,
+            "executed": None,
             "significant": None,
             "departments": [],
             "has_data": False,
@@ -581,7 +614,7 @@ def compute_forma0317_month(
     *,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    """QD-M8: документы 0317 — plan (всего), fact (значимые), поставщик, виды несоответствий."""
+    """QD-M8: документы 0317 — plan (все заявки), fact (исполненные), поставщик, виды несоответствий."""
     date_from, date_to = month_bounds(year, month)
     own_session = session is None
     if session is None:
@@ -607,6 +640,7 @@ def compute_forma0317_month(
         departments = departments_payload_by_name(count_by_supplier_dept(docs))
         kinds = kinds_payload(count_by_kind(raw_docs, kind_names))
         total = len(docs)
+        executed = count_executed_forms(raw_docs)
         significant = count_significant_forms(raw_docs)
         return {
             "year": year,
@@ -614,6 +648,7 @@ def compute_forma0317_month(
             "date_from": date_from.isoformat(),
             "date_to": date_to.isoformat(),
             "total": total,
+            "executed": executed,
             "significant": significant,
             "departments": departments,
             "kinds": kinds,
@@ -624,6 +659,7 @@ def compute_forma0317_month(
             "year": year,
             "month": month,
             "total": None,
+            "executed": None,
             "significant": None,
             "departments": [],
             "kinds": [],
@@ -643,6 +679,7 @@ BRAK_TABLE_COLUMNS = [
     "Объект несоответствия",
     "Вид несоответствия",
     "Подразделение",
+    "Статус",
     "Значимая форма",
 ]
 
@@ -662,6 +699,7 @@ def document_table_row(doc: dict[str, Any]) -> dict[str, str]:
         "Объект несоответствия": str(doc.get("product") or "—"),
         "Вид несоответствия": "; ".join(kinds) if kinds else "—",
         "Подразделение": str(doc.get("supplier_dept") or "—"),
+        "Статус": str(doc.get("status") or "—"),
         "Значимая форма": fmt_significant_flag(doc.get("is_significant")),
     }
 
