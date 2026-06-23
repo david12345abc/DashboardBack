@@ -1,395 +1,6 @@
 {
   "projects": [
     {
-      "file_id": 150,
-      "project_name": "Формирование постоянно действующей Группы экспертов по работе с ИИ для внедрения системы управления по целям (ССП/KPI)",
-      "resources": [
-        "Арсуноев Михаил Магомедович",
-        "Бутова Татьяна",
-        "Ворончихина Елена Николаевна",
-        "Гапонова Ксения Святославовна",
-        "Гончаров Сергей Дмитриевич",
-        "Горбатенко Сергей Александрович",
-        "Гриппа Георгий Александрович",
-        "Грунтовский Дмитрий Дмитриевич",
-        "Давлетов Руслан Игоревич",
-        "Ермаков Илья Николаевич",
-        "Зайцев Гордей Николаевич",
-        "Коваленко Артемий Олегович",
-        "Комарькова Анастасия Эдуардовна",
-        "Кургин Федор Владимирович",
-        "Мангасарян Давид Каренович",
-        "Мегрелишвили Михаил Эмзарович",
-        "Мещерюк Вадим Владимирович",
-        "Орлов Александр Николаевич",
-        "Павлова Лариса",
-        "Пелих Даниил Юрьевич",
-        "Раскатов Леонид Владимирович",
-        "Ростовцева Анастасия Вадимовна",
-        "Свистун Сергей Николаевич",
-        "Сефиханов Ризван Исамудинович",
-        "Соломичева Светлана Викторовна",
-        "Тен Людмила Лаврентьевна",
-        "Тищенко  Марина Николаевна",
-        "Ткаченко Людмила Викторовна",
-        "Улановский Константин Владимирович",
-        "Чернов Александр",
-        "Щербина Владимир Ильич",
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "matched_resources": [
-        "Давлетов Руслан Игоревич",
-        "Комарькова Анастасия Эдуардовна",
-        "Мангасарян Давид Каренович",
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "project_manager": "Соломичева Светлана Викторовна",
-      "kurator": "Донцова Анна Егоровна",
-      "project_code": "НПО/СР/2026/60",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Служба развития",
-      "status_proekta": "Завершен",
-      "start_date": "2026-01-16T08:00:00",
-      "finish_date": "2026-05-29T16:00:00",
-      "baseline_start": "2026-01-16T08:00:00",
-      "baseline_finish": "2026-06-01T16:00:00",
-      "data_nachala": "2026-01-21",
-      "planovaya_data_nachala": "2026-01-21",
-      "planovaya_data_okonchaniya": "2026-03-31",
-      "data_okonchaniya": "2026-05-29",
-      "overdue_milestones_count": 0,
-      "max_delay_workdays": 0,
-      "is_fact": true,
-      "project_progress_pct": 100.0,
-      "milestone_deviations": []
-    },
-    {
-      "file_id": 167,
-      "project_name": "Стандарт по работе ИИ",
-      "resources": [
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "matched_resources": [
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "project_manager": "Ясыров Богдан Джумазаевич",
-      "kurator": "Соломичева Светлана Викторовна",
-      "project_code": "НПО/СР/2026/48",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Служба развития",
-      "status_proekta": "Завершен",
-      "start_date": "2026-01-16T08:00:00",
-      "finish_date": "2026-05-22T14:00:00",
-      "baseline_start": "2026-01-16T08:00:00",
-      "baseline_finish": "2026-05-22T14:00:00",
-      "data_nachala": "2026-01-16",
-      "planovaya_data_nachala": "2026-01-16",
-      "planovaya_data_okonchaniya": "2026-05-22",
-      "data_okonchaniya": "2026-05-22",
-      "overdue_milestones_count": 0,
-      "max_delay_workdays": 0,
-      "is_fact": true,
-      "project_progress_pct": 99.0,
-      "milestone_deviations": []
-    },
-    {
-      "file_id": 170,
-      "project_name": "Снижение текучести",
-      "resources": [
-        "Азриян Артур Ашотович",
-        "Бухгалтер",
-        "Ворончихина Елена Николаевна",
-        "Ворошина Елена Владимировна",
-        "Жалыбин Максим Дмитриевич",
-        "Житкова Ева Владимировна",
-        "Камышанова Мария Витальевна",
-        "Карпушкина Анна Павловна",
-        "Лаврикова Лариса Александровна",
-        "Романова Мария Константиновна",
-        "Руководитель проекта",
-        "Санкина Юлия Владимировна",
-        "Уставицкий Андрей Алексеевич",
-        "Экономист"
-      ],
-      "matched_resources": [
-        "Жалыбин Максим Дмитриевич",
-        "Уставицкий Андрей Алексеевич"
-      ],
-      "project_manager": "Ворончихина Елена Николаевна",
-      "kurator": "Донцова Анна Егоровна",
-      "project_code": "НПО/СУП/2026/37",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Служба управления персоналом",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-01-20T08:00:00",
-      "finish_date": "2026-11-30T17:00:00",
-      "baseline_start": "2026-01-20T08:00:00",
-      "baseline_finish": "2026-11-25T08:22:30",
-      "data_nachala": "2026-03-01",
-      "planovaya_data_nachala": "2026-03-01",
-      "planovaya_data_okonchaniya": "2026-11-30",
-      "data_okonchaniya": "2026-11-30",
-      "overdue_milestones_count": 1,
-      "max_delay_workdays": 2,
-      "is_fact": false,
-      "project_progress_pct": 51.0,
-      "milestone_deviations": [
-        {
-          "name": "Этап окончен совет по качеству",
-          "start_date": "2026-06-18T08:00:00",
-          "finish_date": "2026-06-18T08:00:00",
-          "month": 6,
-          "month_name": "июнь",
-          "percent_complete": 0.0,
-          "delay_workdays": 2
-        }
-      ]
-    },
-    {
-      "file_id": 188,
-      "project_name": "Система оценки удовлетворенности заказчиков",
-      "resources": [
-        "Гайфулин Денис Александрович",
-        "Мануков Роман Григорьевич",
-        "Орлов Александр Николаевич",
-        "Ростовцева Анастасия Вадимовна",
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "matched_resources": [
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "project_manager": "Гайфулин Денис Александрович",
-      "kurator": "Донцова Анна Егоровна",
-      "project_code": "НПО/СС/2026/43",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Сервисная служба",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-01-23T09:00:00",
-      "finish_date": "2026-07-31T09:30:00",
-      "baseline_start": "2026-01-23T09:00:00",
-      "baseline_finish": "2026-07-31T09:30:00",
-      "data_nachala": "2026-01-23",
-      "planovaya_data_nachala": "2026-01-23",
-      "planovaya_data_okonchaniya": "2026-05-29",
-      "data_okonchaniya": "2026-07-31",
-      "overdue_milestones_count": 0,
-      "max_delay_workdays": 0,
-      "is_fact": true,
-      "project_progress_pct": 70.0,
-      "milestone_deviations": []
-    },
-    {
-      "file_id": 363,
-      "project_name": "Разработка ИИ-агентов (первая очередь)",
-      "resources": [
-        "Арсуноев",
-        "Давлетов Руслан Игоревич",
-        "Жалыбин Максим Дмитриевич",
-        "Комарькова Анастасия Эдуардовна",
-        "Мангасарян Давид Каренович",
-        "Ростовцева Анастасия Вадимовна",
-        "Соломичева Светлана Викторовна",
-        "Тищенко Марина Николаевна",
-        "Уставицкий Андрей Алексеевич"
-      ],
-      "matched_resources": [
-        "Давлетов Руслан Игоревич",
-        "Жалыбин Максим Дмитриевич",
-        "Комарькова Анастасия Эдуардовна",
-        "Мангасарян Давид Каренович",
-        "Уставицкий Андрей Алексеевич"
-      ],
-      "project_manager": "Соломичева Светлана Викторовна",
-      "kurator": "Мегрелишвили Михаил Эмзарович",
-      "project_code": "НП/ДР/2026/110",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Служба развития",
-      "status_proekta": "Планирование",
-      "start_date": "2026-06-01T08:00:00",
-      "finish_date": "2026-08-10T18:00:00",
-      "baseline_start": "2026-06-01T08:00:00",
-      "baseline_finish": "2026-08-10T18:00:00",
-      "data_nachala": null,
-      "planovaya_data_nachala": "2026-06-10",
-      "planovaya_data_okonchaniya": "2026-08-10",
-      "data_okonchaniya": "2026-08-10",
-      "overdue_milestones_count": 2,
-      "max_delay_workdays": 1,
-      "is_fact": false,
-      "project_progress_pct": 35.0,
-      "milestone_deviations": [
-        {
-          "name": "4.1.8. Совет по качеству",
-          "start_date": "2026-06-19T18:00:00",
-          "finish_date": "2026-06-19T18:00:00",
-          "month": 6,
-          "month_name": "июнь",
-          "percent_complete": 0.0,
-          "delay_workdays": 1
-        },
-        {
-          "name": "4.1.9. Этап \"Составление и согласование ТЗ\" завершен",
-          "start_date": "2026-06-19T18:00:00",
-          "finish_date": "2026-06-19T18:00:00",
-          "month": 6,
-          "month_name": "июнь",
-          "percent_complete": 0.0,
-          "delay_workdays": 1
-        }
-      ]
-    },
-    {
-      "file_id": 135,
-      "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
-      "resources": [
-        "Арсуноев Михаил Магомедович",
-        "Грунтовский Дмитрий Дмитриевич",
-        "Ищенко Алексей Анатольевич",
-        "Ростовцева Анастасия Вадимовна",
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "matched_resources": [
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "project_manager": "Арсуноев Михаил Магомедович",
-      "kurator": "Донцова Анна Егоровна",
-      "project_code": "НПО/СК/2026/35",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-02-02T08:00:00",
-      "finish_date": "2026-10-14T12:00:00",
-      "baseline_start": "2026-02-02T08:00:00",
-      "baseline_finish": "2026-10-27T17:00:00",
-      "data_nachala": "2026-02-18",
-      "planovaya_data_nachala": "2026-02-18",
-      "planovaya_data_okonchaniya": "2026-10-30",
-      "data_okonchaniya": "2026-10-30",
-      "overdue_milestones_count": 0,
-      "max_delay_workdays": 0,
-      "is_fact": true,
-      "project_progress_pct": 46.0,
-      "milestone_deviations": []
-    },
-    {
-      "file_id": 366,
-      "project_name": "ОПЭ дашбордов",
-      "resources": [
-        "Ворончихина Елена Николаевна",
-        "Гончаров Сергей Дмитриевич",
-        "Донцова Анна Егоровна",
-        "Ермаков Илья Николаевич",
-        "Коваленко Артемий Олегович",
-        "Комарькова Анастасия Эдуардовна",
-        "Кондратюк Михаела Борисовна",
-        "Мангасарян Давид Каренович",
-        "Ростовцева Анастасия Вадимовна",
-        "Соломичева Светлана Викторовна",
-        "Улановский Константин Владимирович",
-        "Хозуян Иван Владимирович",
-        "Шамрай Дарья Николаевна"
-      ],
-      "matched_resources": [
-        "Комарькова Анастасия Эдуардовна",
-        "Мангасарян Давид Каренович"
-      ],
-      "project_manager": "Соломичева Светлана Викторовна",
-      "kurator": "Мегрелишвили Михаил Эмзарович",
-      "project_code": "НП/ДР/2026/110",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Служба развития",
-      "status_proekta": "Планирование",
-      "start_date": "2026-06-01T08:00:00",
-      "finish_date": "2026-07-10T17:00:00",
-      "baseline_start": "2026-06-01T08:00:00",
-      "baseline_finish": "2026-07-10T17:00:00",
-      "data_nachala": null,
-      "planovaya_data_nachala": "2026-06-10",
-      "planovaya_data_okonchaniya": "2026-07-10",
-      "data_okonchaniya": null,
-      "overdue_milestones_count": 0,
-      "max_delay_workdays": 0,
-      "is_fact": true,
-      "project_progress_pct": 40.0,
-      "milestone_deviations": []
-    },
-    {
-      "file_id": 139,
-      "project_name": "Календарь с сотрудницами на 2027 год",
-      "resources": [
-        "Акинина Татьяна Владимировна",
-        "Ануфриева Оксана Николаевна",
-        "Беккер Алексей Владимирович",
-        "Давиденко Ольга Борисовна",
-        "Модель",
-        "Соловьева Екатерина Николаевна",
-        "Сысоева Ирина Леонидовна",
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "matched_resources": [
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "project_manager": "Беккер Алексей Владимирович",
-      "kurator": "Донцова Анна Егоровна",
-      "project_code": "НПО/Реклама и PR/2026/70",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "ПродвижениеИРеклама",
-      "podrazdelenie": "Cектор рекламы и PR",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-02-16T09:00:00",
-      "finish_date": "2026-10-29T18:00:00",
-      "baseline_start": "2026-02-16T09:00:00",
-      "baseline_finish": "2026-10-29T18:00:00",
-      "data_nachala": "2026-03-02",
-      "planovaya_data_nachala": "2026-03-02",
-      "planovaya_data_okonchaniya": "2026-10-30",
-      "data_okonchaniya": "2026-10-30",
-      "overdue_milestones_count": 0,
-      "max_delay_workdays": 0,
-      "is_fact": true,
-      "project_progress_pct": 53.0,
-      "milestone_deviations": []
-    },
-    {
-      "file_id": 159,
-      "project_name": "Доработка программы мастер-подбор",
-      "resources": [
-        "Уставицкий Андрей Алексеевич",
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "matched_resources": [
-        "Уставицкий Андрей Алексеевич",
-        "Ясыров Богдан Джумазаевич"
-      ],
-      "project_manager": "Уставицкий Андрей Алексеевич",
-      "kurator": "Соломичева Светлана Викторовна",
-      "project_code": "НПО/СР/2026/80",
-      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-      "tip_proekta": "РазвитияИУлучшений",
-      "podrazdelenie": "Служба развития",
-      "status_proekta": "ВРаботе",
-      "start_date": "2026-01-23T08:00:00",
-      "finish_date": "2026-06-16T17:00:00",
-      "baseline_start": "2026-01-23T08:00:00",
-      "baseline_finish": "2026-06-16T17:00:00",
-      "data_nachala": "2026-01-23",
-      "planovaya_data_nachala": "2026-01-23",
-      "planovaya_data_okonchaniya": "2026-02-13",
-      "data_okonchaniya": "2026-05-29",
-      "overdue_milestones_count": 0,
-      "max_delay_workdays": 0,
-      "is_fact": true,
-      "project_progress_pct": 100.0,
-      "milestone_deviations": []
-    },
-    {
       "file_id": 126,
       "project_name": "Внедрение системы контроля качества разработки",
       "resources": [
@@ -453,7 +64,7 @@
       "planovaya_data_okonchaniya": "2026-03-20",
       "data_okonchaniya": null,
       "overdue_milestones_count": 5,
-      "max_delay_workdays": 140,
+      "max_delay_workdays": 141,
       "is_fact": false,
       "project_progress_pct": 61.0,
       "milestone_deviations": [
@@ -464,7 +75,7 @@
           "month": 12,
           "month_name": "декабрь",
           "percent_complete": 0.0,
-          "delay_workdays": 140
+          "delay_workdays": 141
         },
         {
           "name": "Утверждение бюджета и приказа по проекту",
@@ -473,7 +84,7 @@
           "month": 12,
           "month_name": "декабрь",
           "percent_complete": 0.0,
-          "delay_workdays": 126
+          "delay_workdays": 127
         },
         {
           "name": "Адаптированное ТЗ под прибор UFG-Z готово",
@@ -482,7 +93,7 @@
           "month": 3,
           "month_name": "март",
           "percent_complete": 0.0,
-          "delay_workdays": 66
+          "delay_workdays": 67
         },
         {
           "name": "Сотрудники КБ обучены",
@@ -491,7 +102,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 44
+          "delay_workdays": 45
         },
         {
           "name": "Проект завершен",
@@ -500,7 +111,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 43
+          "delay_workdays": 44
         }
       ]
     },
@@ -542,7 +153,7 @@
       "planovaya_data_okonchaniya": "2026-04-22",
       "data_okonchaniya": "2026-06-04",
       "overdue_milestones_count": 12,
-      "max_delay_workdays": 65,
+      "max_delay_workdays": 66,
       "is_fact": false,
       "project_progress_pct": 58.0,
       "milestone_deviations": [
@@ -553,7 +164,7 @@
           "month": 3,
           "month_name": "март",
           "percent_complete": 0.0,
-          "delay_workdays": 65
+          "delay_workdays": 66
         },
         {
           "name": "Этап 2: Разработка блока 1С:ERP (Цель 1) выполнено",
@@ -562,7 +173,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 48
+          "delay_workdays": 49
         },
         {
           "name": " План-факт БДДС в Turbo Project создан",
@@ -571,7 +182,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 46
+          "delay_workdays": 47
         },
         {
           "name": "Цель 1.1: Шаблоны документов в 1С:ERP  работы приняты",
@@ -580,7 +191,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 45
+          "delay_workdays": 46
         },
         {
           "name": "Блок ИИ Turbo Project внедрен",
@@ -589,7 +200,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 9
+          "delay_workdays": 10
         },
         {
           "name": "Отчет к ДПИ с нарастающим итогом создан",
@@ -598,7 +209,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 9
+          "delay_workdays": 10
         },
         {
           "name": "дополнительные работы выполнены",
@@ -607,7 +218,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 9
+          "delay_workdays": 10
         },
         {
           "name": "автоматический контроль план-факта по лимитам БДДС в 1С ERP создан",
@@ -616,7 +227,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 8
+          "delay_workdays": 9
         },
         {
           "name": "Система ЭДО в 1С ERP по проектам доработана",
@@ -625,7 +236,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 5
+          "delay_workdays": 6
         },
         {
           "name": "Цель 1.1: Шаблоны документов в 1С:ERP  доработаны",
@@ -634,7 +245,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 4
+          "delay_workdays": 5
         },
         {
           "name": "Блок 1С ERP внедрен",
@@ -643,7 +254,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 2
+          "delay_workdays": 3
         },
         {
           "name": "Цель 1.2: Единый реестр проектов в 1С:ERP доработан",
@@ -652,7 +263,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 2
+          "delay_workdays": 3
         }
       ]
     },
@@ -696,6 +307,7 @@
       "resources": [
         "Азриян Артур Ашотович",
         "Асланян Артур Карапетович",
+        "Бабалыхян А.А.",
         "Бараковский Константин Сергеевич",
         "Близнюкова Светлана Сергеевна",
         "Буркин Руслан Евгеньевич",
@@ -764,7 +376,7 @@
       "planovaya_data_okonchaniya": "2024-04-19",
       "data_okonchaniya": "2026-08-05",
       "overdue_milestones_count": 3,
-      "max_delay_workdays": 615,
+      "max_delay_workdays": 616,
       "is_fact": false,
       "project_progress_pct": 95.0,
       "milestone_deviations": [
@@ -775,7 +387,7 @@
           "month": 2,
           "month_name": "февраль",
           "percent_complete": 0.0,
-          "delay_workdays": 615
+          "delay_workdays": 616
         },
         {
           "name": "Испытания UFG ч 1 выполнены ",
@@ -784,7 +396,7 @@
           "month": 5,
           "month_name": "май",
           "percent_complete": 0.0,
-          "delay_workdays": 16
+          "delay_workdays": 17
         },
         {
           "name": "Совет по качеству ",
@@ -793,7 +405,7 @@
           "month": 5,
           "month_name": "май",
           "percent_complete": 0.0,
-          "delay_workdays": 16
+          "delay_workdays": 17
         }
       ]
     },
@@ -1036,12 +648,447 @@
       "is_fact": true,
       "project_progress_pct": 100.0,
       "milestone_deviations": []
+    },
+    {
+      "file_id": 150,
+      "project_name": "Формирование постоянно действующей Группы экспертов по работе с ИИ для внедрения системы управления по целям (ССП/KPI)",
+      "resources": [
+        "Арсуноев Михаил Магомедович",
+        "Бутова Татьяна",
+        "Ворончихина Елена Николаевна",
+        "Гапонова Ксения Святославовна",
+        "Гончаров Сергей Дмитриевич",
+        "Горбатенко Сергей Александрович",
+        "Гриппа Георгий Александрович",
+        "Грунтовский Дмитрий Дмитриевич",
+        "Давлетов Руслан Игоревич",
+        "Ермаков Илья Николаевич",
+        "Зайцев Гордей Николаевич",
+        "Коваленко Артемий Олегович",
+        "Комарькова Анастасия Эдуардовна",
+        "Кургин Федор Владимирович",
+        "Мангасарян Давид Каренович",
+        "Мегрелишвили Михаил Эмзарович",
+        "Мещерюк Вадим Владимирович",
+        "Орлов Александр Николаевич",
+        "Павлова Лариса",
+        "Пелих Даниил Юрьевич",
+        "Раскатов Леонид Владимирович",
+        "Ростовцева Анастасия Вадимовна",
+        "Свистун Сергей Николаевич",
+        "Сефиханов Ризван Исамудинович",
+        "Соломичева Светлана Викторовна",
+        "Тен Людмила Лаврентьевна",
+        "Тищенко  Марина Николаевна",
+        "Ткаченко Людмила Викторовна",
+        "Улановский Константин Владимирович",
+        "Чернов Александр",
+        "Щербина Владимир Ильич",
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "matched_resources": [
+        "Давлетов Руслан Игоревич",
+        "Комарькова Анастасия Эдуардовна",
+        "Мангасарян Давид Каренович",
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "project_manager": "Соломичева Светлана Викторовна",
+      "kurator": "Донцова Анна Егоровна",
+      "project_code": "НПО/СР/2026/60",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Служба развития",
+      "status_proekta": "Завершен",
+      "start_date": "2026-01-16T08:00:00",
+      "finish_date": "2026-05-29T16:00:00",
+      "baseline_start": "2026-01-16T08:00:00",
+      "baseline_finish": "2026-06-01T16:00:00",
+      "data_nachala": "2026-01-21",
+      "planovaya_data_nachala": "2026-01-21",
+      "planovaya_data_okonchaniya": "2026-03-31",
+      "data_okonchaniya": "2026-05-29",
+      "overdue_milestones_count": 0,
+      "max_delay_workdays": 0,
+      "is_fact": true,
+      "project_progress_pct": 100.0,
+      "milestone_deviations": []
+    },
+    {
+      "file_id": 167,
+      "project_name": "Стандарт по работе ИИ",
+      "resources": [
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "matched_resources": [
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "project_manager": "Ясыров Богдан Джумазаевич",
+      "kurator": "Соломичева Светлана Викторовна",
+      "project_code": "НПО/СР/2026/48",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Служба развития",
+      "status_proekta": "Завершен",
+      "start_date": "2026-01-16T08:00:00",
+      "finish_date": "2026-05-22T14:00:00",
+      "baseline_start": "2026-01-16T08:00:00",
+      "baseline_finish": "2026-05-22T14:00:00",
+      "data_nachala": "2026-01-16",
+      "planovaya_data_nachala": "2026-01-16",
+      "planovaya_data_okonchaniya": "2026-05-22",
+      "data_okonchaniya": "2026-05-22",
+      "overdue_milestones_count": 0,
+      "max_delay_workdays": 0,
+      "is_fact": true,
+      "project_progress_pct": 99.0,
+      "milestone_deviations": []
+    },
+    {
+      "file_id": 170,
+      "project_name": "Снижение текучести",
+      "resources": [
+        "Азриян Артур Ашотович",
+        "Бухгалтер",
+        "Ворончихина Елена Николаевна",
+        "Ворошина Елена Владимировна",
+        "Жалыбин Максим Дмитриевич",
+        "Житкова Ева Владимировна",
+        "Камышанова Мария Витальевна",
+        "Карпушкина Анна Павловна",
+        "Лаврикова Лариса Александровна",
+        "Романова Мария Константиновна",
+        "Руководитель проекта",
+        "Санкина Юлия Владимировна",
+        "Уставицкий Андрей Алексеевич",
+        "Экономист"
+      ],
+      "matched_resources": [
+        "Жалыбин Максим Дмитриевич",
+        "Уставицкий Андрей Алексеевич"
+      ],
+      "project_manager": "Ворончихина Елена Николаевна",
+      "kurator": "Донцова Анна Егоровна",
+      "project_code": "НПО/СУП/2026/37",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Служба управления персоналом",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-01-20T08:00:00",
+      "finish_date": "2026-11-30T17:00:00",
+      "baseline_start": "2026-01-20T08:00:00",
+      "baseline_finish": "2026-11-25T08:22:30",
+      "data_nachala": "2026-03-01",
+      "planovaya_data_nachala": "2026-03-01",
+      "planovaya_data_okonchaniya": "2026-11-30",
+      "data_okonchaniya": "2026-11-30",
+      "overdue_milestones_count": 1,
+      "max_delay_workdays": 3,
+      "is_fact": false,
+      "project_progress_pct": 51.0,
+      "milestone_deviations": [
+        {
+          "name": "Этап окончен совет по качеству",
+          "start_date": "2026-06-18T08:00:00",
+          "finish_date": "2026-06-18T08:00:00",
+          "month": 6,
+          "month_name": "июнь",
+          "percent_complete": 0.0,
+          "delay_workdays": 3
+        }
+      ]
+    },
+    {
+      "file_id": 188,
+      "project_name": "Система оценки удовлетворенности заказчиков",
+      "resources": [
+        "Гайфулин Денис Александрович",
+        "Мануков Роман Григорьевич",
+        "Орлов Александр Николаевич",
+        "Ростовцева Анастасия Вадимовна",
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "matched_resources": [
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "project_manager": "Гайфулин Денис Александрович",
+      "kurator": "Донцова Анна Егоровна",
+      "project_code": "НПО/СС/2026/43",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Сервисная служба",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-01-23T09:00:00",
+      "finish_date": "2026-07-31T09:30:00",
+      "baseline_start": "2026-01-23T09:00:00",
+      "baseline_finish": "2026-07-31T09:30:00",
+      "data_nachala": "2026-01-23",
+      "planovaya_data_nachala": "2026-01-23",
+      "planovaya_data_okonchaniya": "2026-05-29",
+      "data_okonchaniya": "2026-07-31",
+      "overdue_milestones_count": 0,
+      "max_delay_workdays": 0,
+      "is_fact": true,
+      "project_progress_pct": 70.0,
+      "milestone_deviations": []
+    },
+    {
+      "file_id": 363,
+      "project_name": "Разработка ИИ-агентов (первая очередь)",
+      "resources": [
+        "Арсуноев",
+        "Давлетов Руслан Игоревич",
+        "Жалыбин Максим Дмитриевич",
+        "Комарькова Анастасия Эдуардовна",
+        "Мангасарян Давид Каренович",
+        "Ростовцева Анастасия Вадимовна",
+        "Соломичева Светлана Викторовна",
+        "Тищенко Марина Николаевна",
+        "Уставицкий Андрей Алексеевич"
+      ],
+      "matched_resources": [
+        "Давлетов Руслан Игоревич",
+        "Жалыбин Максим Дмитриевич",
+        "Комарькова Анастасия Эдуардовна",
+        "Мангасарян Давид Каренович",
+        "Уставицкий Андрей Алексеевич"
+      ],
+      "project_manager": "Соломичева Светлана Викторовна",
+      "kurator": "Мегрелишвили Михаил Эмзарович",
+      "project_code": "НП/ДР/2026/110",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Служба развития",
+      "status_proekta": "Планирование",
+      "start_date": "2026-06-01T08:00:00",
+      "finish_date": "2026-08-10T18:00:00",
+      "baseline_start": "2026-06-01T08:00:00",
+      "baseline_finish": "2026-08-10T18:00:00",
+      "data_nachala": null,
+      "planovaya_data_nachala": "2026-06-10",
+      "planovaya_data_okonchaniya": "2026-08-10",
+      "data_okonchaniya": "2026-08-10",
+      "overdue_milestones_count": 6,
+      "max_delay_workdays": 2,
+      "is_fact": false,
+      "project_progress_pct": 35.0,
+      "milestone_deviations": [
+        {
+          "name": "4.1.8. Совет по качеству",
+          "start_date": "2026-06-19T18:00:00",
+          "finish_date": "2026-06-19T18:00:00",
+          "month": 6,
+          "month_name": "июнь",
+          "percent_complete": 0.0,
+          "delay_workdays": 2
+        },
+        {
+          "name": "4.1.9. Этап \"Составление и согласование ТЗ\" завершен",
+          "start_date": "2026-06-19T18:00:00",
+          "finish_date": "2026-06-19T18:00:00",
+          "month": 6,
+          "month_name": "июнь",
+          "percent_complete": 0.0,
+          "delay_workdays": 2
+        },
+        {
+          "name": "3.1.6. Совет по качеству",
+          "start_date": "2026-06-22T14:00:00",
+          "finish_date": "2026-06-22T14:00:00",
+          "month": 6,
+          "month_name": "июнь",
+          "percent_complete": 0.0,
+          "delay_workdays": 1
+        },
+        {
+          "name": "3.1.7. Этап \"Проектирование агента проверки НД\" завершен",
+          "start_date": "2026-06-22T14:00:00",
+          "finish_date": "2026-06-22T14:00:00",
+          "month": 6,
+          "month_name": "июнь",
+          "percent_complete": 0.0,
+          "delay_workdays": 1
+        },
+        {
+          "name": "6.4.7. Совет по качеству",
+          "start_date": "2026-06-22T17:00:00",
+          "finish_date": "2026-06-22T17:00:00",
+          "month": 6,
+          "month_name": "июнь",
+          "percent_complete": 0.0,
+          "delay_workdays": 1
+        },
+        {
+          "name": "6.4.8. Этап \"Создание ИИ-агента на LangChain\" завершен",
+          "start_date": "2026-06-22T17:00:00",
+          "finish_date": "2026-06-22T17:00:00",
+          "month": 6,
+          "month_name": "июнь",
+          "percent_complete": 0.0,
+          "delay_workdays": 1
+        }
+      ]
+    },
+    {
+      "file_id": 135,
+      "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
+      "resources": [
+        "Арсуноев Михаил Магомедович",
+        "Грунтовский Дмитрий Дмитриевич",
+        "Ищенко Алексей Анатольевич",
+        "Ростовцева Анастасия Вадимовна",
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "matched_resources": [
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "project_manager": "Арсуноев Михаил Магомедович",
+      "kurator": "Донцова Анна Егоровна",
+      "project_code": "НПО/СК/2026/35",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-02-02T08:00:00",
+      "finish_date": "2026-10-14T12:00:00",
+      "baseline_start": "2026-02-02T08:00:00",
+      "baseline_finish": "2026-10-27T17:00:00",
+      "data_nachala": "2026-02-18",
+      "planovaya_data_nachala": "2026-02-18",
+      "planovaya_data_okonchaniya": "2026-10-30",
+      "data_okonchaniya": "2026-10-30",
+      "overdue_milestones_count": 0,
+      "max_delay_workdays": 0,
+      "is_fact": true,
+      "project_progress_pct": 46.0,
+      "milestone_deviations": []
+    },
+    {
+      "file_id": 366,
+      "project_name": "ОПЭ дашбордов",
+      "resources": [
+        "Ворончихина Елена Николаевна",
+        "Гончаров Сергей Дмитриевич",
+        "Донцова Анна Егоровна",
+        "Ермаков Илья Николаевич",
+        "Коваленко Артемий Олегович",
+        "Комарькова Анастасия Эдуардовна",
+        "Кондратюк Михаела Борисовна",
+        "Мангасарян Давид Каренович",
+        "Ростовцева Анастасия Вадимовна",
+        "Соломичева Светлана Викторовна",
+        "Улановский Константин Владимирович",
+        "Хозуян Иван Владимирович",
+        "Шамрай Дарья Николаевна"
+      ],
+      "matched_resources": [
+        "Комарькова Анастасия Эдуардовна",
+        "Мангасарян Давид Каренович"
+      ],
+      "project_manager": "Соломичева Светлана Викторовна",
+      "kurator": "Мегрелишвили Михаил Эмзарович",
+      "project_code": "НП/ДР/2026/110",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Служба развития",
+      "status_proekta": "Планирование",
+      "start_date": "2026-06-01T08:00:00",
+      "finish_date": "2026-07-10T17:00:00",
+      "baseline_start": "2026-06-01T08:00:00",
+      "baseline_finish": "2026-07-10T17:00:00",
+      "data_nachala": null,
+      "planovaya_data_nachala": "2026-06-10",
+      "planovaya_data_okonchaniya": "2026-07-10",
+      "data_okonchaniya": null,
+      "overdue_milestones_count": 1,
+      "max_delay_workdays": 1,
+      "is_fact": false,
+      "project_progress_pct": 40.0,
+      "milestone_deviations": [
+        {
+          "name": "2.65. Итоговая комиссия ОПЭ",
+          "start_date": "2026-06-22T18:00:00",
+          "finish_date": "2026-06-22T18:00:00",
+          "month": 6,
+          "month_name": "июнь",
+          "percent_complete": 0.0,
+          "delay_workdays": 1
+        }
+      ]
+    },
+    {
+      "file_id": 139,
+      "project_name": "Календарь с сотрудницами на 2027 год",
+      "resources": [
+        "Акинина Татьяна Владимировна",
+        "Ануфриева Оксана Николаевна",
+        "Беккер Алексей Владимирович",
+        "Давиденко Ольга Борисовна",
+        "Модель",
+        "Соловьева Екатерина Николаевна",
+        "Сысоева Ирина Леонидовна",
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "matched_resources": [
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "project_manager": "Беккер Алексей Владимирович",
+      "kurator": "Донцова Анна Егоровна",
+      "project_code": "НПО/Реклама и PR/2026/70",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "ПродвижениеИРеклама",
+      "podrazdelenie": "Cектор рекламы и PR",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-02-16T09:00:00",
+      "finish_date": "2026-10-29T18:00:00",
+      "baseline_start": "2026-02-16T09:00:00",
+      "baseline_finish": "2026-10-29T18:00:00",
+      "data_nachala": "2026-03-02",
+      "planovaya_data_nachala": "2026-03-02",
+      "planovaya_data_okonchaniya": "2026-10-30",
+      "data_okonchaniya": "2026-10-30",
+      "overdue_milestones_count": 0,
+      "max_delay_workdays": 0,
+      "is_fact": true,
+      "project_progress_pct": 53.0,
+      "milestone_deviations": []
+    },
+    {
+      "file_id": 159,
+      "project_name": "Доработка программы мастер-подбор",
+      "resources": [
+        "Уставицкий Андрей Алексеевич",
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "matched_resources": [
+        "Уставицкий Андрей Алексеевич",
+        "Ясыров Богдан Джумазаевич"
+      ],
+      "project_manager": "Уставицкий Андрей Алексеевич",
+      "kurator": "Соломичева Светлана Викторовна",
+      "project_code": "НПО/СР/2026/80",
+      "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+      "tip_proekta": "РазвитияИУлучшений",
+      "podrazdelenie": "Служба развития",
+      "status_proekta": "ВРаботе",
+      "start_date": "2026-01-23T08:00:00",
+      "finish_date": "2026-06-16T17:00:00",
+      "baseline_start": "2026-01-23T08:00:00",
+      "baseline_finish": "2026-06-16T17:00:00",
+      "data_nachala": "2026-01-23",
+      "planovaya_data_nachala": "2026-01-23",
+      "planovaya_data_okonchaniya": "2026-02-13",
+      "data_okonchaniya": "2026-05-29",
+      "overdue_milestones_count": 0,
+      "max_delay_workdays": 0,
+      "is_fact": true,
+      "project_progress_pct": 100.0,
+      "milestone_deviations": []
     }
   ],
   "summary": {
     "plan": 22,
-    "fact": 17,
-    "kpi_pct": 77.3,
+    "fact": 16,
+    "kpi_pct": 72.7,
     "selection_scope": "resources_only",
     "organization": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
     "target_resources_department": "Председатель Совета Директоров / ОПЕРАЦИОННЫЙ ДИРЕКТОР / Зам.операционного директора - директор по производству / ДИРЕКТОР ПО РАЗВИТИЮ / Служба развития / Сектор по внедрению искусственного интеллекта",
@@ -1068,398 +1115,9 @@
       "Ясыров Богдан Джумазаевич"
     ],
     "target_projects_count": 22,
-    "fact_projects_count": 17,
+    "fact_projects_count": 16,
     "cache_path": "C:\\Users\\testii\\Downloads\\dash\\DashboardBack\\dashboard\\devdir_turboproject_projects_by_resources_snapshot.json",
     "projects": [
-      {
-        "file_id": 150,
-        "project_name": "Формирование постоянно действующей Группы экспертов по работе с ИИ для внедрения системы управления по целям (ССП/KPI)",
-        "resources": [
-          "Арсуноев Михаил Магомедович",
-          "Бутова Татьяна",
-          "Ворончихина Елена Николаевна",
-          "Гапонова Ксения Святославовна",
-          "Гончаров Сергей Дмитриевич",
-          "Горбатенко Сергей Александрович",
-          "Гриппа Георгий Александрович",
-          "Грунтовский Дмитрий Дмитриевич",
-          "Давлетов Руслан Игоревич",
-          "Ермаков Илья Николаевич",
-          "Зайцев Гордей Николаевич",
-          "Коваленко Артемий Олегович",
-          "Комарькова Анастасия Эдуардовна",
-          "Кургин Федор Владимирович",
-          "Мангасарян Давид Каренович",
-          "Мегрелишвили Михаил Эмзарович",
-          "Мещерюк Вадим Владимирович",
-          "Орлов Александр Николаевич",
-          "Павлова Лариса",
-          "Пелих Даниил Юрьевич",
-          "Раскатов Леонид Владимирович",
-          "Ростовцева Анастасия Вадимовна",
-          "Свистун Сергей Николаевич",
-          "Сефиханов Ризван Исамудинович",
-          "Соломичева Светлана Викторовна",
-          "Тен Людмила Лаврентьевна",
-          "Тищенко  Марина Николаевна",
-          "Ткаченко Людмила Викторовна",
-          "Улановский Константин Владимирович",
-          "Чернов Александр",
-          "Щербина Владимир Ильич",
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "matched_resources": [
-          "Давлетов Руслан Игоревич",
-          "Комарькова Анастасия Эдуардовна",
-          "Мангасарян Давид Каренович",
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "project_manager": "Соломичева Светлана Викторовна",
-        "kurator": "Донцова Анна Егоровна",
-        "project_code": "НПО/СР/2026/60",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Служба развития",
-        "status_proekta": "Завершен",
-        "start_date": "2026-01-16T08:00:00",
-        "finish_date": "2026-05-29T16:00:00",
-        "baseline_start": "2026-01-16T08:00:00",
-        "baseline_finish": "2026-06-01T16:00:00",
-        "data_nachala": "2026-01-21",
-        "planovaya_data_nachala": "2026-01-21",
-        "planovaya_data_okonchaniya": "2026-03-31",
-        "data_okonchaniya": "2026-05-29",
-        "overdue_milestones_count": 0,
-        "max_delay_workdays": 0,
-        "is_fact": true,
-        "project_progress_pct": 100.0,
-        "milestone_deviations": []
-      },
-      {
-        "file_id": 167,
-        "project_name": "Стандарт по работе ИИ",
-        "resources": [
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "matched_resources": [
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "project_manager": "Ясыров Богдан Джумазаевич",
-        "kurator": "Соломичева Светлана Викторовна",
-        "project_code": "НПО/СР/2026/48",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Служба развития",
-        "status_proekta": "Завершен",
-        "start_date": "2026-01-16T08:00:00",
-        "finish_date": "2026-05-22T14:00:00",
-        "baseline_start": "2026-01-16T08:00:00",
-        "baseline_finish": "2026-05-22T14:00:00",
-        "data_nachala": "2026-01-16",
-        "planovaya_data_nachala": "2026-01-16",
-        "planovaya_data_okonchaniya": "2026-05-22",
-        "data_okonchaniya": "2026-05-22",
-        "overdue_milestones_count": 0,
-        "max_delay_workdays": 0,
-        "is_fact": true,
-        "project_progress_pct": 99.0,
-        "milestone_deviations": []
-      },
-      {
-        "file_id": 170,
-        "project_name": "Снижение текучести",
-        "resources": [
-          "Азриян Артур Ашотович",
-          "Бухгалтер",
-          "Ворончихина Елена Николаевна",
-          "Ворошина Елена Владимировна",
-          "Жалыбин Максим Дмитриевич",
-          "Житкова Ева Владимировна",
-          "Камышанова Мария Витальевна",
-          "Карпушкина Анна Павловна",
-          "Лаврикова Лариса Александровна",
-          "Романова Мария Константиновна",
-          "Руководитель проекта",
-          "Санкина Юлия Владимировна",
-          "Уставицкий Андрей Алексеевич",
-          "Экономист"
-        ],
-        "matched_resources": [
-          "Жалыбин Максим Дмитриевич",
-          "Уставицкий Андрей Алексеевич"
-        ],
-        "project_manager": "Ворончихина Елена Николаевна",
-        "kurator": "Донцова Анна Егоровна",
-        "project_code": "НПО/СУП/2026/37",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Служба управления персоналом",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-01-20T08:00:00",
-        "finish_date": "2026-11-30T17:00:00",
-        "baseline_start": "2026-01-20T08:00:00",
-        "baseline_finish": "2026-11-25T08:22:30",
-        "data_nachala": "2026-03-01",
-        "planovaya_data_nachala": "2026-03-01",
-        "planovaya_data_okonchaniya": "2026-11-30",
-        "data_okonchaniya": "2026-11-30",
-        "overdue_milestones_count": 1,
-        "max_delay_workdays": 2,
-        "is_fact": false,
-        "project_progress_pct": 51.0,
-        "milestone_deviations": [
-          {
-            "name": "Этап окончен совет по качеству",
-            "start_date": "2026-06-18T08:00:00",
-            "finish_date": "2026-06-18T08:00:00",
-            "month": 6,
-            "month_name": "июнь",
-            "percent_complete": 0.0,
-            "delay_workdays": 2
-          }
-        ]
-      },
-      {
-        "file_id": 188,
-        "project_name": "Система оценки удовлетворенности заказчиков",
-        "resources": [
-          "Гайфулин Денис Александрович",
-          "Мануков Роман Григорьевич",
-          "Орлов Александр Николаевич",
-          "Ростовцева Анастасия Вадимовна",
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "matched_resources": [
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "project_manager": "Гайфулин Денис Александрович",
-        "kurator": "Донцова Анна Егоровна",
-        "project_code": "НПО/СС/2026/43",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Сервисная служба",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-01-23T09:00:00",
-        "finish_date": "2026-07-31T09:30:00",
-        "baseline_start": "2026-01-23T09:00:00",
-        "baseline_finish": "2026-07-31T09:30:00",
-        "data_nachala": "2026-01-23",
-        "planovaya_data_nachala": "2026-01-23",
-        "planovaya_data_okonchaniya": "2026-05-29",
-        "data_okonchaniya": "2026-07-31",
-        "overdue_milestones_count": 0,
-        "max_delay_workdays": 0,
-        "is_fact": true,
-        "project_progress_pct": 70.0,
-        "milestone_deviations": []
-      },
-      {
-        "file_id": 363,
-        "project_name": "Разработка ИИ-агентов (первая очередь)",
-        "resources": [
-          "Арсуноев",
-          "Давлетов Руслан Игоревич",
-          "Жалыбин Максим Дмитриевич",
-          "Комарькова Анастасия Эдуардовна",
-          "Мангасарян Давид Каренович",
-          "Ростовцева Анастасия Вадимовна",
-          "Соломичева Светлана Викторовна",
-          "Тищенко Марина Николаевна",
-          "Уставицкий Андрей Алексеевич"
-        ],
-        "matched_resources": [
-          "Давлетов Руслан Игоревич",
-          "Жалыбин Максим Дмитриевич",
-          "Комарькова Анастасия Эдуардовна",
-          "Мангасарян Давид Каренович",
-          "Уставицкий Андрей Алексеевич"
-        ],
-        "project_manager": "Соломичева Светлана Викторовна",
-        "kurator": "Мегрелишвили Михаил Эмзарович",
-        "project_code": "НП/ДР/2026/110",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Служба развития",
-        "status_proekta": "Планирование",
-        "start_date": "2026-06-01T08:00:00",
-        "finish_date": "2026-08-10T18:00:00",
-        "baseline_start": "2026-06-01T08:00:00",
-        "baseline_finish": "2026-08-10T18:00:00",
-        "data_nachala": null,
-        "planovaya_data_nachala": "2026-06-10",
-        "planovaya_data_okonchaniya": "2026-08-10",
-        "data_okonchaniya": "2026-08-10",
-        "overdue_milestones_count": 2,
-        "max_delay_workdays": 1,
-        "is_fact": false,
-        "project_progress_pct": 35.0,
-        "milestone_deviations": [
-          {
-            "name": "4.1.8. Совет по качеству",
-            "start_date": "2026-06-19T18:00:00",
-            "finish_date": "2026-06-19T18:00:00",
-            "month": 6,
-            "month_name": "июнь",
-            "percent_complete": 0.0,
-            "delay_workdays": 1
-          },
-          {
-            "name": "4.1.9. Этап \"Составление и согласование ТЗ\" завершен",
-            "start_date": "2026-06-19T18:00:00",
-            "finish_date": "2026-06-19T18:00:00",
-            "month": 6,
-            "month_name": "июнь",
-            "percent_complete": 0.0,
-            "delay_workdays": 1
-          }
-        ]
-      },
-      {
-        "file_id": 135,
-        "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
-        "resources": [
-          "Арсуноев Михаил Магомедович",
-          "Грунтовский Дмитрий Дмитриевич",
-          "Ищенко Алексей Анатольевич",
-          "Ростовцева Анастасия Вадимовна",
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "matched_resources": [
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "project_manager": "Арсуноев Михаил Магомедович",
-        "kurator": "Донцова Анна Егоровна",
-        "project_code": "НПО/СК/2026/35",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-02-02T08:00:00",
-        "finish_date": "2026-10-14T12:00:00",
-        "baseline_start": "2026-02-02T08:00:00",
-        "baseline_finish": "2026-10-27T17:00:00",
-        "data_nachala": "2026-02-18",
-        "planovaya_data_nachala": "2026-02-18",
-        "planovaya_data_okonchaniya": "2026-10-30",
-        "data_okonchaniya": "2026-10-30",
-        "overdue_milestones_count": 0,
-        "max_delay_workdays": 0,
-        "is_fact": true,
-        "project_progress_pct": 46.0,
-        "milestone_deviations": []
-      },
-      {
-        "file_id": 366,
-        "project_name": "ОПЭ дашбордов",
-        "resources": [
-          "Ворончихина Елена Николаевна",
-          "Гончаров Сергей Дмитриевич",
-          "Донцова Анна Егоровна",
-          "Ермаков Илья Николаевич",
-          "Коваленко Артемий Олегович",
-          "Комарькова Анастасия Эдуардовна",
-          "Кондратюк Михаела Борисовна",
-          "Мангасарян Давид Каренович",
-          "Ростовцева Анастасия Вадимовна",
-          "Соломичева Светлана Викторовна",
-          "Улановский Константин Владимирович",
-          "Хозуян Иван Владимирович",
-          "Шамрай Дарья Николаевна"
-        ],
-        "matched_resources": [
-          "Комарькова Анастасия Эдуардовна",
-          "Мангасарян Давид Каренович"
-        ],
-        "project_manager": "Соломичева Светлана Викторовна",
-        "kurator": "Мегрелишвили Михаил Эмзарович",
-        "project_code": "НП/ДР/2026/110",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Служба развития",
-        "status_proekta": "Планирование",
-        "start_date": "2026-06-01T08:00:00",
-        "finish_date": "2026-07-10T17:00:00",
-        "baseline_start": "2026-06-01T08:00:00",
-        "baseline_finish": "2026-07-10T17:00:00",
-        "data_nachala": null,
-        "planovaya_data_nachala": "2026-06-10",
-        "planovaya_data_okonchaniya": "2026-07-10",
-        "data_okonchaniya": null,
-        "overdue_milestones_count": 0,
-        "max_delay_workdays": 0,
-        "is_fact": true,
-        "project_progress_pct": 40.0,
-        "milestone_deviations": []
-      },
-      {
-        "file_id": 139,
-        "project_name": "Календарь с сотрудницами на 2027 год",
-        "resources": [
-          "Акинина Татьяна Владимировна",
-          "Ануфриева Оксана Николаевна",
-          "Беккер Алексей Владимирович",
-          "Давиденко Ольга Борисовна",
-          "Модель",
-          "Соловьева Екатерина Николаевна",
-          "Сысоева Ирина Леонидовна",
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "matched_resources": [
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "project_manager": "Беккер Алексей Владимирович",
-        "kurator": "Донцова Анна Егоровна",
-        "project_code": "НПО/Реклама и PR/2026/70",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "ПродвижениеИРеклама",
-        "podrazdelenie": "Cектор рекламы и PR",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-02-16T09:00:00",
-        "finish_date": "2026-10-29T18:00:00",
-        "baseline_start": "2026-02-16T09:00:00",
-        "baseline_finish": "2026-10-29T18:00:00",
-        "data_nachala": "2026-03-02",
-        "planovaya_data_nachala": "2026-03-02",
-        "planovaya_data_okonchaniya": "2026-10-30",
-        "data_okonchaniya": "2026-10-30",
-        "overdue_milestones_count": 0,
-        "max_delay_workdays": 0,
-        "is_fact": true,
-        "project_progress_pct": 53.0,
-        "milestone_deviations": []
-      },
-      {
-        "file_id": 159,
-        "project_name": "Доработка программы мастер-подбор",
-        "resources": [
-          "Уставицкий Андрей Алексеевич",
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "matched_resources": [
-          "Уставицкий Андрей Алексеевич",
-          "Ясыров Богдан Джумазаевич"
-        ],
-        "project_manager": "Уставицкий Андрей Алексеевич",
-        "kurator": "Соломичева Светлана Викторовна",
-        "project_code": "НПО/СР/2026/80",
-        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
-        "tip_proekta": "РазвитияИУлучшений",
-        "podrazdelenie": "Служба развития",
-        "status_proekta": "ВРаботе",
-        "start_date": "2026-01-23T08:00:00",
-        "finish_date": "2026-06-16T17:00:00",
-        "baseline_start": "2026-01-23T08:00:00",
-        "baseline_finish": "2026-06-16T17:00:00",
-        "data_nachala": "2026-01-23",
-        "planovaya_data_nachala": "2026-01-23",
-        "planovaya_data_okonchaniya": "2026-02-13",
-        "data_okonchaniya": "2026-05-29",
-        "overdue_milestones_count": 0,
-        "max_delay_workdays": 0,
-        "is_fact": true,
-        "project_progress_pct": 100.0,
-        "milestone_deviations": []
-      },
       {
         "file_id": 126,
         "project_name": "Внедрение системы контроля качества разработки",
@@ -1524,7 +1182,7 @@
         "planovaya_data_okonchaniya": "2026-03-20",
         "data_okonchaniya": null,
         "overdue_milestones_count": 5,
-        "max_delay_workdays": 140,
+        "max_delay_workdays": 141,
         "is_fact": false,
         "project_progress_pct": 61.0,
         "milestone_deviations": [
@@ -1535,7 +1193,7 @@
             "month": 12,
             "month_name": "декабрь",
             "percent_complete": 0.0,
-            "delay_workdays": 140
+            "delay_workdays": 141
           },
           {
             "name": "Утверждение бюджета и приказа по проекту",
@@ -1544,7 +1202,7 @@
             "month": 12,
             "month_name": "декабрь",
             "percent_complete": 0.0,
-            "delay_workdays": 126
+            "delay_workdays": 127
           },
           {
             "name": "Адаптированное ТЗ под прибор UFG-Z готово",
@@ -1553,7 +1211,7 @@
             "month": 3,
             "month_name": "март",
             "percent_complete": 0.0,
-            "delay_workdays": 66
+            "delay_workdays": 67
           },
           {
             "name": "Сотрудники КБ обучены",
@@ -1562,7 +1220,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 44
+            "delay_workdays": 45
           },
           {
             "name": "Проект завершен",
@@ -1571,7 +1229,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 43
+            "delay_workdays": 44
           }
         ]
       },
@@ -1613,7 +1271,7 @@
         "planovaya_data_okonchaniya": "2026-04-22",
         "data_okonchaniya": "2026-06-04",
         "overdue_milestones_count": 12,
-        "max_delay_workdays": 65,
+        "max_delay_workdays": 66,
         "is_fact": false,
         "project_progress_pct": 58.0,
         "milestone_deviations": [
@@ -1624,7 +1282,7 @@
             "month": 3,
             "month_name": "март",
             "percent_complete": 0.0,
-            "delay_workdays": 65
+            "delay_workdays": 66
           },
           {
             "name": "Этап 2: Разработка блока 1С:ERP (Цель 1) выполнено",
@@ -1633,7 +1291,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 48
+            "delay_workdays": 49
           },
           {
             "name": " План-факт БДДС в Turbo Project создан",
@@ -1642,7 +1300,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 46
+            "delay_workdays": 47
           },
           {
             "name": "Цель 1.1: Шаблоны документов в 1С:ERP  работы приняты",
@@ -1651,7 +1309,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 45
+            "delay_workdays": 46
           },
           {
             "name": "Блок ИИ Turbo Project внедрен",
@@ -1660,7 +1318,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 9
+            "delay_workdays": 10
           },
           {
             "name": "Отчет к ДПИ с нарастающим итогом создан",
@@ -1669,7 +1327,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 9
+            "delay_workdays": 10
           },
           {
             "name": "дополнительные работы выполнены",
@@ -1678,7 +1336,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 9
+            "delay_workdays": 10
           },
           {
             "name": "автоматический контроль план-факта по лимитам БДДС в 1С ERP создан",
@@ -1687,7 +1345,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 8
+            "delay_workdays": 9
           },
           {
             "name": "Система ЭДО в 1С ERP по проектам доработана",
@@ -1696,7 +1354,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 5
+            "delay_workdays": 6
           },
           {
             "name": "Цель 1.1: Шаблоны документов в 1С:ERP  доработаны",
@@ -1705,7 +1363,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 4
+            "delay_workdays": 5
           },
           {
             "name": "Блок 1С ERP внедрен",
@@ -1714,7 +1372,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 2
+            "delay_workdays": 3
           },
           {
             "name": "Цель 1.2: Единый реестр проектов в 1С:ERP доработан",
@@ -1723,7 +1381,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 2
+            "delay_workdays": 3
           }
         ]
       },
@@ -1767,6 +1425,7 @@
         "resources": [
           "Азриян Артур Ашотович",
           "Асланян Артур Карапетович",
+          "Бабалыхян А.А.",
           "Бараковский Константин Сергеевич",
           "Близнюкова Светлана Сергеевна",
           "Буркин Руслан Евгеньевич",
@@ -1835,7 +1494,7 @@
         "planovaya_data_okonchaniya": "2024-04-19",
         "data_okonchaniya": "2026-08-05",
         "overdue_milestones_count": 3,
-        "max_delay_workdays": 615,
+        "max_delay_workdays": 616,
         "is_fact": false,
         "project_progress_pct": 95.0,
         "milestone_deviations": [
@@ -1846,7 +1505,7 @@
             "month": 2,
             "month_name": "февраль",
             "percent_complete": 0.0,
-            "delay_workdays": 615
+            "delay_workdays": 616
           },
           {
             "name": "Испытания UFG ч 1 выполнены ",
@@ -1855,7 +1514,7 @@
             "month": 5,
             "month_name": "май",
             "percent_complete": 0.0,
-            "delay_workdays": 16
+            "delay_workdays": 17
           },
           {
             "name": "Совет по качеству ",
@@ -1864,7 +1523,7 @@
             "month": 5,
             "month_name": "май",
             "percent_complete": 0.0,
-            "delay_workdays": 16
+            "delay_workdays": 17
           }
         ]
       },
@@ -2107,9 +1766,444 @@
         "is_fact": true,
         "project_progress_pct": 100.0,
         "milestone_deviations": []
+      },
+      {
+        "file_id": 150,
+        "project_name": "Формирование постоянно действующей Группы экспертов по работе с ИИ для внедрения системы управления по целям (ССП/KPI)",
+        "resources": [
+          "Арсуноев Михаил Магомедович",
+          "Бутова Татьяна",
+          "Ворончихина Елена Николаевна",
+          "Гапонова Ксения Святославовна",
+          "Гончаров Сергей Дмитриевич",
+          "Горбатенко Сергей Александрович",
+          "Гриппа Георгий Александрович",
+          "Грунтовский Дмитрий Дмитриевич",
+          "Давлетов Руслан Игоревич",
+          "Ермаков Илья Николаевич",
+          "Зайцев Гордей Николаевич",
+          "Коваленко Артемий Олегович",
+          "Комарькова Анастасия Эдуардовна",
+          "Кургин Федор Владимирович",
+          "Мангасарян Давид Каренович",
+          "Мегрелишвили Михаил Эмзарович",
+          "Мещерюк Вадим Владимирович",
+          "Орлов Александр Николаевич",
+          "Павлова Лариса",
+          "Пелих Даниил Юрьевич",
+          "Раскатов Леонид Владимирович",
+          "Ростовцева Анастасия Вадимовна",
+          "Свистун Сергей Николаевич",
+          "Сефиханов Ризван Исамудинович",
+          "Соломичева Светлана Викторовна",
+          "Тен Людмила Лаврентьевна",
+          "Тищенко  Марина Николаевна",
+          "Ткаченко Людмила Викторовна",
+          "Улановский Константин Владимирович",
+          "Чернов Александр",
+          "Щербина Владимир Ильич",
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "matched_resources": [
+          "Давлетов Руслан Игоревич",
+          "Комарькова Анастасия Эдуардовна",
+          "Мангасарян Давид Каренович",
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "project_manager": "Соломичева Светлана Викторовна",
+        "kurator": "Донцова Анна Егоровна",
+        "project_code": "НПО/СР/2026/60",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Служба развития",
+        "status_proekta": "Завершен",
+        "start_date": "2026-01-16T08:00:00",
+        "finish_date": "2026-05-29T16:00:00",
+        "baseline_start": "2026-01-16T08:00:00",
+        "baseline_finish": "2026-06-01T16:00:00",
+        "data_nachala": "2026-01-21",
+        "planovaya_data_nachala": "2026-01-21",
+        "planovaya_data_okonchaniya": "2026-03-31",
+        "data_okonchaniya": "2026-05-29",
+        "overdue_milestones_count": 0,
+        "max_delay_workdays": 0,
+        "is_fact": true,
+        "project_progress_pct": 100.0,
+        "milestone_deviations": []
+      },
+      {
+        "file_id": 167,
+        "project_name": "Стандарт по работе ИИ",
+        "resources": [
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "matched_resources": [
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "project_manager": "Ясыров Богдан Джумазаевич",
+        "kurator": "Соломичева Светлана Викторовна",
+        "project_code": "НПО/СР/2026/48",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Служба развития",
+        "status_proekta": "Завершен",
+        "start_date": "2026-01-16T08:00:00",
+        "finish_date": "2026-05-22T14:00:00",
+        "baseline_start": "2026-01-16T08:00:00",
+        "baseline_finish": "2026-05-22T14:00:00",
+        "data_nachala": "2026-01-16",
+        "planovaya_data_nachala": "2026-01-16",
+        "planovaya_data_okonchaniya": "2026-05-22",
+        "data_okonchaniya": "2026-05-22",
+        "overdue_milestones_count": 0,
+        "max_delay_workdays": 0,
+        "is_fact": true,
+        "project_progress_pct": 99.0,
+        "milestone_deviations": []
+      },
+      {
+        "file_id": 170,
+        "project_name": "Снижение текучести",
+        "resources": [
+          "Азриян Артур Ашотович",
+          "Бухгалтер",
+          "Ворончихина Елена Николаевна",
+          "Ворошина Елена Владимировна",
+          "Жалыбин Максим Дмитриевич",
+          "Житкова Ева Владимировна",
+          "Камышанова Мария Витальевна",
+          "Карпушкина Анна Павловна",
+          "Лаврикова Лариса Александровна",
+          "Романова Мария Константиновна",
+          "Руководитель проекта",
+          "Санкина Юлия Владимировна",
+          "Уставицкий Андрей Алексеевич",
+          "Экономист"
+        ],
+        "matched_resources": [
+          "Жалыбин Максим Дмитриевич",
+          "Уставицкий Андрей Алексеевич"
+        ],
+        "project_manager": "Ворончихина Елена Николаевна",
+        "kurator": "Донцова Анна Егоровна",
+        "project_code": "НПО/СУП/2026/37",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Служба управления персоналом",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-01-20T08:00:00",
+        "finish_date": "2026-11-30T17:00:00",
+        "baseline_start": "2026-01-20T08:00:00",
+        "baseline_finish": "2026-11-25T08:22:30",
+        "data_nachala": "2026-03-01",
+        "planovaya_data_nachala": "2026-03-01",
+        "planovaya_data_okonchaniya": "2026-11-30",
+        "data_okonchaniya": "2026-11-30",
+        "overdue_milestones_count": 1,
+        "max_delay_workdays": 3,
+        "is_fact": false,
+        "project_progress_pct": 51.0,
+        "milestone_deviations": [
+          {
+            "name": "Этап окончен совет по качеству",
+            "start_date": "2026-06-18T08:00:00",
+            "finish_date": "2026-06-18T08:00:00",
+            "month": 6,
+            "month_name": "июнь",
+            "percent_complete": 0.0,
+            "delay_workdays": 3
+          }
+        ]
+      },
+      {
+        "file_id": 188,
+        "project_name": "Система оценки удовлетворенности заказчиков",
+        "resources": [
+          "Гайфулин Денис Александрович",
+          "Мануков Роман Григорьевич",
+          "Орлов Александр Николаевич",
+          "Ростовцева Анастасия Вадимовна",
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "matched_resources": [
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "project_manager": "Гайфулин Денис Александрович",
+        "kurator": "Донцова Анна Егоровна",
+        "project_code": "НПО/СС/2026/43",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Сервисная служба",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-01-23T09:00:00",
+        "finish_date": "2026-07-31T09:30:00",
+        "baseline_start": "2026-01-23T09:00:00",
+        "baseline_finish": "2026-07-31T09:30:00",
+        "data_nachala": "2026-01-23",
+        "planovaya_data_nachala": "2026-01-23",
+        "planovaya_data_okonchaniya": "2026-05-29",
+        "data_okonchaniya": "2026-07-31",
+        "overdue_milestones_count": 0,
+        "max_delay_workdays": 0,
+        "is_fact": true,
+        "project_progress_pct": 70.0,
+        "milestone_deviations": []
+      },
+      {
+        "file_id": 363,
+        "project_name": "Разработка ИИ-агентов (первая очередь)",
+        "resources": [
+          "Арсуноев",
+          "Давлетов Руслан Игоревич",
+          "Жалыбин Максим Дмитриевич",
+          "Комарькова Анастасия Эдуардовна",
+          "Мангасарян Давид Каренович",
+          "Ростовцева Анастасия Вадимовна",
+          "Соломичева Светлана Викторовна",
+          "Тищенко Марина Николаевна",
+          "Уставицкий Андрей Алексеевич"
+        ],
+        "matched_resources": [
+          "Давлетов Руслан Игоревич",
+          "Жалыбин Максим Дмитриевич",
+          "Комарькова Анастасия Эдуардовна",
+          "Мангасарян Давид Каренович",
+          "Уставицкий Андрей Алексеевич"
+        ],
+        "project_manager": "Соломичева Светлана Викторовна",
+        "kurator": "Мегрелишвили Михаил Эмзарович",
+        "project_code": "НП/ДР/2026/110",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Служба развития",
+        "status_proekta": "Планирование",
+        "start_date": "2026-06-01T08:00:00",
+        "finish_date": "2026-08-10T18:00:00",
+        "baseline_start": "2026-06-01T08:00:00",
+        "baseline_finish": "2026-08-10T18:00:00",
+        "data_nachala": null,
+        "planovaya_data_nachala": "2026-06-10",
+        "planovaya_data_okonchaniya": "2026-08-10",
+        "data_okonchaniya": "2026-08-10",
+        "overdue_milestones_count": 6,
+        "max_delay_workdays": 2,
+        "is_fact": false,
+        "project_progress_pct": 35.0,
+        "milestone_deviations": [
+          {
+            "name": "4.1.8. Совет по качеству",
+            "start_date": "2026-06-19T18:00:00",
+            "finish_date": "2026-06-19T18:00:00",
+            "month": 6,
+            "month_name": "июнь",
+            "percent_complete": 0.0,
+            "delay_workdays": 2
+          },
+          {
+            "name": "4.1.9. Этап \"Составление и согласование ТЗ\" завершен",
+            "start_date": "2026-06-19T18:00:00",
+            "finish_date": "2026-06-19T18:00:00",
+            "month": 6,
+            "month_name": "июнь",
+            "percent_complete": 0.0,
+            "delay_workdays": 2
+          },
+          {
+            "name": "3.1.6. Совет по качеству",
+            "start_date": "2026-06-22T14:00:00",
+            "finish_date": "2026-06-22T14:00:00",
+            "month": 6,
+            "month_name": "июнь",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
+          },
+          {
+            "name": "3.1.7. Этап \"Проектирование агента проверки НД\" завершен",
+            "start_date": "2026-06-22T14:00:00",
+            "finish_date": "2026-06-22T14:00:00",
+            "month": 6,
+            "month_name": "июнь",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
+          },
+          {
+            "name": "6.4.7. Совет по качеству",
+            "start_date": "2026-06-22T17:00:00",
+            "finish_date": "2026-06-22T17:00:00",
+            "month": 6,
+            "month_name": "июнь",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
+          },
+          {
+            "name": "6.4.8. Этап \"Создание ИИ-агента на LangChain\" завершен",
+            "start_date": "2026-06-22T17:00:00",
+            "finish_date": "2026-06-22T17:00:00",
+            "month": 6,
+            "month_name": "июнь",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
+          }
+        ]
+      },
+      {
+        "file_id": 135,
+        "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
+        "resources": [
+          "Арсуноев Михаил Магомедович",
+          "Грунтовский Дмитрий Дмитриевич",
+          "Ищенко Алексей Анатольевич",
+          "Ростовцева Анастасия Вадимовна",
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "matched_resources": [
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "project_manager": "Арсуноев Михаил Магомедович",
+        "kurator": "Донцова Анна Егоровна",
+        "project_code": "НПО/СК/2026/35",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-02-02T08:00:00",
+        "finish_date": "2026-10-14T12:00:00",
+        "baseline_start": "2026-02-02T08:00:00",
+        "baseline_finish": "2026-10-27T17:00:00",
+        "data_nachala": "2026-02-18",
+        "planovaya_data_nachala": "2026-02-18",
+        "planovaya_data_okonchaniya": "2026-10-30",
+        "data_okonchaniya": "2026-10-30",
+        "overdue_milestones_count": 0,
+        "max_delay_workdays": 0,
+        "is_fact": true,
+        "project_progress_pct": 46.0,
+        "milestone_deviations": []
+      },
+      {
+        "file_id": 366,
+        "project_name": "ОПЭ дашбордов",
+        "resources": [
+          "Ворончихина Елена Николаевна",
+          "Гончаров Сергей Дмитриевич",
+          "Донцова Анна Егоровна",
+          "Ермаков Илья Николаевич",
+          "Коваленко Артемий Олегович",
+          "Комарькова Анастасия Эдуардовна",
+          "Кондратюк Михаела Борисовна",
+          "Мангасарян Давид Каренович",
+          "Ростовцева Анастасия Вадимовна",
+          "Соломичева Светлана Викторовна",
+          "Улановский Константин Владимирович",
+          "Хозуян Иван Владимирович",
+          "Шамрай Дарья Николаевна"
+        ],
+        "matched_resources": [
+          "Комарькова Анастасия Эдуардовна",
+          "Мангасарян Давид Каренович"
+        ],
+        "project_manager": "Соломичева Светлана Викторовна",
+        "kurator": "Мегрелишвили Михаил Эмзарович",
+        "project_code": "НП/ДР/2026/110",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Служба развития",
+        "status_proekta": "Планирование",
+        "start_date": "2026-06-01T08:00:00",
+        "finish_date": "2026-07-10T17:00:00",
+        "baseline_start": "2026-06-01T08:00:00",
+        "baseline_finish": "2026-07-10T17:00:00",
+        "data_nachala": null,
+        "planovaya_data_nachala": "2026-06-10",
+        "planovaya_data_okonchaniya": "2026-07-10",
+        "data_okonchaniya": null,
+        "overdue_milestones_count": 1,
+        "max_delay_workdays": 1,
+        "is_fact": false,
+        "project_progress_pct": 40.0,
+        "milestone_deviations": [
+          {
+            "name": "2.65. Итоговая комиссия ОПЭ",
+            "start_date": "2026-06-22T18:00:00",
+            "finish_date": "2026-06-22T18:00:00",
+            "month": 6,
+            "month_name": "июнь",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
+          }
+        ]
+      },
+      {
+        "file_id": 139,
+        "project_name": "Календарь с сотрудницами на 2027 год",
+        "resources": [
+          "Акинина Татьяна Владимировна",
+          "Ануфриева Оксана Николаевна",
+          "Беккер Алексей Владимирович",
+          "Давиденко Ольга Борисовна",
+          "Модель",
+          "Соловьева Екатерина Николаевна",
+          "Сысоева Ирина Леонидовна",
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "matched_resources": [
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "project_manager": "Беккер Алексей Владимирович",
+        "kurator": "Донцова Анна Егоровна",
+        "project_code": "НПО/Реклама и PR/2026/70",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "ПродвижениеИРеклама",
+        "podrazdelenie": "Cектор рекламы и PR",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-02-16T09:00:00",
+        "finish_date": "2026-10-29T18:00:00",
+        "baseline_start": "2026-02-16T09:00:00",
+        "baseline_finish": "2026-10-29T18:00:00",
+        "data_nachala": "2026-03-02",
+        "planovaya_data_nachala": "2026-03-02",
+        "planovaya_data_okonchaniya": "2026-10-30",
+        "data_okonchaniya": "2026-10-30",
+        "overdue_milestones_count": 0,
+        "max_delay_workdays": 0,
+        "is_fact": true,
+        "project_progress_pct": 53.0,
+        "milestone_deviations": []
+      },
+      {
+        "file_id": 159,
+        "project_name": "Доработка программы мастер-подбор",
+        "resources": [
+          "Уставицкий Андрей Алексеевич",
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "matched_resources": [
+          "Уставицкий Андрей Алексеевич",
+          "Ясыров Богдан Джумазаевич"
+        ],
+        "project_manager": "Уставицкий Андрей Алексеевич",
+        "kurator": "Соломичева Светлана Викторовна",
+        "project_code": "НПО/СР/2026/80",
+        "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+        "tip_proekta": "РазвитияИУлучшений",
+        "podrazdelenie": "Служба развития",
+        "status_proekta": "ВРаботе",
+        "start_date": "2026-01-23T08:00:00",
+        "finish_date": "2026-06-16T17:00:00",
+        "baseline_start": "2026-01-23T08:00:00",
+        "baseline_finish": "2026-06-16T17:00:00",
+        "data_nachala": "2026-01-23",
+        "planovaya_data_nachala": "2026-01-23",
+        "planovaya_data_okonchaniya": "2026-02-13",
+        "data_okonchaniya": "2026-05-29",
+        "overdue_milestones_count": 0,
+        "max_delay_workdays": 0,
+        "is_fact": true,
+        "project_progress_pct": 100.0,
+        "milestone_deviations": []
       }
     ]
   },
-  "cache_date": "2026-06-22",
+  "cache_date": "2026-06-23",
   "cache_version": 4
 }
