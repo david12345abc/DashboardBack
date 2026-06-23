@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
 EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v2"
-CACHE_VERSION = 2
+CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v3"
+CACHE_VERSION = 3
 
 BASE = DEFAULT_BASE_URL.rstrip("/") + "/odata/standard.odata"
 if os.getenv("ONEC_BASE_URL"):
@@ -104,6 +104,19 @@ def _fmt(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def _late_by_calendar_day(
+    plan_end: datetime | None,
+    fact_end: datetime | None,
+    evaluation_dt: datetime,
+) -> bool:
+    """День-в-день не просрочка: время внутри одной даты игнорируем."""
+    if plan_end is None:
+        return False
+    if fact_end is not None:
+        return fact_end.date() > plan_end.date()
+    return plan_end.date() < evaluation_dt.date()
+
+
 def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     start = datetime(int(year), int(month), 1)
     end = datetime.combine(date(int(year), int(month), monthrange(int(year), int(month))[1]), time.max)
@@ -161,7 +174,7 @@ def _load_schedule_rows(
     period_end: datetime,
     current_dt: datetime,
 ) -> tuple[list[dict], dict]:
-    select = "Этап,Этап_Type,Начало,Окончание"
+    select = "Этап,Этап_Type,Начало,Окончание,ЗаказНаПроизводство_Key"
     odata_filter = (
         f"Начало ge datetime'{_fmt(period_start)}' "
         f"and Окончание le datetime'{_fmt(period_end)}' "
@@ -225,6 +238,31 @@ def _load_stage_docs(session: requests.Session, stage_keys: set[str]) -> dict[st
     return out
 
 
+def _load_production_orders(session: requests.Session, order_keys: set[str]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    keys = sorted(key for key in order_keys if key and key != EMPTY_GUID)
+    select = "Ref_Key,Number,Date,ТД_ОпросныйЛист"
+    for i in range(0, len(keys), 25):
+        batch = keys[i:i + 25]
+        flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in batch)
+        query = (
+            "$format=json"
+            f"&$select={quote(select, safe=',_')}"
+            f"&$filter={quote(flt, safe='')}"
+        )
+        rows, _status, _error = _odata_rows(
+            session,
+            "Document_ЗаказНаПроизводство2_2",
+            query,
+            label="METD-M1/production-orders",
+        )
+        for row in rows:
+            key = str(row.get("Ref_Key") or "")
+            if key:
+                out[key] = row
+    return out
+
+
 def _month_row(year: int, month: int) -> dict:
     period_start, period_end = _month_bounds(year, month)
     current_dt = datetime.now()
@@ -245,10 +283,22 @@ def _month_row(year: int, month: int) -> dict:
             unique_schedule[key] = row
 
     stages = _load_stage_docs(session, set(unique_schedule.keys())) if unique_schedule else {}
+    production_order_keys = {
+        str(row.get("ЗаказНаПроизводство_Key") or "").strip()
+        for row in schedule_rows
+        if str(row.get("ЗаказНаПроизводство_Key") or "").strip()
+        and str(row.get("ЗаказНаПроизводство_Key") or "").strip() != EMPTY_GUID
+    }
+    production_orders = (
+        _load_production_orders(session, production_order_keys)
+        if production_order_keys
+        else {}
+    )
     on_time = 0
     late = 0
     skipped_wrong_department = 0
     details: list[dict] = []
+    late_stage_rows: list[dict] = []
     for key, schedule in population_rows:
         stage = stages.get(key) or {}
         if str(stage.get("Подразделение_Key") or "").strip() != DEPARTMENT_KEY:
@@ -256,17 +306,27 @@ def _month_row(year: int, month: int) -> dict:
             continue
         plan_end = _dt(schedule.get("Окончание"))
         fact_end = _dt(stage.get("ФактическоеОкончаниеЭтапа"))
-        is_late = bool(
-            plan_end
-            and (
-                (fact_end is not None and fact_end > plan_end)
-                or (fact_end is None and plan_end < evaluation_dt)
-            )
-        )
+        is_late = _late_by_calendar_day(plan_end, fact_end, evaluation_dt)
         if is_late:
             late += 1
         else:
             on_time += 1
+        order_key = str(schedule.get("ЗаказНаПроизводство_Key") or "").strip()
+        production_order = production_orders.get(order_key) or {}
+        if is_late:
+            late_stage_rows.append({
+                "Этап": stage.get("Number") or key,
+                "Начало": str(schedule.get("Начало") or "")[:19],
+                "Окончание": str(schedule.get("Окончание") or "")[:19],
+                "ЭтапФактическоеОкончание": str(stage.get("ФактическоеОкончаниеЭтапа") or "")[:19],
+                "ЗаказНаПроизводствоТД_ОпросныйЛист": (
+                    str(production_order.get("ТД_ОпросныйЛист") or "")
+                    if production_order.get("ТД_ОпросныйЛист") != EMPTY_GUID
+                    else ""
+                ),
+                "stage_key": key,
+                "production_order_key": order_key,
+            })
         details.append({
             "stage_key": key,
             "stage_number": stage.get("Number"),
@@ -274,6 +334,7 @@ def _month_row(year: int, month: int) -> dict:
             "plan_end": str(schedule.get("Окончание") or "")[:19],
             "fact_end": str(stage.get("ФактическоеОкончаниеЭтапа") or "")[:19],
             "late": is_late,
+            "production_order_key": order_key,
         })
 
     total = on_time + late
@@ -289,6 +350,7 @@ def _month_row(year: int, month: int) -> dict:
         "total_stages": total,
         "late_stages": late,
         "on_time_stages": on_time,
+        "late_stage_rows": late_stage_rows,
         "check_sum_ok": total == late + on_time,
         "period_start": _fmt(period_start),
         "period_end": _fmt(period_end),
@@ -301,12 +363,13 @@ def _month_row(year: int, month: int) -> dict:
             "unique_stage_refs_from_schedule": len(unique_schedule),
             "population_schedule_rows": len(population_rows),
             "stage_docs_loaded": len(stages),
+            "production_orders_loaded": len(production_orders),
             "skipped_wrong_department": skipped_wrong_department,
             "query_protocol": query_protocol,
             "details_sample": details[:100],
             "formula": (
-                "total = строки регистра с непустым Этап; late = ФактическоеОкончаниеЭтапа > Окончание "
-                "или факт пустой и Окончание < ТекущаяДата; on_time = остальные"
+                "total = строки регистра с непустым Этап; late = дата(ФактическоеОкончаниеЭтапа) > дата(Окончание) "
+                "или факт пустой и дата(Окончание) < дата(ТекущаяДата); on_time = остальные"
             ),
         },
     }
@@ -341,3 +404,33 @@ def get_metrolog_production_plan_monthly(year: int, month: int) -> dict:
     }
     _save_cache(ref_y, ref_m, payload)
     return payload
+
+
+def get_metrolog_late_stage_table(year: int, month: int) -> dict:
+    payload = get_metrolog_production_plan_monthly(year, month)
+    rows = []
+    for row in payload.get("monthly_data") or []:
+        if row.get("year") == int(year) and row.get("month") == int(month):
+            rows = row.get("late_stage_rows") or []
+            break
+    return {
+        "name": f"Просроченные этапы метрологической службы за {MONTH_NAMES.get(int(month), month)} {int(year)}",
+        "periodicity": "ежемесячно",
+        "description": (
+            "Строки регистра ГрафикЭтаповПроизводства2_2, где этап относится к метрологической службе. "
+            "День-в-день не считается просрочкой: сравниваются календарные даты, а не время."
+        ),
+        "period": {
+            "year": int(year),
+            "month": int(month),
+            "month_name": MONTH_NAMES.get(int(month), str(month)),
+        },
+        "columns": [
+            "Этап",
+            "Начало",
+            "Окончание",
+            "ЭтапФактическоеОкончание",
+            "ЗаказНаПроизводствоТД_ОпросныйЛист",
+        ],
+        "rows": rows,
+    }

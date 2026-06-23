@@ -37,12 +37,12 @@
       "baseline_finish": "2026-12-01T08:30:00",
       "data_nachala": "2025-09-23",
       "planovaya_data_nachala": "2025-09-23",
-      "planovaya_data_okonchaniya": "2026-12-01",
-      "data_okonchaniya": "2026-12-01",
+      "planovaya_data_okonchaniya": "2026-11-30",
+      "data_okonchaniya": "2026-11-30",
       "overdue_milestones_count": 0,
       "max_delay_workdays": 0,
       "is_fact": true,
-      "project_progress_pct": 57.0,
+      "project_progress_pct": 43.0,
       "milestone_deviations": []
     },
     {
@@ -76,9 +76,9 @@
       "podrazdelenie": "Служба развития",
       "status_proekta": "ВРаботе",
       "start_date": "2026-04-09T08:00:00",
-      "finish_date": "2027-05-21T08:12:48",
-      "baseline_start": null,
-      "baseline_finish": null,
+      "finish_date": "2027-04-30T08:12:48",
+      "baseline_start": "2026-04-09T08:00:00",
+      "baseline_finish": "2027-04-30T08:12:48",
       "data_nachala": "2026-04-27",
       "planovaya_data_nachala": "2026-04-27",
       "planovaya_data_okonchaniya": "2027-04-30",
@@ -101,8 +101,8 @@
     "target_project_type": "ОПЭ",
     "target_projects_count": 2,
     "fact_projects_count": 2,
-    "cache_path": "C:\\Users\\a.komarkova\\Documents\\projects\\DashboardBack\\DashboardBack\\dashboard\\devdir_turboproject_ope_projects_snapshot.json"
+    "cache_path": "C:\\Users\\testii\\Downloads\\dash\\DashboardBack\\dashboard\\devdir_turboproject_ope_projects_snapshot.json"
   },
-  "cache_date": "2026-06-11",
+  "cache_date": "2026-06-22",
   "cache_version": 1
 }

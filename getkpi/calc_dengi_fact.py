@@ -97,6 +97,28 @@ def _monthly_cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"dengi_monthly_{year}_{month:02d}.json"
 
 
+def _cache_date(raw: dict) -> date | None:
+    try:
+        return date.fromisoformat(str(raw.get("cache_date") or "")[:10])
+    except ValueError:
+        return None
+
+
+def _period_end(year: int, month: int) -> date:
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
+def _cache_is_fresh_for_period(raw: dict, year: int, month: int) -> bool:
+    """Текущий месяц обновляем ежедневно; закрытый месяц не берём до его окончания."""
+    today = date.today()
+    cache_day = _cache_date(raw)
+    if (year, month) == (today.year, today.month):
+        return cache_day == today
+    if (year, month) < (today.year, today.month):
+        return cache_day is None or cache_day >= _period_end(year, month)
+    return False
+
+
 def _has_nonzero_months(data: dict) -> bool:
     return any((row.get("fact") or 0) for row in data.get("months", []))
 
@@ -130,6 +152,8 @@ def _load_cache(year: int, month: int) -> dict | None:
             data = json.load(f)
         if data.get("cache_version") != CACHE_VERSION or "by_dept" not in data:
             return None
+        if not _cache_is_fresh_for_period(data, year, month):
+            return None
         return data
     except (OSError, json.JSONDecodeError):
         return None
@@ -142,6 +166,7 @@ def _save_cache(year: int, month: int, total: float,
         with open(_cache_path(year, month), "w", encoding="utf-8") as f:
             json.dump({
                 "cache_version": CACHE_VERSION,
+                "cache_date": date.today().isoformat(),
                 "total": total,
                 "by_dept": by_dept,
             }, f, ensure_ascii=False)
@@ -588,7 +613,11 @@ def get_dengi_monthly(year: int | None = None,
             with open(mc, "r", encoding="utf-8") as f:
                 data = json.load(f)
             first_m = (data.get("months") or [{}])[0]
-            if data.get("cache_version") == CACHE_VERSION and "by_dept" in first_m:
+            if (
+                data.get("cache_version") == CACHE_VERSION
+                and "by_dept" in first_m
+                and _cache_is_fresh_for_period(data, ref_y, ref_m)
+            ):
                 return _slice_payload(data, dept_guid)
         except (OSError, json.JSONDecodeError):
             pass
@@ -610,6 +639,7 @@ def get_dengi_monthly(year: int | None = None,
             })
         payload = {
             "cache_version": CACHE_VERSION,
+            "cache_date": date.today().isoformat(),
             "year": ref_y,
             "ref_month": ref_m,
             "months": out_months,
@@ -690,6 +720,7 @@ def get_dengi_monthly(year: int | None = None,
 
     payload = {
         "cache_version": CACHE_VERSION,
+        "cache_date": date.today().isoformat(),
         "year": ref_y,
         "ref_month": ref_m,
         "months": out_months,

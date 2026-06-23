@@ -2731,6 +2731,15 @@ def _build_universal_payload(
             tablitsy['KD-T-OVERDUE'] = _build_overdue_table(ref_y, ref_m, dept_guid=None)
         except Exception:
             pass
+        try:
+            from . import calc_metrolog_production_plan
+
+            tablitsy['METD-T-M1-LATE-STAGES'] = calc_metrolog_production_plan.get_metrolog_late_stage_table(
+                year=ref_y,
+                month=ref_m,
+            )
+        except Exception:
+            logger.exception("Не удалось построить таблицу просроченных этапов метролога")
     else:
         dept_protocol_tables.merge_protocol_overdue_table(tablitsy, dept, year=ref_y, month=ref_m)
 

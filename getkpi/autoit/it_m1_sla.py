@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "autoit_it_m1_sla"
 CACHE_SOURCE_TAG = "autoit_it_m1_sla_ytd"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 MONTHLY_CACHE_PREFIX = "autoit_it_m1_sla_monthly"
 MONTHLY_SOURCE_TAG = "autoit_it_m1_sla_monthly_v1"
@@ -104,10 +104,60 @@ def _month_row_from_snapshot(ref_y: int, m: int, snapshot: dict[str, Any]) -> di
     }
 
 
+def _display_row_for_ref_period(
+    monthly_rows: list[dict[str, Any]],
+    ref_y: int,
+    ref_m: int,
+) -> dict[str, Any] | None:
+    """Строка для плитки: опорный месяц, если в нём есть данные, иначе последний полный."""
+    ref_row: dict[str, Any] | None = None
+    last_with_data: dict[str, Any] | None = None
+    for row in monthly_rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("month") == ref_m and row.get("year") == ref_y:
+            ref_row = row
+        if row.get("has_data"):
+            last_with_data = row
+    if ref_row and ref_row.get("has_data"):
+        return ref_row
+    return last_with_data
+
+
+def _ytd_payload_matches_monthlies(
+    cached: dict[str, Any],
+    ref_y: int,
+    ref_m: int,
+) -> bool:
+    """YTD-агрегат устарел, если строки monthly_data не совпадают с помесячными кэшами."""
+    rows = cached.get("monthly_data") or []
+    if not isinstance(rows, list):
+        return False
+    by_month = {
+        int(row.get("month")): row
+        for row in rows
+        if isinstance(row, dict) and row.get("month") is not None
+    }
+    for m in range(1, ref_m + 1):
+        cached_row = by_month.get(m)
+        if cached_row is None:
+            return False
+        snapshot = _load_monthly_cache(ref_y, m)
+        if snapshot is None:
+            return False
+        try:
+            plan_ok = float(cached_row.get("plan") or -1) == float(snapshot.get("plan") or -2)
+            fact_ok = float(cached_row.get("fact") or -1) == float(snapshot.get("fact") or -2)
+        except (TypeError, ValueError):
+            return False
+        if not (plan_ok and fact_ok):
+            return False
+    return True
+
+
 def _build_it_m1_sla_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_it_tile_period(year, month)
     monthly_rows: list[dict[str, Any]] = []
-    ref_row: dict[str, Any] | None = None
     monthly_debug: list[dict[str, Any]] = []
 
     for m in range(1, ref_m + 1):
@@ -121,24 +171,24 @@ def _build_it_m1_sla_payload(year: int | None = None, month: int | None = None) 
                 "counts": snapshot.get("counts") or {},
             }
         )
-        if m == ref_m:
-            ref_row = row
 
+    display_row = _display_row_for_ref_period(monthly_rows, ref_y, ref_m)
     with_data = [row for row in monthly_rows if row.get("has_data")]
+    display_m = int(display_row["month"]) if display_row else ref_m
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
-        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+        "last_full_month_row": dict(display_row) if display_row else None,
         "kpi_period": {
             "type": "last_full_month",
             "year": ref_y,
-            "month": ref_m,
-            "month_name": MONTH_NAMES[ref_m],
+            "month": display_m,
+            "month_name": MONTH_NAMES[display_m],
         },
         "ytd": {
-            "total_plan": ref_row.get("plan") if ref_row else None,
-            "total_fact": ref_row.get("fact") if ref_row else None,
-            "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+            "total_plan": display_row.get("plan") if display_row else None,
+            "total_fact": display_row.get("fact") if display_row else None,
+            "kpi_pct": display_row.get("kpi_pct") if display_row else None,
             "months_with_data": len(with_data),
             "months_total": len(monthly_rows),
             "values_unit": "шт.",
@@ -172,7 +222,7 @@ def get_it_m1_sla_ytd(year: int | None = None, month: int | None = None) -> dict
             version=CACHE_VERSION,
             perpetual=perpetual,
         )
-        if cached is not None:
+        if cached is not None and _ytd_payload_matches_monthlies(cached, ref_y, ref_m):
             return cached
         try:
             payload = _build_it_m1_sla_payload(year=year, month=month)

@@ -504,6 +504,35 @@ def _save_json(path: Path, data: dict) -> None:
         pass
 
 
+def _monthly_cache_is_current(data: dict | None, ref_y: int, ref_m: int) -> bool:
+    """Месячный агрегат валиден только если строки построены на нужные даты снимков."""
+    if data is None:
+        return False
+    if data.get("kz_source") != "predoplata_upr":
+        return False
+    if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
+        return False
+
+    rows = data.get("months") or []
+    if not rows or not all("kz_fact" in row for row in rows):
+        return False
+
+    expected_dates = {
+        month: snap_date.isoformat()
+        for month, snap_date in _snap_dates_for_year_through_month(ref_y, ref_m)
+    }
+    rows_by_month = {
+        int(row.get("month")): row
+        for row in rows
+        if isinstance(row, dict) and row.get("month") is not None
+    }
+    for month, expected_date in expected_dates.items():
+        row = rows_by_month.get(month)
+        if row is None or row.get("na_datu") != expected_date:
+            return False
+    return True
+
+
 def _overdue_detail_cache_is_current(data: dict | None) -> bool:
     """Кэш детализации должен содержать новую колонку ликвидированных подразделений."""
     if data is None:
@@ -765,20 +794,12 @@ def get_komdir_dz_monthly(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
-    _ensure_debitorka_caches_for_period(ref_y, ref_m)
+    _ensure_debitorka_caches_for_period(ref_y, ref_m, include_overdue_detail=False)
 
     if dept_name is None:
         cached = _load_json(_cache_path_monthly(ref_y, ref_m))
-        # Старые кэши без маркера kz_source="predoplata_upr" или без алиасов
-        # коммерческих подразделений пересобираем.
-        if (
-            cached is not None
-            and cached.get("kz_source") == "predoplata_upr"
-            and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
-        ):
-            rows = cached.get("months") or []
-            if not rows or all("kz_fact" in r for r in rows):
-                return cached
+        if _monthly_cache_is_current(cached, ref_y, ref_m):
+            return cached
 
     snap_dates = _snap_dates_for_year_through_month(ref_y, ref_m)
 
@@ -842,7 +863,12 @@ def _snap_dates_for_year_through_month(ref_y: int, ref_m: int) -> list[tuple[int
     return out
 
 
-def _ensure_debitorka_caches_for_period(ref_y: int, ref_m: int) -> None:
+def _ensure_debitorka_caches_for_period(
+    ref_y: int,
+    ref_m: int,
+    *,
+    include_overdue_detail: bool = False,
+) -> None:
     """Один запрос к OData: снимки ДЗ и детализация просрочки за все месяцы 1..ref_m.
 
     Если каких-то снимков или файлов overdue_detail нет / устарели (не сегодняшняя
@@ -859,6 +885,7 @@ def _ensure_debitorka_caches_for_period(ref_y: int, ref_m: int) -> None:
             snap is None
             or snap.get("kz_source") != "predoplata_upr"
             or snap.get("dept_alias_source") != DEPT_ALIAS_SOURCE
+            or snap.get("na_datu") != d.isoformat()
         )
 
     uncached = [d for _, d in snap_dates if _snapshot_needs_refresh(d)]
@@ -867,7 +894,11 @@ def _ensure_debitorka_caches_for_period(ref_y: int, ref_m: int) -> None:
         od = _load_json(_cache_path_overdue_detail(d))
         return not _overdue_detail_cache_is_current(od)
 
-    overdue_stale = [d for _, d in snap_dates if _overdue_needs_refresh(d)]
+    overdue_stale = (
+        [d for _, d in snap_dates if _overdue_needs_refresh(d)]
+        if include_overdue_detail
+        else []
+    )
 
     if not uncached and not overdue_stale:
         return
@@ -920,7 +951,7 @@ def get_overdue_detail(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
-    _ensure_debitorka_caches_for_period(ref_y, ref_m)
+    _ensure_debitorka_caches_for_period(ref_y, ref_m, include_overdue_detail=True)
 
     na_datu = _month_end(ref_y, ref_m)
     if na_datu > today:

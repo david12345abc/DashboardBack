@@ -1,8 +1,8 @@
 {
   "na_datu": "2026-02-28",
-  "cache_date": "2026-06-18",
+  "cache_date": "2026-06-23",
   "dept_alias_source": "commercial_department_aliases_v2",
-  "total_overdue": 223854777.54,
+  "total_overdue": 224534902.44,
   "rows": [
     {
       "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
@@ -385,6 +385,32 @@
           "amount": 363864.0,
           "days_overdue": 1135,
           "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "7587c178-92f6-11f0-96f9-6cb31113810e",
+      "dept_name": "Отдел дилерских продаж",
+      "source_dept_key": "ff740269-d71e-11e6-8127-001e67112509",
+      "liquidated_dept_name": "(ликв.) Отдел дилерских продаж промышленного оборудования",
+      "partner_key": "d7f5ff44-a8c6-11e7-8266-ac1f6b05524d",
+      "partner_name": "Метрогазсервис ООО",
+      "counterparty": "Метрогазсервис ООО",
+      "order_key": "fe28a683-cc58-11f0-974e-6cb31113810c",
+      "order_num": "МПГ00011528",
+      "order_date": "2025-08-19",
+      "amount": 680124.9,
+      "dz_total": 680124.9,
+      "days_overdue": 14,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-02-14",
+          "amount": 680124.9,
+          "days_overdue": 14,
+          "bucket": "1-29 дн."
         }
       ],
       "reason": "",
