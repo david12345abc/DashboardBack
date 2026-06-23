@@ -4,9 +4,10 @@ QD-M1 — внешний брак (директор по качеству / qual
 Источник: ``Document_ТД_Форма0319`` через ``qualdir.brak_report``.
 
 За выбранный месяц:
-  1) ``plan`` — согласованные формы по ``Date`` (исключены черновики/отказ/отмена);
-  2) ``fact`` — значимые (``ФормаЯвляетсяЗначимой = Истина``);
-  3) ``departments`` — ``ПодразделениеПоставщика``.
+  1) ``plan`` — заявки по ``Date`` (исключены ``НеСогласовано``, ``Отменена``, ``НаСогласовании``);
+  2) ``fact`` — исполненные (``Статус = Выполнено``);
+  3) ``significant`` — значимые (``ФормаЯвляетсяЗначимой = Истина``);
+  4) ``departments`` — ``ПодразделениеПоставщика``.
 
 Кэш OData: ``qualdir_external_brak_<Y>_<MM>.json``.
 YTD-файл только для mtime / warm; данные плитки всегда собираются заново из помесячных снимков.
@@ -33,12 +34,12 @@ logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 _MONTH_CACHE_META = frozenset({"source", "cache_version", "cache_date"})
-SOURCE_TAG = "qualdir_external_brak_month_v6"
-CACHE_VERSION = 6
+SOURCE_TAG = "qualdir_external_brak_month_v9"
+CACHE_VERSION = 9
 
 QD_M1_YTD_CACHE_PREFIX = "qualdir_qd_m1_ytd"
-QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v9"
-QD_M1_YTD_DISK_VERSION = 9
+QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v13"
+QD_M1_YTD_DISK_VERSION = 13
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
@@ -83,7 +84,7 @@ def _month_snapshot_is_valid(snapshot: dict[str, Any] | None) -> bool:
         return True
     if snapshot.get("total") is None:
         return False
-    return "significant" in snapshot
+    return "executed" in snapshot
 
 
 def _month_row_has_plan_fact(row: dict[str, Any]) -> bool:
@@ -191,6 +192,7 @@ def compute_qd_m1_external_brak_month(
             "year": year,
             "month": month,
             "total": None,
+            "executed": None,
             "significant": None,
             "departments": [],
             "has_data": False,
@@ -205,16 +207,19 @@ def compute_qd_m1_external_brak_month(
 
 def _month_row_from_snapshot(snapshot: dict[str, Any], y: int, m: int) -> dict[str, Any]:
     total = snapshot.get("total")
+    executed = snapshot.get("executed")
     significant = snapshot.get("significant")
     has_data = bool(snapshot.get("has_data")) and total is not None
     plan = int(total) if has_data else None
-    fact = int(significant) if has_data and significant is not None else None
+    fact = int(executed) if has_data and executed is not None else None
+    sig = int(significant) if has_data and significant is not None else None
     row: dict[str, Any] = {
         "year": y,
         "month": m,
         "month_name": MONTH_RU[m].lower(),
         "plan": plan,
         "fact": fact,
+        "significant": sig,
         "kpi_pct": _qd_q2_kpi_pct(plan, fact),
         "has_data": has_data,
         "departments": [dict(item) for item in snapshot.get("departments") or []],
@@ -253,6 +258,7 @@ def _compute_qd_m1_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
                     "year": y,
                     "month": m,
                     "total": None,
+                    "executed": None,
                     "significant": None,
                     "departments": [],
                     "has_data": False,
@@ -276,6 +282,7 @@ def _compute_qd_m1_tile(ref_y: int, ref_m: int) -> dict[str, Any]:
             "ytd": {
                 "total_plan": ref_row.get("plan") if ref_row else None,
                 "total_fact": ref_row.get("fact") if ref_row else None,
+                "total_significant": ref_row.get("significant") if ref_row else None,
                 "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
                 "months_with_data": months_with_data,
                 "months_total": len(monthly_rows),

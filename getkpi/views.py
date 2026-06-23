@@ -70,9 +70,22 @@ from qualdir.qd_m7 import (
 )
 from qualdir.qd_m6 import (
     get_qd_m6_ytd,
+    legacy_otk_predyavlenie_month_cache_path,
     otk_predyavlenie_month_cache_path,
     qd_m6_tile_cache_path,
     qd_m6_ytd_cache_path,
+)
+from qualdir.qd_m9 import (
+    get_qd_m9_ytd,
+    otk_predyavlenie_npo_month_cache_path,
+    qd_m9_tile_cache_path,
+    qd_m9_ytd_cache_path,
+)
+from qualdir.qd_m10 import (
+    get_qd_m10_ytd,
+    otk_predyavlenie_almaz_month_cache_path,
+    qd_m10_tile_cache_path,
+    qd_m10_ytd_cache_path,
 )
 from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
 from qualdir.turnover import (
@@ -636,11 +649,11 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     ytd = entry.get('ytd') or {}
     kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
 
-    if kid == 'QD-M1' or kid == 'QD-M5' or kid == 'QD-M8':
+    if kid in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:
         pct = ytd.get('kpi_pct')
         if pct is not None:
             pct = float(pct)
-        color = _rag_td_m4_limit(pct)
+        color = _qualdir_kpi_views.rag_plan_fact_pct(pct)
         return pct, color
 
     pct = ytd.get('kpi_pct')
@@ -781,6 +794,21 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             qd_m6_ytd_cache_path(ref_y, ref_m),
             otk_predyavlenie_month_cache_path(ref_y, ref_m),
             qd_m6_tile_cache_path(ref_y, ref_m),
+        ]
+        legacy_month = legacy_otk_predyavlenie_month_cache_path(ref_y, ref_m)
+        if legacy_month is not None:
+            cache_files.append(legacy_month)
+    elif kpi_id == 'QD-M9':
+        cache_files = [
+            qd_m9_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_npo_month_cache_path(ref_y, ref_m),
+            qd_m9_tile_cache_path(ref_y, ref_m),
+        ]
+    elif kpi_id == 'QD-M10':
+        cache_files = [
+            qd_m10_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_almaz_month_cache_path(ref_y, ref_m),
+            qd_m10_tile_cache_path(ref_y, ref_m),
         ]
     elif kpi_id == 'QD-M7':
         cache_files = [
@@ -936,9 +964,12 @@ def _build_tile_item(
             lfr = tile.get('last_full_month_row') or {}
             if lfr.get('kinds') is not None:
                 tile['kinds'] = lfr.get('kinds')
-    if kpi.get('kpi_id') == 'QD-M6':
         lfr = tile.get('last_full_month_row') or {}
-        for extra_key in ('in_work_today', 'delay_count'):
+        if lfr.get('significant') is not None:
+            tile['significant'] = lfr.get('significant')
+    if kpi.get('kpi_id') in _qualdir_kpi_views.OTK_INCOMING_TILE_IDS:
+        lfr = tile.get('last_full_month_row') or {}
+        for extra_key in ('in_work_today', 'rejected_items_count'):
             if extra_key in lfr:
                 tile[extra_key] = lfr.get(extra_key)
     if kpi.get('kpi_id') == 'QD-M7':
@@ -1544,7 +1575,7 @@ def _build_universal_payload(
         )
         if not lm:
             lm = entry.get('last_full_month_row') or {}
-        if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M8'}:
+        if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10'}:
             lfr = entry.get('last_full_month_row') or {}
             if lfr.get('plan') is not None and (
                 not lm or (lm.get('plan') is None and lm.get('fact') is not None)
@@ -1573,11 +1604,14 @@ def _build_universal_payload(
                     tile['departments'] = lm.get('departments')
                 if kpi.get('kpi_id') == 'QD-M8' and 'kinds' in lm:
                     tile['kinds'] = lm.get('kinds')
+                if lm.get('significant') is not None:
+                    tile['significant'] = lm.get('significant')
+            if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10'}:
                 if lm.get('kpi_pct') is not None:
                     tile['kpi_pct'] = lm.get('kpi_pct')
-                    tile['color'] = _rag_td_m4_limit(float(lm['kpi_pct']))
-            if kpi.get('kpi_id') == 'QD-M6':
-                for extra_key in ('in_work_today', 'delay_count'):
+                    tile['color'] = _qualdir_kpi_views.rag_plan_fact_pct(float(lm['kpi_pct']))
+            if kpi.get('kpi_id') in _qualdir_kpi_views.OTK_INCOMING_TILE_IDS:
+                for extra_key in ('in_work_today', 'rejected_items_count'):
                     if extra_key in lm:
                         tile[extra_key] = lm.get(extra_key)
             if kpi.get('kpi_id') == 'QD-M7':
@@ -1612,7 +1646,7 @@ def _build_universal_payload(
                     tile['data_granularity'] = 'monthly'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
-        elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1', 'QD-M6', 'QD-M7', 'QD-M8'}:
+        elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1', 'QD-M6', 'QD-M7', 'QD-M8', 'QD-M9', 'QD-M10'}:
             tile['unit'] = 'шт.'
         elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'

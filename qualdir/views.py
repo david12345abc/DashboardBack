@@ -10,19 +10,37 @@ from .qd_m3 import get_qd_m3_ytd
 from .qd_m4 import get_qd_m4_ytd
 from .qd_m5 import get_qd_m5_ytd
 from .qd_m6 import get_qd_m6_ytd
+from .qd_m9 import get_qd_m9_ytd
+from .qd_m10 import get_qd_m10_ytd
 from .qd_m7 import get_qd_m7_ytd
 from .qd_m8 import get_qd_m8_ytd
 from .turnover import get_qd_q2_ytd
 
 QUALDIR_TILE_KPI_IDS: frozenset[str] = frozenset({
-    'QD-Q2', 'QD-Q1', 'QD-M1', 'QD-M4', 'QD-M3', 'QD-M5', 'QD-M6', 'QD-M7', 'QD-M8',
+    'QD-Q2', 'QD-Q1', 'QD-M1', 'QD-M4', 'QD-M3', 'QD-M5',
+    'QD-M6', 'QD-M7', 'QD-M8', 'QD-M9', 'QD-M10',
 })
 
 KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset(
-    {'QD-M1', 'QD-M3', 'QD-M4', 'QD-M5', 'QD-M8'}
+    {'QD-M1', 'QD-M3', 'QD-M4', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10'}
 )
 RUB_UNIT_KPI_IDS: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
 TILE_COLOR_TD_M4_LIMIT_IDS: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
+TILE_COLOR_PLAN_FACT_IDS: frozenset[str] = frozenset(
+    {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10'}
+)
+OTK_INCOMING_TILE_IDS: frozenset[str] = frozenset({'QD-M6', 'QD-M9', 'QD-M10'})
+
+
+def rag_plan_fact_pct(pct: float | None) -> str:
+    """QD-M1/M5/M6/M8: ≥90 % — зелёный, 80–89,9 % — жёлтый, <80 % — красный."""
+    if pct is None:
+        return 'unknown'
+    if pct >= 90:
+        return 'green'
+    if pct >= 80:
+        return 'yellow'
+    return 'red'
 
 
 def _merge_qd_q2(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
@@ -128,6 +146,32 @@ def _merge_qd_m6(entry: dict[str, Any], year: int | None, month: int | None) -> 
     return True
 
 
+def _merge_qd_m9(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
+    qd = get_qd_m9_ytd(year=year, month=month)
+    if qd is None:
+        return False
+    entry['data_granularity'] = qd['data_granularity']
+    entry['monthly_data'] = qd['monthly_data']
+    entry['last_full_month_row'] = qd.get('last_full_month_row')
+    entry['ytd'] = qd['ytd']
+    entry['kpi_period'] = qd['kpi_period']
+    entry['debug'] = qd.get('debug')
+    return True
+
+
+def _merge_qd_m10(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
+    qd = get_qd_m10_ytd(year=year, month=month)
+    if qd is None:
+        return False
+    entry['data_granularity'] = qd['data_granularity']
+    entry['monthly_data'] = qd['monthly_data']
+    entry['last_full_month_row'] = qd.get('last_full_month_row')
+    entry['ytd'] = qd['ytd']
+    entry['kpi_period'] = qd['kpi_period']
+    entry['debug'] = qd.get('debug')
+    return True
+
+
 def _merge_qd_m5(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
     qd = get_qd_m5_ytd(year=year, month=month)
     if qd is None:
@@ -151,6 +195,8 @@ _MERGE_BY_ID: dict[str, Callable[[dict[str, Any], int | None, int | None], bool]
     'QD-M3': _merge_qd_m3,
     'QD-M5': _merge_qd_m5,
     'QD-M6': _merge_qd_m6,
+    'QD-M9': _merge_qd_m9,
+    'QD-M10': _merge_qd_m10,
     'QD-M7': _merge_qd_m7,
     'QD-M8': _merge_qd_m8,
 }

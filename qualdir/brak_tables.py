@@ -33,9 +33,9 @@ TABLE_ID_INTERNAL = "QD-T-M5"
 TABLE_ID_FORMA0317 = "QD-T-M8"
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-TABLE_MONTH_CACHE_VERSION = 3
-TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v3"
-TABLE_YTD_DISK_VERSION = 3
+TABLE_MONTH_CACHE_VERSION = 7
+TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v7"
+TABLE_YTD_DISK_VERSION = 7
 
 
 def _month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
@@ -76,7 +76,9 @@ def _load_month_table_cache(table_kind: str, year: int, month: int) -> list[dict
     rows = data.get("rows")
     if not isinstance(rows, list):
         return None
-    if rows and isinstance(rows[0], dict) and "Значимая форма" not in rows[0]:
+    if rows and isinstance(rows[0], dict) and (
+        "Значимая форма" not in rows[0] or "Статус" not in rows[0]
+    ):
         return None
     return rows
 

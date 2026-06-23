@@ -109,7 +109,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from gspp import ol_gspp_monthly as gspp_ol_m2
     from gspp import q5 as gspp_q5
     from gspp import tkp_lifecycle as gspp_tkp
-    from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8
+    from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8, qd_m9, qd_m10
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
     from sup import hrd_m1, hrd_m4, hrd_q4
     from getkpi.autoit.it_m1_sla import (
@@ -252,6 +252,26 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'qualdir_qd_m6_tile_{y}_{m}',
          qd_m6.qd_m6_tile_cache_path(y, m),
          lambda yy=y, mm=m: qd_m6.get_qd_m6_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m6_month_{y}_{m}',
+         qd_m6.otk_predyavlenie_month_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m6.compute_qd_m6_month(yy, mm)),
+
+        (f'qualdir_qd_m9_tile_{y}_{m}',
+         qd_m9.qd_m9_tile_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m9.get_qd_m9_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m9_month_{y}_{m}',
+         qd_m9.otk_predyavlenie_npo_month_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m9.compute_qd_m9_month(yy, mm)),
+
+        (f'qualdir_qd_m10_tile_{y}_{m}',
+         qd_m10.qd_m10_tile_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m10.get_qd_m10_ytd(year=yy, month=mm)),
+
+        (f'qualdir_qd_m10_month_{y}_{m}',
+         qd_m10.otk_predyavlenie_almaz_month_cache_path(y, m),
+         lambda yy=y, mm=m: qd_m10.compute_qd_m10_month(yy, mm)),
 
         (f'qualdir_qd_m7_tile_{y}_{m}',
          qd_m7.qd_m7_tile_cache_path(y, m),
