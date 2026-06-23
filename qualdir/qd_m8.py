@@ -33,13 +33,11 @@ logger = logging.getLogger(__name__)
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 _MONTH_CACHE_META = frozenset({"source", "cache_version", "cache_date"})
 SOURCE_TAG = "qualdir_forma0317_month_v7"
-SOURCE_TAG_LEGACY = "qualdir_forma0317_month_v6"
 CACHE_VERSION = 7
-CACHE_VERSION_LEGACY = 6
 
 QD_M8_YTD_CACHE_PREFIX = "qualdir_qd_m8_ytd"
-QD_M8_YTD_DISK_TAG = "qualdir_qd_m8_ytd_payload_v7"
-QD_M8_YTD_DISK_VERSION = 7
+QD_M8_YTD_DISK_TAG = "qualdir_qd_m8_ytd_payload_v8"
+QD_M8_YTD_DISK_VERSION = 8
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
@@ -145,9 +143,7 @@ def _load_month_cache(year: int, month: int) -> dict[str, Any] | None:
         return None
     source = data.get("source")
     version = data.get("cache_version")
-    if source not in (SOURCE_TAG, SOURCE_TAG_LEGACY):
-        return None
-    if version not in (CACHE_VERSION, CACHE_VERSION_LEGACY):
+    if source != SOURCE_TAG or version != CACHE_VERSION:
         return None
     if not _month_row_cache_is_perpetual(year, month):
         if data.get("cache_date") != date.today().isoformat():
