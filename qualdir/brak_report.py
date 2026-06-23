@@ -82,6 +82,14 @@ FORM_0317_CONFIG = ReportConfig(
     description="Документы ТД_Форма0317: подразделение поставщика и виды несоответствий.",
 )
 
+# Формы без завершённого согласования или снятые с учёта — не входят в plan/fact.
+EXCLUDED_APPROVAL_STATUSES = frozenset({
+    "НеСогласовано",
+    "Подготовлен",
+    "НаСогласовании",
+    "Отменена",
+})
+
 
 def normalize_text(value: str | None) -> str:
     text = (value or "").strip().lower().replace("ё", "е")
@@ -177,6 +185,14 @@ def build_filter(date_from: date, date_to: date) -> str:
     return " and ".join(parts)
 
 
+def is_countable_brak_document(row: dict) -> bool:
+    """Форма участвует в plan/fact только после согласования (не черновик/отказ/отмена)."""
+    status = (row.get("Статус") or "").strip()
+    if not status:
+        return False
+    return status not in EXCLUDED_APPROVAL_STATUSES
+
+
 def ref_name(value: Any) -> str:
     if isinstance(value, dict):
         return (value.get("Description") or "").strip()
@@ -200,6 +216,7 @@ def load_documents(
         "Number",
         "Date",
         "Posted",
+        "Статус",
         "НаименованиеИзделия",
         "ПодразделениеПоставщика",
         "Несоответствия",
@@ -215,8 +232,10 @@ def load_documents(
     )
     log(f"Загрузка {config.doc_entity} …")
     rows = fetch_all(session, url)
-    log(f"  Документов: {len(rows)}")
-    return rows
+    accepted = [row for row in rows if is_countable_brak_document(row)]
+    skipped = len(rows) - len(accepted)
+    log(f"  Документов: {len(accepted)}" + (f" (исключено по Статус: {skipped})" if skipped else ""))
+    return accepted
 
 
 def load_kind_names(session: requests.Session, keys: set[str]) -> dict[str, str]:
@@ -296,6 +315,7 @@ def normalize_documents(rows: list[dict], kind_names: dict[str, str]) -> list[di
                 "product": (row.get("НаименованиеИзделия") or "").strip() or "—",
                 "kinds": defect_kinds(row, kind_names),
                 "is_significant": row.get("ФормаЯвляетсяЗначимой") is True,
+                "status": (row.get("Статус") or "").strip() or "—",
             }
         )
     return result

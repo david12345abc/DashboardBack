@@ -4,7 +4,7 @@ QD-M1 — внешний брак (директор по качеству / qual
 Источник: ``Document_ТД_Форма0319`` через ``qualdir.brak_report``.
 
 За выбранный месяц:
-  1) ``plan`` — всего форм по ``Date``;
+  1) ``plan`` — согласованные формы по ``Date`` (исключены черновики/отказ/отмена);
   2) ``fact`` — значимые (``ФормаЯвляетсяЗначимой = Истина``);
   3) ``departments`` — ``ПодразделениеПоставщика``.
 
@@ -33,14 +33,14 @@ logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 _MONTH_CACHE_META = frozenset({"source", "cache_version", "cache_date"})
-SOURCE_TAG = "qualdir_external_brak_month_v5"
-SOURCE_TAG_LEGACY = "qualdir_external_brak_month_v4"
-CACHE_VERSION = 5
-CACHE_VERSION_LEGACY = 4
+SOURCE_TAG = "qualdir_external_brak_month_v6"
+SOURCE_TAG_LEGACY = "qualdir_external_brak_month_v5"
+CACHE_VERSION = 6
+CACHE_VERSION_LEGACY = 5
 
 QD_M1_YTD_CACHE_PREFIX = "qualdir_qd_m1_ytd"
-QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v7"
-QD_M1_YTD_DISK_VERSION = 7
+QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v8"
+QD_M1_YTD_DISK_VERSION = 8
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:

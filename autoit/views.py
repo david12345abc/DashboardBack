@@ -19,7 +19,6 @@ AUTOIT_KPI_IDS: frozenset[str] = frozenset({
     "ИТ-M2", "IT-M2",
     "ИТ-M3", "IT-M3",
     "ИТ-M4", "IT-M4",
-    "ИТ-Q1", "IT-Q1",
     "ИТ-Q2", "IT-Q2",
     "ИТ-Y1", "IT-Y1",
     "ИТ-C1", "IT-C1",
@@ -34,7 +33,6 @@ AUTOIT_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
     "ИТ-M2", "IT-M2",
     "ИТ-M3", "IT-M3",
     "ИТ-M4", "IT-M4",
-    "ИТ-Q1", "IT-Q1",
     "ИТ-Q2", "IT-Q2",
     "ИТ-Y1", "IT-Y1",
 })

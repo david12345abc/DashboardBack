@@ -1,6 +1,8 @@
 """KPI ИТ-M3 / IT-M3 (бюджет): план из it_m3_plan, факт из it_m3_fact.
 
-Кэш: ``getkpi/dashboard/autoit_it_m3_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
+Кэш:
+  • помесячно — ``getkpi/dashboard/autoit_it_m3_fact_monthly_<год>_<месяц>.json``;
+  • YTD-плитка — ``getkpi/dashboard/autoit_it_m3_<год>_<месяц>.json``.
 """
 
 from __future__ import annotations
@@ -21,7 +23,11 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "autoit_it_m3"
 CACHE_SOURCE_TAG = "autoit_it_m3_ytd"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
+
+MONTHLY_CACHE_PREFIX = "autoit_it_m3_fact_monthly"
+MONTHLY_SOURCE_TAG = "autoit_it_m3_fact_monthly_v1"
+MONTHLY_CACHE_VERSION = 1
 
 
 def _plan_for_month(year: int, month: int) -> float | None:
@@ -30,28 +36,85 @@ def _plan_for_month(year: int, month: int) -> float | None:
     return None
 
 
+def monthly_cache_path(year: int, month: int) -> Path:
+    return ytd_json_cache.cache_path(MONTHLY_CACHE_PREFIX, year, month)
+
+
+def _monthly_cache_is_perpetual(year: int, month: int) -> bool:
+    return ytd_json_cache.is_ref_period_fully_past(year, month)
+
+
+def _load_monthly_cache(year: int, month: int) -> dict[str, Any] | None:
+    return ytd_json_cache.load_payload(
+        monthly_cache_path(year, month),
+        source_tag=MONTHLY_SOURCE_TAG,
+        version=MONTHLY_CACHE_VERSION,
+        perpetual=_monthly_cache_is_perpetual(year, month),
+    )
+
+
+def _save_monthly_cache(year: int, month: int, payload: dict[str, Any]) -> None:
+    ytd_json_cache.save_payload(
+        monthly_cache_path(year, month),
+        payload,
+        source_tag=MONTHLY_SOURCE_TAG,
+        version=MONTHLY_CACHE_VERSION,
+    )
+
+
+def get_it_m3_fact_monthly(year: int, month: int) -> dict[str, Any]:
+    """Факт бюджета за один месяц с дисковым кэшем и блокировкой по ключу."""
+    cached = _load_monthly_cache(year, month)
+    if cached is not None:
+        return cached
+
+    lock_key = f"autoit_it_m3_fact_monthly_{year}_{month:02d}"
+
+    def _runner() -> dict[str, Any]:
+        again = _load_monthly_cache(year, month)
+        if again is not None:
+            return again
+        payload = compute_it_m3_fact_monthly(year, month)
+        _save_monthly_cache(year, month, payload)
+        return payload
+
+    return locked_call(lock_key, _runner)
+
+
+def _month_row_from_snapshot(ref_y: int, m: int, snapshot: dict[str, Any]) -> dict[str, Any]:
+    plan = _plan_for_month(ref_y, m)
+    fact_raw = snapshot.get("total_fact")
+    fact_value = float(fact_raw) if fact_raw is not None else None
+    has_data = plan is not None and fact_value is not None
+    return {
+        "month": m,
+        "year": ref_y,
+        "month_name": MONTH_NAMES[m],
+        "plan": round(plan, 2) if plan is not None else None,
+        "fact": round(fact_value, 2) if fact_value is not None else None,
+        "kpi_pct": _qd_q2_kpi_pct(plan, fact_value) if has_data else None,
+        "has_data": has_data,
+        "values_unit": "руб.",
+    }
+
+
 def _build_it_m3_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_it_tile_period(year, month)
     monthly_rows: list[dict[str, Any]] = []
     ref_row: dict[str, Any] | None = None
+    monthly_debug: list[dict[str, Any]] = []
 
     for m in range(1, ref_m + 1):
-        plan = _plan_for_month(ref_y, m)
-        fact_payload = compute_it_m3_fact_monthly(ref_y, m)
-        fact_raw = fact_payload.get("total_fact")
-        fact_value = float(fact_raw) if fact_raw is not None else None
-        has_data = plan is not None and fact_value is not None
-        row = {
-            "month": m,
-            "year": ref_y,
-            "month_name": MONTH_NAMES[m],
-            "plan": round(plan, 2) if plan is not None else None,
-            "fact": round(fact_value, 2) if fact_value is not None else None,
-            "kpi_pct": _qd_q2_kpi_pct(plan, fact_value) if has_data else None,
-            "has_data": has_data,
-            "values_unit": "руб.",
-        }
+        snapshot = get_it_m3_fact_monthly(ref_y, m)
+        row = _month_row_from_snapshot(ref_y, m, snapshot)
         monthly_rows.append(row)
+        monthly_debug.append(
+            {
+                "month": m,
+                "cache_file": str(monthly_cache_path(ref_y, m).name),
+                "counts": (snapshot.get("debug") or {}).get("counts") or snapshot.get("counts") or {},
+            }
+        )
         if m == ref_m:
             ref_row = row
 
@@ -79,6 +142,9 @@ def _build_it_m3_payload(year: int | None = None, month: int | None = None) -> d
             "kpi_id": "IT-M3",
             "plan_source": "getkpi/autoit/it_m3_plan.py (сумма 11 строк × месяц)",
             "fact_source": "getkpi/autoit/it_m3_fact.py",
+            "monthly_cache_prefix": MONTHLY_CACHE_PREFIX,
+            "monthly_cache_version": MONTHLY_CACHE_VERSION,
+            "monthly_debug": monthly_debug,
         },
     }
 
