@@ -40,7 +40,7 @@ print = functools.partial(print, flush=True)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
-CACHE_VERSION = 6
+CACHE_VERSION = 8
 
 DEPARTMENTS = {
     "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел ВЭД",
@@ -75,6 +75,14 @@ EXCHANGE_RATES = {
 }
 
 F_PARTNERS = "partners_exclude_cache.json"
+
+EXCLUDED_ORDER_PARTNER_NAMES = (
+    "АЛМАЗ ООО (рабочий)",
+    "Турбулентность-Дон ООО",
+    "Турбулентность-ДОН ООО НПО",
+    "СКТБ Турбо-Дон ООО",
+    "Метрогазсервис ООО",
+)
 
 MONTH_RU = {
     1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
@@ -206,14 +214,50 @@ def _partner_resale_sets(session: requests.Session) -> tuple[set[str], set[str]]
     return resale, resale_without_mgs
 
 
+def _currency_rate(currency_key: str | None) -> float:
+    return EXCHANGE_RATES.get(CURRENCY_KEYS.get(currency_key or "", "RUB"), 1.0)
+
+
+def _load_partner_keys_by_names(session: requests.Session,
+                                names: tuple[str, ...]) -> set[str]:
+    """Найти партнёров по наименованиям для дополнительных исключений заказа."""
+    result: set[str] = set()
+    for name in names:
+        escaped = name.replace("'", "''")
+        flt = quote(f"Description eq '{escaped}'", safe="")
+        url = (
+            f"{BASE}/Catalog_Партнеры?$format=json"
+            f"&$filter={flt}&$select=Ref_Key,Description&$top=10"
+        )
+        r = request_with_retry(session, url, timeout=30, retries=3, label="Dogovory/ExcludedPartners")
+        if r is None or not r.ok:
+            continue
+        try:
+            for row in r.json().get("value", []):
+                if row.get("Description") == name and row.get("Ref_Key"):
+                    result.add(row["Ref_Key"])
+        except Exception:
+            continue
+    return result
+
+
 def _dept_from_register(row: dict) -> str:
     """Отдел для KPI — только Подразделение_Key строки регистра (+ алиасы ликвидированных)."""
     return normalize_commercial_dept_guid(row.get("Подразделение_Key", ""))
 
 
 def _effective_dept(row: dict, order_data: dict[str, dict] | None = None) -> str:
-    """Старое имя (reload/.pyc): подразделение только из регистра; order_data не используется."""
-    return _dept_from_register(row)
+    """Отдел KPI: строка регистра, а если она некоммерческая — отдел заказа."""
+    dept = _dept_from_register(row)
+    if dept in DEPT_SET:
+        return dept
+    ok = row.get("ЗаказКлиента_Key", "")
+    od = (order_data or {}).get(ok)
+    if od:
+        order_dept = normalize_commercial_dept_guid(od.get("dept", ""))
+        if order_dept in DEPT_SET:
+            return order_dept
+    return dept
 
 
 def _calc_month_total(session: requests.Session, all_rows: list[dict],
@@ -268,7 +312,8 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
         url = (
             f"{BASE}/Document_ЗаказКлиента"
             f"?$format=json&$filter={flt}"
-            f"&$select=Ref_Key,ТД_НеУчитыватьВПланФакте"
+            f"&$select=Ref_Key,Партнер_Key,Валюта_Key,"
+            f"Подразделение_Key,ТД_СопровождениеПродажи,ТД_НеУчитыватьВПланФакте"
             f"&$top={BATCH}"
         )
         r = request_with_retry(session, url, timeout=30, retries=3, label="Dogovory/Orders")
@@ -277,17 +322,22 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
         try:
             for it in r.json().get("value", []):
                 order_data[it["Ref_Key"]] = {
+                    "partner": it.get("Партнер_Key", ""),
+                    "currency": it.get("Валюта_Key", ""),
+                    "dept": it.get("Подразделение_Key", ""),
+                    "soprovozhd": it.get("ТД_СопровождениеПродажи", False),
                     "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
                 }
         except Exception:
             pass
 
     resale_partners, resale_partners_without_mgs = _partner_resale_sets(session)
+    excluded_order_partners = _load_partner_keys_by_names(session, EXCLUDED_ORDER_PARTNER_NAMES)
 
     partner_ok = []
     for x in spec_ok:
         pk = x.get("Партнер_Key", "")
-        dept = _dept_from_register(x)
+        dept = _effective_dept(x, order_data)
         if dept not in DEPT_SET or dept == EMPTY:
             continue
         soprovozhd = x.get("ТД_СопровождениеПродажи", False)
@@ -309,8 +359,13 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
             if od:
                 if od["ne_uchit"]:
                     continue
+                if od["partner"] in excluded_order_partners:
+                    continue
+                if od["soprovozhd"]:
+                    continue
+                amt *= _currency_rate(od["currency"])
 
-        dept = _dept_from_register(x)
+        dept = _effective_dept(x, order_data)
         by_dept[dept] += amt
 
     by_dept = {d: round(v, 2) for d, v in by_dept.items()}
