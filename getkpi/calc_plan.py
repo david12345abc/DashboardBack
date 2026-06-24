@@ -28,6 +28,7 @@ from __future__ import annotations
 import calendar
 import json
 import logging
+import os
 import sys
 import time
 from datetime import date
@@ -49,6 +50,16 @@ BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
+# Источник «ожидаемых» значений (Сумма планируемых платежей / Заказы ожидаемые
+# к отгрузке / Договоры ожидаемые к заключению) — 1С HTTP-сервис, который
+# исполняет отчётные запросы с виртуальными таблицами (Остатки/Обороты).
+# Эти запросы невозможно воспроизвести через стандартный OData, поэтому
+# значения берём напрямую из сервиса. URL переопределяется переменной окружения.
+EXPECTED_SERVICE_URL = os.getenv(
+    "EXPECTED_PLAN_SERVICE_URL",
+    "http://192.168.2.229:81/erp_pm/hs/dashboard/expected",
+)
+
 DEPARTMENTS = {
     "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел ВЭД",
     "34497ef7-810f-11e4-80d6-001e67112509": "Отдел продаж эталонного оборуд. и услуг",
@@ -69,7 +80,7 @@ REG = "AccumulationRegister_ТД_ПланированиеДоговоровОт�
 EXPECTED_DOC = "Document_ТД_ПланированиеПроцессаПродажЕжемесячное"
 EXPECTED_CONTRACT_DOC = "Document_КоммерческоеПредложениеКлиенту"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 6
+CACHE_VERSION = 10
 PLAN_KEYS = ("dengi", "otgruzki", "dogovory")
 EXPECTED_KEYS = {
     "dengi": "dengi_expected",
@@ -804,35 +815,48 @@ def _proposal_expected_contract_amount(row: dict) -> float:
     return amount
 
 
+def _batch_load_users(session: requests.Session, user_keys: set[str]) -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    keys = sorted(k for k in user_keys if k and k != EMPTY)
+    fields = "Ref_Key,Подразделение_Key"
+    sel = quote(fields, safe=",_")
+    for i in range(0, len(keys), 20):
+        batch = keys[i:i + 20]
+        flt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
+        url = (
+            f"{BASE}/Catalog_Пользователи?$format=json&$top=5000"
+            f"&$filter={flt}&$select={sel}"
+        )
+        r = request_with_retry(session, url, timeout=60, retries=3, label="Plans/Users")
+        if r is None or not r.ok:
+            continue
+        for row in r.json().get("value", []):
+            result[row["Ref_Key"]] = row
+    return result
+
+
+def _expected_table_sum(rows: object) -> float:
+    if not isinstance(rows, list):
+        return 0.0
+    total = 0.0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        total += float(row.get("Сумма") or 0)
+    return total
+
+
 def _merge_expected_plans(result: dict[int, dict],
                           documents: list[dict],
                           ref_month: int,
                           proposals: list[dict] | None = None) -> None:
-    """Добавить сумму «Договоры, ожидаемые к заключению» в уже собранный план."""
-    manager_dept_by_month: dict[tuple[int, str], str] = {}
-    for doc in documents:
-        date_str = (doc.get("ДатаПланирования") or "")[:10]
-        if len(date_str) < 7:
-            continue
-        try:
-            m = int(date_str[5:7])
-        except (ValueError, IndexError):
-            continue
-        if m < 1 or m > ref_month:
-            continue
-
-        dept = doc.get("Подразделение_Key", "")
-        if not dept or dept == EMPTY or dept not in DEPT_SET:
-            continue
-        if doc.get("Статус") not in (None, "", "Подготовлен", "Утвержден"):
-            continue
-
-        month_row = result[m]
-        dept_row = month_row["by_dept"][dept]
-        manager = doc.get("Ответственный_Key")
-        if manager:
-            manager_dept_by_month[(m, manager)] = dept
-
+    """Добавить «Договоры, ожидаемые к заключению» из согласованных КП."""
+    session = requests.Session()
+    session.auth = AUTH
+    users = _batch_load_users(
+        session,
+        {row.get("Менеджер_Key", "") for row in proposals or []},
+    )
     for row in proposals or []:
         date_str = (row.get("ДатаПодписанияПлан") or "")[:10]
         if len(date_str) < 7:
@@ -843,20 +867,120 @@ def _merge_expected_plans(result: dict[int, dict],
             continue
         if m < 1 or m > ref_month:
             continue
-        manager = row.get("Менеджер_Key")
-        dept = manager_dept_by_month.get((m, manager))
-        if not dept:
+
+        # В 1С поле «ожидаемые к заключению» строится по согласованным КП,
+        # которые еще не согласованы клиентом.
+        if row.get("Статус") != "Согласовано" or row.get("СогласованоСКлиентом"):
             continue
-        amount = _proposal_expected_contract_amount(row)
+        user = users.get(row.get("Менеджер_Key", ""))
+        dept = _normalize_expected_dept(user.get("Подразделение_Key", "") if user else "")
+        if not dept or dept == EMPTY or dept not in DEPT_SET:
+            continue
+
+        amount = float(row.get("СуммаДокумента") or row.get("СуммаБазыКБ") or 0)
         result[m]["dogovory_expected"] += amount
         result[m]["by_dept"][dept]["dogovory_expected"] += amount
 
     for m in result:
-        for k in EXPECTED_KEYS.values():
-            result[m][k] = round(result[m][k], 2)
+        result[m]["dogovory_expected"] = round(result[m]["dogovory_expected"], 2)
         for d in result[m]["by_dept"]:
-            for k in EXPECTED_KEYS.values():
-                result[m]["by_dept"][d][k] = round(result[m]["by_dept"][d][k], 2)
+            result[m]["by_dept"][d]["dogovory_expected"] = round(
+                result[m]["by_dept"][d]["dogovory_expected"],
+                2,
+            )
+
+
+_SERVICE_FIELD_MAP = {
+    "dengi_expected": ("dengi", "Деньги", "СуммаПланируемыхПлатежей"),
+    "otgruzki_expected": ("otgruzki", "Отгрузки", "ЗаказыОжидаемыеКОтгрузке"),
+    "dogovory_expected": ("dogovory", "Договоры", "ДоговорыОжидаемыеКЗаключению"),
+}
+
+
+def _service_pick(node: dict, aliases: tuple[str, ...]) -> float:
+    for alias in aliases:
+        if alias in node:
+            try:
+                return float(node.get(alias) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
+
+
+def _fetch_expected_from_service(year: int, ref_month: int) -> dict[int, dict] | None:
+    """Запросить ожидаемые значения у 1С HTTP-сервиса.
+
+    Ожидаемый ответ (JSON)::
+
+        {"year": 2026, "months": [
+            {"month": 5, "by_dept": {
+                "<guid подразделения>": {
+                    "dengi": 0.0,        # Сумма планируемых платежей (план)
+                    "otgruzki": 0.0,      # Заказы ожидаемые к отгрузке (план)
+                    "dogovory": 0.0       # Договоры ожидаемые к заключению (план)
+                }, ...}},
+            ...]}
+
+    Допускаются и русские псевдонимы полей (``СуммаПланируемыхПлатежей`` и т.д.).
+    """
+    url = f"{EXPECTED_SERVICE_URL}?year={year}&month={ref_month}"
+    try:
+        r = requests.get(url, auth=AUTH, timeout=120)
+    except requests.RequestException as exc:
+        logger.warning("Expected service unreachable (%s): %s", url, exc)
+        return None
+    if not r.ok:
+        logger.warning("Expected service HTTP %d (%s)", r.status_code, url)
+        return None
+    try:
+        payload = r.json()
+    except ValueError:
+        logger.warning("Expected service returned non-JSON (%s)", url)
+        return None
+
+    result: dict[int, dict] = {}
+    for month_node in payload.get("months", []) or []:
+        try:
+            m = int(month_node.get("month"))
+        except (TypeError, ValueError):
+            continue
+        if m < 1 or m > ref_month:
+            continue
+        by_dept: dict[str, dict] = {}
+        for raw_guid, values in (month_node.get("by_dept") or {}).items():
+            dept = _normalize_expected_dept(raw_guid)
+            if dept not in DEPT_SET or not isinstance(values, dict):
+                continue
+            bucket = by_dept.setdefault(
+                dept,
+                {"dengi_expected": 0.0, "otgruzki_expected": 0.0, "dogovory_expected": 0.0},
+            )
+            for target, aliases in _SERVICE_FIELD_MAP.items():
+                bucket[target] += _service_pick(values, aliases)
+        result[m] = {"by_dept": by_dept}
+    return result
+
+
+def _apply_expected_values(result: dict[int, dict],
+                           year: int, ref_month: int) -> bool:
+    """Заполнить ожидаемые значения из 1С HTTP-сервиса."""
+    source = _fetch_expected_from_service(year, ref_month)
+    if not source:
+        return False
+
+    for m, month_row in result.items():
+        node = source.get(m, {})
+        by_dept = node.get("by_dept", {})
+        totals = {"dengi_expected": 0.0, "otgruzki_expected": 0.0, "dogovory_expected": 0.0}
+        for dept, dept_row in month_row["by_dept"].items():
+            svc = by_dept.get(dept, {})
+            for key in EXPECTED_KEYS.values():
+                value = round(float(svc.get(key, 0.0)), 2)
+                dept_row[key] = value
+                totals[key] += value
+        for key in EXPECTED_KEYS.values():
+            month_row[key] = round(totals[key], 2)
+    return True
 
 
 def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
@@ -953,10 +1077,17 @@ def get_plans_monthly(year: int | None = None,
     logger.info("calc_plan: loading register for %d months 1-%d", ref_y, ref_m)
     entries = _load_register(session, ref_y, ref_m)
     computed = _calc_plans(entries, ref_m)
-    expected_documents = _load_expected_documents(session, ref_y, ref_m)
-    expected_contracts = _load_expected_contract_proposals(session, ref_y, ref_m)
-    _merge_expected_plans(computed, expected_documents, ref_m, expected_contracts)
-    _merge_expected_money_and_shipments(computed, session, ref_y, ref_m)
+    # План (Маркетинговый план) считается из регистра выше; «ожидаемые» значения
+    # берём только из расчётного HTTP-сервиса 1С. Старые OData-аппроксимации здесь
+    # не используем: они не совпадают с «План-фактным анализом» 1С.
+    if _apply_expected_values(computed, ref_y, ref_m):
+        logger.info("calc_plan: expected values from 1C HTTP service")
+    else:
+        logger.warning(
+            "calc_plan: expected service unavailable; expected values left empty. "
+            "Publish 1C HTTP-service at %s",
+            EXPECTED_SERVICE_URL,
+        )
 
     out_months = []
     for m in range(1, ref_m + 1):
