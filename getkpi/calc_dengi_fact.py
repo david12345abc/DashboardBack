@@ -51,7 +51,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -427,18 +427,36 @@ def _resolve_order_for_object(
     return candidates[0]
 
 
-def _order_passes_plan_fact(order: dict, excl_full: set, excl_no_mgs: set) -> bool:
-    dept = normalize_commercial_dept_guid(order.get("dept", ""))
+def _payment_dept_if_passes_plan_fact(
+    catalog_obj: dict,
+    order: dict,
+    excl_full: set,
+    excl_no_mgs: set,
+    *,
+    opbo_mgs_exception: bool,
+) -> str | None:
+    """Повторить отбор 1С: отдел/соглашение из объекта расчетов, флаги из заказа."""
+    dept = normalize_commercial_dept_guid(catalog_obj.get("dept", ""))
     if _is_empty_ref(dept) or dept not in DEPT_SET:
-        return False
-    if _is_empty_ref(order.get("agreement")):
-        return False
+        return None
+    if _is_empty_ref(catalog_obj.get("agreement")):
+        return None
     if order.get("ne_uchit"):
-        return False
-    partner = order.get("partner", "")
-    if dept == OPBO_DEPT:
-        return partner not in excl_no_mgs
-    return partner not in excl_full or bool(order.get("soprovozhd"))
+        return None
+    if order.get("soprovozhd"):
+        return None
+    if order.get("partner", "") in excl_full:
+        return None
+
+    partner = catalog_obj.get("partner", "")
+    order_dept = normalize_commercial_dept_guid(order.get("dept", ""))
+    if opbo_mgs_exception and order_dept == OPBO_DEPT:
+        if partner in excl_no_mgs:
+            return None
+    elif partner in excl_full:
+        return None
+
+    return dept
 
 
 def _batch_load_partners(session: requests.Session,
@@ -464,7 +482,8 @@ def _batch_load_partners(session: requests.Session,
 # Расчёт трёх веток
 # ═══════════════════════════════════════════════════════
 
-def _calc_branch1(ds_rows: list[dict], orders_by_obj: dict[str, list[dict]],
+def _calc_branch1(ds_rows: list[dict], catalog: dict,
+                  orders_by_obj: dict[str, list[dict]],
                   excl_full: set, excl_no_mgs: set,
                   max_month: int) -> dict[str, dict[int, float]]:
     """Ветка 1: Клиентские оплаты (СуммаОплатыРегл). Возвращает by_dept."""
@@ -480,10 +499,17 @@ def _calc_branch1(ds_rows: list[dict], orders_by_obj: dict[str, list[dict]],
         obj_key = row.get("ОбъектРасчетов", "")
         if _is_empty_ref(obj_key):
             continue
-        order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key"))
-        if not order or not _order_passes_plan_fact(order, excl_full, excl_no_mgs):
+        catalog_obj = catalog.get(obj_key)
+        if not catalog_obj:
             continue
-        effective_dept = normalize_commercial_dept_guid(order.get("dept", ""))
+        order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key"))
+        if not order:
+            continue
+        effective_dept = _payment_dept_if_passes_plan_fact(
+            catalog_obj, order, excl_full, excl_no_mgs, opbo_mgs_exception=True,
+        )
+        if not effective_dept:
+            continue
 
         amt = float(row.get("СуммаОплатыРегл") or row.get("СуммаОплаты") or 0)
         if not amt:
@@ -543,7 +569,8 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, l
     return monthly
 
 
-def _calc_branch3(kk_rows: list[dict], orders_by_obj: dict[str, list[dict]],
+def _calc_branch3(kk_rows: list[dict], catalog: dict,
+                  orders_by_obj: dict[str, list[dict]],
                   excl_full: set, excl_no_mgs: set,
                   max_month: int) -> dict[str, dict[int, float]]:
     """Ветка 3: Взаимозачёты (СуммаРегл). Возвращает by_dept."""
@@ -559,10 +586,17 @@ def _calc_branch3(kk_rows: list[dict], orders_by_obj: dict[str, list[dict]],
         obj_key = row.get("ОбъектРасчетов", "")
         if _is_empty_ref(obj_key):
             continue
-        order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key"))
-        if not order or not _order_passes_plan_fact(order, excl_full, excl_no_mgs):
+        catalog_obj = catalog.get(obj_key)
+        if not catalog_obj:
             continue
-        effective_dept = normalize_commercial_dept_guid(order.get("dept", ""))
+        order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key"))
+        if not order:
+            continue
+        effective_dept = _payment_dept_if_passes_plan_fact(
+            catalog_obj, order, excl_full, excl_no_mgs, opbo_mgs_exception=False,
+        )
+        if not effective_dept:
+            continue
 
         amt = float(row.get("СуммаРегл") or row.get("Сумма") or 0)
         if not amt:
@@ -696,9 +730,9 @@ def get_dengi_monthly(year: int | None = None,
     excl_full = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES}
     excl_no_mgs = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS}
 
-    b1 = _calc_branch1(ds_rows, orders_by_obj, excl_full, excl_no_mgs, ref_m)
+    b1 = _calc_branch1(ds_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
     b2 = _calc_branch2(ds_rows, catalog, orders_by_obj, excl_full, ref_m)
-    b3 = _calc_branch3(kk_rows, orders_by_obj, excl_full, excl_no_mgs, ref_m)
+    b3 = _calc_branch3(kk_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
 
     merged = _merge_by_dept(b1, b2, b3, ref_m)
 
