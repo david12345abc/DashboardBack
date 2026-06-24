@@ -1,5 +1,5 @@
 {
-  "cache_date": "2026-06-11",
+  "cache_date": "2026-06-24",
   "cache_version": 8,
   "payload": {
     "name": "Проекты с отклонениями по вехам",
@@ -22,62 +22,69 @@
     "rows": [
       {
         "number": 1,
-        "project_code": "НПО/Реклама и PR/2026/70",
-        "project_name": "Календарь с сотрудницами на 2027 год",
-        "project_manager": "Беккер Алексей Владимирович",
-        "timeline": "02.03.2026 - 30.10.2026",
-        "deviation": "7 вех., 8 р.д.",
-        "delay_days": 8,
-        "status": "В работе",
-        "progress_pct": 42.0,
-        "overdue_milestones_count": 7,
+        "project_code": "НПО/ИГ/2026/56",
+        "project_name": "Автоматизация процессов запуска, ведения, контроля и завершения проектов согласно СТО-36-131 Управление проектами",
+        "project_manager": "Тищенко Марина Николаевна",
+        "timeline": "02.02.2026 - 04.06.2026",
+        "deviation": "8 вех., 11 р.д.",
+        "delay_days": 11,
+        "status": "Приостановлен",
+        "progress_pct": 58.0,
+        "overdue_milestones_count": 8,
         "milestone_deviations": [
           {
-            "name": "  График съемок подготовлен и согласован со всеми участниками процесса",
-            "start_date": "2026-06-01T17:00:00",
-            "finish_date": "2026-06-01T17:00:00",
+            "name": "Блок ИИ Turbo Project внедрен",
+            "start_date": "2026-06-09T15:00:00",
+            "finish_date": "2026-06-09T15:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 8
+            "delay_workdays": 11
           },
           {
-            "name": "Совет по качеству ",
-            "start_date": "2026-06-01T17:00:00",
-            "finish_date": "2026-06-01T17:00:00",
+            "name": "Отчет к ДПИ с нарастающим итогом создан",
+            "start_date": "2026-06-09T15:00:00",
+            "finish_date": "2026-06-09T15:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 8
+            "delay_workdays": 11
           },
           {
-            "name": " Договор с фотографом заключен",
-            "start_date": "2026-06-02T17:00:00",
-            "finish_date": "2026-06-02T17:00:00",
+            "name": "дополнительные работы выполнены",
+            "start_date": "2026-06-09T15:00:00",
+            "finish_date": "2026-06-09T15:00:00",
+            "percent_complete": 0.0,
+            "delay_workdays": 11
+          },
+          {
+            "name": "автоматический контроль план-факта по лимитам БДДС в 1С ERP создан",
+            "start_date": "2026-06-10T14:00:00",
+            "finish_date": "2026-06-10T14:00:00",
+            "percent_complete": 0.0,
+            "delay_workdays": 10
+          },
+          {
+            "name": "Система ЭДО в 1С ERP по проектам доработана",
+            "start_date": "2026-06-15T12:00:00",
+            "finish_date": "2026-06-15T12:00:00",
             "percent_complete": 0.0,
             "delay_workdays": 7
           },
           {
-            "name": " Счет фотографу оплачен",
-            "start_date": "2026-06-02T17:00:00",
-            "finish_date": "2026-06-02T17:00:00",
+            "name": "Цель 1.1: Шаблоны документов в 1С:ERP  доработаны",
+            "start_date": "2026-06-16T13:40:00",
+            "finish_date": "2026-06-16T13:40:00",
             "percent_complete": 0.0,
-            "delay_workdays": 7
+            "delay_workdays": 6
           },
           {
-            "name": " Договор с визажистом-стилистом заключен",
-            "start_date": "2026-06-05T17:00:00",
-            "finish_date": "2026-06-05T17:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 4
-          },
-          {
-            "name": " Счет визажисту-стилисту оплачен",
-            "start_date": "2026-06-05T17:00:00",
-            "finish_date": "2026-06-05T17:00:00",
+            "name": "Блок 1С ERP внедрен",
+            "start_date": "2026-06-18T16:40:00",
+            "finish_date": "2026-06-18T16:40:00",
             "percent_complete": 0.0,
             "delay_workdays": 4
           },
           {
-            "name": "Совет по качеству ",
-            "start_date": "2026-06-05T17:00:00",
-            "finish_date": "2026-06-05T17:00:00",
+            "name": "Цель 1.2: Единый реестр проектов в 1С:ERP доработан",
+            "start_date": "2026-06-18T16:40:00",
+            "finish_date": "2026-06-18T16:40:00",
             "percent_complete": 0.0,
             "delay_workdays": 4
           }
@@ -85,90 +92,48 @@
       },
       {
         "number": 2,
-        "project_code": "НПО/ИГ/2026/56",
-        "project_name": "Автоматизация процессов запуска, ведения, контроля и завершения проектов согласно СТО-36-131 Управление проектами",
-        "project_manager": "Тищенко Марина Николаевна",
-        "timeline": "02.02.2026 - 04.06.2026",
-        "deviation": "5 вех., 7 р.д.",
-        "delay_days": 7,
+        "project_code": "НПО/СУП/2026/37",
+        "project_name": "Снижение текучести",
+        "project_manager": "Ворончихина Елена Николаевна",
+        "timeline": "01.03.2026 - 30.11.2026",
+        "deviation": "1 вех., 4 р.д.",
+        "delay_days": 4,
         "status": "Планирование",
-        "progress_pct": 77.0,
-        "overdue_milestones_count": 5,
+        "progress_pct": 51.0,
+        "overdue_milestones_count": 1,
         "milestone_deviations": [
           {
-            "name": "Цель 2.4: Автоформирование ДДС доработано",
-            "start_date": "2026-06-02T15:00:00",
-            "finish_date": "2026-06-02T15:00:00",
+            "name": "Этап окончен совет по качеству",
+            "start_date": "2026-06-18T08:00:00",
+            "finish_date": "2026-06-18T08:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 7
-          },
-          {
-            "name": "Блок ИИ Turbo Project внедрен",
-            "start_date": "2026-06-09T15:00:00",
-            "finish_date": "2026-06-09T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 2
-          },
-          {
-            "name": "Отчет к ДПИ с нарастающим итогом создан",
-            "start_date": "2026-06-09T15:00:00",
-            "finish_date": "2026-06-09T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 2
-          },
-          {
-            "name": "дополнительные работы выполнены",
-            "start_date": "2026-06-09T15:00:00",
-            "finish_date": "2026-06-09T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 2
-          },
-          {
-            "name": "автоматический контроль план-факта по лимитам БДДС в 1С ERP создан",
-            "start_date": "2026-06-10T14:00:00",
-            "finish_date": "2026-06-10T14:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 1
+            "delay_workdays": 4
           }
         ]
       },
       {
         "number": 3,
-        "project_code": "НПО/СС/2026/43",
-        "project_name": "Система оценки удовлетворенности заказчиков",
-        "project_manager": "Гайфулин Денис Александрович",
-        "timeline": "23.01.2026 - 31.07.2026",
-        "deviation": "1 вех., 7 р.д.",
-        "delay_days": 7,
-        "status": "В работе",
-        "progress_pct": 47.0,
-        "overdue_milestones_count": 1,
-        "milestone_deviations": [
-          {
-            "name": "Совет по качеству",
-            "start_date": "2026-06-02T15:00:00",
-            "finish_date": "2026-06-02T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 7
-          }
-        ]
-      },
-      {
-        "number": 4,
-        "project_code": "НПО/СК/2026/35",
-        "project_name": "Разработка и внедрение новой версии СТО-10-237 \"Управление несоответствиями\"",
-        "project_manager": "Арсуноев Михаил Магомедович",
-        "timeline": "18.02.2026 - 30.10.2026",
-        "deviation": "1 вех., 2 р.д.",
+        "project_code": "НП/ДР/2026/110",
+        "project_name": "Разработка ИИ-агентов (первая очередь)",
+        "project_manager": "Соломичева Светлана Викторовна",
+        "timeline": "10.06.2026 - 10.08.2026",
+        "deviation": "2 вех., 2 р.д.",
         "delay_days": 2,
         "status": "В работе",
-        "progress_pct": 44.0,
-        "overdue_milestones_count": 1,
+        "progress_pct": 34.0,
+        "overdue_milestones_count": 2,
         "milestone_deviations": [
           {
-            "name": "Новая версия СТО готова к проведению ОПЭ",
-            "start_date": "2026-06-09T16:40:00",
-            "finish_date": "2026-06-09T16:40:00",
+            "name": "6.4.7. Совет по качеству",
+            "start_date": "2026-06-22T17:00:00",
+            "finish_date": "2026-06-22T17:00:00",
+            "percent_complete": 0.0,
+            "delay_workdays": 2
+          },
+          {
+            "name": "6.4.8. Этап \"Создание ИИ-агента на LangChain\" завершен",
+            "start_date": "2026-06-22T17:00:00",
+            "finish_date": "2026-06-22T17:00:00",
             "percent_complete": 0.0,
             "delay_workdays": 2
           }
@@ -176,8 +141,8 @@
       }
     ],
     "summary": {
-      "plan": 6,
-      "fact": 2
+      "plan": 9,
+      "fact": 6
     }
   }
 }

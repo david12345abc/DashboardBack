@@ -247,7 +247,9 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
         y = row.get('year', ref_y)
         fact = row.get('fact')
         plan, plan_full = _plan_values(plans_by_month.get(m) or 0, y, m)
-        expected_plan = expected_by_month.get(m) or 0
+        expected_remaining = expected_by_month.get(m)
+        # "Ожидаемо" на плитке — прогноз итога месяца: уже случившийся факт + ожидаемый остаток.
+        expected_plan = (fact or 0) + (expected_remaining or 0)
         pct = round(fact / plan * 100, 1) if plan and fact is not None else None
         mrow = {
             'month': m,
@@ -257,6 +259,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             'plan_full': plan_full,
             'fact': fact,
             'expected_plan': expected_plan,
+            'expected_remaining': expected_remaining or 0,
             'kpi_pct': pct,
             'has_data': fact is not None,
         }

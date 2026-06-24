@@ -64,7 +64,7 @@
       "planovaya_data_okonchaniya": "2026-03-20",
       "data_okonchaniya": null,
       "overdue_milestones_count": 5,
-      "max_delay_workdays": 141,
+      "max_delay_workdays": 142,
       "is_fact": false,
       "project_progress_pct": 61.0,
       "milestone_deviations": [
@@ -75,7 +75,7 @@
           "month": 12,
           "month_name": "декабрь",
           "percent_complete": 0.0,
-          "delay_workdays": 141
+          "delay_workdays": 142
         },
         {
           "name": "Утверждение бюджета и приказа по проекту",
@@ -84,7 +84,7 @@
           "month": 12,
           "month_name": "декабрь",
           "percent_complete": 0.0,
-          "delay_workdays": 127
+          "delay_workdays": 128
         },
         {
           "name": "Адаптированное ТЗ под прибор UFG-Z готово",
@@ -93,7 +93,7 @@
           "month": 3,
           "month_name": "март",
           "percent_complete": 0.0,
-          "delay_workdays": 67
+          "delay_workdays": 68
         },
         {
           "name": "Сотрудники КБ обучены",
@@ -102,7 +102,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 45
+          "delay_workdays": 46
         },
         {
           "name": "Проект завершен",
@@ -111,7 +111,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 44
+          "delay_workdays": 45
         }
       ]
     },
@@ -153,7 +153,7 @@
       "planovaya_data_okonchaniya": "2026-04-22",
       "data_okonchaniya": "2026-06-04",
       "overdue_milestones_count": 12,
-      "max_delay_workdays": 66,
+      "max_delay_workdays": 67,
       "is_fact": false,
       "project_progress_pct": 58.0,
       "milestone_deviations": [
@@ -164,7 +164,7 @@
           "month": 3,
           "month_name": "март",
           "percent_complete": 0.0,
-          "delay_workdays": 66
+          "delay_workdays": 67
         },
         {
           "name": "Этап 2: Разработка блока 1С:ERP (Цель 1) выполнено",
@@ -173,7 +173,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 49
+          "delay_workdays": 50
         },
         {
           "name": " План-факт БДДС в Turbo Project создан",
@@ -182,7 +182,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 47
+          "delay_workdays": 48
         },
         {
           "name": "Цель 1.1: Шаблоны документов в 1С:ERP  работы приняты",
@@ -191,7 +191,7 @@
           "month": 4,
           "month_name": "апрель",
           "percent_complete": 0.0,
-          "delay_workdays": 46
+          "delay_workdays": 47
         },
         {
           "name": "Блок ИИ Turbo Project внедрен",
@@ -200,7 +200,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 10
+          "delay_workdays": 11
         },
         {
           "name": "Отчет к ДПИ с нарастающим итогом создан",
@@ -209,7 +209,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 10
+          "delay_workdays": 11
         },
         {
           "name": "дополнительные работы выполнены",
@@ -218,7 +218,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 10
+          "delay_workdays": 11
         },
         {
           "name": "автоматический контроль план-факта по лимитам БДДС в 1С ERP создан",
@@ -227,7 +227,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 9
+          "delay_workdays": 10
         },
         {
           "name": "Система ЭДО в 1С ERP по проектам доработана",
@@ -236,7 +236,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 6
+          "delay_workdays": 7
         },
         {
           "name": "Цель 1.1: Шаблоны документов в 1С:ERP  доработаны",
@@ -245,7 +245,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 5
+          "delay_workdays": 6
         },
         {
           "name": "Блок 1С ERP внедрен",
@@ -254,7 +254,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 3
+          "delay_workdays": 4
         },
         {
           "name": "Цель 1.2: Единый реестр проектов в 1С:ERP доработан",
@@ -263,7 +263,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 3
+          "delay_workdays": 4
         }
       ]
     },
@@ -298,7 +298,7 @@
       "overdue_milestones_count": 0,
       "max_delay_workdays": 0,
       "is_fact": true,
-      "project_progress_pct": 28.0,
+      "project_progress_pct": 30.0,
       "milestone_deviations": []
     },
     {
@@ -376,7 +376,7 @@
       "planovaya_data_okonchaniya": "2024-04-19",
       "data_okonchaniya": "2026-08-05",
       "overdue_milestones_count": 3,
-      "max_delay_workdays": 616,
+      "max_delay_workdays": 617,
       "is_fact": false,
       "project_progress_pct": 95.0,
       "milestone_deviations": [
@@ -387,7 +387,7 @@
           "month": 2,
           "month_name": "февраль",
           "percent_complete": 0.0,
-          "delay_workdays": 616
+          "delay_workdays": 617
         },
         {
           "name": "Испытания UFG ч 1 выполнены ",
@@ -396,7 +396,7 @@
           "month": 5,
           "month_name": "май",
           "percent_complete": 0.0,
-          "delay_workdays": 17
+          "delay_workdays": 18
         },
         {
           "name": "Совет по качеству ",
@@ -405,7 +405,7 @@
           "month": 5,
           "month_name": "май",
           "percent_complete": 0.0,
-          "delay_workdays": 17
+          "delay_workdays": 18
         }
       ]
     },
@@ -424,7 +424,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-05-06T09:00:00",
       "finish_date": "2026-05-14T09:00:00",
       "baseline_start": "2025-12-12T09:00:00",
@@ -454,7 +454,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-05-18T09:00:00",
       "finish_date": "2026-05-20T14:00:00",
       "baseline_start": null,
@@ -484,7 +484,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-05-15T09:00:00",
       "finish_date": "2026-05-28T16:00:00",
       "baseline_start": null,
@@ -574,7 +574,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "РазвитияИУлучшений",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-05-16T09:00:00",
       "finish_date": "2026-05-22T10:00:00",
       "baseline_start": "2025-12-12T09:00:00",
@@ -604,7 +604,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "РазвитияИУлучшений",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-05-06T09:00:00",
       "finish_date": "2026-05-22T10:00:00",
       "baseline_start": "2025-12-12T09:00:00",
@@ -634,7 +634,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-05-06T09:00:00",
       "finish_date": "2026-05-22T10:00:00",
       "baseline_start": "2025-12-12T09:00:00",
@@ -728,7 +728,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "РазвитияИУлучшений",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "Завершен",
+      "status_proekta": "Планирование",
       "start_date": "2026-01-16T08:00:00",
       "finish_date": "2026-05-22T14:00:00",
       "baseline_start": "2026-01-16T08:00:00",
@@ -737,11 +737,30 @@
       "planovaya_data_nachala": "2026-01-16",
       "planovaya_data_okonchaniya": "2026-05-22",
       "data_okonchaniya": "2026-05-22",
-      "overdue_milestones_count": 0,
-      "max_delay_workdays": 0,
-      "is_fact": true,
+      "overdue_milestones_count": 2,
+      "max_delay_workdays": 29,
+      "is_fact": false,
       "project_progress_pct": 99.0,
-      "milestone_deviations": []
+      "milestone_deviations": [
+        {
+          "name": "Совет по качеству",
+          "start_date": "2026-05-14T17:00:00",
+          "finish_date": "2026-05-14T17:00:00",
+          "month": 5,
+          "month_name": "май",
+          "percent_complete": 0.0,
+          "delay_workdays": 29
+        },
+        {
+          "name": "   Проект завершен",
+          "start_date": "2026-05-22T14:00:00",
+          "finish_date": "2026-05-22T14:00:00",
+          "month": 5,
+          "month_name": "май",
+          "percent_complete": 0.0,
+          "delay_workdays": 23
+        }
+      ]
     },
     {
       "file_id": 170,
@@ -772,7 +791,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "РазвитияИУлучшений",
       "podrazdelenie": "Служба управления персоналом",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-01-20T08:00:00",
       "finish_date": "2026-11-30T17:00:00",
       "baseline_start": "2026-01-20T08:00:00",
@@ -782,7 +801,7 @@
       "planovaya_data_okonchaniya": "2026-11-30",
       "data_okonchaniya": "2026-11-30",
       "overdue_milestones_count": 1,
-      "max_delay_workdays": 3,
+      "max_delay_workdays": 4,
       "is_fact": false,
       "project_progress_pct": 51.0,
       "milestone_deviations": [
@@ -793,7 +812,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 3
+          "delay_workdays": 4
         }
       ]
     },
@@ -816,7 +835,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "РазвитияИУлучшений",
       "podrazdelenie": "Сервисная служба",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-01-23T09:00:00",
       "finish_date": "2026-07-31T09:30:00",
       "baseline_start": "2026-01-23T09:00:00",
@@ -828,13 +847,14 @@
       "overdue_milestones_count": 0,
       "max_delay_workdays": 0,
       "is_fact": true,
-      "project_progress_pct": 70.0,
+      "project_progress_pct": 74.0,
       "milestone_deviations": []
     },
     {
       "file_id": 363,
       "project_name": "Разработка ИИ-агентов (первая очередь)",
       "resources": [
+        "Акинина Татьяна Владимировна",
         "Арсуноев",
         "Давлетов Руслан Игоревич",
         "Жалыбин Максим Дмитриевич",
@@ -842,7 +862,6 @@
         "Мангасарян Давид Каренович",
         "Ростовцева Анастасия Вадимовна",
         "Соломичева Светлана Викторовна",
-        "Тищенко Марина Николаевна",
         "Уставицкий Андрей Алексеевич"
       ],
       "matched_resources": [
@@ -858,7 +877,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "РазвитияИУлучшений",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "Планирование",
+      "status_proekta": "ВРаботе",
       "start_date": "2026-06-01T08:00:00",
       "finish_date": "2026-08-10T18:00:00",
       "baseline_start": "2026-06-01T08:00:00",
@@ -867,47 +886,11 @@
       "planovaya_data_nachala": "2026-06-10",
       "planovaya_data_okonchaniya": "2026-08-10",
       "data_okonchaniya": "2026-08-10",
-      "overdue_milestones_count": 6,
+      "overdue_milestones_count": 2,
       "max_delay_workdays": 2,
       "is_fact": false,
-      "project_progress_pct": 35.0,
+      "project_progress_pct": 34.0,
       "milestone_deviations": [
-        {
-          "name": "4.1.8. Совет по качеству",
-          "start_date": "2026-06-19T18:00:00",
-          "finish_date": "2026-06-19T18:00:00",
-          "month": 6,
-          "month_name": "июнь",
-          "percent_complete": 0.0,
-          "delay_workdays": 2
-        },
-        {
-          "name": "4.1.9. Этап \"Составление и согласование ТЗ\" завершен",
-          "start_date": "2026-06-19T18:00:00",
-          "finish_date": "2026-06-19T18:00:00",
-          "month": 6,
-          "month_name": "июнь",
-          "percent_complete": 0.0,
-          "delay_workdays": 2
-        },
-        {
-          "name": "3.1.6. Совет по качеству",
-          "start_date": "2026-06-22T14:00:00",
-          "finish_date": "2026-06-22T14:00:00",
-          "month": 6,
-          "month_name": "июнь",
-          "percent_complete": 0.0,
-          "delay_workdays": 1
-        },
-        {
-          "name": "3.1.7. Этап \"Проектирование агента проверки НД\" завершен",
-          "start_date": "2026-06-22T14:00:00",
-          "finish_date": "2026-06-22T14:00:00",
-          "month": 6,
-          "month_name": "июнь",
-          "percent_complete": 0.0,
-          "delay_workdays": 1
-        },
         {
           "name": "6.4.7. Совет по качеству",
           "start_date": "2026-06-22T17:00:00",
@@ -915,7 +898,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 1
+          "delay_workdays": 2
         },
         {
           "name": "6.4.8. Этап \"Создание ИИ-агента на LangChain\" завершен",
@@ -924,7 +907,7 @@
           "month": 6,
           "month_name": "июнь",
           "percent_complete": 0.0,
-          "delay_workdays": 1
+          "delay_workdays": 2
         }
       ]
     },
@@ -947,7 +930,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "РазвитияИУлучшений",
       "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-02-02T08:00:00",
       "finish_date": "2026-10-14T12:00:00",
       "baseline_start": "2026-02-02T08:00:00",
@@ -959,7 +942,7 @@
       "overdue_milestones_count": 0,
       "max_delay_workdays": 0,
       "is_fact": true,
-      "project_progress_pct": 46.0,
+      "project_progress_pct": 47.0,
       "milestone_deviations": []
     },
     {
@@ -990,7 +973,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "РазвитияИУлучшений",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "Планирование",
+      "status_proekta": "ВРаботе",
       "start_date": "2026-06-01T08:00:00",
       "finish_date": "2026-07-10T17:00:00",
       "baseline_start": "2026-06-01T08:00:00",
@@ -999,21 +982,11 @@
       "planovaya_data_nachala": "2026-06-10",
       "planovaya_data_okonchaniya": "2026-07-10",
       "data_okonchaniya": null,
-      "overdue_milestones_count": 1,
-      "max_delay_workdays": 1,
-      "is_fact": false,
-      "project_progress_pct": 40.0,
-      "milestone_deviations": [
-        {
-          "name": "2.65. Итоговая комиссия ОПЭ",
-          "start_date": "2026-06-22T18:00:00",
-          "finish_date": "2026-06-22T18:00:00",
-          "month": 6,
-          "month_name": "июнь",
-          "percent_complete": 0.0,
-          "delay_workdays": 1
-        }
-      ]
+      "overdue_milestones_count": 0,
+      "max_delay_workdays": 0,
+      "is_fact": true,
+      "project_progress_pct": 49.0,
+      "milestone_deviations": []
     },
     {
       "file_id": 139,
@@ -1037,7 +1010,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "ПродвижениеИРеклама",
       "podrazdelenie": "Cектор рекламы и PR",
-      "status_proekta": "ВРаботе",
+      "status_proekta": "Планирование",
       "start_date": "2026-02-16T09:00:00",
       "finish_date": "2026-10-29T18:00:00",
       "baseline_start": "2026-02-16T09:00:00",
@@ -1182,7 +1155,7 @@
         "planovaya_data_okonchaniya": "2026-03-20",
         "data_okonchaniya": null,
         "overdue_milestones_count": 5,
-        "max_delay_workdays": 141,
+        "max_delay_workdays": 142,
         "is_fact": false,
         "project_progress_pct": 61.0,
         "milestone_deviations": [
@@ -1193,7 +1166,7 @@
             "month": 12,
             "month_name": "декабрь",
             "percent_complete": 0.0,
-            "delay_workdays": 141
+            "delay_workdays": 142
           },
           {
             "name": "Утверждение бюджета и приказа по проекту",
@@ -1202,7 +1175,7 @@
             "month": 12,
             "month_name": "декабрь",
             "percent_complete": 0.0,
-            "delay_workdays": 127
+            "delay_workdays": 128
           },
           {
             "name": "Адаптированное ТЗ под прибор UFG-Z готово",
@@ -1211,7 +1184,7 @@
             "month": 3,
             "month_name": "март",
             "percent_complete": 0.0,
-            "delay_workdays": 67
+            "delay_workdays": 68
           },
           {
             "name": "Сотрудники КБ обучены",
@@ -1220,7 +1193,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 45
+            "delay_workdays": 46
           },
           {
             "name": "Проект завершен",
@@ -1229,7 +1202,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 44
+            "delay_workdays": 45
           }
         ]
       },
@@ -1271,7 +1244,7 @@
         "planovaya_data_okonchaniya": "2026-04-22",
         "data_okonchaniya": "2026-06-04",
         "overdue_milestones_count": 12,
-        "max_delay_workdays": 66,
+        "max_delay_workdays": 67,
         "is_fact": false,
         "project_progress_pct": 58.0,
         "milestone_deviations": [
@@ -1282,7 +1255,7 @@
             "month": 3,
             "month_name": "март",
             "percent_complete": 0.0,
-            "delay_workdays": 66
+            "delay_workdays": 67
           },
           {
             "name": "Этап 2: Разработка блока 1С:ERP (Цель 1) выполнено",
@@ -1291,7 +1264,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 49
+            "delay_workdays": 50
           },
           {
             "name": " План-факт БДДС в Turbo Project создан",
@@ -1300,7 +1273,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 47
+            "delay_workdays": 48
           },
           {
             "name": "Цель 1.1: Шаблоны документов в 1С:ERP  работы приняты",
@@ -1309,7 +1282,7 @@
             "month": 4,
             "month_name": "апрель",
             "percent_complete": 0.0,
-            "delay_workdays": 46
+            "delay_workdays": 47
           },
           {
             "name": "Блок ИИ Turbo Project внедрен",
@@ -1318,7 +1291,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 10
+            "delay_workdays": 11
           },
           {
             "name": "Отчет к ДПИ с нарастающим итогом создан",
@@ -1327,7 +1300,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 10
+            "delay_workdays": 11
           },
           {
             "name": "дополнительные работы выполнены",
@@ -1336,7 +1309,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 10
+            "delay_workdays": 11
           },
           {
             "name": "автоматический контроль план-факта по лимитам БДДС в 1С ERP создан",
@@ -1345,7 +1318,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 9
+            "delay_workdays": 10
           },
           {
             "name": "Система ЭДО в 1С ERP по проектам доработана",
@@ -1354,7 +1327,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 6
+            "delay_workdays": 7
           },
           {
             "name": "Цель 1.1: Шаблоны документов в 1С:ERP  доработаны",
@@ -1363,7 +1336,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 5
+            "delay_workdays": 6
           },
           {
             "name": "Блок 1С ERP внедрен",
@@ -1372,7 +1345,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 3
+            "delay_workdays": 4
           },
           {
             "name": "Цель 1.2: Единый реестр проектов в 1С:ERP доработан",
@@ -1381,7 +1354,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 3
+            "delay_workdays": 4
           }
         ]
       },
@@ -1416,7 +1389,7 @@
         "overdue_milestones_count": 0,
         "max_delay_workdays": 0,
         "is_fact": true,
-        "project_progress_pct": 28.0,
+        "project_progress_pct": 30.0,
         "milestone_deviations": []
       },
       {
@@ -1494,7 +1467,7 @@
         "planovaya_data_okonchaniya": "2024-04-19",
         "data_okonchaniya": "2026-08-05",
         "overdue_milestones_count": 3,
-        "max_delay_workdays": 616,
+        "max_delay_workdays": 617,
         "is_fact": false,
         "project_progress_pct": 95.0,
         "milestone_deviations": [
@@ -1505,7 +1478,7 @@
             "month": 2,
             "month_name": "февраль",
             "percent_complete": 0.0,
-            "delay_workdays": 616
+            "delay_workdays": 617
           },
           {
             "name": "Испытания UFG ч 1 выполнены ",
@@ -1514,7 +1487,7 @@
             "month": 5,
             "month_name": "май",
             "percent_complete": 0.0,
-            "delay_workdays": 17
+            "delay_workdays": 18
           },
           {
             "name": "Совет по качеству ",
@@ -1523,7 +1496,7 @@
             "month": 5,
             "month_name": "май",
             "percent_complete": 0.0,
-            "delay_workdays": 17
+            "delay_workdays": 18
           }
         ]
       },
@@ -1542,7 +1515,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-05-06T09:00:00",
         "finish_date": "2026-05-14T09:00:00",
         "baseline_start": "2025-12-12T09:00:00",
@@ -1572,7 +1545,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-05-18T09:00:00",
         "finish_date": "2026-05-20T14:00:00",
         "baseline_start": null,
@@ -1602,7 +1575,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-05-15T09:00:00",
         "finish_date": "2026-05-28T16:00:00",
         "baseline_start": null,
@@ -1692,7 +1665,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "РазвитияИУлучшений",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-05-16T09:00:00",
         "finish_date": "2026-05-22T10:00:00",
         "baseline_start": "2025-12-12T09:00:00",
@@ -1722,7 +1695,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "РазвитияИУлучшений",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-05-06T09:00:00",
         "finish_date": "2026-05-22T10:00:00",
         "baseline_start": "2025-12-12T09:00:00",
@@ -1752,7 +1725,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-05-06T09:00:00",
         "finish_date": "2026-05-22T10:00:00",
         "baseline_start": "2025-12-12T09:00:00",
@@ -1846,7 +1819,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "РазвитияИУлучшений",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "Завершен",
+        "status_proekta": "Планирование",
         "start_date": "2026-01-16T08:00:00",
         "finish_date": "2026-05-22T14:00:00",
         "baseline_start": "2026-01-16T08:00:00",
@@ -1855,11 +1828,30 @@
         "planovaya_data_nachala": "2026-01-16",
         "planovaya_data_okonchaniya": "2026-05-22",
         "data_okonchaniya": "2026-05-22",
-        "overdue_milestones_count": 0,
-        "max_delay_workdays": 0,
-        "is_fact": true,
+        "overdue_milestones_count": 2,
+        "max_delay_workdays": 29,
+        "is_fact": false,
         "project_progress_pct": 99.0,
-        "milestone_deviations": []
+        "milestone_deviations": [
+          {
+            "name": "Совет по качеству",
+            "start_date": "2026-05-14T17:00:00",
+            "finish_date": "2026-05-14T17:00:00",
+            "month": 5,
+            "month_name": "май",
+            "percent_complete": 0.0,
+            "delay_workdays": 29
+          },
+          {
+            "name": "   Проект завершен",
+            "start_date": "2026-05-22T14:00:00",
+            "finish_date": "2026-05-22T14:00:00",
+            "month": 5,
+            "month_name": "май",
+            "percent_complete": 0.0,
+            "delay_workdays": 23
+          }
+        ]
       },
       {
         "file_id": 170,
@@ -1890,7 +1882,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "РазвитияИУлучшений",
         "podrazdelenie": "Служба управления персоналом",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-01-20T08:00:00",
         "finish_date": "2026-11-30T17:00:00",
         "baseline_start": "2026-01-20T08:00:00",
@@ -1900,7 +1892,7 @@
         "planovaya_data_okonchaniya": "2026-11-30",
         "data_okonchaniya": "2026-11-30",
         "overdue_milestones_count": 1,
-        "max_delay_workdays": 3,
+        "max_delay_workdays": 4,
         "is_fact": false,
         "project_progress_pct": 51.0,
         "milestone_deviations": [
@@ -1911,7 +1903,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 3
+            "delay_workdays": 4
           }
         ]
       },
@@ -1934,7 +1926,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "РазвитияИУлучшений",
         "podrazdelenie": "Сервисная служба",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-01-23T09:00:00",
         "finish_date": "2026-07-31T09:30:00",
         "baseline_start": "2026-01-23T09:00:00",
@@ -1946,13 +1938,14 @@
         "overdue_milestones_count": 0,
         "max_delay_workdays": 0,
         "is_fact": true,
-        "project_progress_pct": 70.0,
+        "project_progress_pct": 74.0,
         "milestone_deviations": []
       },
       {
         "file_id": 363,
         "project_name": "Разработка ИИ-агентов (первая очередь)",
         "resources": [
+          "Акинина Татьяна Владимировна",
           "Арсуноев",
           "Давлетов Руслан Игоревич",
           "Жалыбин Максим Дмитриевич",
@@ -1960,7 +1953,6 @@
           "Мангасарян Давид Каренович",
           "Ростовцева Анастасия Вадимовна",
           "Соломичева Светлана Викторовна",
-          "Тищенко Марина Николаевна",
           "Уставицкий Андрей Алексеевич"
         ],
         "matched_resources": [
@@ -1976,7 +1968,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "РазвитияИУлучшений",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "Планирование",
+        "status_proekta": "ВРаботе",
         "start_date": "2026-06-01T08:00:00",
         "finish_date": "2026-08-10T18:00:00",
         "baseline_start": "2026-06-01T08:00:00",
@@ -1985,47 +1977,11 @@
         "planovaya_data_nachala": "2026-06-10",
         "planovaya_data_okonchaniya": "2026-08-10",
         "data_okonchaniya": "2026-08-10",
-        "overdue_milestones_count": 6,
+        "overdue_milestones_count": 2,
         "max_delay_workdays": 2,
         "is_fact": false,
-        "project_progress_pct": 35.0,
+        "project_progress_pct": 34.0,
         "milestone_deviations": [
-          {
-            "name": "4.1.8. Совет по качеству",
-            "start_date": "2026-06-19T18:00:00",
-            "finish_date": "2026-06-19T18:00:00",
-            "month": 6,
-            "month_name": "июнь",
-            "percent_complete": 0.0,
-            "delay_workdays": 2
-          },
-          {
-            "name": "4.1.9. Этап \"Составление и согласование ТЗ\" завершен",
-            "start_date": "2026-06-19T18:00:00",
-            "finish_date": "2026-06-19T18:00:00",
-            "month": 6,
-            "month_name": "июнь",
-            "percent_complete": 0.0,
-            "delay_workdays": 2
-          },
-          {
-            "name": "3.1.6. Совет по качеству",
-            "start_date": "2026-06-22T14:00:00",
-            "finish_date": "2026-06-22T14:00:00",
-            "month": 6,
-            "month_name": "июнь",
-            "percent_complete": 0.0,
-            "delay_workdays": 1
-          },
-          {
-            "name": "3.1.7. Этап \"Проектирование агента проверки НД\" завершен",
-            "start_date": "2026-06-22T14:00:00",
-            "finish_date": "2026-06-22T14:00:00",
-            "month": 6,
-            "month_name": "июнь",
-            "percent_complete": 0.0,
-            "delay_workdays": 1
-          },
           {
             "name": "6.4.7. Совет по качеству",
             "start_date": "2026-06-22T17:00:00",
@@ -2033,7 +1989,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 1
+            "delay_workdays": 2
           },
           {
             "name": "6.4.8. Этап \"Создание ИИ-агента на LangChain\" завершен",
@@ -2042,7 +1998,7 @@
             "month": 6,
             "month_name": "июнь",
             "percent_complete": 0.0,
-            "delay_workdays": 1
+            "delay_workdays": 2
           }
         ]
       },
@@ -2065,7 +2021,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "РазвитияИУлучшений",
         "podrazdelenie": "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-02-02T08:00:00",
         "finish_date": "2026-10-14T12:00:00",
         "baseline_start": "2026-02-02T08:00:00",
@@ -2077,7 +2033,7 @@
         "overdue_milestones_count": 0,
         "max_delay_workdays": 0,
         "is_fact": true,
-        "project_progress_pct": 46.0,
+        "project_progress_pct": 47.0,
         "milestone_deviations": []
       },
       {
@@ -2108,7 +2064,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "РазвитияИУлучшений",
         "podrazdelenie": "Служба развития",
-        "status_proekta": "Планирование",
+        "status_proekta": "ВРаботе",
         "start_date": "2026-06-01T08:00:00",
         "finish_date": "2026-07-10T17:00:00",
         "baseline_start": "2026-06-01T08:00:00",
@@ -2117,21 +2073,11 @@
         "planovaya_data_nachala": "2026-06-10",
         "planovaya_data_okonchaniya": "2026-07-10",
         "data_okonchaniya": null,
-        "overdue_milestones_count": 1,
-        "max_delay_workdays": 1,
-        "is_fact": false,
-        "project_progress_pct": 40.0,
-        "milestone_deviations": [
-          {
-            "name": "2.65. Итоговая комиссия ОПЭ",
-            "start_date": "2026-06-22T18:00:00",
-            "finish_date": "2026-06-22T18:00:00",
-            "month": 6,
-            "month_name": "июнь",
-            "percent_complete": 0.0,
-            "delay_workdays": 1
-          }
-        ]
+        "overdue_milestones_count": 0,
+        "max_delay_workdays": 0,
+        "is_fact": true,
+        "project_progress_pct": 49.0,
+        "milestone_deviations": []
       },
       {
         "file_id": 139,
@@ -2155,7 +2101,7 @@
         "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
         "tip_proekta": "ПродвижениеИРеклама",
         "podrazdelenie": "Cектор рекламы и PR",
-        "status_proekta": "ВРаботе",
+        "status_proekta": "Планирование",
         "start_date": "2026-02-16T09:00:00",
         "finish_date": "2026-10-29T18:00:00",
         "baseline_start": "2026-02-16T09:00:00",
@@ -2204,6 +2150,6 @@
       }
     ]
   },
-  "cache_date": "2026-06-23",
+  "cache_date": "2026-06-24",
   "cache_version": 4
 }
