@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'autoit',
     'c1auto',
     'tools',
+    'servhead',
 ]
 
 MIDDLEWARE = [
