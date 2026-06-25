@@ -2,46 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-
-# Virtual environments
-venv/
-.venv/
-env/
-
-# Django
-*.log
-local_settings.py
-db.sqlite3
-media/
-staticfiles/
-
-# Environment / secrets
-.env
-.env.*
-!.env.example
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Local agent workspaces
-agent/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# caches
-getkpi/dashboard/*.json
-getkpi/dashboard/**/*.json
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
 *.pyo
 *.pyd
 .Python
@@ -65,6 +25,7 @@ htmlcov/
 # Agent repository memory and runtime state
 .agentTurbo/
 **/.agentTurbo/
+agent/
 agent/data/
 MCP/logs/
 *.sqlite
@@ -115,3 +76,10 @@ temp/
 terminals/
 agent-tools/
 assets/
+
+# Runtime/generated dashboard caches
+dashboard/*.json
+getkpi/dashboard/*.json
+getkpi/dashboard/**/*.json
+getkpi/*_cache.json
+getkpi/dds_articles_cache.json

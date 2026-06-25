@@ -52,6 +52,7 @@ import devdir.views as _devdir_kpi_views
 import gspp.views as _gspp_kpi_views
 import qualdir.views as _qualdir_kpi_views
 import sup.views as _sup_kpi_views
+import servhead.views as _servhead_kpi_views
 import autoit.views as _autoit_kpi_views
 import c1auto.views as _c1auto_kpi_views
 from . import techdir_kpi_entry
@@ -842,8 +843,61 @@ def _is_gspp_m3_tile(kpi: dict) -> bool:
 
 
 def _is_gspp_m1_tile(kpi: dict) -> bool:
-    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
-    return kid in {'GSP-M1', 'GSPP-M1', 'ГСП-M1', 'ГCП-M1', 'ГСПП-M1', 'ГCПП-M1'}
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _gspp_kpi_views.gspp_m1_tile_matches(kid) or _gspp_kpi_views.gspp_m1_tile_matches(raw)
+
+
+def _is_gspp_m2_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _gspp_kpi_views.gspp_m2_tile_matches(kid) or _gspp_kpi_views.gspp_m2_tile_matches(raw)
+
+
+def _is_servhead_m1_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _servhead_kpi_views.servhead_m1_tile_matches(kid) or _servhead_kpi_views.servhead_m1_tile_matches(raw)
+
+
+def _is_servhead_m2_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _servhead_kpi_views.servhead_m2_tile_matches(kid) or _servhead_kpi_views.servhead_m2_tile_matches(raw)
+
+
+def _is_servhead_m3_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _servhead_kpi_views.servhead_m3_tile_matches(kid) or _servhead_kpi_views.servhead_m3_tile_matches(raw)
+
+
+def _is_servhead_m4_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _servhead_kpi_views.servhead_m4_tile_matches(kid) or _servhead_kpi_views.servhead_m4_tile_matches(raw)
+
+
+def _is_servhead_m5_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _servhead_kpi_views.servhead_m5_tile_matches(kid) or _servhead_kpi_views.servhead_m5_tile_matches(raw)
+
+
+def _is_servhead_lower_better_tile(kpi: dict) -> bool:
+    return _is_servhead_m2_tile(kpi) or _is_servhead_m3_tile(kpi) or _is_servhead_m5_tile(kpi)
+
+
+def _is_servhead_higher_better_tile(kpi: dict) -> bool:
+    return _is_servhead_m1_tile(kpi) or _is_servhead_m4_tile(kpi)
+
+
+def _is_servhead_tile(kpi: dict) -> bool:
+    return (
+        _is_servhead_m1_tile(kpi) or _is_servhead_m2_tile(kpi)
+        or _is_servhead_m3_tile(kpi) or _is_servhead_m4_tile(kpi)
+        or _is_servhead_m5_tile(kpi)
+    )
 
 
 def _is_gspp_q5_tile(kpi: dict) -> bool:
@@ -1052,6 +1106,14 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_td_m4_limit(pct)
     elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
         color = _rag_td_m4_limit(pct)
+    elif _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+        color = _gspp_kpi_views.rag_gspp_m1_m2_pct(pct)
+    elif _is_servhead_higher_better_tile(kpi):
+        color = _servhead_kpi_views.rag_servhead_m1_pct(pct)
+    elif _is_servhead_lower_better_tile(kpi):
+        color = _servhead_kpi_views.rag_servhead_lower_better_pct(pct)
+    elif _gspp_kpi_views.gspp_q4_kpi_id_matches(kid):
+        color = _gspp_kpi_views.rag_gspp_q4_pct(pct)
     elif _is_budget_limit_m3_kpi(kid):
         pct = _budget_fact_div_plan_pct(entry)
         color = _rag_budget_fact_div_plan(pct)
@@ -1290,11 +1352,20 @@ def _build_tile_item(
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
         tile['periodicity'] = 'ежемесячно'
-    if _is_gspp_m1_tile(kpi) or _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+    if (
+        _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi)
+        or _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi)
+    ):
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
         tile['periodicity'] = 'ежемесячно'
-        if not _is_gspp_m1_tile(kpi):
+        if _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+            tile['pct_lower_is_better'] = True
+    if _is_servhead_tile(kpi):
+        tile['period'] = 'ежемесячно'
+        tile['frequency'] = 'ежемесячно'
+        tile['periodicity'] = 'ежемесячно'
+        if _is_servhead_lower_better_tile(kpi):
             tile['pct_lower_is_better'] = True
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
@@ -1308,6 +1379,31 @@ def _build_tile_item(
                 **lfr,
                 'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
             }
+        if isinstance(lfr, dict):
+            if _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+                if lfr.get('kpi_pct') is not None:
+                    lfr = {
+                        **lfr,
+                        'color': _gspp_kpi_views.rag_gspp_m1_m2_pct(float(lfr['kpi_pct'])),
+                    }
+            elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_gspp):
+                if lfr.get('kpi_pct') is not None:
+                    lfr = {
+                        **lfr,
+                        'color': _gspp_kpi_views.rag_gspp_q4_pct(float(lfr['kpi_pct'])),
+                    }
+            elif _is_servhead_higher_better_tile(kpi):
+                if lfr.get('kpi_pct') is not None:
+                    lfr = {
+                        **lfr,
+                        'color': _servhead_kpi_views.rag_servhead_m1_pct(float(lfr['kpi_pct'])),
+                    }
+            elif _is_servhead_lower_better_tile(kpi):
+                if lfr.get('kpi_pct') is not None:
+                    lfr = {
+                        **lfr,
+                        'color': _servhead_kpi_views.rag_servhead_lower_better_pct(float(lfr['kpi_pct'])),
+                    }
         tile['last_full_month_row'] = _public_unit_row(lfr)
         if isinstance(lfr, dict):
             if 'project_deviation_rows' in lfr:
@@ -1321,6 +1417,54 @@ def _build_tile_item(
                 {
                     **row,
                     'kpi_pct': _qd_q2_kpi_pct(row.get('plan'), row.get('fact')),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
+        elif _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+            raw_rows = [
+                {
+                    **row,
+                    'color': _gspp_kpi_views.rag_gspp_m1_m2_pct(
+                        float(row['kpi_pct']) if row.get('kpi_pct') is not None else None
+                    ),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
+        elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_gspp):
+            raw_rows = [
+                {
+                    **row,
+                    'color': _gspp_kpi_views.rag_gspp_q4_pct(
+                        float(row['kpi_pct']) if row.get('kpi_pct') is not None else None
+                    ),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
+        elif _is_servhead_higher_better_tile(kpi):
+            raw_rows = [
+                {
+                    **row,
+                    'color': _servhead_kpi_views.rag_servhead_m1_pct(
+                        float(row['kpi_pct']) if row.get('kpi_pct') is not None else None
+                    ),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
+        elif _is_servhead_lower_better_tile(kpi):
+            raw_rows = [
+                {
+                    **row,
+                    'color': _servhead_kpi_views.rag_servhead_lower_better_pct(
+                        float(row['kpi_pct']) if row.get('kpi_pct') is not None else None
+                    ),
                 }
                 if isinstance(row, dict)
                 else row
@@ -2192,6 +2336,7 @@ def _build_universal_payload(
         or _is_devdir_department(dept)
         or _is_gspp_department(dept)
         or _is_sup_department(dept)
+        or _servhead_kpi_views.is_servhead_department(dept)
         or _is_autoit_department(dept)
         or _is_c1auto_department(dept)
     ):
@@ -2215,7 +2360,7 @@ def _build_universal_payload(
 
     gspp_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        gspp_memo_key = f"gspp_dashboard:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        gspp_memo_key = f"gspp_dashboard:v3:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2233,6 +2378,7 @@ def _build_universal_payload(
             | _devdir_kpi_views.DEVDIR_KPI_IDS
             | _gspp_kpi_views.GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD
             | _sup_kpi_views.SUP_KPI_IDS_USE_BUILDER_KP_PERIOD
+            | _servhead_kpi_views.SERVHEAD_KPI_IDS_USE_BUILDER_KP_PERIOD
             | _autoit_kpi_views.AUTOIT_KPI_IDS_USE_BUILDER_KP_PERIOD
             | _c1auto_kpi_views.C1AUTO_KPI_IDS_USE_BUILDER_KP_PERIOD
         ) or _kid_tile == 'TD-M6':
@@ -2301,6 +2447,22 @@ def _build_universal_payload(
                 if lm.get('kpi_pct') is not None:
                     tile['kpi_pct'] = lm.get('kpi_pct')
                     tile['color'] = _qualdir_kpi_views.rag_plan_fact_pct(float(lm['kpi_pct']))
+            if _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _gspp_kpi_views.rag_gspp_m1_m2_pct(float(lm['kpi_pct']))
+            elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _gspp_kpi_views.rag_gspp_q4_pct(float(lm['kpi_pct']))
+            elif _is_servhead_higher_better_tile(kpi):
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _servhead_kpi_views.rag_servhead_m1_pct(float(lm['kpi_pct']))
+            elif _is_servhead_lower_better_tile(kpi):
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _servhead_kpi_views.rag_servhead_lower_better_pct(float(lm['kpi_pct']))
             if kpi.get('kpi_id') in _qualdir_kpi_views.OTK_INCOMING_TILE_IDS:
                 for extra_key in ('in_work_today', 'rejected_items_count'):
                     if extra_key in lm:
@@ -2378,7 +2540,9 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'
-        elif _is_gspp_m1_tile(kpi):
+        elif _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+            tile['unit'] = 'шт.'
+        elif _is_servhead_tile(kpi):
             tile['unit'] = 'шт.'
         elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
             tile['unit'] = 'руб.'
@@ -2493,6 +2657,7 @@ def _build_universal_payload(
         and not _is_qualdir_dashboard(dept, all_kpis)
         and not _is_autoit_department(dept)
         and not _is_c1auto_department(dept)
+        and not _servhead_kpi_views.is_servhead_department(dept)
     )
 
     if include_generic_tables:
@@ -2639,6 +2804,10 @@ def _build_universal_payload(
 
     if _is_sup_department(dept):
         _sup_kpi_views.merge_sup_tables_into_universal_payload(tablitsy, entries_by_id, ref_y, ref_m)
+
+    # servhead: SH-T1 вместо KD-T-CLAIMS (претензии по клиентам, не построчный журнал).
+    if _servhead_kpi_views.is_servhead_department(dept):
+        _servhead_kpi_views.merge_servhead_tables_into_universal_payload(tablitsy, ref_y, ref_m)
 
     if str(dept).strip().lower() == 'операционный директор':
         try:
@@ -3491,6 +3660,9 @@ def _build_kpi_entry(
         return entry
 
     if _sup_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
+        return entry
+
+    if _servhead_kpi_views.merge_kpi_entry_if_applicable(kpi_id, entry, year=year, month=month):
         return entry
 
     if _autoit_kpi_views.merge_kpi_entry_if_applicable(

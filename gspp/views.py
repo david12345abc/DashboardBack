@@ -49,6 +49,40 @@ GSPP_Q5_TILE_IDS: frozenset[str] = frozenset({
 })
 
 
+def rag_gspp_m1_m2_pct(pct: float | None) -> str:
+    """ГСП-M1/M2: ≥95 % — зелёный, 90–94,9 % — жёлтый, <90 % — красный."""
+    if pct is None:
+        return "unknown"
+    if pct >= 95:
+        return "green"
+    if pct >= 90:
+        return "yellow"
+    return "red"
+
+
+def gspp_m1_tile_matches(kpi_id: str) -> bool:
+    return _normalize_kpi_id(kpi_id) in GSPP_M1_TILE_IDS
+
+
+def gspp_m2_tile_matches(kpi_id: str) -> bool:
+    return _normalize_kpi_id(kpi_id) in GSPP_M2_TILE_IDS
+
+
+def gspp_m1_m2_tile_matches(kpi_id: str) -> bool:
+    return gspp_m1_tile_matches(kpi_id) or gspp_m2_tile_matches(kpi_id)
+
+
+def rag_gspp_q4_pct(pct: float | None) -> str:
+    """ГСП-Q4: ≥90 % — зелёный, 80–89,9 % — жёлтый, <80 % — красный."""
+    if pct is None:
+        return "unknown"
+    if pct >= 90:
+        return "green"
+    if pct >= 80:
+        return "yellow"
+    return "red"
+
+
 def _normalize_kpi_id(raw: object) -> str:
     s = str(raw or "").strip().upper()
     for d in (

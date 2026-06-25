@@ -14,6 +14,11 @@
 **Факт:** план минус число отклонившихся (остальные — без отклонения за месяц).
 План/факт по плитке — **сумма по всем** подходящим проектам.
 
+**Отбор проектов:** ``has_1c``, РП = актуальный «Руководитель отдела» ГСПП.
+Для каждого **опорного месяца** отдельно: «Планирование» не учитывается; «В работе» —
+если проект пересекается с месяцем; «Завершен»/«Закрыт» — месяцы до даты фактического
+окончания включительно (исторически были «в работе»).
+
 Веха — задача с флагом ``is_milestone`` и нулевой длительностью по **календарным** датам
 (``start_date``/``finish_date`` в т.ч. ``дд.мм.гггг`` из Turbo), плюс обход вложенных
 ``children``/``subTasks`` в ответе API.
@@ -49,6 +54,7 @@ from .techdir_projects import (
     _month_start_end,
     _normalize_person_label,
     _parse_iso_date,
+    _parse_real_project_date,
     _project_progress_pct,
     _project_status_label,
     _project_timeline_label,
@@ -61,15 +67,18 @@ TARGET_MANAGER_DEPARTMENT = (
     "Группа сопровождения продаж и производства"
 )
 TARGET_MANAGER_POSITION = "Руководитель отдела"
+TARGET_PROJECT_STATUSES = frozenset({"ВРаботе", "В работе"})
+STATUS_PLANNING = "планирование"
+STATUS_COMPLETED = frozenset({"завершен", "закрыт"})
 PROJECT_NAME_SUBSTR = "номенклатур"
 
 GSPP_Q4_CACHE_PREFIX = "gspp_q4_ytd"
-GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v9"
-GSPP_Q4_DISK_VERSION = 9
+GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v11"
+GSPP_Q4_DISK_VERSION = 11
 
 GSPP_Q4_DEVIATION_CACHE_PREFIX = "gspp_q4_deviation_tables"
-GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v2"
-GSPP_Q4_DEVIATION_DISK_VERSION = 2
+GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v4"
+GSPP_Q4_DEVIATION_DISK_VERSION = 4
 
 _MANAGER_PROJECTS_TTL = 3600
 _manager_projects_cache: tuple[
@@ -108,6 +117,90 @@ def _target_manager_labels() -> set[str]:
 def _manager_matches(data_1c: dict[str, Any]) -> bool:
     lead = _normalize_person_label(data_1c.get("rukovoditel"))
     return bool(lead) and lead in _target_manager_labels()
+
+
+def _normalize_project_status(value: Any) -> str:
+    return " ".join(str(value or "").replace("ё", "е").strip().lower().split())
+
+
+def _allowed_project_statuses_normalized() -> frozenset[str]:
+    return frozenset(_normalize_project_status(status) for status in TARGET_PROJECT_STATUSES)
+
+
+def _project_status_in_work(data_1c: dict[str, Any]) -> bool:
+    status = _normalize_project_status(data_1c.get("status_proekta"))
+    return status in _allowed_project_statuses_normalized()
+
+
+def _project_date_bounds(details: dict[str, Any]) -> tuple[date | None, date | None]:
+    data_1c = details.get("data_1c") or {}
+    meta = details.get("project") or {}
+    start = (
+        _parse_real_project_date(data_1c.get("data_nachala"))
+        or _parse_real_project_date(data_1c.get("planovaya_data_nachala"))
+        or _parse_real_project_date(meta.get("start_date"))
+        or _parse_real_project_date(meta.get("baseline_start"))
+    )
+    finish = (
+        _parse_real_project_date(data_1c.get("data_okonchaniya"))
+        or _parse_real_project_date(data_1c.get("planovaya_data_okonchaniya"))
+        or _parse_real_project_date(meta.get("finish_date"))
+        or _parse_real_project_date(meta.get("baseline_finish"))
+    )
+    return start, finish
+
+
+def _project_alive_in_month(details: dict[str, Any], year: int, month: int) -> bool:
+    period_start, period_end = _month_start_end(year, month)
+    start, finish = _project_date_bounds(details)
+    if start is not None and start > period_end:
+        return False
+    if finish is not None and finish < period_start:
+        return False
+    return True
+
+
+def _project_completion_date(details: dict[str, Any]) -> date | None:
+    data_1c = details.get("data_1c") or {}
+    meta = details.get("project") or {}
+    for key in ("data_okonchaniya", "planovaya_data_okonchaniya"):
+        dt = _parse_real_project_date(data_1c.get(key))
+        if dt is not None:
+            return dt
+    for key in ("finish_date", "baseline_finish"):
+        dt = _parse_real_project_date(meta.get(key))
+        if dt is not None:
+            return dt
+    return None
+
+
+def _project_in_work_in_month(details: dict[str, Any], ref_y: int, ref_m: int) -> bool:
+    """Проект учитывается в опорном месяце по статусу 1С (текущий статус + дата закрытия)."""
+    data_1c = details.get("data_1c") or {}
+    status = _normalize_project_status(data_1c.get("status_proekta"))
+    period_start, _period_end = _month_start_end(ref_y, ref_m)
+
+    if status == STATUS_PLANNING:
+        return False
+    if status in _allowed_project_statuses_normalized():
+        return _project_alive_in_month(details, ref_y, ref_m)
+    if status in STATUS_COMPLETED:
+        completion = _project_completion_date(details)
+        if completion is not None and period_start > completion:
+            return False
+        return True
+    return False
+
+
+def _pairs_in_work_for_month(
+    project_pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+    ref_y: int,
+    ref_m: int,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    return [
+        pair for pair in project_pairs
+        if _project_in_work_in_month(pair[1], ref_y, ref_m)
+    ]
 
 
 def _task_baseline_finish(task: dict[str, Any]) -> Any:
@@ -332,7 +425,7 @@ def _load_manager_project_pairs(
     session: requests.Session,
     token: str,
 ) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[str]]:
-    """Все проекты TurboProject (``has_1c``), где РП совпадает с оргструктурой ГСПП."""
+    """Проекты TurboProject (``has_1c``): РП из оргструктуры ГСПП (статус — помесячно при расчёте)."""
     summary = _api_get(session, "/api/projects/files", token)
     items = summary.get("items") or []
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
@@ -415,6 +508,8 @@ def _count_milestones_for_projects(
     plan_n = 0
     deviated_n = 0
     for _item, details in project_pairs:
+        if not _project_in_work_in_month(details, ref_y, ref_m):
+            continue
         tasks = _flatten_tasks_tree(details.get("tasks") or [])
         pn, _fn, dn, wob_m = _count_milestones_for_month(tasks, ref_y, ref_m)
         plan_n += pn
@@ -480,7 +575,11 @@ def _build_gspp_q4_payload(year: int | None = None, month: int | None = None) ->
         "target_manager_department": TARGET_MANAGER_DEPARTMENT,
         "target_manager_position": TARGET_MANAGER_POSITION,
         "target_managers": list(_target_manager_names()),
-        "project_filter": "all has_1c projects where rukovoditel matches org structure",
+        "target_project_statuses": sorted(TARGET_PROJECT_STATUSES),
+        "project_filter": (
+            "has_1c + rukovoditel matches org structure; "
+            "per month: in work, or completed through completion date; planning excluded"
+        ),
         "status": "no_project",
     }
     try:
@@ -512,15 +611,20 @@ def _build_gspp_q4_payload(year: int | None = None, month: int | None = None) ->
             for _item, details in project_pairs:
                 tasks = _flatten_tasks_tree(details.get("tasks") or [])
                 milestones_total += _count_zero_duration_milestones(tasks)
+            ref_pairs = _pairs_in_work_for_month(project_pairs, ref_y, ref_m)
             dbg = {
                 **dbg,
-                "status": "ok",
+                "status": "ok" if any(row.get("has_data") for row in monthly_rows) else "no_project",
                 "projects_count": len(project_pairs),
+                "projects_in_ref_month": len(ref_pairs),
                 "projects": [
                     {
                         "file_id": item.get("id"),
                         "project_name": _project_display_name(details, item),
                         "project_code": (details.get("data_1c") or {}).get("nomer_proekta"),
+                        "status_proekta": (details.get("data_1c") or {}).get("status_proekta"),
+                        "data_okonchaniya": (details.get("data_1c") or {}).get("data_okonchaniya"),
+                        "in_ref_month": _project_in_work_in_month(details, ref_y, ref_m),
                     }
                     for item, details in project_pairs
                 ],
@@ -723,7 +827,7 @@ def _build_gspp_q4_deviation_table_payload(
         "name": "Отклонения по вехам: ГСП-Q4",
         "periodicity": "ежемесячно",
         "description": (
-            "Проекты TurboProject с РП из оргструктуры ГСПП — все вехи с отклонением "
+            "Проекты TurboProject (has_1c, РП ГСПП; «в работе» или завершённые до даты закрытия) — вехи с отклонением "
             f"за {MONTH_NAMES[ref_m]} {ref_y} (логика как у плитки ГСП-Q4). Структура вложенности вех — как у "
             "технического директора (TD-T-M1-DEVIATIONS / TD-T-Q1-DEVIATIONS)."
         ),
@@ -751,7 +855,9 @@ def _compute_gspp_q4_deviation_tables(ref_y: int, ref_m: int) -> dict[str, Any]:
                     ref_y, ref_m, hint=f"({err or 'проекты не найдены'})",
                 ),
             }
-        tbl = _build_gspp_q4_deviation_table_payload(ref_y, ref_m, project_pairs)
+        tbl = _build_gspp_q4_deviation_table_payload(
+            ref_y, ref_m, _pairs_in_work_for_month(project_pairs, ref_y, ref_m),
+        )
         return {"GSPP-T-Q4-DEVIATIONS": tbl}
     except Exception:
         logger.exception("ГСП-Q4: ошибка таблицы отклонений по вехам")

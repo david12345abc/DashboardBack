@@ -6,7 +6,8 @@
 ПроверкаОпросногоЛистаДиспетчеромГСПП.
 
 Факт: ВсегоОЛПоступило - КоличествоОЛНеВСрок, где ОЛ не в срок —
-строки с ДатаЗавершенияФакт > ДатаЗавершенияПлан.
+строки, у которых дата ``ДатаЗавершенияФакт`` строго позже даты
+``ДатаЗавершенияПлан`` (время суток не учитывается).
 
 Использование:
   python gspp/ol_gspp_monthly.py
@@ -51,8 +52,8 @@ STAGE_POINT_PDN = "ПроверкаОпросногоЛистаДиспетче�
 EMPTY_DATE = "0001-01-01T00:00:00"
 SCRIPT_DIR = Path(__file__).resolve().parent
 GSPP_M2_CACHE_PREFIX = "gspp_m2_ol_monthly"
-GSPP_M2_DISK_TAG = "gspp_m2_ol_monthly_payload_v1"
-GSPP_M2_DISK_VERSION = 1
+GSPP_M2_DISK_TAG = "gspp_m2_ol_monthly_payload_v2"
+GSPP_M2_DISK_VERSION = 2
 
 
 def normalize_odata_base(raw_base_url: str) -> str:
@@ -184,12 +185,22 @@ def is_empty_date(value: str | None) -> bool:
     return not value or value.startswith(EMPTY_DATE)
 
 
+def _date_part(value: str | None) -> date | None:
+    if is_empty_date(value):
+        return None
+    try:
+        return parse_odata_dt(str(value)).date()
+    except ValueError:
+        return None
+
+
 def is_late(row: dict) -> bool:
-    plan_raw = row.get("ДатаЗавершенияПлан")
-    fact_raw = row.get("ДатаЗавершенияФакт")
-    if is_empty_date(plan_raw) or is_empty_date(fact_raw):
+    """Просрок: календарная дата факта строго позже плановой (без учёта времени)."""
+    plan_date = _date_part(row.get("ДатаЗавершенияПлан"))
+    fact_date = _date_part(row.get("ДатаЗавершенияФакт"))
+    if plan_date is None or fact_date is None:
         return False
-    return parse_odata_dt(fact_raw) > parse_odata_dt(plan_raw)
+    return fact_date > plan_date
 
 
 def kpi_pct(fact: int, plan: int) -> float | None:
@@ -348,7 +359,11 @@ def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> 
             "status": "ok",
             "source": "gspp.ol_gspp_monthly",
             "stage_point": point_name,
-            "rule": "plan = rows with planned completion in month; fact = plan - late rows",
+            "rule": (
+                "plan = rows with planned completion in month; "
+                "late = fact date strictly after plan date (time ignored); "
+                "fact = plan - late"
+            ),
             "rows_by_month": rows,
         },
     }

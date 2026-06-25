@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'c1auto',
     'tools',
     'aiassistant',
+    'servhead',
 ]
 
 MIDDLEWARE = [

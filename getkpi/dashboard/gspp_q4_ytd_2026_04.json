@@ -1,0 +1,160 @@
+{
+  "cache_source": "gspp_q4_ytd_payload_v11",
+  "cache_version": 11,
+  "cache_date": "2026-06-25",
+  "payload": {
+    "data_granularity": "monthly",
+    "monthly_data": [
+      {
+        "month": 1,
+        "year": 2026,
+        "month_name": "январь",
+        "plan": 0.0,
+        "fact": 0.0,
+        "kpi_pct": null,
+        "has_data": false,
+        "values_unit": "шт."
+      },
+      {
+        "month": 2,
+        "year": 2026,
+        "month_name": "февраль",
+        "plan": 2.0,
+        "fact": 2.0,
+        "kpi_pct": 100.0,
+        "has_data": true,
+        "values_unit": "шт."
+      },
+      {
+        "month": 3,
+        "year": 2026,
+        "month_name": "март",
+        "plan": 16.0,
+        "fact": 16.0,
+        "kpi_pct": 100.0,
+        "has_data": true,
+        "values_unit": "шт."
+      },
+      {
+        "month": 4,
+        "year": 2026,
+        "month_name": "апрель",
+        "plan": 12.0,
+        "fact": 12.0,
+        "kpi_pct": 100.0,
+        "has_data": true,
+        "values_unit": "шт."
+      }
+    ],
+    "last_full_month_row": {
+      "month": 4,
+      "year": 2026,
+      "month_name": "апрель",
+      "plan": 12.0,
+      "fact": 12.0,
+      "kpi_pct": 100.0,
+      "has_data": true,
+      "values_unit": "шт."
+    },
+    "kpi_period": {
+      "type": "last_full_month",
+      "year": 2026,
+      "month": 4,
+      "month_name": "апрель"
+    },
+    "ytd": {
+      "total_plan": 12.0,
+      "total_fact": 12.0,
+      "kpi_pct": 100.0,
+      "months_with_data": 3,
+      "months_total": 4,
+      "values_unit": "шт."
+    },
+    "debug": {
+      "kpi_id": "ГСП-Q4",
+      "source": "getkpi/gspp_q4.py (TurboProject)",
+      "target_manager_department": "Обособленное подразделение / Производство №1 / Группа сопровождения продаж и производства",
+      "target_manager_position": "Руководитель отдела",
+      "target_managers": [
+        "Ермаков Илья Николаевич"
+      ],
+      "target_project_statuses": [
+        "В работе",
+        "ВРаботе"
+      ],
+      "project_filter": "has_1c + rukovoditel matches org structure; per month: in work, or completed through completion date; planning excluded",
+      "status": "ok",
+      "projects_count": 6,
+      "projects_in_ref_month": 1,
+      "projects": [
+        {
+          "file_id": 352,
+          "project_name": "Мини-проекты ССП ГСПП (Нохаева В.А.) МАЙ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-05-31",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 338,
+          "project_name": "Мини-проекты СПП ГСПП (Тимофеев М.Ю) МАЙ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-05-31",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 351,
+          "project_name": "Мини-проекты СДУСП ГСПП(Асланян А.К.) МАЙ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-05-31",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 350,
+          "project_name": "Мини-проекты  СППСП ГСПП (Емельяненко Д.С.) МАЙ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-05-31",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 267,
+          "project_name": "Справочник номенклатуры первый этап",
+          "project_code": "НПО/ГСПП/2026/46",
+          "status_proekta": "Завершен",
+          "data_okonchaniya": "2026-05-20",
+          "in_ref_month": true
+        },
+        {
+          "file_id": 275,
+          "project_name": "Справочник Номенклатура второй этап",
+          "project_code": "НПО/ГСПП/2026/105",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": null,
+          "in_ref_month": false
+        }
+      ],
+      "milestones_zero_duration_in_projects": 607,
+      "milestones_in_month_plan": 12,
+      "milestones_in_month_deviated": 0,
+      "milestones_in_month_without_deviation": 12,
+      "milestones_without_baseline": [
+        "1.3 Написать структурированный черновик документа, охватывающий 5 ключевых сценариев: поиск номенклатуры\\ добавление новой позиции\\ внесение изменений в существующую\\ запрос на удаление/архивацию\\ к кому обращаться с вопросами (Э3)",
+        "1.4 Написать структурированный черновик документа, охватывающий 5 ключевых сценариев: поиск номенклатуры\\ добавление новой позиции\\ внесение изменений в существующую\\ запрос на удаление/архивацию\\ к кому обращаться с вопросами (Э4)",
+        "1.5 Согласование текста инструкции со смежными подразделениями",
+        "1.6 Оформление инструкции по работе с номенклатурным справочником",
+        "Разработка инструкции по работе с номенклатурным справочником в апреле выполнена",
+        "1.1 Согласование и утверждение инструкции по работе с номенклатурным справочником.",
+        "1.2 Ознакомление сотрудников смежных подразделением с регламентом.",
+        "Утверждение инструкции по работе с номенклатурным справочником выполнено",
+        "Закрытие заработной платы",
+        "Зарплата за апрель закрыта",
+        "Типовой СК",
+        "Типовой СК пройден"
+      ],
+      "milestones_without_baseline_truncated": false
+    }
+  }
+}
