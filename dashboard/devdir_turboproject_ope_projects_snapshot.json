@@ -74,7 +74,7 @@
       "organizatsiya": "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
       "tip_proekta": "ОПЭ",
       "podrazdelenie": "Служба развития",
-      "status_proekta": "Планирование",
+      "status_proekta": "ВРаботе",
       "start_date": "2026-04-09T08:00:00",
       "finish_date": "2027-04-30T08:12:48",
       "baseline_start": "2026-04-09T08:00:00",
@@ -103,6 +103,6 @@
     "fact_projects_count": 2,
     "cache_path": "C:\\Users\\testii\\Downloads\\dash\\DashboardBack\\dashboard\\devdir_turboproject_ope_projects_snapshot.json"
   },
-  "cache_date": "2026-06-24",
+  "cache_date": "2026-06-25",
   "cache_version": 1
 }

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 
 import logging
+import os
 
 from pathlib import Path
 
@@ -119,6 +120,26 @@ def build_protocol_overdue_table_cached(
     if cached_table is not None and cached_table.get("months_total") == len(pairs):
 
         return cached_table
+
+    stale_table = build_from_cached_months(department, ref_y, ref_m, allow_stale=True)
+
+    if stale_table is not None:
+
+        return stale_table
+
+    if os.getenv("DEPT_PROTOCOL_LIVE_ON_REQUEST", "").strip().lower() not in {"1", "true", "yes"}:
+
+        logger.info(
+
+            "%s: нет готового кэша для «%s», пропускаем live OData при обычном запросе",
+
+            TABLE_ID,
+
+            department,
+
+        )
+
+        return None
 
 
 
