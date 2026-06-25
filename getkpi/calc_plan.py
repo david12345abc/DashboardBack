@@ -79,8 +79,10 @@ MONTH_RU = {
 REG = "AccumulationRegister_ТД_ПланированиеДоговоровОтгрузокДС_RecordType"
 EXPECTED_DOC = "Document_ТД_ПланированиеПроцессаПродажЕжемесячное"
 EXPECTED_CONTRACT_DOC = "Document_КоммерческоеПредложениеКлиенту"
+EXPECTED_POTENTIAL_CONTRACTS = "InformationRegister_ТД_ДоговорыПотенциальные"
+SIGNED_CONTRACTS_REG = "InformationRegister_ТД_ДоговорыПодписанные"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 10
+CACHE_VERSION = 13
 PLAN_KEYS = ("dengi", "otgruzki", "dogovory")
 EXPECTED_KEYS = {
     "dengi": "dengi_expected",
@@ -741,6 +743,298 @@ def _merge_expected_money_and_shipments(result: dict[int, dict],
                 result[m]["by_dept"][d][k] = round(result[m]["by_dept"][d][k], 2)
 
 
+def _batch_load_by_ref(session: requests.Session,
+                       entity: str,
+                       keys: set[str],
+                       select: str,
+                       *,
+                       batch_size: int = 15,
+                       label: str = "Plans/Batch") -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    keys = sorted(k for k in keys if k and k != EMPTY)
+    for i in range(0, len(keys), batch_size):
+        batch = keys[i:i + batch_size]
+        flt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
+        url = (
+            f"{BASE}/{entity}?$format=json&$filter={flt}"
+            f"&$select={quote(select, safe=',_')}&$top={len(batch)}"
+        )
+        r = request_with_retry(session, url, timeout=60, retries=3, label=label)
+        if r is None or not r.ok:
+            continue
+        try:
+            for row in r.json().get("value", []):
+                if row.get("Ref_Key"):
+                    result[row["Ref_Key"]] = row
+        except Exception:
+            pass
+    return result
+
+
+def _load_potential_contract_rows(session: requests.Session,
+                                  year: int,
+                                  ref_month: int) -> list[dict]:
+    d_from = _month_start(year, 1)
+    d_to = _month_end_exclusive(year, ref_month)
+    sel = quote(
+        "КоммерческоеПредложение,Подразделение_Key,Ответственный_Key,Партнер_Key,"
+        "ЗаказКлиента_Key,СуммаДоговора,ДатаПодписанияПлан",
+        safe=",_",
+    )
+    flt = quote(
+        f"ДатаПодписанияПлан ge datetime'{d_from}' and "
+        f"ДатаПодписанияПлан lt datetime'{d_to}'",
+        safe="",
+    )
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        url = (
+            f"{BASE}/{EXPECTED_POTENTIAL_CONTRACTS}?$format=json"
+            f"&$top=5000&$skip={skip}&$filter={flt}&$select={sel}"
+        )
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Plans/PotentialContracts")
+        if r is None or not r.ok:
+            break
+        batch = r.json().get("value", [])
+        rows.extend(batch)
+        if len(batch) < 5000:
+            break
+        skip += 5000
+    return rows
+
+
+def _contract_proposal_amount(potential_row: dict, proposal: dict) -> float:
+    amount = float(potential_row.get("СуммаДоговора") or 0)
+    if proposal.get("ТД_ОсновноеТКПДляБМИ"):
+        amount = float(proposal.get("ТД_СуммаТКПБМИ") or 0)
+    return amount * _currency_rate(proposal.get("Валюта_Key", ""))
+
+
+def _proposal_status_allows_expected_contract(status: str | None) -> bool:
+    return status not in {"НеСогласовано", "Аннулировано", "Не согласовано"}
+
+
+def _merge_expected_contracts_potential(result: dict[int, dict],
+                                        session: requests.Session,
+                                        year: int,
+                                        ref_month: int,
+                                        resale_partners: set[str],
+                                        resale_without_mgs: set[str]) -> None:
+    rows = _load_potential_contract_rows(session, year, ref_month)
+    proposals = _batch_load_by_ref(
+        session,
+        EXPECTED_CONTRACT_DOC,
+        {row.get("КоммерческоеПредложение", "") for row in rows},
+        "Ref_Key,Валюта_Key,Статус,Соглашение_Key,ТД_ОсновноеТКПДляБМИ,ТД_СуммаТКПБМИ",
+        label="Plans/PotentialContractProposals",
+    )
+
+    for row in rows:
+        m = _month_from_date(row.get("ДатаПодписанияПлан"))
+        if m is None or m < 1 or m > ref_month:
+            continue
+        # В 1С-запросе Подразделение В(&ПодразделениеСписок) — без нормализации алиасов.
+        dept = row.get("Подразделение_Key", "")
+        if dept not in DEPT_SET:
+            continue
+        partner = row.get("Партнер_Key", "")
+        if dept == OPBO_DEPT:
+            if partner in resale_without_mgs:
+                continue
+        elif partner in resale_partners:
+            continue
+        if row.get("ЗаказКлиента_Key", "") not in ("", EMPTY):
+            continue
+        proposal = proposals.get(row.get("КоммерческоеПредложение", ""))
+        if not proposal:
+            continue
+        if not _proposal_status_allows_expected_contract(proposal.get("Статус")):
+            continue
+        amount = _contract_proposal_amount(row, proposal)
+        result[m]["dogovory_expected"] += amount
+        result[m]["by_dept"][dept]["dogovory_expected"] += amount
+
+
+def _load_orders_for_expected_contract_offer(session: requests.Session) -> dict[str, dict]:
+    dept_filter = " or ".join(f"Подразделение_Key eq guid'{d}'" for d in DEPT_SET)
+    flt = quote(f"({dept_filter})", safe="")
+    sel = quote(
+        "Ref_Key,Number,Date,Подразделение_Key,Партнер_Key,Соглашение_Key,ОбъектРасчетов_Key,"
+        "СуммаДокумента,ТД_ПредполагаемаяДатаАванса,ТД_НеУчитыватьВПланФакте",
+        safe=",_",
+    )
+    result: dict[str, dict] = {}
+    skip = 0
+    while True:
+        url = (
+            f"{BASE}/Document_ЗаказКлиента?$format=json&$top=5000&$skip={skip}"
+            f"&$filter={flt}&$select={sel}"
+        )
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Plans/ContractOfferOrders")
+        if r is None or not r.ok:
+            break
+        batch = r.json().get("value", [])
+        for row in batch:
+            if row.get("Ref_Key"):
+                result[row["Ref_Key"]] = row
+        if len(batch) < 5000:
+            break
+        skip += 5000
+    return result
+
+
+def _load_payment_stage_dates_for_orders(session: requests.Session,
+                                         order_keys: set[str],
+                                         year: int,
+                                         ref_month: int) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    flt = quote(f"ДатаПлатежа lt datetime'{_month_end_exclusive(year, ref_month)}'", safe="")
+    sel = quote("Ref_Key,ДатаПлатежа", safe=",_")
+    skip = 0
+    while True:
+        url = (
+            f"{BASE}/{PAYMENT_STAGES}?$format=json&$top=5000&$skip={skip}"
+            f"&$filter={flt}&$select={sel}"
+        )
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Plans/ContractOfferStages")
+        if r is None or not r.ok:
+            break
+        batch = r.json().get("value", [])
+        for row in batch:
+            order_key = row.get("Ref_Key", "")
+            if order_key not in order_keys:
+                continue
+            pay_date = (row.get("ДатаПлатежа") or "")[:10]
+            if pay_date:
+                result.setdefault(order_key, []).append(pay_date)
+        if len(batch) < 5000:
+            break
+        skip += 5000
+    return result
+
+
+def _load_signed_contract_order_keys(session: requests.Session) -> set[str]:
+    result: set[str] = set()
+    skip = 0
+    while True:
+        url = (
+            f"{BASE}/{SIGNED_CONTRACTS_REG}?$format=json&$top=5000&$skip={skip}"
+            f"&$select=ЗаказКлиента_Key"
+        )
+        r = request_with_retry(session, url, timeout=120, retries=4, label="Plans/SignedContractOrders")
+        if r is None or not r.ok:
+            break
+        batch = r.json().get("value", [])
+        for row in batch:
+            order_key = row.get("ЗаказКлиента_Key", "")
+            if order_key not in ("", EMPTY):
+                result.add(order_key)
+        if len(batch) < 5000:
+            break
+        skip += 5000
+    return result
+
+
+def _merge_expected_contracts_offer_orders(result: dict[int, dict],
+                                           session: requests.Session,
+                                           year: int,
+                                           ref_month: int,
+                                           resale_partners: set[str],
+                                           resale_without_mgs: set[str]) -> None:
+    orders = _load_orders_for_expected_contract_offer(session)
+    agreements = _batch_load_by_ref(
+        session,
+        "Catalog_СоглашенияСКлиентами",
+        {row.get("Соглашение_Key", "") for row in orders.values()},
+        "Ref_Key,ТД_СчетОферта",
+        label="Plans/ContractOfferAgreements",
+    )
+    signed_orders = _load_signed_contract_order_keys(session)
+    stage_dates = _load_payment_stage_dates_for_orders(session, set(orders), year, ref_month)
+
+    candidate_orders: dict[str, dict] = {}
+    calc_obj_to_order: dict[str, str] = {}
+    for order_key, order in orders.items():
+        if order_key not in stage_dates:
+            continue
+        if order_key in signed_orders:
+            continue
+        if order.get("ТД_НеУчитыватьВПланФакте"):
+            continue
+        if not agreements.get(order.get("Соглашение_Key", ""), {}).get("ТД_СчетОферта"):
+            continue
+        dept = order.get("Подразделение_Key", "")
+        if dept not in DEPT_SET:
+            continue
+        partner = order.get("Партнер_Key", "")
+        if dept == OPBO_DEPT:
+            if partner in resale_without_mgs:
+                continue
+        elif partner in resale_partners:
+            continue
+        obj = order.get("ОбъектРасчетов_Key", "")
+        if obj in ("", EMPTY):
+            continue
+        candidate_orders[order_key] = order
+        calc_obj_to_order[obj] = order_key
+
+    rows = _load_customer_settlement_rows(session, year, ref_month, set(calc_obj_to_order))
+    rows_sorted = sorted(rows, key=lambda x: (x.get("Period") or ""))
+    for m in range(1, ref_month + 1):
+        end = _month_end_exclusive(year, m)
+        balances: dict[str, float] = {}
+        for row in rows_sorted:
+            if (row.get("Period") or "") >= end:
+                break
+            obj = row.get("ОбъектРасчетов_Key", "")
+            if obj in calc_obj_to_order:
+                balances[obj] = balances.get(obj, 0.0) + _signed_balance_amount(row, "КОплате")
+        for obj, balance in balances.items():
+            if balance <= 0:
+                continue
+            order_key = calc_obj_to_order[obj]
+            order = candidate_orders[order_key]
+            if not any(pay_date < end[:10] for pay_date in stage_dates.get(order_key, [])):
+                continue
+            dept = order.get("Подразделение_Key", "")
+            amount = float(order.get("СуммаДокумента") or 0)
+            result[m]["dogovory_expected"] += amount
+            result[m]["by_dept"][dept]["dogovory_expected"] += amount
+
+
+def _merge_expected_contracts_from_odata(result: dict[int, dict],
+                                         session: requests.Session,
+                                         year: int,
+                                         ref_month: int) -> None:
+    """Воспроизвести «СуммаДоговораПлан» из предоставленного 1С-запроса через OData."""
+    resale_partners, resale_without_mgs = _partner_resale_sets(session)
+    _merge_expected_contracts_potential(
+        result,
+        session,
+        year,
+        ref_month,
+        resale_partners,
+        resale_without_mgs,
+    )
+    _merge_expected_contracts_offer_orders(
+        result,
+        session,
+        year,
+        ref_month,
+        resale_partners,
+        resale_without_mgs,
+    )
+
+    for m in result:
+        result[m]["dogovory_expected"] = round(result[m]["dogovory_expected"], 2)
+        for d in result[m]["by_dept"]:
+            result[m]["by_dept"][d]["dogovory_expected"] = round(
+                result[m]["by_dept"][d]["dogovory_expected"],
+                2,
+            )
+
+
 def _calc_plans(entries: list[dict],
                 ref_month: int) -> dict[int, dict]:
     """
@@ -893,7 +1187,12 @@ def _merge_expected_plans(result: dict[int, dict],
 _SERVICE_FIELD_MAP = {
     "dengi_expected": ("dengi", "Деньги", "СуммаПланируемыхПлатежей"),
     "otgruzki_expected": ("otgruzki", "Отгрузки", "ЗаказыОжидаемыеКОтгрузке"),
-    "dogovory_expected": ("dogovory", "Договоры", "ДоговорыОжидаемыеКЗаключению"),
+    "dogovory_expected": (
+        "dogovory",
+        "Договоры",
+        "ДоговорыОжидаемыеКЗаключению",
+        "СуммаДоговораПлан",
+    ),
 }
 
 
@@ -917,7 +1216,8 @@ def _fetch_expected_from_service(year: int, ref_month: int) -> dict[int, dict] |
                 "<guid подразделения>": {
                     "dengi": 0.0,        # Сумма планируемых платежей (план)
                     "otgruzki": 0.0,      # Заказы ожидаемые к отгрузке (план)
-                    "dogovory": 0.0       # Договоры ожидаемые к заключению (план)
+                    "dogovory": 0.0,      # Договоры ожидаемые к заключению (план)
+                    # или "СуммаДоговораПлан": 0.0 — поле из 1С-запроса
                 }, ...}},
             ...]}
 
@@ -1077,17 +1377,18 @@ def get_plans_monthly(year: int | None = None,
     logger.info("calc_plan: loading register for %d months 1-%d", ref_y, ref_m)
     entries = _load_register(session, ref_y, ref_m)
     computed = _calc_plans(entries, ref_m)
-    # План (Маркетинговый план) считается из регистра выше; «ожидаемые» значения
-    # берём только из расчётного HTTP-сервиса 1С. Старые OData-аппроксимации здесь
-    # не используем: они не совпадают с «План-фактным анализом» 1С.
+    # План (Маркетинговый план) считается из регистра выше. Ожидаемые значения
+    # сначала берём из расчётного HTTP-сервиса 1С; если сервис не опубликован,
+    # договоры ожидаемые воспроизводим по OData-объектам из запроса 1С.
     if _apply_expected_values(computed, ref_y, ref_m):
         logger.info("calc_plan: expected values from 1C HTTP service")
     else:
         logger.warning(
-            "calc_plan: expected service unavailable; expected values left empty. "
-            "Publish 1C HTTP-service at %s",
+            "calc_plan: expected service unavailable; calculating dogovory_expected via OData. "
+            "Publish 1C HTTP-service at %s for exact dengi/otgruzki expected values.",
             EXPECTED_SERVICE_URL,
         )
+        _merge_expected_contracts_from_odata(computed, session, ref_y, ref_m)
 
     out_months = []
     for m in range(1, ref_m + 1):
