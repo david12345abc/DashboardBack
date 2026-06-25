@@ -1,7 +1,7 @@
 """
 ГСП-M5 — суммарный бюджет план/факт по проектам TurboProject (та же когорта, что ГСП-Q4).
 
-Берутся все проекты ``has_1c``, где РП совпадает с актуальным «Руководителем отдела» ГСПП.
+Берутся проекты ``has_1c`` со статусом «В работе», где РП совпадает с актуальным «Руководителем отдела» ГСПП.
 План и факт — из ``data_1c.byudzhet_plan`` / ``data_1c.byudzhet_fakt``, суммируются по проектам,
 «живым» в опорном месяце (пересечение сроков проекта с календарным месяцем).
 """
@@ -18,7 +18,7 @@ from typing import Any
 from .cache_manager import locked_call
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from .gspp_q4 import get_manager_project_pairs, _project_display_name
+from .gspp_q4 import get_manager_project_pairs, _project_display_name, _project_in_work_in_month
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +132,8 @@ def _budget_totals_for_month(
     has_fact = False
     any_alive = False
     for _item, details in project_pairs:
+        if not _project_in_work_in_month(details, year, month):
+            continue
         if not _project_alive_in_month(details, year, month):
             continue
         any_alive = True
@@ -158,7 +160,7 @@ def _build_gspp_m5_payload(year: int | None = None, month: int | None = None) ->
     debug: dict[str, Any] = {
         "kpi_id": "ГСП-M5",
         "source": "getkpi/gspp_m5.py (TurboProject)",
-        "project_filter": "same as GSPP-Q4: all has_1c projects where rukovoditel matches org structure",
+        "project_filter": "same as GSPP-Q4: per-month in work or completed through close date; planning excluded",
         "plan_field": "data_1c.byudzhet_plan",
         "fact_field": "data_1c.byudzhet_fakt",
         "aggregation": "sum by active projects per month",

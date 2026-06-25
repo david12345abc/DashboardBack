@@ -507,8 +507,15 @@ def _is_gspp_m3_tile(kpi: dict) -> bool:
 
 
 def _is_gspp_m1_tile(kpi: dict) -> bool:
-    kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
-    return kid in {'GSP-M1', 'GSPP-M1', 'ГСП-M1', 'ГCП-M1', 'ГСПП-M1', 'ГCПП-M1'}
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _gspp_kpi_views.gspp_m1_tile_matches(kid) or _gspp_kpi_views.gspp_m1_tile_matches(raw)
+
+
+def _is_gspp_m2_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _gspp_kpi_views.gspp_m2_tile_matches(kid) or _gspp_kpi_views.gspp_m2_tile_matches(raw)
 
 
 def _is_gspp_q5_tile(kpi: dict) -> bool:
@@ -680,6 +687,10 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_td_m4_limit(pct)
     elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
         color = _rag_td_m4_limit(pct)
+    elif _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+        color = _gspp_kpi_views.rag_gspp_m1_m2_pct(pct)
+    elif _gspp_kpi_views.gspp_q4_kpi_id_matches(kid):
+        color = _gspp_kpi_views.rag_gspp_q4_pct(pct)
     elif _is_budget_limit_m3_kpi(kid):
         color = _rag_dz_lower_better(pct)
     elif kid in techdir_kpi_entry.TILE_COLOR_DZ_LOWER_IDS:
@@ -917,11 +928,14 @@ def _build_tile_item(
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
         tile['periodicity'] = 'ежемесячно'
-    if _is_gspp_m1_tile(kpi) or _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+    if (
+        _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi)
+        or _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi)
+    ):
         tile['period'] = 'ежемесячно'
         tile['frequency'] = 'ежемесячно'
         tile['periodicity'] = 'ежемесячно'
-        if not _is_gspp_m1_tile(kpi):
+        if _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
             tile['pct_lower_is_better'] = True
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
@@ -935,6 +949,19 @@ def _build_tile_item(
                 **lfr,
                 'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
             }
+        if isinstance(lfr, dict):
+            if _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+                if lfr.get('kpi_pct') is not None:
+                    lfr = {
+                        **lfr,
+                        'color': _gspp_kpi_views.rag_gspp_m1_m2_pct(float(lfr['kpi_pct'])),
+                    }
+            elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_gspp):
+                if lfr.get('kpi_pct') is not None:
+                    lfr = {
+                        **lfr,
+                        'color': _gspp_kpi_views.rag_gspp_q4_pct(float(lfr['kpi_pct'])),
+                    }
         tile['last_full_month_row'] = _public_unit_row(lfr)
     if entry.get('monthly_data') is not None:
         raw_rows = entry.get('monthly_data') or []
@@ -943,6 +970,30 @@ def _build_tile_item(
                 {
                     **row,
                     'kpi_pct': _qd_q2_kpi_pct(row.get('plan'), row.get('fact')),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
+        elif _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+            raw_rows = [
+                {
+                    **row,
+                    'color': _gspp_kpi_views.rag_gspp_m1_m2_pct(
+                        float(row['kpi_pct']) if row.get('kpi_pct') is not None else None
+                    ),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
+        elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_gspp):
+            raw_rows = [
+                {
+                    **row,
+                    'color': _gspp_kpi_views.rag_gspp_q4_pct(
+                        float(row['kpi_pct']) if row.get('kpi_pct') is not None else None
+                    ),
                 }
                 if isinstance(row, dict)
                 else row
@@ -1533,7 +1584,7 @@ def _build_universal_payload(
 
     gspp_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        gspp_memo_key = f"gspp_dashboard:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        gspp_memo_key = f"gspp_dashboard:v3:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -1610,6 +1661,14 @@ def _build_universal_payload(
                 if lm.get('kpi_pct') is not None:
                     tile['kpi_pct'] = lm.get('kpi_pct')
                     tile['color'] = _qualdir_kpi_views.rag_plan_fact_pct(float(lm['kpi_pct']))
+            if _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _gspp_kpi_views.rag_gspp_m1_m2_pct(float(lm['kpi_pct']))
+            elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _gspp_kpi_views.rag_gspp_q4_pct(float(lm['kpi_pct']))
             if kpi.get('kpi_id') in _qualdir_kpi_views.OTK_INCOMING_TILE_IDS:
                 for extra_key in ('in_work_today', 'rejected_items_count'):
                     if extra_key in lm:
@@ -1650,7 +1709,7 @@ def _build_universal_payload(
             tile['unit'] = 'шт.'
         elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'
-        elif _is_gspp_m1_tile(kpi):
+        elif _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
             tile['unit'] = 'шт.'
         elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
             tile['unit'] = 'руб.'

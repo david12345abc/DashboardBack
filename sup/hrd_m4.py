@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 SHEET_NAME = "Текучесть"
 CACHE_PREFIX = "sup_hrd_m4_turnover"
-CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v3_hc"
-CACHE_VERSION = 3
+CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v4_hc"
+CACHE_VERSION = 4
 
 FACT_ROW = 10
 PLAN_ROW = 11
@@ -71,6 +71,13 @@ def _safe_percent(value: Any) -> float | None:
     if abs(num) <= 1:
         num *= 100
     return round(num, 2)
+
+
+def _kpi_pct_from_plan_fact(plan: float | None, fact: float | None) -> float | None:
+    """KPI плитки: факт / план × 100 (% выполнения порога)."""
+    if plan is None or fact is None or plan <= 0:
+        return None
+    return round(fact / plan * 100, 1)
 
 
 def _open_tekuchest_sheet(book: xlrd.Book):
@@ -139,7 +146,7 @@ def _load_turnover_months(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]],
             "month_name": MONTH_NAMES[month],
             "plan": plan,
             "fact": fact,
-            "kpi_pct": fact,
+            "kpi_pct": _kpi_pct_from_plan_fact(plan, fact),
             "has_data": fact is not None or plan is not None,
             "values_unit": "%",
         })

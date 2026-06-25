@@ -3,6 +3,7 @@
 План — накопительно с начала года: ``номер_месяца × 1,5`` (январь = 1,5 %, июнь = 9 %).
 Факт — лист «Текучесть», столбец D, последняя непустая ячейка в файле
 ``HC_сводный_{year}_{Месяц}.xls`` из каталога отчётов HR.
+KPI плитки — ``факт / план × 100`` (%).
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
-from sup.hrd_m4 import _safe_percent
+from sup.hrd_m4 import _kpi_pct_from_plan_fact, _safe_percent
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,8 @@ HC_SHEET_NAME = "Текучесть"
 HC_FACT_COLUMN = 3  # D
 
 CACHE_PREFIX = "sup_hrd_q4_adaptation"
-CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v5"
-CACHE_VERSION = 5
+CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v6"
+CACHE_VERSION = 6
 
 # Накопительный план с января: месяц × 1,5 п.п.
 PLAN_PCT_PER_MONTH = 1.5
@@ -104,7 +105,7 @@ def _read_monthly_rows(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], di
             "month_name": MONTH_NAMES[month],
             "plan": plan,
             "fact": fact,
-            "kpi_pct": fact,
+            "kpi_pct": _kpi_pct_from_plan_fact(plan, fact),
             "has_data": True,
             "values_unit": "%",
         })
@@ -146,7 +147,8 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
             "rule": (
                 "plan = month * 1.5 (cumulative from year start); "
                 "fact = last value in column D on sheet Текучесть "
-                "from HC_сводный_{year}_{Month}.xls (non-numeric → 0)"
+                "from HC_сводный_{year}_{Month}.xls (non-numeric → 0); "
+                "kpi_pct = fact / plan * 100"
             ),
             "plan_pct_per_month": PLAN_PCT_PER_MONTH,
             **debug,

@@ -35,3 +35,6 @@ Thumbs.db
 # caches
 getkpi/dashboard/*.json
 getkpi/dashboard/**/*.json
+dashboard/*.json
+getkpi/*_cache.json
+getkpi/dds_articles_cache.json
