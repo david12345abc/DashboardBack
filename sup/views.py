@@ -4,14 +4,39 @@ from __future__ import annotations
 from typing import Any
 
 from sup.hrd_m1 import get_hrd_m1_ytd
+from sup.hrd_m2 import get_hrd_m2_ytd
+from sup.hrd_m3 import get_hrd_m3_ytd
 from sup.hrd_m4 import get_hrd_m4_ytd
 from sup.hrd_q4 import get_hrd_q4_ytd
 
-SUP_KPI_IDS: frozenset[str] = frozenset({"HRD-M1", "HRD-M4", "HRD-Q4"})
+SUP_KPI_IDS: frozenset[str] = frozenset({"HRD-M1", "HRD-M2", "HRD-M3", "HRD-M4", "HRD-Q4"})
 SUP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = SUP_KPI_IDS
+SUP_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({"HRD-M2"})
+SUP_BUDGET_LIMIT_KPI_IDS: frozenset[str] = frozenset({"HRD-M3"})
+SUP_TURNOVER_FACT_RAG_IDS: frozenset[str] = frozenset({"HRD-M4", "HRD-Q4"})
+
+
+def rag_hrd_turnover_fact_pct(fact_pct: float | None, *, kpi_id: str) -> str:
+    """HRD-M4 / HRD-Q4: цвет по факту (%, меньше — лучше), пороги из карточки KPI."""
+    if fact_pct is None:
+        return "unknown"
+    kid = str(kpi_id or "").strip().upper()
+    if kid == "HRD-M4":
+        if fact_pct < 85:
+            return "green"
+    else:
+        if fact_pct <= 85:
+            return "green"
+    if fact_pct <= 94.9:
+        return "yellow"
+    if fact_pct > 95:
+        return "red"
+    return "yellow"
 
 _PAYLOAD_BUILDERS = {
     "HRD-M1": get_hrd_m1_ytd,
+    "HRD-M2": get_hrd_m2_ytd,
+    "HRD-M3": get_hrd_m3_ytd,
     "HRD-M4": get_hrd_m4_ytd,
     "HRD-Q4": get_hrd_q4_ytd,
 }
