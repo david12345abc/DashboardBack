@@ -21,7 +21,50 @@ DEVDIR_KPI_IDS: frozenset[str] = frozenset(
     {'RD-M1', 'RD-M2-1', 'RD-M3', 'RD-M3-1', 'RD-M4', 'RD-Q2'},
 )
 DEVDIR_PIECE_UNIT_KPI_IDS: frozenset[str] = frozenset({'RD-M1', 'RD-M2-1', 'RD-M3-1'})
+DEVDIR_PLAN_FACT_COLOR_IDS: frozenset[str] = DEVDIR_PIECE_UNIT_KPI_IDS
 DEVDIR_RUB_UNIT_KPI_IDS: frozenset[str] = frozenset({'RD-M3', 'RD-M4'})
+
+
+def rag_devdir_plan_fact_pct(pct: float | None) -> str:
+    """RD-M1 / RD-M2-1 / RD-M3-1: ≥90 % — зелёный, 80–89,9 % — жёлтый, <80 % — красный."""
+    if pct is None:
+        return 'unknown'
+    if pct >= 90:
+        return 'green'
+    if pct >= 80:
+        return 'yellow'
+    return 'red'
+
+
+def kpi_pct_from_plan_fact(plan: object, fact: object) -> float | None:
+    try:
+        p = float(plan)
+        f = float(fact)
+    except (TypeError, ValueError):
+        return None
+    if p <= 0:
+        return None
+    return round(f / p * 100, 1)
+
+
+def sync_devdir_piece_tile_color(tile: dict[str, Any]) -> None:
+    """Плитки RD-M1/M2-1/M3-1: цвет и kpi_pct строго из plan/fact выбранного месяца."""
+    kid = str(tile.get('kpi_id') or '').strip().upper()
+    if kid not in DEVDIR_PLAN_FACT_COLOR_IDS:
+        return
+    pct = kpi_pct_from_plan_fact(tile.get('plan'), tile.get('fact'))
+    if pct is None:
+        pct = tile.get('kpi_pct')
+        if pct is not None:
+            pct = float(pct)
+    else:
+        tile['kpi_pct'] = pct
+    if pct is not None:
+        color = rag_devdir_plan_fact_pct(float(pct))
+        tile['color'] = color
+        tile['status_color'] = color
+    tile['pct_higher_is_better'] = True
+    tile['rag_direction'] = 'higher_better'
 
 
 def merge_kpi_entry_if_applicable(

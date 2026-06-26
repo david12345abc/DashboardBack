@@ -1,13 +1,12 @@
-"""Turboproject snapshot for projects where selected resources participate.
+"""Turboproject snapshot for KPI RD-M3-1 (плитка проектов директора по развитию).
 
-The module mirrors the techdir-style snapshot flow:
-  - fetch project list;
-  - inspect each project details payload;
-  - keep only projects that match the target resources;
-  - build a cached snapshot with plan/fact counters.
+Отбор проектов:
+  - организация «ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО»;
+  - РП (``rukovoditel``) или куратор (``kurator``) = действующий «Директор по развитию» из 1С;
+  - исключаются проекты с типом «ОПЭ».
 
-Plan = total matching projects.
-Fact = projects without milestone deviations.
+План = все подходящие «живые» проекты в месяце.
+Факт = проекты без отклонений по вехам.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from typing import Any
 import requests
 
 from getkpi.cache_manager import locked_call
-from getkpi.list_enterprise_positions import employees_by_department
+from getkpi.list_enterprise_positions import employees_by_position
 from . import ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES
 from .rd_monthly_period import normalize_rd_tile_period
@@ -38,21 +37,16 @@ PASSWORD = os.getenv("TURBOPROJECT_PASSWORD", "Ruslandavletov28")
 TIMEOUT = 60
 
 TARGET_ORGANIZATION = "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО"
-TARGET_RESOURCES_DEPARTMENT = (
-    "Председатель Совета Директоров / ОПЕРАЦИОННЫЙ ДИРЕКТОР / "
-    "Зам.операционного директора - директор по производству / "
-    "ДИРЕКТОР ПО РАЗВИТИЮ / Служба развития / "
-    "Сектор по внедрению искусственного интеллекта"
-)
+DEVDIR_OWNER_POSITION = "Директор по развитию"
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
 CACHE_PATH = CACHE_DIR / "devdir_turboproject_projects_by_resources_snapshot.json"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 TABLE_CACHE_PREFIX = "devdir_turboproject_projects_by_resources_deviations"
-TABLE_CACHE_VERSION = 8
+TABLE_CACHE_VERSION = 9
 TILE_CACHE_PREFIX = "devdir_rd_m3_1_turboproject_projects_by_resources"
 TILE_CACHE_SOURCE_TAG = "devdir_rd_m3_1_turboproject_projects_by_resources_ytd"
-TILE_CACHE_VERSION = 7
+TILE_CACHE_VERSION = 8
 
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
@@ -63,18 +57,51 @@ def normalize_name(value: Any) -> str:
     return " ".join(value.strip().lower().replace("ё", "е").split())
 
 
+def _is_ope_project_type(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = "".join(value.strip().lower().replace("ё", "е").split())
+    return normalized in {"опэ", "ope"}
+
+
 @lru_cache(maxsize=1)
-def target_resources() -> tuple[str, ...]:
-    """Актуальные сотрудники сектора ИИ из 1С."""
-    return tuple(employees_by_department(TARGET_RESOURCES_DEPARTMENT))
+def devdir_project_owners() -> tuple[str, ...]:
+    """Актуальные ФИО действующего директора по развитию из 1С."""
+    return tuple(employees_by_position(DEVDIR_OWNER_POSITION))
 
 
-def target_resources_normalized() -> set[str]:
+def devdir_project_owner_labels() -> set[str]:
     return {
         normalized
-        for resource in target_resources()
-        if (normalized := normalize_name(resource))
+        for owner in devdir_project_owners()
+        if (normalized := normalize_name(owner))
     }
+
+
+def is_target_devdir_project(data_1c: dict[str, Any]) -> bool:
+    """Проект директора по развитию: РП/куратор из 1С, без типа ОПЭ."""
+    if data_1c.get("organizatsiya") != TARGET_ORGANIZATION:
+        return False
+    tip = str(data_1c.get("tip_proekta") or "").strip()
+    if _is_ope_project_type(tip):
+        return False
+    owners = devdir_project_owner_labels()
+    if not owners:
+        return False
+    return (
+        normalize_name(data_1c.get("rukovoditel")) in owners
+        or normalize_name(data_1c.get("kurator")) in owners
+    )
+
+
+def matched_project_owners(data_1c: dict[str, Any]) -> list[str]:
+    owners = devdir_project_owner_labels()
+    matched: set[str] = set()
+    for field in ("rukovoditel", "kurator"):
+        raw = data_1c.get(field)
+        if isinstance(raw, str) and raw.strip() and normalize_name(raw) in owners:
+            matched.add(raw.strip())
+    return sorted(matched, key=str.lower)
 
 
 def unique_resource_names(names: list[Any]) -> list[str]:
@@ -100,23 +127,6 @@ def build_project_resources(details: dict[str, Any]) -> list[str]:
             assignment_resource_names.append(assignment.get("resource_name"))
 
     return unique_resource_names(assignment_resource_names)
-
-
-def matched_target_resources(resources: list[str]) -> list[str]:
-    normalized = {normalize_name(resource) for resource in resources}
-    targets = target_resources_normalized()
-    return sorted(
-        {
-            resource
-            for resource in resources
-            if normalize_name(resource) in targets
-        },
-        key=str.lower,
-    ) if normalized & targets else []
-
-
-def has_target_resource(resources: list[str]) -> bool:
-    return bool(matched_target_resources(resources))
 
 
 def login(session: requests.Session) -> str:
@@ -379,7 +389,7 @@ def _project_summary(
         "file_id": summary_item.get("id"),
         "project_name": project_name(summary_item, details),
         "resources": resources,
-        "matched_resources": matched_target_resources(resources),
+        "matched_owners": matched_project_owners(data_1c),
         "project_manager": data_1c.get("rukovoditel"),
         "kurator": data_1c.get("kurator"),
         "project_code": data_1c.get("nomer_proekta"),
@@ -622,7 +632,7 @@ def _build_projects_monthly_payload(
             "fact": fact_projects,
             "kpi_pct": kpi_pct,
             "has_data": plan_count > 0,
-            "projects_with_resources": plan_count,
+            "projects_in_scope": plan_count,
             "projects_without_deviations": fact_projects,
             "projects_with_deviations": deviation_projects,
             "values_unit": "шт.",
@@ -651,8 +661,10 @@ def _build_projects_monthly_payload(
         },
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
-            "target_resources_department": TARGET_RESOURCES_DEPARTMENT,
-            "target_resources": list(target_resources()),
+            "devdir_owner_position": DEVDIR_OWNER_POSITION,
+            "devdir_project_owners": list(devdir_project_owners()),
+            "excluded_project_types": ["ОПЭ"],
+            "filter": "rukovoditel or kurator == devdir owner from 1C; tip_proekta != ОПЭ",
             "target_projects_count": len(projects),
             "kpi_route": TILE_CACHE_PREFIX,
         },
@@ -676,7 +688,7 @@ def get_rd_m3_1_ytd(year: int | None = None, month: int | None = None) -> dict |
         try:
             payload = _build_projects_monthly_payload(year=year, month=month)
         except Exception:
-            logger.exception("Ошибка при расчёте RD-M3-1 (TurboProject по ресурсам)")
+            logger.exception("Ошибка при расчёте RD-M3-1 (TurboProject, проекты директора по развитию)")
             return None
         if payload is not None:
             ytd_json_cache.save_payload(
@@ -778,10 +790,11 @@ def _compute_projects_snapshot() -> dict:
             logger.exception("Не удалось получить детали проекта %s", file_id)
             continue
 
-        resources = build_project_resources(details)
-        if not has_target_resource(resources):
+        data_1c = details.get("data_1c") or {}
+        if not is_target_devdir_project(data_1c):
             continue
 
+        resources = build_project_resources(details)
         tasks = details.get("tasks") or []
         project_meta = details.get("project") or {}
         overdue_milestones = _overdue_milestone_rows(
@@ -808,15 +821,18 @@ def _compute_projects_snapshot() -> dict:
                 if target_projects
                 else None
             ),
-            "selection_scope": "resources_only",
+            "selection_scope": "devdir_owner_rp_or_kurator",
             "organization": TARGET_ORGANIZATION,
-            "target_resources_department": TARGET_RESOURCES_DEPARTMENT,
-            "target_resources": list(target_resources()),
+            "devdir_owner_position": DEVDIR_OWNER_POSITION,
+            "devdir_project_owners": list(devdir_project_owners()),
+            "excluded_project_types": ["ОПЭ"],
         },
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
-            "target_resources_department": TARGET_RESOURCES_DEPARTMENT,
-            "target_resources": list(target_resources()),
+            "devdir_owner_position": DEVDIR_OWNER_POSITION,
+            "devdir_project_owners": list(devdir_project_owners()),
+            "excluded_project_types": ["ОПЭ"],
+            "filter": "rukovoditel or kurator == devdir owner from 1C; tip_proekta != ОПЭ",
             "target_projects_count": len(target_projects),
             "fact_projects_count": len(fact_projects),
             "cache_path": str(CACHE_PATH),
