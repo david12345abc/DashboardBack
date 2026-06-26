@@ -1,7 +1,7 @@
 {
   "cache_source": "gspp_q4_ytd_payload_v11",
   "cache_version": 11,
-  "cache_date": "2026-06-25",
+  "cache_date": "2026-06-26",
   "payload": {
     "data_granularity": "monthly",
     "monthly_data": [
@@ -108,6 +108,14 @@
       "projects_in_ref_month": 0,
       "projects": [
         {
+          "file_id": 275,
+          "project_name": "Справочник Номенклатура второй этап",
+          "project_code": "НПО/ГСПП/2026/105",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-12-24",
+          "in_ref_month": false
+        },
+        {
           "file_id": 352,
           "project_name": "Мини-проекты ССП ГСПП (Нохаева В.А.) МАЙ",
           "project_code": "НП/ГК/2026/110",
@@ -146,17 +154,9 @@
           "status_proekta": "Завершен",
           "data_okonchaniya": "2026-05-20",
           "in_ref_month": false
-        },
-        {
-          "file_id": 275,
-          "project_name": "Справочник Номенклатура второй этап",
-          "project_code": "НПО/ГСПП/2026/105",
-          "status_proekta": "Планирование",
-          "data_okonchaniya": null,
-          "in_ref_month": false
         }
       ],
-      "milestones_zero_duration_in_projects": 607,
+      "milestones_zero_duration_in_projects": 610,
       "milestones_in_month_plan": 0,
       "milestones_in_month_deviated": 0,
       "milestones_in_month_without_deviation": 0,

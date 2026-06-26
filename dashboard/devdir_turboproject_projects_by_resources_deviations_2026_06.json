@@ -1,5 +1,5 @@
 {
-  "cache_date": "2026-06-24",
+  "cache_date": "2026-06-26",
   "cache_version": 8,
   "payload": {
     "name": "Проекты с отклонениями по вехам",
@@ -26,10 +26,10 @@
         "project_name": "Автоматизация процессов запуска, ведения, контроля и завершения проектов согласно СТО-36-131 Управление проектами",
         "project_manager": "Тищенко Марина Николаевна",
         "timeline": "02.02.2026 - 04.06.2026",
-        "deviation": "8 вех., 11 р.д.",
-        "delay_days": 11,
+        "deviation": "8 вех., 13 р.д.",
+        "delay_days": 13,
         "status": "Приостановлен",
-        "progress_pct": 58.0,
+        "progress_pct": 53.0,
         "overdue_milestones_count": 8,
         "milestone_deviations": [
           {
@@ -37,56 +37,56 @@
             "start_date": "2026-06-09T15:00:00",
             "finish_date": "2026-06-09T15:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 11
+            "delay_workdays": 13
           },
           {
             "name": "Отчет к ДПИ с нарастающим итогом создан",
             "start_date": "2026-06-09T15:00:00",
             "finish_date": "2026-06-09T15:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 11
+            "delay_workdays": 13
           },
           {
             "name": "дополнительные работы выполнены",
             "start_date": "2026-06-09T15:00:00",
             "finish_date": "2026-06-09T15:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 11
+            "delay_workdays": 13
           },
           {
             "name": "автоматический контроль план-факта по лимитам БДДС в 1С ERP создан",
             "start_date": "2026-06-10T14:00:00",
             "finish_date": "2026-06-10T14:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 10
+            "delay_workdays": 12
           },
           {
             "name": "Система ЭДО в 1С ERP по проектам доработана",
             "start_date": "2026-06-15T12:00:00",
             "finish_date": "2026-06-15T12:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 7
+            "delay_workdays": 9
           },
           {
             "name": "Цель 1.1: Шаблоны документов в 1С:ERP  доработаны",
             "start_date": "2026-06-16T13:40:00",
             "finish_date": "2026-06-16T13:40:00",
             "percent_complete": 0.0,
-            "delay_workdays": 6
+            "delay_workdays": 8
           },
           {
             "name": "Блок 1С ERP внедрен",
             "start_date": "2026-06-18T16:40:00",
             "finish_date": "2026-06-18T16:40:00",
             "percent_complete": 0.0,
-            "delay_workdays": 4
+            "delay_workdays": 6
           },
           {
             "name": "Цель 1.2: Единый реестр проектов в 1С:ERP доработан",
             "start_date": "2026-06-18T16:40:00",
             "finish_date": "2026-06-18T16:40:00",
             "percent_complete": 0.0,
-            "delay_workdays": 4
+            "delay_workdays": 6
           }
         ]
       },
@@ -96,9 +96,9 @@
         "project_name": "Снижение текучести",
         "project_manager": "Ворончихина Елена Николаевна",
         "timeline": "01.03.2026 - 30.11.2026",
-        "deviation": "1 вех., 4 р.д.",
-        "delay_days": 4,
-        "status": "Планирование",
+        "deviation": "1 вех., 6 р.д.",
+        "delay_days": 6,
+        "status": "В работе",
         "progress_pct": 51.0,
         "overdue_milestones_count": 1,
         "milestone_deviations": [
@@ -107,7 +107,7 @@
             "start_date": "2026-06-18T08:00:00",
             "finish_date": "2026-06-18T08:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 4
+            "delay_workdays": 6
           }
         ]
       },
@@ -117,25 +117,67 @@
         "project_name": "Разработка ИИ-агентов (первая очередь)",
         "project_manager": "Соломичева Светлана Викторовна",
         "timeline": "10.06.2026 - 10.08.2026",
-        "deviation": "2 вех., 2 р.д.",
-        "delay_days": 2,
+        "deviation": "8 вех., 4 р.д.",
+        "delay_days": 4,
         "status": "В работе",
-        "progress_pct": 34.0,
-        "overdue_milestones_count": 2,
+        "progress_pct": 35.0,
+        "overdue_milestones_count": 8,
         "milestone_deviations": [
           {
             "name": "6.4.7. Совет по качеству",
             "start_date": "2026-06-22T17:00:00",
             "finish_date": "2026-06-22T17:00:00",
             "percent_complete": 0.0,
-            "delay_workdays": 2
+            "delay_workdays": 4
           },
           {
             "name": "6.4.8. Этап \"Создание ИИ-агента на LangChain\" завершен",
             "start_date": "2026-06-22T17:00:00",
             "finish_date": "2026-06-22T17:00:00",
             "percent_complete": 0.0,
+            "delay_workdays": 4
+          },
+          {
+            "name": "3.3.10. Этап \"Backend-модели и API\" завершен",
+            "start_date": "2026-06-24T15:00:00",
+            "finish_date": "2026-06-24T15:00:00",
+            "percent_complete": 0.0,
             "delay_workdays": 2
+          },
+          {
+            "name": "3.3.9. Совет по качеству",
+            "start_date": "2026-06-24T15:00:00",
+            "finish_date": "2026-06-24T15:00:00",
+            "percent_complete": 0.0,
+            "delay_workdays": 2
+          },
+          {
+            "name": "6.1.7. Совет по качеству",
+            "start_date": "2026-06-25T09:00:00",
+            "finish_date": "2026-06-25T09:00:00",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
+          },
+          {
+            "name": "6.1.8. Этап \"Составление и согласование ТЗ\" завершен",
+            "start_date": "2026-06-25T09:00:00",
+            "finish_date": "2026-06-25T09:00:00",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
+          },
+          {
+            "name": "3.1.6. Совет по качеству",
+            "start_date": "2026-06-25T10:00:00",
+            "finish_date": "2026-06-25T10:00:00",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
+          },
+          {
+            "name": "3.1.7. Этап \"Проектирование агента проверки НД\" завершен",
+            "start_date": "2026-06-25T10:00:00",
+            "finish_date": "2026-06-25T10:00:00",
+            "percent_complete": 0.0,
+            "delay_workdays": 1
           }
         ]
       }
