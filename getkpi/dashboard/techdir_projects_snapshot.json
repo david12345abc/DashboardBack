@@ -12,8 +12,8 @@
       "status_proekta": "Завершен",
       "start_date": "2026-02-03T08:00:00",
       "finish_date": "2026-05-29T16:00:00",
-      "baseline_start": "2026-02-03T08:00:00",
-      "baseline_finish": "2026-05-29T16:00:00",
+      "baseline_start": null,
+      "baseline_finish": null,
       "data_nachala": "2026-02-03",
       "planovaya_data_nachala": "2026-02-03",
       "planovaya_data_okonchaniya": "2026-05-30",
@@ -53,8 +53,8 @@
         "status_proekta": "Завершен",
         "start_date": "2026-02-03T08:00:00",
         "finish_date": "2026-05-29T16:00:00",
-        "baseline_start": "2026-02-03T08:00:00",
-        "baseline_finish": "2026-05-29T16:00:00",
+        "baseline_start": null,
+        "baseline_finish": null,
         "data_nachala": "2026-02-03",
         "planovaya_data_nachala": "2026-02-03",
         "planovaya_data_okonchaniya": "2026-05-30",
@@ -74,7 +74,7 @@
       }
     ]
   },
-  "cache_date": "2026-06-26",
+  "cache_date": "2026-06-29",
   "cache_version": 13,
   "od_overdue_milestones_schema": "zero_duration_milestones_v1"
 }

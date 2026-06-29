@@ -1,6 +1,6 @@
 {
-  "cache_date": "2026-06-11",
-  "cache_version": 8,
+  "cache_date": "2026-06-26",
+  "cache_version": 9,
   "payload": {
     "name": "Проекты с отклонениями по вехам",
     "periodicity": "ежемесячно",
@@ -19,130 +19,10 @@
       "Статус",
       "Прогресс"
     ],
-    "rows": [
-      {
-        "number": 1,
-        "project_code": "НПО/СР/2026/48",
-        "project_name": "Стандарт по работе ИИ",
-        "project_manager": "Ясыров Богдан Джумазаевич",
-        "timeline": "16.01.2026 - 22.05.2026",
-        "deviation": "2 вех., 11 р.д.",
-        "delay_days": 11,
-        "status": "Планирование",
-        "progress_pct": 99.0,
-        "overdue_milestones_count": 2,
-        "milestone_deviations": [
-          {
-            "name": "Совет по качеству",
-            "start_date": "2026-05-14T17:00:00",
-            "finish_date": "2026-05-14T17:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 11
-          },
-          {
-            "name": "   Проект завершен",
-            "start_date": "2026-05-22T14:00:00",
-            "finish_date": "2026-05-22T14:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 5
-          }
-        ]
-      },
-      {
-        "number": 2,
-        "project_code": "НПО/СС/2026/43",
-        "project_name": "Система оценки удовлетворенности заказчиков",
-        "project_manager": "Гайфулин Денис Александрович",
-        "timeline": "23.01.2026 - 31.07.2026",
-        "deviation": "2 вех., 4 р.д.",
-        "delay_days": 4,
-        "status": "В работе",
-        "progress_pct": 47.0,
-        "overdue_milestones_count": 2,
-        "milestone_deviations": [
-          {
-            "name": "План выполнения согласован, даты назначены",
-            "start_date": "2026-05-25T15:00:00",
-            "finish_date": "2026-05-25T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 4
-          },
-          {
-            "name": "Совет по качеству",
-            "start_date": "2026-05-27T15:00:00",
-            "finish_date": "2026-05-27T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 2
-          }
-        ]
-      },
-      {
-        "number": 3,
-        "project_code": "НПО/Реклама и PR/2026/70",
-        "project_name": "Календарь с сотрудницами на 2027 год",
-        "project_manager": "Беккер Алексей Владимирович",
-        "timeline": "02.03.2026 - 30.10.2026",
-        "deviation": "3 вех., 0 р.д.",
-        "delay_days": 0,
-        "status": "В работе",
-        "progress_pct": 42.0,
-        "overdue_milestones_count": 3,
-        "milestone_deviations": [
-          {
-            "name": " Образы получены на склад",
-            "start_date": "2026-05-29T17:00:00",
-            "finish_date": "2026-05-29T17:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 0
-          },
-          {
-            "name": " Счет за одежду, реквизит на маркетплейсах, аренду в прокате оплачен ",
-            "start_date": "2026-05-29T17:00:00",
-            "finish_date": "2026-05-29T17:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 0
-          },
-          {
-            "name": "Совет по качеству ",
-            "start_date": "2026-05-29T17:00:00",
-            "finish_date": "2026-05-29T17:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 0
-          }
-        ]
-      },
-      {
-        "number": 4,
-        "project_code": "НПО/КБ/2023/5",
-        "project_name": "ОКР измерения скорости звука в разных газах и помехозащищенность",
-        "project_manager": "Донченко Руслан Владимирович",
-        "timeline": "21.09.2023 - 05.08.2026",
-        "deviation": "2 вех., 0 р.д.",
-        "delay_days": 0,
-        "status": "В работе",
-        "progress_pct": 94.0,
-        "overdue_milestones_count": 2,
-        "milestone_deviations": [
-          {
-            "name": "Испытания UFG ч 1 выполнены ",
-            "start_date": "2026-05-29T09:00:00",
-            "finish_date": "2026-05-29T09:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 0
-          },
-          {
-            "name": "Совет по качеству ",
-            "start_date": "2026-05-29T09:00:00",
-            "finish_date": "2026-05-29T09:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 0
-          }
-        ]
-      }
-    ],
+    "rows": [],
     "summary": {
-      "plan": 18,
-      "fact": 14
+      "plan": 5,
+      "fact": 5
     }
   }
 }

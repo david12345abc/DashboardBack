@@ -32,7 +32,6 @@ from pathlib import Path
 
 from .commercial_department_aliases import (
     COMMERCIAL_DEPT_ALIASES,
-    normalize_commercial_dept_guid,
 )
 from .odata_http import request_with_retry
 
@@ -56,7 +55,13 @@ DEPARTMENTS = {
 }
 
 TOLERANCE = 0.01
-DEPT_ALIAS_SOURCE = "commercial_department_aliases_v2"
+DEPT_ALIAS_SOURCE = "debitorka_department_aliases_v3"
+DEALER_SALES_DEPT_GUID = "7587c178-92f6-11f0-96f9-6cb31113810e"
+DEBITORKA_DEPT_ALIASES = {
+    source: target
+    for source, target in COMMERCIAL_DEPT_ALIASES.items()
+    if target != DEALER_SALES_DEPT_GUID
+}
 LIQUIDATED_DEPT_NAMES = {
     "4edcf3a0-9f99-11e4-80da-001e67112509": "(ликв.) Отдел дилерских продаж бытового оборудования",
     "ff740269-d71e-11e6-8127-001e67112509": "(ликв.) Отдел дилерских продаж промышленного оборудования",
@@ -66,6 +71,13 @@ LIQUIDATED_DEPT_NAMES = {
 }
 
 REGISTER = "AccumulationRegister_РасчетыСКлиентамиПоСрокам_RecordType"
+
+
+def normalize_debitorka_dept_guid(dept_guid: str | None) -> str:
+    """Для ДЗ не подтягиваем ликвидированные дилерские отделы в текущий ОДП."""
+    if not dept_guid:
+        return ""
+    return DEBITORKA_DEPT_ALIASES.get(dept_guid, dept_guid)
 
 
 def fetch_all_register(session, na_datu: str):
@@ -163,8 +175,8 @@ def resolve_objects(session, obj_keys: set):
     """
     Загрузить Catalog_ОбъектыРасчетов страницами, собрать маппинг
     Ref_Key (lower) → {dept, partner, desc, number, date}.
-    Подразделение берётся из каталога и нормализуется:
-    ликвидированные ОДП/холдинги попадают в действующие отделы.
+    Подразделение берётся из каталога и нормализуется.
+    В дебиторке ликвидированные дилерские отделы не попадают в текущий ОДП.
     """
     sel = quote(
         "Ref_Key,Подразделение_Key,Партнер_Key,Description,Номер,Дата",
@@ -194,7 +206,7 @@ def resolve_objects(session, obj_keys: set):
             k = str(item.get("Ref_Key", EMPTY)).lower()
             if k in needed:
                 raw_dept = str(item.get("Подразделение_Key", EMPTY)).lower()
-                normalized_dept = normalize_commercial_dept_guid(raw_dept).lower()
+                normalized_dept = normalize_debitorka_dept_guid(raw_dept).lower()
                 liquidated_dept_name = (
                     LIQUIDATED_DEPT_NAMES.get(raw_dept, "")
                     if raw_dept in COMMERCIAL_DEPT_ALIASES
@@ -223,7 +235,7 @@ def resolve_objects(session, obj_keys: set):
 
     missing = needed - set(catalog.keys())
     if missing:
-        print(f"  ⚠ не найдено в каталоге: {len(missing)} ОбъектРасчетов")
+        print(f"  WARNING: не найдено в каталоге: {len(missing)} ОбъектРасчетов")
 
     return catalog
 
@@ -967,7 +979,7 @@ def get_overdue_detail(year: int | None = None,
 
     rows = data.get("rows", [])
     if dept_guid:
-        dept_lower = normalize_commercial_dept_guid(dept_guid.lower()).lower()
+        dept_lower = normalize_debitorka_dept_guid(dept_guid.lower()).lower()
         rows = [r for r in rows if r.get("dept_key") == dept_lower]
 
     total = round(sum(r["amount"] for r in rows), 2)

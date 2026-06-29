@@ -155,7 +155,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from servhead import sh_t1 as servhead_sh_t1
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8, qd_m9, qd_m10
     from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
-    from sup import hrd_m1, hrd_m4, hrd_q4
+    from sup import hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_q4
     from getkpi.autoit.it_m1_sla import (
         cache_file_path_for_period as autoit_it_m1_cache_path,
         get_it_m1_sla_monthly,
@@ -445,18 +445,6 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          turboproject_ope_projects.cache_file_path_for_period(y, m),
          lambda yy=y, mm=m: turboproject_ope_projects.get_rd_m2_1_ytd(year=yy, month=mm)),
 
-        (f'sup_hrd_m1_{y}_{m}',
-         hrd_m1.cache_file_path_for_period(y, m),
-         lambda yy=y, mm=m: hrd_m1.get_hrd_m1_ytd(year=yy, month=mm)),
-
-        (f'sup_hrd_m4_{y}_{m}',
-         hrd_m4.cache_file_path_for_period(y, m),
-         lambda yy=y, mm=m: hrd_m4.get_hrd_m4_ytd(year=yy, month=mm)),
-
-        (f'sup_hrd_q4_{y}_{m}',
-         hrd_q4.cache_file_path_for_period(y, m),
-         lambda yy=y, mm=m: hrd_q4.get_hrd_q4_ytd(year=yy, month=mm)),
-
         (f'autoit_it_m1_sla_monthly_{y}_{m}',
          autoit_it_m1_monthly_cache_path(y, m),
          lambda yy=y, mm=m: get_it_m1_sla_monthly(yy, mm)),
@@ -520,6 +508,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         tasks, y, m,
         servhead_sh_m1, servhead_sh_m2, servhead_sh_m3, servhead_sh_m4, servhead_sh_m5,
         servhead_sh_t1,
+    )
+    _append_sup_warm_tasks(
+        tasks, y, m,
+        hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_q4,
     )
 
     tasks.append((
@@ -717,6 +709,54 @@ def _append_servhead_warm_tasks(
             f"servhead_sh_t1_{ref_y}_{warm_m:02d}",
             sh_t1_mod.sh_t1_cache_path(ref_y, warm_m),
             lambda yy=ref_y, mm=warm_m: sh_t1_mod.get_sh_t1_table(year=yy, month=mm),
+        ))
+
+def _append_sup_warm_tasks(
+    tasks: list[tuple[str, Path, object]],
+    ref_y: int,
+    ref_m: int,
+    hrd_m1_mod: object,
+    hrd_m2_mod: object,
+    hrd_m3_mod: object,
+    hrd_m4_mod: object,
+    hrd_q4_mod: object,
+) -> None:
+    """Прогреть файловые кэши SUP (HRD-M1…M4, HRD-Q4) за все месяцы 1..ref_m."""
+    for warm_m in range(1, ref_m + 1):
+        tasks.append((
+            f"sup_hrd_m1_{ref_y}_{warm_m:02d}",
+            hrd_m1_mod.cache_file_path_for_period(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_m1_mod.get_hrd_m1_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"sup_hrd_m2_fot_fact_{ref_y}_{warm_m:02d}",
+            hrd_m2_mod.monthly_cache_path(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_m2_mod.get_hrd_m2_fact_monthly(yy, mm),
+        ))
+        tasks.append((
+            f"sup_hrd_m2_{ref_y}_{warm_m:02d}",
+            hrd_m2_mod.cache_file_path_for_period(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_m2_mod.get_hrd_m2_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"sup_hrd_m3_budget_fact_{ref_y}_{warm_m:02d}",
+            hrd_m3_mod.monthly_cache_path(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_m3_mod.get_hrd_m3_fact_monthly(yy, mm),
+        ))
+        tasks.append((
+            f"sup_hrd_m3_{ref_y}_{warm_m:02d}",
+            hrd_m3_mod.cache_file_path_for_period(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_m3_mod.get_hrd_m3_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"sup_hrd_m4_{ref_y}_{warm_m:02d}",
+            hrd_m4_mod.cache_file_path_for_period(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_m4_mod.get_hrd_m4_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"sup_hrd_q4_{ref_y}_{warm_m:02d}",
+            hrd_q4_mod.cache_file_path_for_period(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_q4_mod.get_hrd_q4_ytd(year=yy, month=mm),
         ))
 
 

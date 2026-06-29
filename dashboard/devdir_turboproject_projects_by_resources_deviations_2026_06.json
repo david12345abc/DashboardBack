@@ -1,6 +1,6 @@
 {
   "cache_date": "2026-06-26",
-  "cache_version": 8,
+  "cache_version": 9,
   "payload": {
     "name": "Проекты с отклонениями по вехам",
     "periodicity": "ежемесячно",
@@ -22,97 +22,6 @@
     "rows": [
       {
         "number": 1,
-        "project_code": "НПО/ИГ/2026/56",
-        "project_name": "Автоматизация процессов запуска, ведения, контроля и завершения проектов согласно СТО-36-131 Управление проектами",
-        "project_manager": "Тищенко Марина Николаевна",
-        "timeline": "02.02.2026 - 04.06.2026",
-        "deviation": "8 вех., 13 р.д.",
-        "delay_days": 13,
-        "status": "Приостановлен",
-        "progress_pct": 53.0,
-        "overdue_milestones_count": 8,
-        "milestone_deviations": [
-          {
-            "name": "Блок ИИ Turbo Project внедрен",
-            "start_date": "2026-06-09T15:00:00",
-            "finish_date": "2026-06-09T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 13
-          },
-          {
-            "name": "Отчет к ДПИ с нарастающим итогом создан",
-            "start_date": "2026-06-09T15:00:00",
-            "finish_date": "2026-06-09T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 13
-          },
-          {
-            "name": "дополнительные работы выполнены",
-            "start_date": "2026-06-09T15:00:00",
-            "finish_date": "2026-06-09T15:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 13
-          },
-          {
-            "name": "автоматический контроль план-факта по лимитам БДДС в 1С ERP создан",
-            "start_date": "2026-06-10T14:00:00",
-            "finish_date": "2026-06-10T14:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 12
-          },
-          {
-            "name": "Система ЭДО в 1С ERP по проектам доработана",
-            "start_date": "2026-06-15T12:00:00",
-            "finish_date": "2026-06-15T12:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 9
-          },
-          {
-            "name": "Цель 1.1: Шаблоны документов в 1С:ERP  доработаны",
-            "start_date": "2026-06-16T13:40:00",
-            "finish_date": "2026-06-16T13:40:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 8
-          },
-          {
-            "name": "Блок 1С ERP внедрен",
-            "start_date": "2026-06-18T16:40:00",
-            "finish_date": "2026-06-18T16:40:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 6
-          },
-          {
-            "name": "Цель 1.2: Единый реестр проектов в 1С:ERP доработан",
-            "start_date": "2026-06-18T16:40:00",
-            "finish_date": "2026-06-18T16:40:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 6
-          }
-        ]
-      },
-      {
-        "number": 2,
-        "project_code": "НПО/СУП/2026/37",
-        "project_name": "Снижение текучести",
-        "project_manager": "Ворончихина Елена Николаевна",
-        "timeline": "01.03.2026 - 30.11.2026",
-        "deviation": "1 вех., 6 р.д.",
-        "delay_days": 6,
-        "status": "В работе",
-        "progress_pct": 51.0,
-        "overdue_milestones_count": 1,
-        "milestone_deviations": [
-          {
-            "name": "Этап окончен совет по качеству",
-            "start_date": "2026-06-18T08:00:00",
-            "finish_date": "2026-06-18T08:00:00",
-            "percent_complete": 0.0,
-            "delay_workdays": 6
-          }
-        ]
-      },
-      {
-        "number": 3,
         "project_code": "НП/ДР/2026/110",
         "project_name": "Разработка ИИ-агентов (первая очередь)",
         "project_manager": "Соломичева Светлана Викторовна",
@@ -183,8 +92,8 @@
       }
     ],
     "summary": {
-      "plan": 9,
-      "fact": 6
+      "plan": 3,
+      "fact": 2
     }
   }
 }
