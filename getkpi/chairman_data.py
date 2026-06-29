@@ -1725,7 +1725,9 @@ def build_chairman_commerce_payload(
 
     from .views import _fetch_claims_rows_for_department, _fetch_lawsuits_rows_for_department
     try:
-        claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, 'коммерческий директор')
+        claims_rows = _fetch_claims_rows_for_department(
+            ref_y, ref_m, 'коммерческий директор', psd_filters=True,
+        )
     except Exception:
         claims_rows = []
     try:
@@ -1746,7 +1748,10 @@ def build_chairman_commerce_payload(
         'KD-T-CLAIMS': {
             'name': f'Претензии за {month_name} {ref_y}',
             'periodicity': 'ежемесячно',
-            'description': 'Претензии из 1С (Catalog_Претензии) за выбранный месяц',
+            'description': (
+                'Претензии из 1С (Catalog_Претензии) за выбранный месяц; '
+                'причина возникновения = Претензия; сумма заказа > 1 млн'
+            ),
             'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
             'rows': claims_rows,
         },

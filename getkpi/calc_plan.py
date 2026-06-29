@@ -82,7 +82,7 @@ EXPECTED_CONTRACT_DOC = "Document_КоммерческоеПредложение
 EXPECTED_POTENTIAL_CONTRACTS = "InformationRegister_ТД_ДоговорыПотенциальные"
 SIGNED_CONTRACTS_REG = "InformationRegister_ТД_ДоговорыПодписанные"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 13
+CACHE_VERSION = 15
 PLAN_KEYS = ("dengi", "otgruzki", "dogovory")
 EXPECTED_KEYS = {
     "dengi": "dengi_expected",
@@ -552,7 +552,11 @@ def _load_shipment_order_rows(session: requests.Session,
                               year: int,
                               ref_month: int,
                               order_keys: set[str]) -> list[dict]:
-    d_from = _month_start(year, 1)
+    # The 1C report builds expected shipments from the accumulation register
+    # turnover balance. In practice the report includes carry-over customer
+    # orders from the previous year, so the OData fallback uses the same
+    # carry-over window instead of only the current calendar year.
+    d_from = _month_start(year - 1, 1)
     d_to = _month_end_exclusive(year, ref_month)
     sel = quote(
         "Period,Active,Распоряжение,Распоряжение_Type,ВидДвиженияРегистра,Сумма,Сторно",
@@ -655,7 +659,7 @@ def _merge_expected_money(result: dict[int, dict],
             order = orders.get(order_key)
             if not order:
                 continue
-            if m not in payment_months.get(order_key, set()):
+            if not any(pay_month <= m for pay_month in payment_months.get(order_key, set())):
                 continue
             if order.get("ne_uchit") or order.get("ne_uchit_ds"):
                 continue
@@ -669,12 +673,7 @@ def _merge_expected_money(result: dict[int, dict],
 
 def _expected_shipment_row_amount(row: dict, order: dict) -> float:
     amount = float(row.get("Сумма") or 0) * _currency_rate(order.get("currency", ""))
-    movement = row.get("ВидДвиженияРегистра")
-    if movement == "Расход":
-        return -amount
-    if movement == "Приход":
-        return amount
-    return 0.0
+    return amount
 
 
 def _merge_expected_shipments(result: dict[int, dict],
@@ -693,35 +692,30 @@ def _merge_expected_shipments(result: dict[int, dict],
     rows_sorted = sorted(rows, key=lambda x: (x.get("Period") or ""))
 
     for m in range(1, ref_month + 1):
-        start = _month_start(year, m)
         end = _month_end_exclusive(year, m)
-        by_order: dict[str, float] = {}
+        by_order: dict[tuple[str, str], float] = {}
         for row in rows_sorted:
             period = row.get("Period") or ""
             if period >= end:
                 break
-            if period < start:
-                continue
             order_key = row.get("Распоряжение", "")
             order = orders.get(order_key)
             if not order:
                 continue
             ship_date = (order.get("ship_date") or "")[:10]
-            if not ship_date or not (start[:10] <= ship_date < end[:10]):
+            if not ship_date or not (ship_date < end[:10]):
                 continue
             dept = _expected_order_passes_common_filters(order, resale_partners, resale_without_mgs)
             if not dept:
                 continue
-            by_order[order_key] = by_order.get(order_key, 0.0) + _expected_shipment_row_amount(row, order)
+            key = (dept, order_key)
+            by_order[key] = by_order.get(key, 0.0) + _expected_shipment_row_amount(row, order)
 
-        for order_key, amount in by_order.items():
+        for (dept, order_key), amount in by_order.items():
             if amount <= 0:
                 continue
             order = orders.get(order_key)
             if not order or order.get("ne_uchit") or order.get("ne_uchit_ship"):
-                continue
-            dept = _expected_order_passes_common_filters(order, resale_partners, resale_without_mgs)
-            if not dept:
                 continue
             result[m]["otgruzki_expected"] += amount
             result[m]["by_dept"][dept]["otgruzki_expected"] += amount
@@ -1035,6 +1029,54 @@ def _merge_expected_contracts_from_odata(result: dict[int, dict],
             )
 
 
+def _merge_expected_shipments_from_odata(result: dict[int, dict],
+                                        session: requests.Session,
+                                        year: int,
+                                        ref_month: int) -> None:
+    """Воспроизвести «СуммаОтгрузкиПлан» из 1С-запроса через OData."""
+    resale_partners, resale_without_mgs = _partner_resale_sets(session)
+    _merge_expected_shipments(
+        result,
+        session,
+        year,
+        ref_month,
+        resale_partners,
+        resale_without_mgs,
+    )
+
+    for m in result:
+        result[m]["otgruzki_expected"] = round(result[m]["otgruzki_expected"], 2)
+        for d in result[m]["by_dept"]:
+            result[m]["by_dept"][d]["otgruzki_expected"] = round(
+                result[m]["by_dept"][d]["otgruzki_expected"],
+                2,
+            )
+
+
+def _merge_expected_money_from_odata(result: dict[int, dict],
+                                    session: requests.Session,
+                                    year: int,
+                                    ref_month: int) -> None:
+    """Воспроизвести «СуммаДеньгиПлан» из 1С-запроса через OData."""
+    resale_partners, resale_without_mgs = _partner_resale_sets(session)
+    _merge_expected_money(
+        result,
+        session,
+        year,
+        ref_month,
+        resale_partners,
+        resale_without_mgs,
+    )
+
+    for m in result:
+        result[m]["dengi_expected"] = round(result[m]["dengi_expected"], 2)
+        for d in result[m]["by_dept"]:
+            result[m]["by_dept"][d]["dengi_expected"] = round(
+                result[m]["by_dept"][d]["dengi_expected"],
+                2,
+            )
+
+
 def _calc_plans(entries: list[dict],
                 ref_month: int) -> dict[int, dict]:
     """
@@ -1185,8 +1227,18 @@ def _merge_expected_plans(result: dict[int, dict],
 
 
 _SERVICE_FIELD_MAP = {
-    "dengi_expected": ("dengi", "Деньги", "СуммаПланируемыхПлатежей"),
-    "otgruzki_expected": ("otgruzki", "Отгрузки", "ЗаказыОжидаемыеКОтгрузке"),
+    "dengi_expected": (
+        "dengi",
+        "Деньги",
+        "СуммаПланируемыхПлатежей",
+        "СуммаДеньгиПлан",
+    ),
+    "otgruzki_expected": (
+        "otgruzki",
+        "Отгрузки",
+        "ЗаказыОжидаемыеКОтгрузке",
+        "СуммаОтгрузкиПлан",
+    ),
     "dogovory_expected": (
         "dogovory",
         "Договоры",
@@ -1379,15 +1431,18 @@ def get_plans_monthly(year: int | None = None,
     computed = _calc_plans(entries, ref_m)
     # План (Маркетинговый план) считается из регистра выше. Ожидаемые значения
     # сначала берём из расчётного HTTP-сервиса 1С; если сервис не опубликован,
-    # договоры ожидаемые воспроизводим по OData-объектам из запроса 1С.
+    # деньги/договоры/отгрузки ожидаемые воспроизводим по OData-объектам из запросов 1С.
     if _apply_expected_values(computed, ref_y, ref_m):
         logger.info("calc_plan: expected values from 1C HTTP service")
     else:
         logger.warning(
-            "calc_plan: expected service unavailable; calculating dogovory_expected via OData. "
-            "Publish 1C HTTP-service at %s for exact dengi/otgruzki expected values.",
+            "calc_plan: expected service unavailable; calculating dengi_expected, "
+            "dogovory_expected and otgruzki_expected via OData. Publish 1C "
+            "HTTP-service at %s for exact expected values.",
             EXPECTED_SERVICE_URL,
         )
+        _merge_expected_money_from_odata(computed, session, ref_y, ref_m)
+        _merge_expected_shipments_from_odata(computed, session, ref_y, ref_m)
         _merge_expected_contracts_from_odata(computed, session, ref_y, ref_m)
 
     out_months = []

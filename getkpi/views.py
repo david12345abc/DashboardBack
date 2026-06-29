@@ -107,6 +107,9 @@ _structure_cache: dict | None = None
 _structure_mtime: float | None = None
 logger = logging.getLogger(__name__)
 
+PSD_CLAIM_REASON_PRETENSION_KEY = "7a4719be-3e1b-11ec-8742-ac1f6b05524d"
+PSD_CLAIM_MIN_ORDER_SUM = 1_000_000
+
 PROD_DEPUTY_OUTPUT_PERIOD_BY_ID = {
     'PD-M1.1.M': ('pc1', 'month'),
     'PD-M1.1.W': ('pc1', 'week'),
@@ -3115,7 +3118,28 @@ def _normalize_commercial_context_department(department: str | None) -> tuple[st
     return raw, None
 
 
-def _fetch_claims_rows_for_department(year: int, month: int, department: str) -> list[dict]:
+def _psd_claim_order_sum(row: dict) -> float:
+    try:
+        return float(row.get('order_sum') or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _filter_psd_claim_rows(rows: list[dict]) -> list[dict]:
+    return [
+        row for row in rows
+        if row.get('reason_key') == PSD_CLAIM_REASON_PRETENSION_KEY
+        and _psd_claim_order_sum(row) > PSD_CLAIM_MIN_ORDER_SUM
+    ]
+
+
+def _fetch_claims_rows_for_department(
+    year: int,
+    month: int,
+    department: str,
+    *,
+    psd_filters: bool = False,
+) -> list[dict]:
     from .komdir_claims import fetch_claims_for_month
 
     canonical_dept, dept_guid = _normalize_commercial_context_department(department)
@@ -3126,6 +3150,8 @@ def _fetch_claims_rows_for_department(year: int, month: int, department: str) ->
             r for r in rows
             if (r.get('normalized_order_dept_key') or r.get('order_dept_key')) == dept_guid
         ]
+    if psd_filters:
+        rows = _filter_psd_claim_rows(rows)
     return rows
 
 
@@ -4053,7 +4079,7 @@ def get_kpi(request):
         if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
             target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
         try:
-            claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept)
+            claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
         except Exception:
             claims_rows = []
         try:
@@ -4065,7 +4091,10 @@ def get_kpi(request):
             'KD-T-CLAIMS': {
                 'name': 'Активные претензии',
                 'periodicity': 'ежемесячно',
-                'description': 'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле',
+                'description': (
+                    'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
+                    'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
+                ),
                 'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
                 'rows': claims_rows,
             },
@@ -4209,7 +4238,7 @@ def get_all_departments(request):
             if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
                 target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
             try:
-                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept)
+                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
             except Exception:
                 claims_rows = []
             try:
@@ -4221,7 +4250,10 @@ def get_all_departments(request):
                 'KD-T-CLAIMS': {
                     'name': 'Активные претензии',
                     'periodicity': 'ежемесячно',
-                    'description': 'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле',
+                    'description': (
+                        'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
+                        'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
+                    ),
                     'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
                     'rows': claims_rows,
                 },
@@ -4305,7 +4337,7 @@ def get_all_departments(request):
             if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
                 target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
             try:
-                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept)
+                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
             except Exception:
                 claims_rows = []
             try:
@@ -4317,7 +4349,10 @@ def get_all_departments(request):
                 'KD-T-CLAIMS': {
                     'name': 'Активные претензии',
                     'periodicity': 'ежемесячно',
-                    'description': 'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, На контроле',
+                    'description': (
+                        'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
+                        'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
+                    ),
                     'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
                     'rows': claims_rows,
                 },

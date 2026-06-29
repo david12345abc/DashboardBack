@@ -34,7 +34,7 @@ ALLOWED_DEPARTMENTS = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 ALLOWED_CLAIM_STATUSES = frozenset({
     "Зарегистрирована",
     "Обрабатывается",
@@ -43,10 +43,10 @@ ALLOWED_CLAIM_STATUSES = frozenset({
 CLAIM_STATUS_LABELS = {
     "НаКонтроле": "На контроле",
 }
-EXCLUDED_CLAIM_REASON_OBRASHCHENIE = "7a4719be-3e1b-11ec-8742-ac1f6b05524d"
-EXCLUDED_CLAIM_REASON_KEYS = frozenset({
-    EXCLUDED_CLAIM_REASON_OBRASHCHENIE,  # Обращение
-})
+CLAIM_REASON_PRETENSION = "7a4719be-3e1b-11ec-8742-ac1f6b05524d"
+CLAIM_REASON_LABELS = {
+    CLAIM_REASON_PRETENSION: "Претензия",
+}
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -295,8 +295,8 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
         raw_status = c.get("Статус", "")
         if raw_status not in ALLOWED_CLAIM_STATUSES:
             continue
-        if c.get("ПричинаВозникновения_Key") in EXCLUDED_CLAIM_REASON_KEYS:
-            continue
+        reason_key = c.get("ПричинаВозникновения_Key") or ""
+        reason = CLAIM_REASON_LABELS.get(reason_key, reason_key)
         status = CLAIM_STATUS_LABELS.get(raw_status, raw_status)
 
         result_rows.append({
@@ -314,6 +314,8 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
             "characteristic": char,
             "order_sum": order_sum,
             "description": desc,
+            "reason_key": reason_key,
+            "reason": reason,
             "status": status,
         })
 
