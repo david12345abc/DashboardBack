@@ -51,7 +51,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -68,6 +68,8 @@ UUID_RD_COMMISSION = frozenset({
     "a1e67513-8fde-4b86-8a14-990ca9d1a362",
     "233c1a97-85b9-4b2c-94ef-25531415f8c7",
 })
+TYPE_POSTUPLENIE_BEZNAL = "standardodata.document_поступлениебезналичныхденежныхсредств"
+TYPE_RD_COMMISSION = "standardodata.document_отчеткомиссионера"
 
 BATCH = 15
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
@@ -184,6 +186,14 @@ def _extract_uuid(type_str) -> str:
     if "UnavailableEntity_" in type_str:
         return type_str.split("UnavailableEntity_", 1)[1].lower()
     return type_str.lower()
+
+
+def _is_postuplenie_beznal_type(type_str: str | None) -> bool:
+    return _extract_uuid(type_str) in {UUID_POSTUPLENIE_BEZNAL, TYPE_POSTUPLENIE_BEZNAL}
+
+
+def _is_commission_report_type(type_str: str | None) -> bool:
+    return _extract_uuid(type_str) in {*UUID_RD_COMMISSION, TYPE_RD_COMMISSION}
 
 
 def _period_month(row: dict) -> int | None:
@@ -535,11 +545,9 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, l
         if m is None or m < 1 or m > max_month:
             continue
 
-        rd_uuid = _extract_uuid(row.get("РасчетныйДокумент_Type"))
-        if rd_uuid not in UUID_RD_COMMISSION:
+        if not _is_commission_report_type(row.get("РасчетныйДокумент_Type")):
             continue
-        rec_uuid = _extract_uuid(row.get("Recorder_Type"))
-        if rec_uuid != UUID_POSTUPLENIE_BEZNAL:
+        if not _is_postuplenie_beznal_type(row.get("Recorder_Type")):
             continue
 
         reg_partner = row.get("Партнер_Key", "")
