@@ -38,6 +38,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from . import cache_manager
 from .commercial_department_aliases import (
     COMMERCIAL_DEPT_ALIASES,
     normalize_commercial_dept_guid,
@@ -1379,8 +1380,9 @@ def get_plans_monthly(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
+    force_compute = cache_manager.is_force_compute_context()
     mc = _monthly_cache_path(ref_y, ref_m)
-    if mc.exists():
+    if mc.exists() and not force_compute:
         try:
             with open(mc, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -1395,7 +1397,7 @@ def get_plans_monthly(year: int | None = None,
         except (OSError, json.JSONDecodeError):
             pass
 
-    all_cached = True
+    all_cached = not force_compute
     for m in range(1, ref_m + 1):
         if _load_cache(ref_y, m) is None:
             all_cached = False
@@ -1447,7 +1449,7 @@ def get_plans_monthly(year: int | None = None,
 
     out_months = []
     for m in range(1, ref_m + 1):
-        cached = _load_cache(ref_y, m)
+        cached = None if force_compute else _load_cache(ref_y, m)
         if cached is not None:
             totals = {k: cached[k] for k in (*PLAN_KEYS, *EXPECTED_KEYS.values())}
             by_dept = cached.get("by_dept", {})

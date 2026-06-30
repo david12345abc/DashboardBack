@@ -11,6 +11,7 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from . import cache_manager
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ def cache_file_path_for_period(year: int, month: int) -> Path:
     return CACHE_DIR / f"metrolog_production_plan_{int(year)}_{int(month):02d}.json"
 
 
-def _load_cache(year: int, month: int) -> dict | None:
+def _load_cache(year: int, month: int, *, allow_stale: bool = False) -> dict | None:
     path = cache_file_path_for_period(year, month)
     if not path.exists():
         return None
@@ -86,7 +87,7 @@ def _load_cache(year: int, month: int) -> dict | None:
         return None
     if data.get("cache_version") != CACHE_VERSION:
         return None
-    if data.get("cache_date") != date.today().isoformat():
+    if not allow_stale and data.get("cache_date") != date.today().isoformat():
         return None
     return data
 
@@ -459,6 +460,12 @@ def get_metrolog_production_plan_monthly(year: int, month: int) -> dict:
     cached = _load_cache(ref_y, ref_m)
     if cached is not None:
         return cached
+    if not cache_manager.is_force_compute_context():
+        stale = _load_cache(ref_y, ref_m, allow_stale=True)
+        if stale is not None:
+            stale = dict(stale)
+            stale["cache_refresh_status"] = "running"
+            return stale
     months = [_month_row(ref_y, m) for m in range(1, ref_m + 1)]
     last = months[-1] if months else None
     payload = {
@@ -491,7 +498,7 @@ def get_metrolog_late_stage_table(year: int, month: int) -> dict:
         if row.get("year") == int(year) and row.get("month") == int(month):
             rows = row.get("late_stage_rows") or []
             break
-    return {
+    table = {
         "name": f"Просроченные этапы метрологической службы за {MONTH_NAMES.get(int(month), month)} {int(year)}",
         "periodicity": "ежемесячно",
         "description": (
@@ -512,3 +519,6 @@ def get_metrolog_late_stage_table(year: int, month: int) -> dict:
         ],
         "rows": rows,
     }
+    if payload.get("cache_refresh_status"):
+        table["cache_refresh_status"] = payload.get("cache_refresh_status")
+    return table

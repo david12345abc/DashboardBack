@@ -36,6 +36,7 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from . import cache_manager
 from .commercial_department_aliases import normalize_commercial_dept_guid
 from .calc_dengi_fact import (
     BATCH,
@@ -553,6 +554,25 @@ def _load_cache(as_of: date) -> dict[str, Any] | None:
         return None
 
 
+def _load_latest_stale_cache() -> dict[str, Any] | None:
+    candidates = sorted(
+        CACHE_DIR.glob(f"komdir_active_dealers_*_{CACHE_VERSION}.json"),
+        key=lambda path: path.stat().st_mtime if path.exists() else 0,
+        reverse=True,
+    )
+    for p in candidates:
+        try:
+            with open(p, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("cache_version") == CACHE_VERSION:
+                data = dict(data)
+                data["cache_refresh_status"] = "running"
+                return data
+        except (OSError, json.JSONDecodeError):
+            continue
+    return None
+
+
 def _save_cache(as_of: date, payload: dict[str, Any]) -> None:
     try:
         to_write = {
@@ -595,6 +615,11 @@ def compute_active_dealers_report(as_of: date | None = None) -> dict[str, Any]:
     if cached is not None and cached.get("cache_version") == CACHE_VERSION:
         _mem_set(mem_key, cached)
         return cached
+    if not cache_manager.is_force_compute_context():
+        stale = _load_latest_stale_cache()
+        if stale is not None:
+            _mem_set(mem_key, stale)
+            return stale
 
     session = requests.Session()
     session.auth = AUTH

@@ -12,6 +12,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from . import cache_manager
 from .kpi_periods import last_full_month, vp_months_for_api
 
 logger = logging.getLogger(__name__)
@@ -255,6 +256,25 @@ def _load_result_cache(dept_guid: str | None = None) -> dict | None:
     return None
 
 
+def _load_stale_result_cache(dept_guid: str | None = None) -> dict | None:
+    """Загружает последний результат ВП без проверки даты для stale-режима API."""
+    path = _result_cache_path(dept_guid)
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            cached = json.load(f)
+        if cached.get("cache_version") == RESULT_CACHE_VERSION:
+            data = cached["data"]
+            if isinstance(data, dict):
+                data = dict(data)
+                data["cache_refresh_status"] = "running"
+            return data
+    except (json.JSONDecodeError, KeyError, OSError):
+        pass
+    return None
+
+
 def _save_result_cache(data: dict, dept_guid: str | None = None) -> None:
     """Сохраняет результат ВП с пометкой сегодняшней даты."""
     path = _result_cache_path(dept_guid)
@@ -297,6 +317,10 @@ def get_vp_ytd(dept_guid: str | None = None) -> dict:
     cached = _load_result_cache(dept_guid)
     if cached is not None:
         return cached
+    if not cache_manager.is_force_compute_context():
+        stale = _load_stale_result_cache(dept_guid)
+        if stale is not None:
+            return stale
 
     today = date.today()
     month_tuples, (ref_y, ref_m), _ = vp_months_for_api(today)

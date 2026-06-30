@@ -29,6 +29,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from . import cache_manager
 from .commercial_department_aliases import normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
@@ -211,9 +212,10 @@ def _period_month(row: dict) -> int | None:
 # ═══════════════════════════════════════════════════════
 
 def _load_ds_register(session: requests.Session,
-                      year: int, max_month: int) -> list[dict] | None:
+                      year: int, max_month: int,
+                      start_month: int = 1) -> list[dict] | None:
     last_day = calendar.monthrange(year, max_month)[1]
-    d_from = f"{year}-01-01T00:00:00"
+    d_from = f"{year}-{start_month:02d}-01T00:00:00"
     d_to = f"{year}-{max_month:02d}-{last_day}T23:59:59"
 
     sel = (
@@ -249,7 +251,8 @@ def _load_ds_register(session: requests.Session,
 
 
 def _load_kk_register(session: requests.Session,
-                      year: int, max_month: int) -> list[dict] | None:
+                      year: int, max_month: int,
+                      start_month: int = 1) -> list[dict] | None:
     probe = request_with_retry(
         session, f"{BASE}/{REG_KK}?$format=json&$top=1",
         timeout=20, retries=3, label="KK/probe",
@@ -258,7 +261,7 @@ def _load_kk_register(session: requests.Session,
         return []
 
     last_day = calendar.monthrange(year, max_month)[1]
-    d_from = f"{year}-01-01T00:00:00"
+    d_from = f"{year}-{start_month:02d}-01T00:00:00"
     d_to = f"{year}-{max_month:02d}-{last_day}T23:59:59"
 
     sel = quote(
@@ -347,6 +350,64 @@ def _batch_load_orders(session: requests.Session,
     return result
 
 
+def _batch_load_orders_by_object_keys(
+    session: requests.Session,
+    object_keys: set[str],
+) -> tuple[dict[str, list[dict]], bool]:
+    result: dict[str, list[dict]] = {}
+    keys = sorted({str(k).lower() for k in object_keys if k and k != EMPTY})
+    if not keys:
+        return result, True
+
+    select_order = quote(
+        "Ref_Key,Подразделение_Key,Партнер_Key,Соглашение_Key,"
+        "ТД_СопровождениеПродажи,ТД_НеУчитыватьВПланФакте,"
+        "ОбъектРасчетов_Key,DeletionMark",
+        safe=",_",
+    )
+    worked = False
+    batch_size = 30
+    for i in range(0, len(keys), batch_size):
+        batch = keys[i:i + batch_size]
+        flt = quote(
+            " or ".join(f"ОбъектРасчетов_Key eq guid'{k}'" for k in batch),
+            safe="",
+        )
+        skip = 0
+        while True:
+            url = (
+                f"{BASE}/Document_ЗаказКлиента"
+                f"?$format=json&$select={select_order}&$filter={flt}"
+                f"&$top=500&$skip={skip}"
+            )
+            r = request_with_retry(session, url, timeout=30, retries=2, label="DS/OrdersByObjectDirect")
+            if r is None or not r.ok:
+                break
+            worked = True
+            rows = r.json().get("value", [])
+            for item in rows:
+                if item.get("DeletionMark"):
+                    continue
+                obj_key_norm = str(item.get("ОбъектРасчетов_Key") or "").lower()
+                if obj_key_norm not in keys:
+                    continue
+                order = {
+                    "ref": item.get("Ref_Key", ""),
+                    "dept": normalize_commercial_dept_guid(item.get("Подразделение_Key", "")),
+                    "partner": item.get("Партнер_Key", ""),
+                    "agreement": item.get("Соглашение_Key", ""),
+                    "soprovozhd": item.get("ТД_СопровождениеПродажи", False),
+                    "ne_uchit": item.get("ТД_НеУчитыватьВПланФакте", False),
+                }
+                bucket = result.setdefault(obj_key_norm, [])
+                if not any(existing.get("ref") == order["ref"] for existing in bucket):
+                    bucket.append(order)
+            if len(rows) < 500:
+                break
+            skip += len(rows)
+    return result, worked
+
+
 def _scan_orders_by_object_keys(
     session: requests.Session,
     object_keys: set[str],
@@ -361,6 +422,13 @@ def _scan_orders_by_object_keys(
     needed = {str(k).lower() for k in object_keys if k and k != EMPTY}
     if not needed:
         return {}
+
+    direct_orders, direct_worked = _batch_load_orders_by_object_keys(session, needed)
+    if direct_worked:
+        missing = len(needed) - sum(1 for k in needed if k in direct_orders)
+        if missing:
+            logger.warning("DS orders direct: no customer order for %d settlement objects", missing)
+        return direct_orders
 
     select_order = quote(
         "Ref_Key,Подразделение_Key,Партнер_Key,Соглашение_Key,"
@@ -649,8 +717,9 @@ def get_dengi_monthly(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
+    force_compute = cache_manager.is_force_compute_context()
     mc = _monthly_cache_path(ref_y, ref_m)
-    if mc.exists():
+    if mc.exists() and not force_compute:
         try:
             with open(mc, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -664,7 +733,7 @@ def get_dengi_monthly(year: int | None = None,
         except (OSError, json.JSONDecodeError):
             pass
 
-    all_cached = True
+    all_cached = not force_compute
     for m in range(1, ref_m + 1):
         if _load_cache(ref_y, m) is None:
             all_cached = False
@@ -696,9 +765,13 @@ def get_dengi_monthly(year: int | None = None,
     session = requests.Session()
     session.auth = AUTH
 
-    logger.info("calc_dengi_fact: loading registers for %d months 1-%d", ref_y, ref_m)
-    ds_rows = _load_ds_register(session, ref_y, ref_m)
-    kk_rows = _load_kk_register(session, ref_y, ref_m)
+    compute_start_m = ref_m if force_compute else 1
+    logger.info(
+        "calc_dengi_fact: loading registers for %d months %d-%d",
+        ref_y, compute_start_m, ref_m,
+    )
+    ds_rows = _load_ds_register(session, ref_y, ref_m, start_month=compute_start_m)
+    kk_rows = _load_kk_register(session, ref_y, ref_m, start_month=compute_start_m)
     if ds_rows is None or kk_rows is None:
         fallback = _load_stale_monthly_cache(ref_y, ref_m)
         if fallback is not None:
@@ -746,7 +819,7 @@ def get_dengi_monthly(year: int | None = None,
 
     out_months = []
     for m in range(1, ref_m + 1):
-        cached = _load_cache(ref_y, m)
+        cached = None if (force_compute and m == ref_m) else _load_cache(ref_y, m)
         if cached is not None:
             total = cached["total"]
             by_dept = cached.get("by_dept", {})

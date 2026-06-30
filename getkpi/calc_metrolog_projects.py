@@ -75,14 +75,14 @@ def certification_projects_ytd_cache_path(year: int, month: int) -> Any:
     return cache_manager.CACHE_DIR / f"metrolog_certification_projects_ytd_{int(year)}_{int(month):02d}.json"
 
 
-def _load_period_cache(path: Any, source: str) -> dict | None:
+def _load_period_cache(path: Any, source: str, *, allow_stale: bool = False) -> dict | None:
     if not path.exists():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if data.get("cache_date") != date.today().isoformat():
+    if not allow_stale and data.get("cache_date") != date.today().isoformat():
         return None
     if data.get("cache_version") != YTD_CACHE_VERSION:
         return None
@@ -181,6 +181,12 @@ def _compute_projects_snapshot() -> dict:
     cached = _load_cache()
     if cached is not None:
         return cached
+    if not cache_manager.is_force_compute_context():
+        stale = _load_cache(allow_stale=True)
+        if stale is not None:
+            stale = dict(stale)
+            stale["cache_refresh_status"] = "running"
+            return stale
 
     session = requests.Session()
     try:
@@ -255,6 +261,12 @@ def get_metrolog_projects_without_major_deviation_monthly(
         cached = _load_period_cache(cache_path, "metrolog_projects_ytd")
         if cached is not None:
             return cached
+        if not cache_manager.is_force_compute_context():
+            stale = _load_period_cache(cache_path, "metrolog_projects_ytd", allow_stale=True)
+            if stale is not None:
+                stale = dict(stale)
+                stale["cache_refresh_status"] = "running"
+                return stale
         snapshot = _compute_projects_snapshot()
         projects = list(snapshot.get("projects") or [])
         rows: list[dict[str, Any]] = []
@@ -386,6 +398,16 @@ def get_certification_projects_without_major_deviation_monthly(
         cached = _load_period_cache(cache_path, "metrolog_certification_projects_ytd")
         if cached is not None:
             return cached
+        if not cache_manager.is_force_compute_context():
+            stale = _load_period_cache(
+                cache_path,
+                "metrolog_certification_projects_ytd",
+                allow_stale=True,
+            )
+            if stale is not None:
+                stale = dict(stale)
+                stale["cache_refresh_status"] = "running"
+                return stale
         snapshot = _compute_projects_snapshot()
         projects = list(snapshot.get("certification_projects") or [])
         payload = _build_projects_without_major_deviation_monthly(
@@ -454,7 +476,7 @@ def get_metrolog_project_deviation_table(month: int | None = None, year: int | N
         for index, row in enumerate(rows, start=1):
             row["number"] = index
 
-        return {
+        table = {
             "name": "Проекты метрологической службы с отклонениями >10 р.д.",
             "periodicity": "ежемесячно",
             "description": (
@@ -465,6 +487,9 @@ def get_metrolog_project_deviation_table(month: int | None = None, year: int | N
             "columns": ["№ 1С", "Название", "РП", "Сроки", "Отклонение", "Статус", "Прогресс"],
             "rows": rows,
         }
+        if snapshot.get("cache_refresh_status"):
+            table["cache_refresh_status"] = snapshot.get("cache_refresh_status")
+        return table
     except Exception:
         logger.exception("Ошибка при построении таблицы проектов главного метролога")
         return None

@@ -15,6 +15,7 @@ import os
 import json
 import threading
 import time
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,10 @@ _warming = False
 _warm_cycle_lock = threading.Lock()
 _payload_mem_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _payload_mem_lock = threading.Lock()
+_refresh_local = threading.local()
+_known_cache_paths: dict[str, Path] = {}
+_active_refresh_paths: dict[str, set[str]] = {}
+_active_refresh_lock = threading.Lock()
 
 # Задачи без помесячного суффикса в ключе — выполняются один раз за цикл прогрева.
 _GLOBAL_WARM_TASK_KEYS = frozenset({
@@ -56,13 +61,97 @@ def is_computing(key: str) -> bool:
     return _get_lock(key).locked()
 
 
+def _register_cache_path(key: str, path: Path | str) -> None:
+    with _meta:
+        _known_cache_paths[key] = Path(path)
+
+
+def register_cache_path(key: str, path: Path | str) -> None:
+    """Сообщить cache_manager, какой файловый кэш соответствует lock-key."""
+    _register_cache_path(key, path)
+
+
+def is_force_compute_context() -> bool:
+    """True, когда код выполняется внутри принудительного фонового пересчёта."""
+    return bool(getattr(_refresh_local, 'force_compute', False))
+
+
+@contextmanager
+def force_compute():
+    """Временно включить принудительный пересчёт, не удаляя старые файлы кэша."""
+    previous = bool(getattr(_refresh_local, 'force_compute', False))
+    _refresh_local.force_compute = True
+    try:
+        yield
+    finally:
+        _refresh_local.force_compute = previous
+
+
+def _known_cache_path(key: str) -> Path | None:
+    with _meta:
+        return _known_cache_paths.get(key)
+
+
+def _load_json_cache(path: Path | str) -> dict[str, Any] | None:
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return None
+    try:
+        with p.open('r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None
+
+
+def _mark_refresh_active(key: str, path: Path | None) -> None:
+    if path is None:
+        return
+    with _active_refresh_lock:
+        _active_refresh_paths.setdefault(str(path), set()).add(key)
+
+
+def _mark_refresh_inactive(key: str, path: Path | None) -> None:
+    if path is None:
+        return
+    path_key = str(path)
+    with _active_refresh_lock:
+        keys = _active_refresh_paths.get(path_key)
+        if not keys:
+            return
+        keys.discard(key)
+        if not keys:
+            _active_refresh_paths.pop(path_key, None)
+
+
+def is_cache_path_refreshing(path: Path | str) -> bool:
+    with _active_refresh_lock:
+        return str(Path(path)) in _active_refresh_paths
+
+
+def is_any_cache_path_refreshing(paths: list[Path] | tuple[Path, ...]) -> bool:
+    with _active_refresh_lock:
+        return any(str(Path(path)) in _active_refresh_paths for path in paths)
+
+
+@contextmanager
+def mark_paths_refreshing(key: str, paths: list[Path] | tuple[Path, ...]):
+    normalized_paths = [Path(path) for path in paths]
+    for path in normalized_paths:
+        _mark_refresh_active(key, path)
+    try:
+        yield
+    finally:
+        for path in normalized_paths:
+            _mark_refresh_inactive(key, path)
+
+
 def is_cache_fresh(path: Path | str) -> bool:
     p = Path(path) if isinstance(path, str) else path
     if not p.exists():
         return False
     try:
-        with p.open('r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = _load_json_cache(p)
         if isinstance(data, dict):
             if p.name.startswith('dengi_') and data.get('cache_version') != 3:
                 return False
@@ -83,11 +172,60 @@ def is_cache_fresh(path: Path | str) -> bool:
 def locked_call(key: str, fn, *args, **kwargs):
     """Выполнить fn под блокировкой key.
 
-    Если другой поток уже вычисляет тот же key — текущий поток
-    ждёт завершения, после чего вызывает fn (который прочитает свежий кэш).
+    Если старый файловый кэш есть, но он устарел или уже пересчитывается,
+    запрос получает старый JSON сразу, а обновление продолжается в фоне.
     """
-    with _get_lock(key):
+    lock = _get_lock(key)
+    cache_path = _known_cache_path(key)
+    force_compute = bool(getattr(_refresh_local, 'force_compute', False))
+
+    if cache_path is not None and not force_compute:
+        stale = _load_json_cache(cache_path)
+        if stale is not None and not is_cache_fresh(cache_path):
+            if lock.acquire(blocking=False):
+                lock.release()
+                _start_background_refresh(key, cache_path, fn, args, kwargs)
+            return stale
+
+    if not lock.acquire(blocking=False):
+        if cache_path is not None:
+            stale = _load_json_cache(cache_path)
+            if stale is not None:
+                return stale
+        with lock:
+            return fn(*args, **kwargs)
+
+    try:
+        _mark_refresh_active(key, cache_path)
         return fn(*args, **kwargs)
+    finally:
+        _mark_refresh_inactive(key, cache_path)
+        lock.release()
+
+
+def _start_background_refresh(key: str, cache_path: Path, fn, args: tuple, kwargs: dict) -> None:
+    _mark_refresh_active(key, cache_path)
+
+    def _runner() -> None:
+        lock = _get_lock(key)
+        with lock:
+            _mark_refresh_active(key, cache_path)
+            previous = bool(getattr(_refresh_local, 'force_compute', False))
+            _refresh_local.force_compute = True
+            try:
+                fn(*args, **kwargs)
+                clear_memoized_dashboard_payload()
+            except Exception:
+                logger.exception("cache_manager: background refresh failed [%s]", key)
+            finally:
+                _refresh_local.force_compute = previous
+                _mark_refresh_inactive(key, cache_path)
+
+    threading.Thread(
+        target=_runner,
+        name=f'cache-refresh-{key}',
+        daemon=True,
+    ).start()
 
 
 def get_memoized_dashboard_payload(key: str) -> dict[str, Any] | None:
@@ -112,6 +250,17 @@ def set_memoized_dashboard_payload(
 ) -> None:
     with _payload_mem_lock:
         _payload_mem_cache[key] = (time.monotonic() + ttl_seconds, payload)
+
+
+def clear_memoized_dashboard_payload(prefix: str | None = None) -> None:
+    """Сбросить in-memory кэш собранных payload дашбордов."""
+    with _payload_mem_lock:
+        if not prefix:
+            _payload_mem_cache.clear()
+            return
+        for key in list(_payload_mem_cache):
+            if key.startswith(prefix):
+                del _payload_mem_cache[key]
 
 
 def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
@@ -581,6 +730,8 @@ def _run_warm_tasks(tasks: list[tuple[str, Path, object]], *, force: bool = Fals
     from . import odata_http
 
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    for key, cache_path, _ in tasks:
+        _register_cache_path(key, cache_path)
     odata_http.reset_access_guard(enabled=True)
     try:
         for key, cache_path, fn in tasks:
@@ -597,7 +748,12 @@ def _run_warm_tasks(tasks: list[tuple[str, Path, object]], *, force: bool = Fals
                 continue
             try:
                 logger.info("cache_manager: [%s] computing...", key)
-                locked_call(key, fn)
+                previous = bool(getattr(_refresh_local, 'force_compute', False))
+                _refresh_local.force_compute = True
+                try:
+                    locked_call(key, fn)
+                finally:
+                    _refresh_local.force_compute = previous
                 logger.info("cache_manager: [%s] done", key)
             except Exception:
                 logger.exception("cache_manager: [%s] error", key)

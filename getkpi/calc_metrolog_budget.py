@@ -22,6 +22,7 @@ from .calc_budget_limit import (
 )
 from .calc_budget_techdir_m3 import REQUEST_DOC_ENTITY_CANDIDATES
 from .fot_techdir_fact import BASE
+from . import cache_manager
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ def cache_file_path_for_period(year: int, month: int) -> Path:
     return CACHE_DIR / f"metrolog_budget_{int(year)}_{int(month):02d}.json"
 
 
-def _load_cache(year: int, month: int) -> dict | None:
+def _load_cache(year: int, month: int, *, allow_stale: bool = False) -> dict | None:
     path = cache_file_path_for_period(year, month)
     if not path.exists():
         return None
@@ -93,7 +94,7 @@ def _load_cache(year: int, month: int) -> dict | None:
         return None
     if data.get("cache_version") != CACHE_VERSION:
         return None
-    if data.get("cache_date") != date.today().isoformat():
+    if not allow_stale and data.get("cache_date") != date.today().isoformat():
         return None
     return data
 
@@ -250,6 +251,12 @@ def compute_metrolog_budget_month(year: int, month: int) -> dict:
     cached = _load_cache(year, month)
     if cached is not None:
         return cached
+    if not cache_manager.is_force_compute_context():
+        stale = _load_cache(year, month, allow_stale=True)
+        if stale is not None:
+            stale = dict(stale)
+            stale["cache_refresh_status"] = "running"
+            return stale
 
     session = requests.Session()
     session.auth = AUTH
@@ -355,8 +362,10 @@ def get_metrolog_budget_monthly(year: int | None = None, month: int | None = Non
         ref_m = today.month
 
     months = []
+    cache_refresh_running = False
     for m in range(1, ref_m + 1):
         payload = compute_metrolog_budget_month(ref_y, m)
+        cache_refresh_running = cache_refresh_running or payload.get("cache_refresh_status") == "running"
         months.append({
             "month": m,
             "year": ref_y,
@@ -369,7 +378,7 @@ def get_metrolog_budget_monthly(year: int | None = None, month: int | None = Non
         })
 
     ref_row = months[-1] if months else None
-    return {
+    result = {
         "data_granularity": "monthly",
         "monthly_data": months,
         "last_full_month_row": dict(ref_row) if ref_row else None,
@@ -392,6 +401,9 @@ def get_metrolog_budget_monthly(year: int | None = None, month: int | None = Non
             "plan_source": "БЮДЖЕТ ПЛАН Главного метролога",
         },
     }
+    if cache_refresh_running:
+        result["cache_refresh_status"] = "running"
+    return result
 
 
 def get_metrolog_budget_table(year: int | None = None, month: int | None = None) -> dict:
@@ -399,7 +411,7 @@ def get_metrolog_budget_table(year: int | None = None, month: int | None = None)
     ref_y = int(year or today.year)
     ref_m = max(1, min(12, int(month or today.month)))
     payload = compute_metrolog_budget_month(ref_y, ref_m)
-    return {
+    table = {
         "name": "Бюджет главного метролога",
         "periodicity": "ежемесячно",
         "description": (
@@ -416,3 +428,6 @@ def get_metrolog_budget_table(year: int | None = None, month: int | None = None)
         "missing_articles": payload["missing_articles"],
         "debug": payload["debug"],
     }
+    if payload.get("cache_refresh_status"):
+        table["cache_refresh_status"] = payload.get("cache_refresh_status")
+    return table

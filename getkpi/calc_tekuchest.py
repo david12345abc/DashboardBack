@@ -25,6 +25,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from . import cache_manager
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,20 @@ def _load_cache(year: int, ref_month: int) -> dict | None:
             and data.get("cache_version") == CACHE_VERSION
             and data.get("cache_date") == date.today().isoformat()
         ):
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def _load_stale_cache(year: int, ref_month: int) -> dict | None:
+    p = _cache_path(year, ref_month)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("cache_source") == CACHE_SOURCE_TAG and data.get("cache_version") == CACHE_VERSION:
             return data
     except (OSError, json.JSONDecodeError):
         pass
@@ -199,6 +214,7 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
         })
     return {
         "cache_date": payload.get("cache_date"),
+        "cache_refresh_status": payload.get("cache_refresh_status"),
         "year": payload.get("year"),
         "ref_month": payload.get("ref_month"),
         "months": sliced,
@@ -224,9 +240,16 @@ def get_tekuchest_monthly(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
-    cached = _load_cache(ref_y, ref_m)
+    force_compute = cache_manager.is_force_compute_context()
+    cached = None if force_compute else _load_cache(ref_y, ref_m)
     if cached is not None:
         return _slice_payload(cached, dept_guid)
+    if not force_compute:
+        stale = _load_stale_cache(ref_y, ref_m)
+        if stale is not None:
+            stale = dict(stale)
+            stale["cache_refresh_status"] = "running"
+            return _slice_payload(stale, dept_guid)
 
     session = requests.Session()
     session.auth = AUTH

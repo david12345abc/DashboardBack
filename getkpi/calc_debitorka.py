@@ -30,6 +30,7 @@ from urllib.parse import quote
 from collections import defaultdict
 from pathlib import Path
 
+from . import cache_manager
 from .commercial_department_aliases import (
     COMMERCIAL_DEPT_ALIASES,
 )
@@ -557,6 +558,29 @@ def _overdue_detail_cache_is_current(data: dict | None) -> bool:
     return not rows or all("liquidated_dept_name" in row for row in rows)
 
 
+def _overdue_detail_cache_is_usable(data: dict | None) -> bool:
+    if data is None:
+        return False
+    if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
+        return False
+    rows = data.get("rows") or []
+    return not rows or all("liquidated_dept_name" in row for row in rows)
+
+
+def _monthly_overdue_total(data: dict | None, year: int, month: int) -> float | None:
+    if data is None:
+        return None
+    if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
+        return None
+    for row in data.get("months") or []:
+        try:
+            if int(row.get("year") or 0) == int(year) and int(row.get("month") or 0) == int(month):
+                return round(float(row.get("overdue_fact") or 0), 2)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def _calc_snapshot_for_date(na_datu: date) -> dict:
     """Полный расчёт ДЗ/просрочки на дату (RecordType, медленно, но точно)."""
     session = requests.Session()
@@ -963,8 +987,6 @@ def get_overdue_detail(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
-    _ensure_debitorka_caches_for_period(ref_y, ref_m, include_overdue_detail=True)
-
     na_datu = _month_end(ref_y, ref_m)
     if na_datu > today:
         na_datu = today
@@ -973,16 +995,37 @@ def get_overdue_detail(year: int | None = None,
 
     if _overdue_detail_cache_is_current(cached):
         data = cached
+    elif not cache_manager.is_force_compute_context():
+        if _overdue_detail_cache_is_usable(cached):
+            data = dict(cached)
+            data["cache_refresh_status"] = "running"
+        else:
+            monthly = _load_json(_cache_path_monthly(ref_y, ref_m))
+            total = _monthly_overdue_total(monthly, ref_y, ref_m)
+            data = {
+                "na_datu": na_datu.isoformat(),
+                "total_overdue": total or 0,
+                "rows": [],
+                "cache_refresh_status": "running",
+            }
     else:
-        data = _calc_overdue_detail(na_datu)
-        _save_json(cache_path, data)
+        _ensure_debitorka_caches_for_period(ref_y, ref_m, include_overdue_detail=True)
+        cached = _load_json(cache_path)
+        if _overdue_detail_cache_is_current(cached):
+            data = cached
+        else:
+            data = _calc_overdue_detail(na_datu)
+            _save_json(cache_path, data)
 
     rows = data.get("rows", [])
     if dept_guid:
         dept_lower = normalize_debitorka_dept_guid(dept_guid.lower()).lower()
         rows = [r for r in rows if r.get("dept_key") == dept_lower]
 
-    total = round(sum(r["amount"] for r in rows), 2)
+    if rows:
+        total = round(sum(r["amount"] for r in rows), 2)
+    else:
+        total = round(float(data.get("total_overdue") or 0), 2)
 
     return {
         "na_datu": data.get("na_datu"),

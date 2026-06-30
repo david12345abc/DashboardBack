@@ -18,6 +18,7 @@ urlpatterns = [
         name='immediate-subordinates',
     ),
     path('users/', views.get_users_departments, name='users-departments'),
+    path('cache-refresh/', views.refresh_kpi_tile_cache, name='refresh-kpi-tile-cache'),
     path('cache-status/', views.get_cache_status, name='cache-status'),
     path('lawsuits-table/', views.get_lawsuits_table, name='lawsuits-table'),
 ]

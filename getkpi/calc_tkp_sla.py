@@ -36,6 +36,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from . import cache_manager
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,19 @@ def _load_cache(year: int, ref_month: int) -> dict | None:
             data = json.load(f)
         if data.get("cache_date") == date.today().isoformat():
             return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def _load_stale_cache(year: int, ref_month: int) -> dict | None:
+    p = _cache_path(year, ref_month)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
     except (OSError, json.JSONDecodeError):
         pass
     return None
@@ -434,6 +448,7 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
         })
     return {
         "cache_date": payload.get("cache_date"),
+        "cache_refresh_status": payload.get("cache_refresh_status"),
         "year": payload.get("year"),
         "ref_month": payload.get("ref_month"),
         "months": sliced_months,
@@ -463,15 +478,21 @@ def get_tkp_sla_monthly(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
-    cached = _load_cache(ref_y, ref_m)
+    force_compute = cache_manager.is_force_compute_context()
+    cached = None if force_compute else _load_cache(ref_y, ref_m)
     if cached is not None:
         logger.info("calc_tkp_sla: cache hit for %d-%02d", ref_y, ref_m)
         return _slice_payload(cached, dept_guid)
+    stale = _load_stale_cache(ref_y, ref_m)
+    if stale is not None and not force_compute:
+        stale = dict(stale)
+        stale["cache_refresh_status"] = "running"
+        return _slice_payload(stale, dept_guid)
 
     session = requests.Session()
     session.auth = AUTH
 
-    logger.info("calc_tkp_sla: loading for %d months 1-%d", ref_y, ref_m)
+    logger.info("calc_tkp_sla: loading for %d months %s", ref_y, ref_m if force_compute else f"1-{ref_m}")
     t0 = time.time()
 
     cal_years = sorted(set(range(2021, ref_y + 2)))
@@ -484,8 +505,19 @@ def get_tkp_sla_monthly(year: int | None = None,
 
     mgr_to_dept: dict[str, str] = dict(_manager_dept_cache)
 
+    stale_by_month: dict[int, dict] = {}
+    if force_compute and stale is not None:
+        for row in stale.get("months") or []:
+            try:
+                stale_by_month[int(row.get("month"))] = row
+            except (TypeError, ValueError):
+                continue
+
     out_months: list[dict] = []
     for m in range(1, ref_m + 1):
+        if force_compute and m != ref_m and m in stale_by_month:
+            out_months.append(dict(stale_by_month[m]))
+            continue
         row = _compute_month(session, ref_y, m, mgr_to_dept, mgr_field)
         out_months.append(row)
         logger.info("  %s %d: plan=%d fact=%d pct=%.1f%%",

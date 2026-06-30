@@ -72,6 +72,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
+KOMDIR_PAYLOAD_CACHE_VERSION = 1
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -1315,7 +1316,7 @@ def _build_overdue_table(ref_y: int, ref_m: int,
             "Ликвидированное подразделение": r.get("liquidated_dept_name") or "",
         })
 
-    return {
+    table = {
         "name": f"Просроченная дебиторская задолженность на {detail.get('na_datu', '')}",
         "periodicity": "ежемесячно",
         "description": "Детализация просроченной ДЗ по заказам клиентов",
@@ -1331,12 +1332,225 @@ def _build_overdue_table(ref_y: int, ref_m: int,
         ],
         "rows": rows,
     }
+    if detail.get("cache_refresh_status"):
+        table["cache_refresh_status"] = detail.get("cache_refresh_status")
+    return table
+
+
+def _payload_cache_dept_part(dept_guid: str | None) -> str:
+    return str(dept_guid or 'all').strip().lower().replace('-', '')
+
+
+def _payload_cache_path(ref_y: int, ref_m: int, dept_guid: str | None) -> Path:
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return _CACHE_DIR / f"komdir_payload_{_payload_cache_dept_part(dept_guid)}_{ref_y}_{ref_m:02d}.json"
+
+
+def _save_payload_cache(ref_y: int, ref_m: int, dept_guid: str | None, payload: dict) -> None:
+    try:
+        with _payload_cache_path(ref_y, ref_m, dept_guid).open("w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "cache_version": KOMDIR_PAYLOAD_CACHE_VERSION,
+                    "cache_date": date.today().isoformat(),
+                    "payload": payload,
+                },
+                f,
+                ensure_ascii=False,
+            )
+    except OSError:
+        logger.exception("komdir payload cache: failed to save")
+
+
+def _unwrap_payload_cache(raw: dict) -> dict:
+    if raw.get("cache_version") == KOMDIR_PAYLOAD_CACHE_VERSION and isinstance(raw.get("payload"), dict):
+        payload = dict(raw["payload"])
+        payload["cache_refresh_status"] = "running"
+        for tile in (payload.get("Плитки") or {}).get("items") or []:
+            if isinstance(tile, dict):
+                tile["cache_refresh_status"] = "running"
+        for table in (payload.get("Таблицы") or {}).values():
+            if isinstance(table, dict):
+                table["cache_refresh_status"] = "running"
+        return payload
+    return raw
+
+
+def _payload_with_active_refresh_status(payload: dict, ref_y: int, ref_m: int, payload_cache_path: Path) -> dict:
+    """Вернуть snapshot со статусом running, если сейчас обновляются его кэши."""
+    if not isinstance(payload, dict):
+        return payload
+    payload_refreshing = cache_manager.is_cache_path_refreshing(payload_cache_path)
+    any_refreshing = payload_refreshing
+    next_payload = dict(payload)
+    for tile in (next_payload.get("Плитки") or {}).get("items") or []:
+        if not isinstance(tile, dict):
+            continue
+        kid = str(tile.get("kpi_id") or "").strip()
+        tile_refreshing = payload_refreshing or cache_manager.is_any_cache_path_refreshing(
+            [_CACHE_DIR / fname for fname in _tile_cache_files(kid, ref_y, ref_m)]
+        )
+        if tile_refreshing:
+            tile["cache_refresh_status"] = "running"
+            any_refreshing = True
+    if payload_refreshing:
+        for table in (next_payload.get("Таблицы") or {}).values():
+            if isinstance(table, dict):
+                table["cache_refresh_status"] = "running"
+    if any_refreshing:
+        next_payload["cache_refresh_status"] = "running"
+    return next_payload
+
+
+def _load_fresh_payload_cache(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        raw.get("cache_version") == KOMDIR_PAYLOAD_CACHE_VERSION
+        and raw.get("cache_date") == date.today().isoformat()
+        and isinstance(raw.get("payload"), dict)
+    ):
+        return raw["payload"]
+    return None
+
+
+def _komdir_payload_period(month: int | None, year: int | None) -> tuple[int, int, int]:
+    today = date.today()
+    if month and year:
+        return int(year), int(month), int(month)
+    _pairs, ref_y, ref_m = _get_monthly_pairs()
+    return ref_y, ref_m, _series_through_month(today, ref_y, ref_m)
 
 
 def build_komdir_payload(kpi_list: list[dict],
                          month: int | None = None,
                          year: int | None = None,
                          dept_guid: str | None = None) -> dict:
+    ref_y, ref_m, _series_m = _komdir_payload_period(month, year)
+    cache_key = f"komdir_payload_{_payload_cache_dept_part(dept_guid)}_{ref_y}_{ref_m:02d}"
+    payload_cache_path = _payload_cache_path(ref_y, ref_m, dept_guid)
+    cache_manager.register_cache_path(cache_key, payload_cache_path)
+    if not cache_manager.is_force_compute_context():
+        cached_payload = _load_fresh_payload_cache(payload_cache_path)
+        if cached_payload is not None:
+            return _payload_with_active_refresh_status(cached_payload, ref_y, ref_m, payload_cache_path)
+    raw = cache_manager.locked_call(
+        cache_key,
+        _build_komdir_payload_fresh,
+        kpi_list,
+        month=month,
+        year=year,
+        dept_guid=dept_guid,
+        cache_path=payload_cache_path,
+    )
+    return _unwrap_payload_cache(raw)
+
+
+def _plans_payload_from_tile(tile: dict, kpi_id: str) -> dict:
+    plan_key_by_kpi = {
+        "KD-M1": ("dengi", "dengi_expected"),
+        "KD-M2": ("otgruzki", "otgruzki_expected"),
+        "KD-M3": ("dogovory", "dogovory_expected"),
+    }
+    keys = plan_key_by_kpi.get(kpi_id)
+    if not keys:
+        return {"months": []}
+    plan_key, expected_key = keys
+    months = []
+    for row in tile.get("monthly_data") or []:
+        if not isinstance(row, dict):
+            continue
+        months.append({
+            "year": row.get("year"),
+            "month": row.get("month"),
+            plan_key: row.get("plan_full", row.get("plan")),
+            expected_key: row.get("expected_plan"),
+        })
+    return {"months": months}
+
+
+def _patch_payload_tile(payload: dict, kpi_id: str, tile_data: dict, ref_y: int, ref_m: int) -> None:
+    items = (payload.get("Плитки") or {}).get("items") or []
+    for tile in items:
+        if not isinstance(tile, dict) or tile.get("kpi_id") != kpi_id:
+            continue
+        lm = tile_data.get("last_full_month_row") or {}
+        ytd = tile_data.get("ytd") or {}
+        pct = ytd.get("kpi_pct")
+        tile["kpi_pct"] = pct
+        if kpi_id in {"KD-M1", "KD-M2", "KD-M3"}:
+            tile["color"] = _plan_fact_higher_better_rag(lm.get("plan"), lm.get("fact"), pct)
+        else:
+            tile["color"] = _tile_rag(kpi_id, float(pct) if pct is not None else None)
+        if "monthly_data" in tile_data:
+            tile["monthly_data"] = tile_data.get("monthly_data") or []
+        if lm:
+            for key in ("plan", "fact", "expected_plan", "has_data"):
+                if key in lm:
+                    tile[key] = lm.get(key)
+            tile["plan_fact_period_label"] = f"{MONTH_NAMES_RU.get(ref_m, '')} {ref_y}".strip()
+        tile["cache_updated_at"] = datetime.now().isoformat(timespec="seconds")
+        tile.pop("cache_refresh_status", None)
+        break
+
+
+def refresh_komdir_tile_cache(kpi_id: str,
+                              *,
+                              month: int | None = None,
+                              year: int | None = None,
+                              dept_guid: str | None = None) -> bool:
+    """Точечно пересчитать кэш одной коммерческой плитки и обновить snapshot payload."""
+    kid = str(kpi_id or "").strip().upper()
+    ref_y, ref_m, series_m = _komdir_payload_period(month, year)
+    payload_cache_path = _payload_cache_path(ref_y, ref_m, dept_guid)
+    raw = None
+    if payload_cache_path.exists():
+        try:
+            with payload_cache_path.open("r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            raw = None
+    if not isinstance(raw, dict) or not isinstance(raw.get("payload"), dict):
+        return False
+
+    payload = dict(raw["payload"])
+    existing_tile = None
+    for tile in (payload.get("Плитки") or {}).get("items") or []:
+        if isinstance(tile, dict) and tile.get("kpi_id") == kid:
+            existing_tile = tile
+            break
+    if existing_tile is None:
+        return False
+
+    plans_payload = _plans_payload_from_tile(existing_tile, kid)
+    if kid in {"KD-M1", "KD-M2", "KD-M3", "KD-M8", "KD-M11"}:
+        tile_data = _get_tile_data(
+            kid,
+            [(ref_y, m) for m in range(1, series_m + 1)],
+            ref_y,
+            ref_m,
+            series_m,
+            dept_guid=dept_guid,
+            plans_payload=plans_payload,
+        )
+    else:
+        return False
+
+    _patch_payload_tile(payload, kid, tile_data, ref_y, ref_m)
+    _save_payload_cache(ref_y, ref_m, dept_guid, payload)
+    return True
+
+
+def _build_komdir_payload_fresh(kpi_list: list[dict],
+                                month: int | None = None,
+                                year: int | None = None,
+                                dept_guid: str | None = None,
+                                cache_path: Path | None = None) -> dict:
     """Полный payload для ответа API коммерческого директора.
     dept_guid — GUID подразделения для фильтрации (None = агрегат всех отделов).
     """
@@ -1619,7 +1833,7 @@ def build_komdir_payload(kpi_list: list[dict],
         ],
     }
 
-    return {
+    payload = {
         "month": series_m,
         "year": ref_y,
         "kpi_ref_month": ref_m,
@@ -1627,3 +1841,5 @@ def build_komdir_payload(kpi_list: list[dict],
         "Графики": grafiki,
         "Таблицы": tablitsy,
     }
+    _save_payload_cache(ref_y, ref_m, dept_guid, payload)
+    return payload

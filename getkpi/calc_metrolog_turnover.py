@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 import requests
 
+from . import cache_manager
 from .cache_manager import locked_call
 from .techdir_tekuchet import (
     AUTH,
@@ -89,7 +90,7 @@ def ytd_cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"metrolog_turnover_q2_ytd_{int(year)}_{int(month):02d}.json"
 
 
-def _load_cache(year: int, quarter: int) -> dict | None:
+def _load_cache(year: int, quarter: int, *, allow_stale: bool = False) -> dict | None:
     path = _cache_path(year, quarter)
     if not path.exists():
         return None
@@ -102,12 +103,12 @@ def _load_cache(year: int, quarter: int) -> dict | None:
         return None
     if data.get("cache_version") != CACHE_VERSION:
         return None
-    if data.get("cache_date") != date.today().isoformat():
+    if not allow_stale and data.get("cache_date") != date.today().isoformat():
         return None
     return data
 
 
-def _load_ytd_cache(year: int, month: int) -> dict | None:
+def _load_ytd_cache(year: int, month: int, *, allow_stale: bool = False) -> dict | None:
     path = ytd_cache_path(year, month)
     if not path.exists():
         return None
@@ -120,7 +121,7 @@ def _load_ytd_cache(year: int, month: int) -> dict | None:
         return None
     if data.get("cache_version") != CACHE_VERSION:
         return None
-    if data.get("cache_date") != date.today().isoformat():
+    if not allow_stale and data.get("cache_date") != date.today().isoformat():
         return None
     return data
 
@@ -288,6 +289,12 @@ def compute_metrolog_turnover_quarter(year: int, quarter: int) -> dict:
     cached = _load_cache(year, quarter)
     if cached is not None:
         return cached
+    if not cache_manager.is_force_compute_context():
+        stale = _load_cache(year, quarter, allow_stale=True)
+        if stale is not None:
+            stale = dict(stale)
+            stale["cache_refresh_status"] = "running"
+            return stale
 
     session = requests.Session()
     session.auth = AUTH
@@ -401,10 +408,18 @@ def get_metrolog_turnover_ytd(year: int | None = None, month: int | None = None)
         cached = _load_ytd_cache(ref_y, ref_m)
         if cached is not None:
             return cached
+        if not cache_manager.is_force_compute_context():
+            stale = _load_ytd_cache(ref_y, ref_m, allow_stale=True)
+            if stale is not None:
+                stale = dict(stale)
+                stale["cache_refresh_status"] = "running"
+                return stale
         last_q = _completed_quarter_for_month(ref_m)
         quarter_rows = []
+        cache_refresh_running = False
         for quarter in range(1, last_q + 1):
             snapshot = compute_metrolog_turnover_quarter(ref_y, quarter)
+            cache_refresh_running = cache_refresh_running or snapshot.get("cache_refresh_status") == "running"
             quarter_rows.append({
                 "quarter": quarter,
                 "year": ref_y,
@@ -446,12 +461,18 @@ def get_metrolog_turnover_ytd(year: int | None = None, month: int | None = None)
                 "source": "1C:ERP staffing/dismissals + Document_ТД_ТекучестьПерсонала",
             },
         }
+        if cache_refresh_running:
+            payload["cache_refresh_status"] = "running"
         _save_ytd_cache(ref_y, ref_m, payload)
         return payload
 
     ref_date = date.today()
     ref_y = year or ref_date.year
     ref_m = month or ref_date.month
+    cache_manager.register_cache_path(
+        f"metrolog_turnover_ytd_{ref_y}_{ref_m:02d}",
+        ytd_cache_path(ref_y, ref_m),
+    )
     return locked_call(f"metrolog_turnover_ytd_{ref_y}_{ref_m:02d}", _runner)
 
 
@@ -461,7 +482,7 @@ def get_metrolog_turnover_table(year: int | None = None, month: int | None = Non
     ref_m = month or ref_date.month
     quarter = _completed_quarter_for_month(ref_m)
     snapshot = compute_metrolog_turnover_quarter(ref_y, quarter)
-    return {
+    table = {
         "name": "Текучесть персонала метрологической службы",
         "periodicity": "ежеквартально",
         "description": (
@@ -487,3 +508,6 @@ def get_metrolog_turnover_table(year: int | None = None, month: int | None = Non
         "totals": snapshot["totals"],
         "debug": snapshot["debug"],
     }
+    if snapshot.get("cache_refresh_status"):
+        table["cache_refresh_status"] = snapshot.get("cache_refresh_status")
+    return table

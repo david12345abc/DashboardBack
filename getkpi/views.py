@@ -3,13 +3,15 @@ import logging
 import calendar
 import random
 import re
+import threading
+import time
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from django.http import JsonResponse
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_http_methods
 
 from User.views import login_required
 from . import (
@@ -106,6 +108,10 @@ _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
 _structure_cache: dict | None = None
 _structure_mtime: float | None = None
 logger = logging.getLogger(__name__)
+
+MANUAL_TILE_REFRESH_COOLDOWN_SECONDS = 6 * 60 * 60
+MANUAL_TILE_REFRESH_STATE_PATH = cache_manager.CACHE_DIR / 'manual_tile_refresh_state.json'
+_manual_tile_refresh_state_lock = threading.Lock()
 
 PSD_CLAIM_REASON_PRETENSION_KEY = "7a4719be-3e1b-11ec-8742-ac1f6b05524d"
 PSD_CLAIM_MIN_ORDER_SUM = 1_000_000
@@ -1235,9 +1241,29 @@ def _qd_q1_stamp_paths(ref_y: int | None, ref_m: int | None) -> list:
 def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) -> str | None:
     if ref_y is None or ref_m is None:
         return None
+    kid = _normalize_dashboard_kpi_id(kpi_id)
 
-    if kpi_id == 'QD-Q1':
+    if kid == 'QD-Q1':
         cache_files = _qd_q1_stamp_paths(ref_y, ref_m)
+    elif kid == 'METD-M3.B':
+        cache_files = [cache_manager.CACHE_DIR / f'metrolog_budget_{ref_y}_{ref_m:02d}.json']
+    elif kid == 'METD-M3.F':
+        cache_files = [cache_manager.CACHE_DIR / f'metrolog_fot_{ref_y}_{ref_m:02d}.json']
+    elif kid in {'METD-M1', 'МЕТ-M1'}:
+        cache_files = [cache_manager.CACHE_DIR / f'metrolog_production_plan_{ref_y}_{ref_m:02d}.json']
+    elif kid in {'METD-Q1', 'MET-Q4-1'}:
+        cache_files = [cache_manager.CACHE_DIR / f'metrolog_projects_ytd_{ref_y}_{ref_m:02d}.json']
+    elif kid == 'METD-Q2':
+        cache_files = [cache_manager.CACHE_DIR / f'metrolog_turnover_q2_ytd_{ref_y}_{ref_m:02d}.json']
+    elif kid == 'METD-Q3':
+        cache_files = [cache_manager.CACHE_DIR / f'metrolog_certification_projects_ytd_{ref_y}_{ref_m:02d}.json']
+    elif kid == 'KD-T-OVERDUE':
+        from . import calc_debitorka
+
+        cache_files = [
+            calc_debitorka.overdue_detail_cache_path(ref_y, ref_m),
+            cache_manager.CACHE_DIR / f'debitorka_monthly_{ref_y}_{ref_m:02d}.json',
+        ]
     elif kpi_id == 'QD-M1':
         cache_files = [
             qd_m1_ytd_cache_path(ref_y, ref_m),
@@ -1364,6 +1390,371 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
     return datetime.fromtimestamp(latest_mtime).isoformat(timespec='seconds')
 
 
+def _manual_tile_refresh_key(department: str, kpi_id: str, ref_y: int | None, ref_m: int | None) -> str:
+    dept_part = str(department or '').strip().casefold()
+    kid_part = _normalize_dashboard_kpi_id(kpi_id)
+    return f'{dept_part}|{kid_part}|{ref_y or ""}|{ref_m or ""}'
+
+
+def _manual_tile_refresh_now() -> str:
+    return datetime.now().isoformat(timespec='seconds')
+
+
+def _manual_tile_refresh_parse_dt(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def _manual_tile_refresh_read_state() -> dict[str, dict]:
+    try:
+        with MANUAL_TILE_REFRESH_STATE_PATH.open('r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _manual_tile_refresh_write_state(state: dict[str, dict]) -> None:
+    cache_manager.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_path = MANUAL_TILE_REFRESH_STATE_PATH.with_suffix('.tmp')
+    with tmp_path.open('w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+    tmp_path.replace(MANUAL_TILE_REFRESH_STATE_PATH)
+
+
+def _manual_tile_refresh_state_for_key(key: str) -> dict:
+    with _manual_tile_refresh_state_lock:
+        return dict(_manual_tile_refresh_read_state().get(key) or {})
+
+
+def _manual_tile_refresh_update_state(key: str, **updates) -> dict:
+    with _manual_tile_refresh_state_lock:
+        state = _manual_tile_refresh_read_state()
+        entry = dict(state.get(key) or {})
+        entry.update(updates)
+        state[key] = entry
+        _manual_tile_refresh_write_state(state)
+        return dict(entry)
+
+
+def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int | None) -> list[Path]:
+    """Кэш-файлы, которые нужно удалить перед ручным пересчётом плитки.
+
+    Для KPI без файлового кэша список пустой: расчёт всё равно запускается,
+    но старые значения на экране остаются до завершения фоновой задачи.
+    """
+    if ref_y is None or ref_m is None:
+        return []
+
+    kid = _normalize_dashboard_kpi_id(kpi_id)
+    paths: list[Path] = []
+    cd = cache_manager.CACHE_DIR
+
+    if kid == 'KD-M1':
+        for m in range(1, ref_m + 1):
+            for fn_name in ('_cache_path', '_monthly_cache_path'):
+                fn = getattr(calc_dengi_fact, fn_name, None)
+                if callable(fn):
+                    try:
+                        paths.append(fn(ref_y, m))
+                    except TypeError:
+                        pass
+                fn = getattr(calc_plan, fn_name, None)
+                if callable(fn):
+                    try:
+                        paths.append(fn(ref_y, m))
+                    except TypeError:
+                        pass
+        paths.append(cd / f'dengi_monthly_{ref_y}_{ref_m:02d}.json')
+        paths.append(cd / f'plans_monthly_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'KD-M2':
+        paths.append(cd / f'otgruzki_monthly_{ref_y}_{ref_m:02d}.json')
+        paths.append(cd / f'plans_monthly_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'KD-M3':
+        paths.append(cd / f'dogovory_monthly_{ref_y}_{ref_m:02d}.json')
+        paths.append(cd / f'plans_monthly_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'KD-M8':
+        paths.append(cd / f'fot_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'KD-M11':
+        paths.append(cd / f'tekuchest_{ref_y}_{ref_m:02d}.json')
+    elif kid in {'KD-M6', 'KD-Q1'}:
+        paths.append(cd / 'vp_result_cache.json')
+    elif kid == 'METD-M3.B':
+        paths.append(cd / f'metrolog_budget_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'METD-M3.F':
+        paths.append(cd / f'metrolog_fot_{ref_y}_{ref_m:02d}.json')
+    elif kid in {'МЕТ-M1', 'METD-M1'}:
+        paths.append(cd / f'metrolog_production_plan_{ref_y}_{ref_m:02d}.json')
+    elif kid in {'MET-Q4-1', 'METD-Q1'}:
+        paths.append(cd / f'metrolog_projects_ytd_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'METD-Q2':
+        paths.append(cd / f'metrolog_turnover_q2_ytd_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'METD-Q3':
+        paths.append(cd / f'metrolog_certification_projects_ytd_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'KD-T-OVERDUE':
+        from . import calc_debitorka
+
+        paths.append(calc_debitorka.overdue_detail_cache_path(ref_y, ref_m))
+        paths.append(cd / f'debitorka_monthly_{ref_y}_{ref_m:02d}.json')
+
+    if kid in {'METD-M1', 'МЕТ-M1', 'METD-M3.B', 'METD-M3.F', 'METD-Q1', 'MET-Q4-1', 'METD-Q2', 'METD-Q3'}:
+        paths.append(cd / f'chief_metrolog_payload_{ref_y}_{ref_m:02d}.json')
+    if kid == 'KD-T-OVERDUE' and ref_y is not None and ref_m is not None:
+        paths.append(cd / f'chief_metrolog_payload_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'QD-Q1':
+        paths.extend(_qd_q1_stamp_paths(ref_y, ref_m))
+    elif kid == 'QD-M1':
+        paths.extend([
+            qd_m1_ytd_cache_path(ref_y, ref_m),
+            external_brak_month_cache_path(ref_y, ref_m),
+            qd_m1_tile_cache_path(ref_y, ref_m),
+        ])
+    elif kid == 'QD-M5':
+        from qualdir.qd_m5 import internal_brak_month_cache_path, qd_m5_ytd_cache_path
+
+        paths.extend([
+            qd_m5_ytd_cache_path(ref_y, ref_m),
+            internal_brak_month_cache_path(ref_y, ref_m),
+        ])
+    elif kid == 'QD-M6':
+        paths.extend([
+            qd_m6_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_month_cache_path(ref_y, ref_m),
+            qd_m6_tile_cache_path(ref_y, ref_m),
+        ])
+        legacy_month = legacy_otk_predyavlenie_month_cache_path(ref_y, ref_m)
+        if legacy_month is not None:
+            paths.append(legacy_month)
+    elif kid == 'QD-M7':
+        paths.extend([
+            qd_m7_ytd_cache_path(ref_y, ref_m),
+            vyhod_kontrol_month_cache_path(ref_y, ref_m),
+            qd_m7_tile_cache_path(ref_y, ref_m),
+        ])
+    elif kid == 'QD-M8':
+        paths.extend([
+            qd_m8_ytd_cache_path(ref_y, ref_m),
+            forma0317_month_cache_path(ref_y, ref_m),
+            qd_m8_tile_cache_path(ref_y, ref_m),
+        ])
+    elif kid == 'QD-M9':
+        paths.extend([
+            qd_m9_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_npo_month_cache_path(ref_y, ref_m),
+            qd_m9_tile_cache_path(ref_y, ref_m),
+        ])
+    elif kid == 'QD-M10':
+        paths.extend([
+            qd_m10_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_almaz_month_cache_path(ref_y, ref_m),
+            qd_m10_tile_cache_path(ref_y, ref_m),
+        ])
+    elif kid == 'QD-Q2':
+        paths.extend([
+            qd_q2_ytd_cache_path(ref_y, ref_m),
+            turnover_month_cache_path(ref_y, ref_m),
+        ])
+
+    if kid in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS:
+        from getkpi.autoit.it_m1_sla import (
+            cache_file_path_for_period as it_m1_cache,
+            monthly_cache_path as it_m1_monthly_cache,
+        )
+
+        paths.extend([
+            it_m1_cache(ref_y, ref_m),
+            it_m1_monthly_cache(ref_y, ref_m),
+        ])
+    if kid in _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS:
+        from getkpi.autoit.it_m3 import (
+            cache_file_path_for_period as it_m3_cache,
+            monthly_cache_path as it_m3_monthly_cache,
+        )
+
+        paths.extend([
+            it_m3_cache(ref_y, ref_m),
+            it_m3_monthly_cache(ref_y, ref_m),
+        ])
+    if kid == 'IT-Q2':
+        from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as it_q2_cache
+
+        paths.append(it_q2_cache(ref_y, ref_m))
+    if kid in _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
+        from getkpi.c1auto.c1_m1_sla import (
+            cache_file_path_for_period as c1_m1_cache,
+            monthly_cache_path as c1_m1_monthly_cache,
+        )
+
+        paths.extend([
+            c1_m1_cache(ref_y, ref_m),
+            c1_m1_monthly_cache(ref_y, ref_m),
+        ])
+    if kid in _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS:
+        from getkpi.c1auto.c1_m3 import cache_file_path_for_period as c1_m3_cache
+
+        paths.append(c1_m3_cache(ref_y, ref_m))
+    if kid in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS:
+        from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1_q5_cache
+
+        paths.append(c1_q5_cache(ref_y, ref_m))
+    if kid in _sup_kpi_views.SUP_KPI_IDS:
+        from sup import hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_q4
+
+        if kid == 'HRD-M1':
+            paths.append(hrd_m1.cache_file_path_for_period(ref_y, ref_m))
+        elif kid == 'HRD-M2':
+            paths.extend([
+                hrd_m2.cache_file_path_for_period(ref_y, ref_m),
+                hrd_m2.monthly_cache_path(ref_y, ref_m),
+            ])
+        elif kid == 'HRD-M3':
+            paths.extend([
+                hrd_m3.cache_file_path_for_period(ref_y, ref_m),
+                hrd_m3.monthly_cache_path(ref_y, ref_m),
+            ])
+        elif kid == 'HRD-M4':
+            paths.append(hrd_m4.cache_file_path_for_period(ref_y, ref_m))
+        elif kid == 'HRD-Q4':
+            paths.append(hrd_q4.cache_file_path_for_period(ref_y, ref_m))
+
+    paths.extend(techdir_dashboard.cache_stamp_paths(kid, ref_y, ref_m))
+    return list(dict.fromkeys(paths))
+
+
+def _manual_tile_refresh_delete_cache_files(kpi_id: str, ref_y: int | None, ref_m: int | None) -> list[str]:
+    deleted: list[str] = []
+    for path in _manual_tile_refresh_cache_files(kpi_id, ref_y, ref_m):
+        try:
+            if path.exists() and path.is_file():
+                path.unlink()
+                deleted.append(str(path))
+        except OSError:
+            logger.exception("manual tile refresh: failed to delete cache file %s", path)
+    return deleted
+
+
+def _manual_tile_refresh_find_kpis(department: str) -> tuple[list[dict], str, str | None]:
+    ck = commercial_kpi_key(department)
+    if isinstance(ck, str):
+        return _get_kpi_dicts(ck), 'komdir', dept_guid_for_kpi_key(ck)
+    if ck is None:
+        return [], 'missing', None
+    if _is_chief_metrolog_department(department):
+        return _lookup_kpi_data(department), 'chief_metrolog', None
+    return _lookup_kpi_data(department), 'universal', None
+
+
+def _manual_tile_refresh_worker(
+    *,
+    key: str,
+    department: str,
+    kpi_id: str,
+    ref_y: int | None,
+    ref_m: int | None,
+    kpis: list[dict],
+    payload_kind: str,
+    dept_guid: str | None,
+) -> None:
+    try:
+        deleted: list[str] = []
+        refresh_paths = _manual_tile_refresh_cache_files(kpi_id, ref_y, ref_m)
+        with cache_manager.mark_paths_refreshing(key, refresh_paths), cache_manager.force_compute():
+            if payload_kind == 'komdir':
+                if not komdir_dashboard.refresh_komdir_tile_cache(
+                    kpi_id,
+                    month=ref_m,
+                    year=ref_y,
+                    dept_guid=dept_guid,
+                ):
+                    komdir_dashboard.build_komdir_payload(
+                        kpis,
+                        month=ref_m,
+                        year=ref_y,
+                        dept_guid=dept_guid,
+                    )
+            elif payload_kind == 'chief_metrolog':
+                _build_chief_metrolog_payload_fresh(
+                    department,
+                    kpis,
+                    month=ref_m,
+                    year=ref_y,
+                    include_debug=True,
+                )
+            else:
+                _build_universal_payload(
+                    department,
+                    kpis,
+                    month=ref_m,
+                    year=ref_y,
+                    include_debug=True,
+                )
+        cache_manager.clear_memoized_dashboard_payload()
+        _manual_tile_refresh_update_state(
+            key,
+            status='succeeded',
+            finished_at=_manual_tile_refresh_now(),
+            error='',
+            deleted_files=deleted,
+            cache_updated_at=_tile_cache_updated_at(kpi_id, ref_y, ref_m),
+        )
+    except Exception as exc:
+        logger.exception("manual tile refresh failed: %s %s", department, kpi_id)
+        _manual_tile_refresh_update_state(
+            key,
+            status='failed',
+            finished_at=_manual_tile_refresh_now(),
+            error=str(exc),
+        )
+
+
+def _manual_tile_refresh_response_payload(
+    *,
+    key: str,
+    department: str,
+    kpi_id: str,
+    ref_y: int | None,
+    ref_m: int | None,
+    entry: dict | None = None,
+) -> dict:
+    current = dict(entry or _manual_tile_refresh_state_for_key(key))
+    cache_files = _manual_tile_refresh_cache_files(kpi_id, ref_y, ref_m)
+    is_refreshing = cache_manager.is_any_cache_path_refreshing(cache_files)
+    started = _manual_tile_refresh_parse_dt(current.get('started_at'))
+    if (
+        current.get('status') == 'running'
+        and not is_refreshing
+        and started is not None
+        and (datetime.now() - started).total_seconds() > 60
+    ):
+        current['status'] = 'failed'
+        current['finished_at'] = current.get('finished_at') or _manual_tile_refresh_now()
+        current['error'] = current.get('error') or 'Пересчёт был прерван перезапуском сервера'
+        _manual_tile_refresh_update_state(key, **current)
+    next_allowed = (
+        started + timedelta(seconds=MANUAL_TILE_REFRESH_COOLDOWN_SECONDS)
+        if started is not None
+        else None
+    )
+    current.update({
+        'department': department,
+        'kpi_id': kpi_id,
+        'year': ref_y,
+        'month': ref_m,
+        'cooldown_seconds': MANUAL_TILE_REFRESH_COOLDOWN_SECONDS,
+        'next_allowed_at': next_allowed.isoformat(timespec='seconds') if next_allowed else None,
+        'cache_updated_at': current.get('cache_updated_at') or _tile_cache_updated_at(kpi_id, ref_y, ref_m),
+    })
+    if is_refreshing:
+        current['status'] = 'running'
+    if 'status' not in current:
+        current['status'] = 'idle'
+    return current
+
+
 def _build_tile_item(
     kpi: dict,
     pct: float | None,
@@ -1428,6 +1819,12 @@ def _build_tile_item(
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
         tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
     tile['cache_updated_at'] = _tile_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
+    if entry.get('cache_refresh_status'):
+        tile['cache_refresh_status'] = entry.get('cache_refresh_status')
+    if cache_manager.is_any_cache_path_refreshing(
+        _manual_tile_refresh_cache_files(kpi.get('kpi_id'), ref_y, ref_m),
+    ):
+        tile['cache_refresh_status'] = 'running'
     if entry.get('last_full_month_row'):
         lfr = entry['last_full_month_row']
         if kpi.get('kpi_id') == 'QD-Q1' and isinstance(lfr, dict):
@@ -3075,6 +3472,9 @@ def _build_universal_payload(
     else:
         dept_protocol_tables.merge_protocol_overdue_table(tablitsy, dept, year=ref_y, month=ref_m)
 
+    if _is_chief_metrolog_department(dept):
+        _enrich_chief_metrolog_table_cache_metadata(tablitsy, ref_y, ref_m)
+
     result = {
         'month': ref_m,
         'year': ref_y,
@@ -3086,6 +3486,168 @@ def _build_universal_payload(
     if gspp_memo_key:
         cache_manager.set_memoized_dashboard_payload(gspp_memo_key, result)
     return result
+
+
+CHIEF_METROLOG_PAYLOAD_CACHE_VERSION = 1
+
+
+CHIEF_METROLOG_TABLE_CACHE_KPI_IDS = {
+    'KD-T-OVERDUE': 'KD-T-OVERDUE',
+    'METD-T-M1-LATE-STAGES': 'METD-M1',
+    'GK-T-M1-DEVIATIONS': 'METD-Q1',
+    'METD-T-Q2-TURNOVER': 'METD-Q2',
+    'METD-T-M3-FOT': 'METD-M3.F',
+    'METD-T-M3-BUDGET': 'METD-M3.B',
+}
+
+
+def _enrich_chief_metrolog_table_cache_metadata(tables: dict, ref_y: int, ref_m: int) -> None:
+    if not isinstance(tables, dict):
+        return
+    for table_key, table in tables.items():
+        if not isinstance(table, dict):
+            continue
+        kpi_id = CHIEF_METROLOG_TABLE_CACHE_KPI_IDS.get(str(table_key).strip())
+        if not kpi_id:
+            continue
+        table['cache_refresh_kpi_id'] = kpi_id
+        table['cache_updated_at'] = _tile_cache_updated_at(kpi_id, ref_y, ref_m)
+        if cache_manager.is_any_cache_path_refreshing(
+            _manual_tile_refresh_cache_files(kpi_id, ref_y, ref_m),
+        ):
+            table['cache_refresh_status'] = 'running'
+
+
+def _chief_metrolog_payload_cache_path(ref_y: int, ref_m: int) -> Path:
+    cache_manager.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return cache_manager.CACHE_DIR / f"chief_metrolog_payload_{int(ref_y)}_{int(ref_m):02d}.json"
+
+
+def _mark_payload_cache_refreshing(payload: dict) -> dict:
+    payload = dict(payload)
+    payload['cache_refresh_status'] = 'running'
+    for tile in (payload.get('Плитки') or {}).get('items') or []:
+        if isinstance(tile, dict):
+            tile['cache_refresh_status'] = 'running'
+    for table in (payload.get('Таблицы') or {}).values():
+        if isinstance(table, dict):
+            table['cache_refresh_status'] = 'running'
+    return payload
+
+
+def _unwrap_chief_metrolog_payload_cache(raw: dict) -> dict:
+    if (
+        isinstance(raw, dict)
+        and raw.get('cache_version') == CHIEF_METROLOG_PAYLOAD_CACHE_VERSION
+        and isinstance(raw.get('payload'), dict)
+    ):
+        return _mark_payload_cache_refreshing(raw['payload'])
+    return raw
+
+
+def _load_fresh_chief_metrolog_payload_cache(ref_y: int, ref_m: int) -> dict | None:
+    path = _chief_metrolog_payload_cache_path(ref_y, ref_m)
+    if not path.exists():
+        return None
+    try:
+        with path.open('r', encoding='utf-8') as f:
+            raw = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        raw.get('cache_version') == CHIEF_METROLOG_PAYLOAD_CACHE_VERSION
+        and raw.get('cache_date') == date.today().isoformat()
+        and isinstance(raw.get('payload'), dict)
+    ):
+        return raw['payload']
+    return None
+
+
+def _save_chief_metrolog_payload_cache(ref_y: int, ref_m: int, payload: dict) -> None:
+    try:
+        _chief_metrolog_payload_cache_path(ref_y, ref_m).write_text(
+            json.dumps(
+                {
+                    'cache_version': CHIEF_METROLOG_PAYLOAD_CACHE_VERSION,
+                    'cache_date': date.today().isoformat(),
+                    'payload': payload,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding='utf-8',
+        )
+    except OSError:
+        logger.exception("Не удалось сохранить snapshot payload главного метролога")
+
+
+def _chief_metrolog_ref_period(month: int | None, year: int | None) -> tuple[int, int]:
+    today = date.today()
+    if year is not None and month is not None:
+        return int(year), max(1, min(12, int(month)))
+    if year is not None:
+        ref_y = int(year)
+        return ref_y, today.month if ref_y == today.year else 12
+    if month is not None:
+        return today.year, max(1, min(12, int(month)))
+    return today.year, today.month
+
+
+def _build_chief_metrolog_payload_fresh(
+    requested_dept: str,
+    kpis: list[dict],
+    *,
+    month: int | None = None,
+    year: int | None = None,
+    include_debug: bool = False,
+    aggregation_mode: str | None = None,
+    selected_quarters: list[int] | None = None,
+) -> dict:
+    payload = _build_universal_payload(
+        requested_dept,
+        kpis,
+        month=month,
+        year=year,
+        include_debug=include_debug,
+        aggregation_mode=aggregation_mode,
+        selected_quarters=selected_quarters,
+    )
+    ref_y = int(payload.get('year') or _chief_metrolog_ref_period(month, year)[0])
+    ref_m = int(payload.get('month') or _chief_metrolog_ref_period(month, year)[1])
+    _save_chief_metrolog_payload_cache(ref_y, ref_m, payload)
+    return payload
+
+
+def _build_chief_metrolog_payload(
+    requested_dept: str,
+    kpis: list[dict],
+    *,
+    month: int | None = None,
+    year: int | None = None,
+    include_debug: bool = False,
+    aggregation_mode: str | None = None,
+    selected_quarters: list[int] | None = None,
+) -> dict:
+    ref_y, ref_m = _chief_metrolog_ref_period(month, year)
+    cache_key = f"chief_metrolog_payload_{ref_y}_{ref_m:02d}"
+    cache_path = _chief_metrolog_payload_cache_path(ref_y, ref_m)
+    cache_manager.register_cache_path(cache_key, cache_path)
+    if not cache_manager.is_force_compute_context():
+        cached_payload = _load_fresh_chief_metrolog_payload_cache(ref_y, ref_m)
+        if cached_payload is not None:
+            return cached_payload
+    raw = cache_manager.locked_call(
+        cache_key,
+        _build_chief_metrolog_payload_fresh,
+        requested_dept,
+        kpis,
+        month=month,
+        year=year,
+        include_debug=include_debug,
+        aggregation_mode=aggregation_mode,
+        selected_quarters=selected_quarters,
+    )
+    return _unwrap_chief_metrolog_payload_cache(raw)
 
 
 MONTH_NAMES = {
@@ -3285,6 +3847,8 @@ def _build_kpi_entry(
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
         entry['debug'] = data.get('debug')
+        if data.get('cache_refresh_status'):
+            entry['cache_refresh_status'] = data.get('cache_refresh_status')
         return entry
 
     if dept_key and _is_budget_limit_m3_kpi(kpi_id) and not _is_prod_deputy_pc_m3_kpi(kpi_id):
@@ -3317,6 +3881,8 @@ def _build_kpi_entry(
         entry['ytd'] = data.get('ytd') or {}
         entry['kpi_period'] = data.get('kpi_period')
         entry['debug'] = data.get('debug')
+        if data.get('cache_refresh_status'):
+            entry['cache_refresh_status'] = data.get('cache_refresh_status')
         return entry
 
     if dept_key and dept_turnover_q5.is_turnover_q5_kpi(kpi_id):
@@ -3379,6 +3945,8 @@ def _build_kpi_entry(
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             entry['debug'] = data.get('debug')
+            if data.get('cache_refresh_status'):
+                entry['cache_refresh_status'] = data.get('cache_refresh_status')
             return entry
 
     if kpi_id == 'GK-Q1':
@@ -3404,6 +3972,8 @@ def _build_kpi_entry(
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             entry['debug'] = data.get('debug')
+            if data.get('cache_refresh_status'):
+                entry['cache_refresh_status'] = data.get('cache_refresh_status')
             return entry
 
     if kpi_id in {'MET-Q4-1', 'METD-Q1'}:
@@ -3427,6 +3997,8 @@ def _build_kpi_entry(
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             entry['debug'] = data.get('debug')
+            if data.get('cache_refresh_status'):
+                entry['cache_refresh_status'] = data.get('cache_refresh_status')
             return entry
 
     if kpi_id in {'МЕТ-M1', 'METD-M1'}:
@@ -3450,6 +4022,8 @@ def _build_kpi_entry(
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             entry['debug'] = data.get('debug')
+            if data.get('cache_refresh_status'):
+                entry['cache_refresh_status'] = data.get('cache_refresh_status')
             return entry
 
     if kpi_id == 'METD-Q2':
@@ -3473,6 +4047,8 @@ def _build_kpi_entry(
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             entry['debug'] = data.get('debug')
+            if data.get('cache_refresh_status'):
+                entry['cache_refresh_status'] = data.get('cache_refresh_status')
             return entry
 
     if kpi_id == 'METD-Q3':
@@ -3496,6 +4072,8 @@ def _build_kpi_entry(
             entry['ytd'] = data.get('ytd') or {}
             entry['kpi_period'] = data.get('kpi_period')
             entry['debug'] = data.get('debug')
+            if data.get('cache_refresh_status'):
+                entry['cache_refresh_status'] = data.get('cache_refresh_status')
             return entry
 
     if kpi_id == 'METD-Q4':
@@ -4154,6 +4732,21 @@ def get_kpi(request):
             json_dumps_params={'ensure_ascii': False},
         )
 
+    if _is_chief_metrolog_department(requested_dept):
+        payload = _build_chief_metrolog_payload(
+            requested_dept,
+            kpis,
+            month=req_month,
+            year=req_year,
+            include_debug=_wants_tile_debug(request),
+            aggregation_mode=aggregation_mode,
+            selected_quarters=selected_quarters,
+        )
+        return JsonResponse(
+            {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+            json_dumps_params={'ensure_ascii': False},
+        )
+
     payload = _build_universal_payload(
         requested_dept,
         kpis,
@@ -4553,6 +5146,160 @@ def get_users_departments(request):
     )
     return JsonResponse(
         {'users': users, 'count': len(users)},
+        json_dumps_params={'ensure_ascii': False},
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@login_required
+def refresh_kpi_tile_cache(request):
+    """Запустить или проверить ручной пересчёт кэша одной KPI-плитки."""
+    user_department = request.current_user.department
+    if not user_department:
+        return JsonResponse({'error': 'User has no department assigned'}, status=400)
+
+    body: dict[str, Any] = {}
+    if request.method == 'POST' and request.body:
+        try:
+            parsed = json.loads(request.body.decode('utf-8') or '{}')
+            body = parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON body'}, status=400)
+
+    def _param(name: str, default: object = None) -> object:
+        return body.get(name, request.GET.get(name, default))
+
+    requested_dept = str(_param('department', user_department) or '').strip()
+    kpi_id = str(_param('kpi_id', '') or '').strip()
+    if not requested_dept:
+        return JsonResponse({'error': 'department is required'}, status=400)
+    if not kpi_id:
+        return JsonResponse({'error': 'kpi_id is required'}, status=400)
+
+    allowed = _get_allowed_departments(user_department)
+    if requested_dept not in allowed:
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    try:
+        ref_m = int(_param('month')) if _param('month') not in (None, '') else None
+        ref_y = int(_param('year')) if _param('year') not in (None, '') else None
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'month/year must be integers'}, status=400)
+
+    if ref_m is not None and not (1 <= ref_m <= 12):
+        return JsonResponse({'error': 'month must be between 1 and 12'}, status=400)
+
+    key = _manual_tile_refresh_key(requested_dept, kpi_id, ref_y, ref_m)
+    if request.method == 'GET':
+        return JsonResponse(
+            _manual_tile_refresh_response_payload(
+                key=key,
+                department=requested_dept,
+                kpi_id=kpi_id,
+                ref_y=ref_y,
+                ref_m=ref_m,
+            ),
+            json_dumps_params={'ensure_ascii': False},
+        )
+
+    kpis, payload_kind, dept_guid = _manual_tile_refresh_find_kpis(requested_dept)
+    if not kpis:
+        return JsonResponse({'error': 'No KPIs configured for department'}, status=404)
+
+    normalized_request_kpi_id = _normalize_dashboard_kpi_id(kpi_id)
+    is_allowed_table_refresh = (
+        payload_kind == 'chief_metrolog'
+        and normalized_request_kpi_id == 'KD-T-OVERDUE'
+    )
+    if not is_allowed_table_refresh and not any(_normalize_dashboard_kpi_id(row.get('kpi_id')) == normalized_request_kpi_id for row in kpis):
+        return JsonResponse({'error': 'KPI not found in department'}, status=404)
+
+    with _manual_tile_refresh_state_lock:
+        state = _manual_tile_refresh_read_state()
+        current = dict(state.get(key) or {})
+        started = _manual_tile_refresh_parse_dt(current.get('started_at'))
+        if current.get('status') == 'running':
+            cache_files = _manual_tile_refresh_cache_files(kpi_id, ref_y, ref_m)
+            is_refreshing = cache_manager.is_any_cache_path_refreshing(cache_files)
+            if (
+                not is_refreshing
+                and started is not None
+                and (datetime.now() - started).total_seconds() > 60
+            ):
+                current['status'] = 'failed'
+                current['finished_at'] = current.get('finished_at') or _manual_tile_refresh_now()
+                current['error'] = current.get('error') or 'Пересчёт был прерван перезапуском сервера'
+                state[key] = current
+                _manual_tile_refresh_write_state(state)
+        if current.get('status') == 'running':
+            return JsonResponse(
+                _manual_tile_refresh_response_payload(
+                    key=key,
+                    department=requested_dept,
+                    kpi_id=kpi_id,
+                    ref_y=ref_y,
+                    ref_m=ref_m,
+                    entry=current,
+                ),
+                status=202,
+                json_dumps_params={'ensure_ascii': False},
+            )
+
+        if started is not None and current.get('status') != 'failed':
+            next_allowed = started + timedelta(seconds=MANUAL_TILE_REFRESH_COOLDOWN_SECONDS)
+            if datetime.now() < next_allowed:
+                payload = _manual_tile_refresh_response_payload(
+                    key=key,
+                    department=requested_dept,
+                    kpi_id=kpi_id,
+                    ref_y=ref_y,
+                    ref_m=ref_m,
+                    entry=current,
+                )
+                payload['status'] = 'cooldown'
+                return JsonResponse(payload, status=429, json_dumps_params={'ensure_ascii': False})
+
+        entry = {
+            **current,
+            'status': 'running',
+            'department': requested_dept,
+            'kpi_id': kpi_id,
+            'year': ref_y,
+            'month': ref_m,
+            'started_at': _manual_tile_refresh_now(),
+            'finished_at': None,
+            'error': '',
+        }
+        state[key] = entry
+        _manual_tile_refresh_write_state(state)
+
+    thread = threading.Thread(
+        target=_manual_tile_refresh_worker,
+        kwargs={
+            'key': key,
+            'department': requested_dept,
+            'kpi_id': kpi_id,
+            'ref_y': ref_y,
+            'ref_m': ref_m,
+            'kpis': kpis,
+            'payload_kind': payload_kind,
+            'dept_guid': dept_guid,
+        },
+        name=f'manual-cache-refresh-{normalized_request_kpi_id}',
+        daemon=True,
+    )
+    thread.start()
+
+    return JsonResponse(
+        _manual_tile_refresh_response_payload(
+            key=key,
+            department=requested_dept,
+            kpi_id=kpi_id,
+            ref_y=ref_y,
+            ref_m=ref_m,
+            entry=entry,
+        ),
+        status=202,
         json_dumps_params={'ensure_ascii': False},
     )
 

@@ -70,6 +70,7 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from . import cache_manager
 from .commercial_department_aliases import DEALER_SALES_DEPT, KEY_CLIENTS_DEPT, normalize_commercial_dept_guid
 from .odata_http import request_with_retry
 
@@ -170,6 +171,22 @@ def _load_cache(year: int) -> dict | None:
     today = date.today()
     if int(data.get("year") or 0) == today.year and data.get("cached_at") != today.isoformat():
         return None
+    return data
+
+
+def _load_stale_cache(year: int) -> dict | None:
+    path = _cache_path(year)
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if data.get("source_tag") != CACHE_VERSION:
+        return None
+    data = dict(data)
+    data["cache_refresh_status"] = "running"
     return data
 
 
@@ -1991,6 +2008,10 @@ def get_ks_razvitie_plans(year: int | None = None) -> dict:
     cached = _load_cache(int(year))
     if cached is not None:
         return cached
+    if not cache_manager.is_force_compute_context():
+        stale = _load_stale_cache(int(year))
+        if stale is not None:
+            return stale
 
     try:
         payload = _fetch_from_odata(int(year))

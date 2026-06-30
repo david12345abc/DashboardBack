@@ -26,6 +26,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 
+from . import cache_manager
+
 logger = logging.getLogger(__name__)
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
@@ -152,6 +154,19 @@ def _load_cache(year: int, ref_month: int) -> dict | None:
     return None
 
 
+def _load_stale_cache(year: int, ref_month: int) -> dict | None:
+    p = _cache_path(year, ref_month)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
 def _save_cache(year: int, ref_month: int, payload: dict) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     try:
@@ -260,6 +275,7 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
         })
     return {
         "cache_date": payload.get("cache_date"),
+        "cache_refresh_status": payload.get("cache_refresh_status"),
         "year": payload.get("year"),
         "ref_month": payload.get("ref_month"),
         "months": sliced,
@@ -285,18 +301,35 @@ def get_fot_monthly(year: int | None = None,
     if year is not None and month is not None:
         ref_y, ref_m = year, month
 
-    cached = _load_cache(ref_y, ref_m)
+    force_compute = cache_manager.is_force_compute_context()
+    cached = None if force_compute else _load_cache(ref_y, ref_m)
     if cached is not None:
         return _slice_payload(cached, dept_guid)
+    stale = _load_stale_cache(ref_y, ref_m)
+    if stale is not None and not force_compute:
+        stale = dict(stale)
+        stale["cache_refresh_status"] = "running"
+        return _slice_payload(stale, dept_guid)
 
     session = requests.Session()
     session.auth = AUTH
 
-    logger.info("calc_fot: loading records for %d months 1-%d", ref_y, ref_m)
+    logger.info("calc_fot: loading records for %d months %s", ref_y, ref_m if force_compute else f"1-{ref_m}")
     t0 = time.time()
+
+    stale_by_month: dict[int, dict] = {}
+    if force_compute and stale is not None:
+        for row in stale.get("months") or []:
+            try:
+                stale_by_month[int(row.get("month"))] = row
+            except (TypeError, ValueError):
+                continue
 
     out_months = []
     for m in range(1, ref_m + 1):
+        if force_compute and m != ref_m and m in stale_by_month:
+            out_months.append(dict(stale_by_month[m]))
+            continue
         records = _fetch_records_for_month(session, ref_y, m)
         agg = _aggregate_records(records)
         out_months.append({

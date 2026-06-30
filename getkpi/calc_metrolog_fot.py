@@ -12,6 +12,7 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from . import cache_manager
 from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
@@ -115,7 +116,7 @@ def _get_subaccounts(session: requests.Session, parent_guid: str) -> set[str]:
     return collected
 
 
-def _load_cache(year: int, month: int) -> dict | None:
+def _load_cache(year: int, month: int, *, allow_stale: bool = False) -> dict | None:
     path = cache_file_path_for_period(year, month)
     if not path.exists():
         return None
@@ -127,7 +128,7 @@ def _load_cache(year: int, month: int) -> dict | None:
         return None
     if data.get("cache_version") != CACHE_VERSION:
         return None
-    if data.get("cache_date") != date.today().isoformat():
+    if not allow_stale and data.get("cache_date") != date.today().isoformat():
         return None
     return data
 
@@ -162,6 +163,12 @@ def compute_metrolog_fot_month(year: int, month: int) -> dict:
     cached = _load_cache(year, month)
     if cached is not None:
         return cached
+    if not cache_manager.is_force_compute_context():
+        stale = _load_cache(year, month, allow_stale=True)
+        if stale is not None:
+            stale = dict(stale)
+            stale["cache_refresh_status"] = "running"
+            return stale
 
     session = requests.Session()
     session.auth = AUTH
@@ -290,8 +297,10 @@ def get_metrolog_fot_monthly(year: int | None = None, month: int | None = None) 
         ref_m = today.month
 
     rows = []
+    cache_refresh_running = False
     for m in range(1, ref_m + 1):
         month_payload = compute_metrolog_fot_month(ref_y, m)
+        cache_refresh_running = cache_refresh_running or month_payload.get("cache_refresh_status") == "running"
         rows.append({
             "month": m,
             "year": ref_y,
@@ -304,7 +313,7 @@ def get_metrolog_fot_monthly(year: int | None = None, month: int | None = None) 
         })
 
     ref_row = rows[-1] if rows else None
-    return {
+    result = {
         "data_granularity": "monthly",
         "monthly_data": rows,
         "last_full_month_row": dict(ref_row) if ref_row else None,
@@ -328,6 +337,9 @@ def get_metrolog_fot_monthly(year: int | None = None, month: int | None = None) 
             "accumulation_registers_used": False,
         },
     }
+    if cache_refresh_running:
+        result["cache_refresh_status"] = "running"
+    return result
 
 
 def get_metrolog_fot_table(year: int | None = None, month: int | None = None) -> dict:
@@ -335,7 +347,7 @@ def get_metrolog_fot_table(year: int | None = None, month: int | None = None) ->
     ref_y = int(year or today.year)
     ref_m = max(1, min(12, int(month or today.month)))
     month_payload = compute_metrolog_fot_month(ref_y, ref_m)
-    return {
+    table = {
         "name": "ФОТ главного метролога",
         "periodicity": "ежемесячно",
         "description": (
@@ -362,3 +374,6 @@ def get_metrolog_fot_table(year: int | None = None, month: int | None = None) ->
         "missing_combinations": month_payload["missing_combinations"],
         "debug": month_payload["debug"],
     }
+    if month_payload.get("cache_refresh_status"):
+        table["cache_refresh_status"] = month_payload.get("cache_refresh_status")
+    return table
