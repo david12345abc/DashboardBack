@@ -20,7 +20,7 @@ from .calc_prod_deputy_pc_common import (
     save_json,
 )
 
-SOURCE_TAG_BUDGET = "prod_deputy_pc_budget_v4_paid_requests_by_cfo_nav"
+SOURCE_TAG_BUDGET = "prod_deputy_pc_budget_v5_selected_month_period"
 
 PC_BUDGET_CFO_NAME: dict[ShopKey, str] = {
     "pc1": "Производство №1",

@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
 EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v3"
-CACHE_VERSION = 3
+CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v4_survey_titles"
+CACHE_VERSION = 4
 
 BASE = DEFAULT_BASE_URL.rstrip("/") + "/odata/standard.odata"
 if os.getenv("ONEC_BASE_URL"):
@@ -36,6 +36,28 @@ SCHEDULE_ENTITY_CANDIDATES = (
 )
 STAGE_DOC_ENTITY = "Document_ЭтапПроизводства2_2"
 DEPARTMENT_ENTITY = "Catalog_СтруктураПредприятия"
+SURVEY_DOC_TYPES = (
+    "Document_ТД_КартаЗаказаUFG",
+    "Document_ТД_КартаЗаказаCFM",
+    "Document_ТД_КартаЗаказаUFGH",
+    "Document_ТД_КартаЗаказаTFG",
+    "Document_ТД_КартаЗаказаUFL",
+    "Document_ТД_КартаЗаказаПлотномер",
+    "Document_ТД_КартаЗаказаГранд",
+    "Document_ТД_КартаЗаказаСПУ3М",
+    "Document_ТД_КартаЗаказаРаботУслуг",
+)
+SURVEY_DOC_LABELS = {
+    "Document_ТД_КартаЗаказаUFG": "Карта заказа UFG",
+    "Document_ТД_КартаЗаказаCFM": "Карта заказа CFM",
+    "Document_ТД_КартаЗаказаUFGH": "Карта заказа UFGH",
+    "Document_ТД_КартаЗаказаTFG": "Карта заказа TFG",
+    "Document_ТД_КартаЗаказаUFL": "Карта заказа UFL",
+    "Document_ТД_КартаЗаказаПлотномер": "Карта заказа Плотномер",
+    "Document_ТД_КартаЗаказаГранд": "Карта заказа Гранд",
+    "Document_ТД_КартаЗаказаСПУ3М": "Карта заказа СПУ3М",
+    "Document_ТД_КартаЗаказаРаботУслуг": "Карта заказа Работ/услуг",
+}
 
 DEPARTMENT_NAME = "Метрологическая служба"
 DEPARTMENT_KEY = "4668a58a-6eb1-11e2-afce-001e67112509"
@@ -102,6 +124,11 @@ def _dt(value: str | None) -> datetime | None:
 
 def _fmt(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _fmt_ru_date(value: str | datetime | None) -> str:
+    dt = value if isinstance(value, datetime) else _dt(str(value) if value else None)
+    return dt.strftime("%d.%m.%Y") if dt else ""
 
 
 def _late_by_calendar_day(
@@ -263,6 +290,47 @@ def _load_production_orders(session: requests.Session, order_keys: set[str]) -> 
     return out
 
 
+def _survey_doc_title(entity: str, row: dict) -> str:
+    number = str(row.get("Number") or "").strip()
+    doc_date = _fmt_ru_date(row.get("Date"))
+    label = SURVEY_DOC_LABELS.get(entity, entity.replace("Document_", ""))
+    title = label
+    if number:
+        title = f"{title} №{number}"
+    if doc_date:
+        title = f"{title} от {doc_date}"
+    return title
+
+
+def _load_survey_titles(session: requests.Session, survey_keys: set[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    keys = sorted(key for key in survey_keys if key and key != EMPTY_GUID)
+    if not keys:
+        return out
+
+    select = "Ref_Key,Number,Date"
+    for entity in SURVEY_DOC_TYPES:
+        missing = [key for key in keys if key not in out]
+        if not missing:
+            break
+        for i in range(0, len(missing), 25):
+            batch = missing[i:i + 25]
+            flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in batch)
+            query = (
+                "$format=json"
+                f"&$select={quote(select, safe=',_')}"
+                f"&$filter={quote(flt, safe='')}"
+            )
+            rows, status, _error = _odata_rows(session, entity, query, label=f"METD-M1/survey/{entity}")
+            if status is None or not (200 <= status < 300):
+                continue
+            for row in rows:
+                key = str(row.get("Ref_Key") or "").strip()
+                if key:
+                    out[key] = _survey_doc_title(entity, row)
+    return out
+
+
 def _month_row(year: int, month: int) -> dict:
     period_start, period_end = _month_bounds(year, month)
     current_dt = datetime.now()
@@ -294,6 +362,7 @@ def _month_row(year: int, month: int) -> dict:
         if production_order_keys
         else {}
     )
+    survey_keys_for_late_rows: set[str] = set()
     on_time = 0
     late = 0
     skipped_wrong_department = 0
@@ -313,29 +382,37 @@ def _month_row(year: int, month: int) -> dict:
             on_time += 1
         order_key = str(schedule.get("ЗаказНаПроизводство_Key") or "").strip()
         production_order = production_orders.get(order_key) or {}
+        survey_key = str(production_order.get("ТД_ОпросныйЛист") or "").strip()
         if is_late:
+            if survey_key and survey_key != EMPTY_GUID:
+                survey_keys_for_late_rows.add(survey_key)
             late_stage_rows.append({
                 "Этап": stage.get("Number") or key,
-                "Начало": str(schedule.get("Начало") or "")[:19],
-                "Окончание": str(schedule.get("Окончание") or "")[:19],
-                "ЭтапФактическоеОкончание": str(stage.get("ФактическоеОкончаниеЭтапа") or "")[:19],
+                "Начало": _fmt_ru_date(schedule.get("Начало")),
+                "Окончание": _fmt_ru_date(schedule.get("Окончание")),
+                "ЭтапФактическоеОкончание": _fmt_ru_date(stage.get("ФактическоеОкончаниеЭтапа")),
                 "ЗаказНаПроизводствоТД_ОпросныйЛист": (
-                    str(production_order.get("ТД_ОпросныйЛист") or "")
-                    if production_order.get("ТД_ОпросныйЛист") != EMPTY_GUID
-                    else ""
+                    survey_key if survey_key and survey_key != EMPTY_GUID else ""
                 ),
                 "stage_key": key,
                 "production_order_key": order_key,
+                "survey_key": survey_key if survey_key != EMPTY_GUID else "",
             })
         details.append({
             "stage_key": key,
             "stage_number": stage.get("Number"),
-            "plan_start": str(schedule.get("Начало") or "")[:19],
-            "plan_end": str(schedule.get("Окончание") or "")[:19],
-            "fact_end": str(stage.get("ФактическоеОкончаниеЭтапа") or "")[:19],
+            "plan_start": _fmt_ru_date(schedule.get("Начало")),
+            "plan_end": _fmt_ru_date(schedule.get("Окончание")),
+            "fact_end": _fmt_ru_date(stage.get("ФактическоеОкончаниеЭтапа")),
             "late": is_late,
             "production_order_key": order_key,
         })
+
+    survey_titles = _load_survey_titles(session, survey_keys_for_late_rows)
+    for row in late_stage_rows:
+        survey_key = row.get("survey_key") or ""
+        if survey_key:
+            row["ЗаказНаПроизводствоТД_ОпросныйЛист"] = survey_titles.get(survey_key) or survey_key
 
     total = on_time + late
     pct = round((on_time / total) * 100, 2) if total else None
@@ -364,6 +441,7 @@ def _month_row(year: int, month: int) -> dict:
             "population_schedule_rows": len(population_rows),
             "stage_docs_loaded": len(stages),
             "production_orders_loaded": len(production_orders),
+            "survey_titles_loaded": len(survey_titles),
             "skipped_wrong_department": skipped_wrong_department,
             "query_protocol": query_protocol,
             "details_sample": details[:100],

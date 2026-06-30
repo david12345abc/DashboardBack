@@ -3344,9 +3344,18 @@ def _build_kpi_entry(
         entry['monthly_data'] = data.get('months') or []
         entry['quarterly_data'] = data.get('quarterly_data') or []
         entry['yearly_data'] = data.get('yearly_data') or []
-        entry['last_full_month_row'] = data.get('last_full_month_row')
+        selected_row = pick_monthly_row_for_period(entry['monthly_data'], ref_y, ref_m)
+        entry['last_full_month_row'] = selected_row or data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
-        entry['kpi_period'] = data.get('kpi_period')
+        if selected_row:
+            entry['kpi_period'] = {
+                'type': 'current_month',
+                'year': selected_row.get('year', ref_y),
+                'month': selected_row.get('month', ref_m),
+                'month_name': selected_row.get('month_name'),
+            }
+        else:
+            entry['kpi_period'] = data.get('kpi_period')
         return entry
 
     if kpi_id == 'GK-M1':
@@ -3557,9 +3566,18 @@ def _build_kpi_entry(
         entry['monthly_data'] = data.get('months') or []
         entry['quarterly_data'] = data.get('quarterly_data') or []
         entry['yearly_data'] = data.get('yearly_data') or []
-        entry['last_full_month_row'] = data.get('last_full_month_row')
+        selected_row = pick_monthly_row_for_period(entry['monthly_data'], ref_y, ref_m)
+        entry['last_full_month_row'] = selected_row or data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
-        entry['kpi_period'] = data.get('kpi_period')
+        if selected_row:
+            entry['kpi_period'] = {
+                'type': 'current_month',
+                'year': selected_row.get('year', ref_y),
+                'month': selected_row.get('month', ref_m),
+                'month_name': selected_row.get('month_name'),
+            }
+        else:
+            entry['kpi_period'] = data.get('kpi_period')
         return entry
 
     if kpi_id == 'OD-M3.2':
@@ -3649,9 +3667,18 @@ def _build_kpi_entry(
         entry['monthly_data'] = data.get('months') or []
         entry['quarterly_data'] = data.get('quarterly_data') or []
         entry['yearly_data'] = data.get('yearly_data') or []
-        entry['last_full_month_row'] = data.get('last_full_month_row')
+        selected_row = pick_monthly_row_for_period(entry['monthly_data'], ref_y, ref_m)
+        entry['last_full_month_row'] = selected_row or data.get('last_full_month_row')
         entry['ytd'] = data.get('ytd') or {}
-        entry['kpi_period'] = data.get('kpi_period')
+        if selected_row:
+            entry['kpi_period'] = {
+                'type': 'current_month',
+                'year': selected_row.get('year', ref_y),
+                'month': selected_row.get('month', ref_m),
+                'month_name': selected_row.get('month_name'),
+            }
+        else:
+            entry['kpi_period'] = data.get('kpi_period')
         return entry
 
     if kpi_id == 'PD-Q1':

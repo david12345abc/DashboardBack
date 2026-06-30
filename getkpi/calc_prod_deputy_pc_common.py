@@ -143,7 +143,14 @@ def aggregate_rows(months_out: list[dict]) -> tuple[list[dict], list[dict]]:
 def build_payload(source_tag: str, shop: ShopKey, ref_year: int, ref_month: int, months_out: list[dict]) -> dict:
     today = date.today()
     with_data = [row for row in months_out if row.get("has_data")]
-    last_data_row = with_data[-1] if with_data else (months_out[-1] if months_out else None)
+    selected_month_row = next(
+        (
+            row for row in months_out
+            if row.get("year") == ref_year and row.get("month") == ref_month
+        ),
+        None,
+    )
+    last_data_row = selected_month_row or (with_data[-1] if with_data else (months_out[-1] if months_out else None))
     total_plan = sum(float(row.get("plan") or 0) for row in months_out if row.get("plan") is not None)
     total_fact = sum(float(row.get("fact") or 0) for row in months_out)
     quarterly_data, yearly_data = aggregate_rows(months_out)
@@ -167,7 +174,7 @@ def build_payload(source_tag: str, shop: ShopKey, ref_year: int, ref_month: int,
             "values_unit": "руб." if months_out else None,
         },
         "kpi_period": {
-            "type": "last_full_month",
+            "type": "current_month",
             "year": (last_data_row or {}).get("year", ref_year),
             "month": (last_data_row or {}).get("month", ref_month),
             "month_name": (last_data_row or {}).get("month_name", MONTH_RU[ref_month].lower()),
