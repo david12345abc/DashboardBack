@@ -1,6 +1,7 @@
 import json
 import logging
 import calendar
+import copy
 import random
 import re
 import threading
@@ -1257,6 +1258,8 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
         cache_files = [cache_manager.CACHE_DIR / f'metrolog_turnover_q2_ytd_{ref_y}_{ref_m:02d}.json']
     elif kid == 'METD-Q3':
         cache_files = [cache_manager.CACHE_DIR / f'metrolog_certification_projects_ytd_{ref_y}_{ref_m:02d}.json']
+    elif kid.startswith('PD-'):
+        cache_files = _prod_deputy_cache_files_for_kpi(kid, ref_y, ref_m)
     elif kid == 'KD-T-OVERDUE':
         from . import calc_debitorka
 
@@ -1500,6 +1503,8 @@ def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int 
 
         paths.append(calc_debitorka.overdue_detail_cache_path(ref_y, ref_m))
         paths.append(cd / f'debitorka_monthly_{ref_y}_{ref_m:02d}.json')
+    elif kid.startswith('PD-'):
+        paths.extend(_prod_deputy_cache_files_for_kpi(kid, ref_y, ref_m))
 
     if kid in {'METD-M1', 'МЕТ-M1', 'METD-M3.B', 'METD-M3.F', 'METD-Q1', 'MET-Q4-1', 'METD-Q2', 'METD-Q3'}:
         paths.append(cd / f'chief_metrolog_payload_{ref_y}_{ref_m:02d}.json')
@@ -3474,6 +3479,8 @@ def _build_universal_payload(
 
     if _is_chief_metrolog_department(dept):
         _enrich_chief_metrolog_table_cache_metadata(tablitsy, ref_y, ref_m)
+    if _is_prod_deputy_department(dept):
+        _enrich_prod_deputy_table_cache_metadata(tablitsy, ref_y, ref_m)
 
     result = {
         'month': ref_m,
@@ -3489,6 +3496,7 @@ def _build_universal_payload(
 
 
 CHIEF_METROLOG_PAYLOAD_CACHE_VERSION = 1
+PROD_DEPUTY_PAYLOAD_CACHE_VERSION = 1
 
 
 CHIEF_METROLOG_TABLE_CACHE_KPI_IDS = {
@@ -3523,6 +3531,11 @@ def _chief_metrolog_payload_cache_path(ref_y: int, ref_m: int) -> Path:
     return cache_manager.CACHE_DIR / f"chief_metrolog_payload_{int(ref_y)}_{int(ref_m):02d}.json"
 
 
+def _prod_deputy_payload_cache_path(ref_y: int, ref_m: int) -> Path:
+    cache_manager.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return cache_manager.CACHE_DIR / f"prod_deputy_payload_{int(ref_y)}_{int(ref_m):02d}.json"
+
+
 def _mark_payload_cache_refreshing(payload: dict) -> dict:
     payload = dict(payload)
     payload['cache_refresh_status'] = 'running'
@@ -3535,6 +3548,20 @@ def _mark_payload_cache_refreshing(payload: dict) -> dict:
     return payload
 
 
+def _payload_without_cache_refresh_status(payload: dict) -> dict:
+    """Убрать transient running-статусы перед сохранением snapshot в файл."""
+    clean = copy.deepcopy(payload)
+    if isinstance(clean, dict):
+        clean.pop('cache_refresh_status', None)
+        for tile in (clean.get('Плитки') or {}).get('items') or []:
+            if isinstance(tile, dict):
+                tile.pop('cache_refresh_status', None)
+        for table in (clean.get('Таблицы') or {}).values():
+            if isinstance(table, dict):
+                table.pop('cache_refresh_status', None)
+    return clean
+
+
 def _unwrap_chief_metrolog_payload_cache(raw: dict) -> dict:
     if (
         isinstance(raw, dict)
@@ -3543,6 +3570,95 @@ def _unwrap_chief_metrolog_payload_cache(raw: dict) -> dict:
     ):
         return _mark_payload_cache_refreshing(raw['payload'])
     return raw
+
+
+def _prod_deputy_cache_files_for_kpi(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
+    kid = _normalize_dashboard_kpi_id(kpi_id)
+    cd = cache_manager.CACHE_DIR
+    paths: list[Path] = []
+    if kid.startswith('PD-M1.1'):
+        from . import calc_prod_deputy_output
+        paths.append(calc_prod_deputy_output.cache_path('pc1', ref_y, ref_m))
+    elif kid.startswith('PD-M1.2'):
+        from . import calc_prod_deputy_output
+        paths.append(calc_prod_deputy_output.cache_path('pc2', ref_y, ref_m))
+    elif kid == 'PD-M2':
+        paths.append(cd / f"otif_vypusk_prod_monthly_{ref_y}_{ref_m:02d}.json")
+    elif kid == 'PD-M3.B1':
+        from .calc_prod_deputy_pc_common import cache_path as pc_cache_path
+        paths.append(pc_cache_path('budget', 'pc1', ref_y, ref_m))
+    elif kid == 'PD-M3.B2':
+        from .calc_prod_deputy_pc_common import cache_path as pc_cache_path
+        paths.append(pc_cache_path('budget', 'pc2', ref_y, ref_m))
+    elif kid == 'PD-M3.F1':
+        from .calc_prod_deputy_pc_common import cache_path as pc_cache_path
+        paths.append(pc_cache_path('fot', 'pc1', ref_y, ref_m))
+    elif kid == 'PD-M3.F2':
+        from .calc_prod_deputy_pc_common import cache_path as pc_cache_path
+        paths.append(pc_cache_path('fot', 'pc2', ref_y, ref_m))
+    elif kid == 'PD-Q1':
+        from . import calc_prod_deputy_projects
+        paths.append(calc_prod_deputy_projects.CACHE_PATH)
+    elif kid == 'PD-Q3':
+        from . import calc_prod_deputy_projects
+        paths.append(calc_prod_deputy_projects.CACHE_PATH)
+    elif kid == 'PD-Q2.1':
+        from . import calc_prod_deputy_turnover
+        paths.append(calc_prod_deputy_turnover.cache_path('pc1', ref_y, ref_m))
+    elif kid == 'PD-Q2.2':
+        from . import calc_prod_deputy_turnover
+        paths.append(calc_prod_deputy_turnover.cache_path('pc2', ref_y, ref_m))
+    return paths
+
+
+PROD_DEPUTY_TABLE_CACHE_KPI_IDS = {
+    'PD-T-Q1-DEVIATIONS': 'PD-Q1',
+    'PD-T-Q3-IMPROVEMENTS': 'PD-Q3',
+}
+
+
+def _enrich_prod_deputy_table_cache_metadata(tables: dict, ref_y: int, ref_m: int) -> None:
+    if not isinstance(tables, dict):
+        return
+    for table_key, table in tables.items():
+        if not isinstance(table, dict):
+            continue
+        kpi_id = PROD_DEPUTY_TABLE_CACHE_KPI_IDS.get(str(table_key).strip())
+        if not kpi_id:
+            continue
+        table['cache_refresh_kpi_id'] = kpi_id
+        table['cache_updated_at'] = _tile_cache_updated_at(kpi_id, ref_y, ref_m)
+        if cache_manager.is_any_cache_path_refreshing(
+            _prod_deputy_cache_files_for_kpi(kpi_id, ref_y, ref_m),
+        ):
+            table['cache_refresh_status'] = 'running'
+
+
+def _prod_deputy_payload_with_active_refresh_status(payload: dict, ref_y: int, ref_m: int) -> dict:
+    if not isinstance(payload, dict):
+        return payload
+    cache_path = _prod_deputy_payload_cache_path(ref_y, ref_m)
+    payload_refreshing = cache_manager.is_cache_path_refreshing(cache_path)
+    next_payload = dict(payload)
+    any_refreshing = payload_refreshing
+    for tile in (next_payload.get('Плитки') or {}).get('items') or []:
+        if not isinstance(tile, dict):
+            continue
+        kpi_id = str(tile.get('kpi_id') or '').strip()
+        tile_refreshing = payload_refreshing or cache_manager.is_any_cache_path_refreshing(
+            _prod_deputy_cache_files_for_kpi(kpi_id, ref_y, ref_m),
+        )
+        if tile_refreshing:
+            tile['cache_refresh_status'] = 'running'
+            any_refreshing = True
+    if payload_refreshing:
+        for table in (next_payload.get('Таблицы') or {}).values():
+            if isinstance(table, dict):
+                table['cache_refresh_status'] = 'running'
+    _enrich_prod_deputy_table_cache_metadata(next_payload.get('Таблицы') or {}, ref_y, ref_m)
+    if any_refreshing:
+        next_payload['cache_refresh_status'] = 'running'
+    return next_payload
 
 
 def _load_fresh_chief_metrolog_payload_cache(ref_y: int, ref_m: int) -> dict | None:
@@ -3563,14 +3679,33 @@ def _load_fresh_chief_metrolog_payload_cache(ref_y: int, ref_m: int) -> dict | N
     return None
 
 
+def _load_fresh_prod_deputy_payload_cache(ref_y: int, ref_m: int) -> dict | None:
+    path = _prod_deputy_payload_cache_path(ref_y, ref_m)
+    if not path.exists():
+        return None
+    try:
+        with path.open('r', encoding='utf-8') as f:
+            raw = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        raw.get('cache_version') == PROD_DEPUTY_PAYLOAD_CACHE_VERSION
+        and raw.get('cache_date') == date.today().isoformat()
+        and isinstance(raw.get('payload'), dict)
+    ):
+        return _prod_deputy_payload_with_active_refresh_status(raw['payload'], ref_y, ref_m)
+    return None
+
+
 def _save_chief_metrolog_payload_cache(ref_y: int, ref_m: int, payload: dict) -> None:
     try:
+        clean_payload = _payload_without_cache_refresh_status(payload)
         _chief_metrolog_payload_cache_path(ref_y, ref_m).write_text(
             json.dumps(
                 {
                     'cache_version': CHIEF_METROLOG_PAYLOAD_CACHE_VERSION,
                     'cache_date': date.today().isoformat(),
-                    'payload': payload,
+                    'payload': clean_payload,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -3581,7 +3716,38 @@ def _save_chief_metrolog_payload_cache(ref_y: int, ref_m: int, payload: dict) ->
         logger.exception("Не удалось сохранить snapshot payload главного метролога")
 
 
+def _save_prod_deputy_payload_cache(ref_y: int, ref_m: int, payload: dict) -> None:
+    try:
+        clean_payload = _payload_without_cache_refresh_status(payload)
+        _prod_deputy_payload_cache_path(ref_y, ref_m).write_text(
+            json.dumps(
+                {
+                    'cache_version': PROD_DEPUTY_PAYLOAD_CACHE_VERSION,
+                    'cache_date': date.today().isoformat(),
+                    'payload': clean_payload,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding='utf-8',
+        )
+    except OSError:
+        logger.exception("Не удалось сохранить snapshot payload заместителя операционного директора")
+
+
 def _chief_metrolog_ref_period(month: int | None, year: int | None) -> tuple[int, int]:
+    today = date.today()
+    if year is not None and month is not None:
+        return int(year), max(1, min(12, int(month)))
+    if year is not None:
+        ref_y = int(year)
+        return ref_y, today.month if ref_y == today.year else 12
+    if month is not None:
+        return today.year, max(1, min(12, int(month)))
+    return today.year, today.month
+
+
+def _prod_deputy_ref_period(month: int | None, year: int | None) -> tuple[int, int]:
     today = date.today()
     if year is not None and month is not None:
         return int(year), max(1, min(12, int(month)))
@@ -3614,8 +3780,73 @@ def _build_chief_metrolog_payload_fresh(
     )
     ref_y = int(payload.get('year') or _chief_metrolog_ref_period(month, year)[0])
     ref_m = int(payload.get('month') or _chief_metrolog_ref_period(month, year)[1])
-    _save_chief_metrolog_payload_cache(ref_y, ref_m, payload)
-    return payload
+    clean_payload = _payload_without_cache_refresh_status(payload)
+    _save_chief_metrolog_payload_cache(ref_y, ref_m, clean_payload)
+    return clean_payload
+
+
+def _build_prod_deputy_payload_fresh(
+    requested_dept: str,
+    kpis: list[dict],
+    *,
+    month: int | None = None,
+    year: int | None = None,
+    include_debug: bool = False,
+    aggregation_mode: str | None = None,
+    selected_quarters: list[int] | None = None,
+) -> dict:
+    payload = _build_universal_payload(
+        requested_dept,
+        kpis,
+        month=month,
+        year=year,
+        include_debug=include_debug,
+        aggregation_mode=aggregation_mode,
+        selected_quarters=selected_quarters,
+    )
+    ref_y = int(payload.get('year') or _prod_deputy_ref_period(month, year)[0])
+    ref_m = int(payload.get('month') or _prod_deputy_ref_period(month, year)[1])
+    clean_payload = _payload_without_cache_refresh_status(payload)
+    _save_prod_deputy_payload_cache(ref_y, ref_m, clean_payload)
+    return clean_payload
+
+
+def _build_prod_deputy_payload(
+    requested_dept: str,
+    kpis: list[dict],
+    *,
+    month: int | None = None,
+    year: int | None = None,
+    include_debug: bool = False,
+    aggregation_mode: str | None = None,
+    selected_quarters: list[int] | None = None,
+) -> dict:
+    ref_y, ref_m = _prod_deputy_ref_period(month, year)
+    cache_key = f"prod_deputy_payload_{ref_y}_{ref_m:02d}"
+    cache_path = _prod_deputy_payload_cache_path(ref_y, ref_m)
+    cache_manager.register_cache_path(cache_key, cache_path)
+    if not cache_manager.is_force_compute_context():
+        cached_payload = _load_fresh_prod_deputy_payload_cache(ref_y, ref_m)
+        if cached_payload is not None:
+            return cached_payload
+    raw = cache_manager.locked_call(
+        cache_key,
+        _build_prod_deputy_payload_fresh,
+        requested_dept,
+        kpis,
+        month=month,
+        year=year,
+        include_debug=include_debug,
+        aggregation_mode=aggregation_mode,
+        selected_quarters=selected_quarters,
+    )
+    if (
+        isinstance(raw, dict)
+        and raw.get('cache_version') == PROD_DEPUTY_PAYLOAD_CACHE_VERSION
+        and isinstance(raw.get('payload'), dict)
+    ):
+        return _mark_payload_cache_refreshing(raw['payload'])
+    return raw
 
 
 def _build_chief_metrolog_payload(
@@ -4747,6 +4978,21 @@ def get_kpi(request):
             json_dumps_params={'ensure_ascii': False},
         )
 
+    if _is_prod_deputy_department(requested_dept):
+        payload = _build_prod_deputy_payload(
+            requested_dept,
+            kpis,
+            month=req_month,
+            year=req_year,
+            include_debug=_wants_tile_debug(request),
+            aggregation_mode=aggregation_mode,
+            selected_quarters=selected_quarters,
+        )
+        return JsonResponse(
+            {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+            json_dumps_params={'ensure_ascii': False},
+        )
+
     payload = _build_universal_payload(
         requested_dept,
         kpis,
@@ -4911,6 +5157,20 @@ def get_all_departments(request):
         req_month_all = int(month_param) if month_param else None
         req_year_all = int(year_param) if year_param else None
         aggregation_mode, selected_quarters = _request_aggregation_params(request)
+        if _is_prod_deputy_department(requested_dept):
+            payload = _build_prod_deputy_payload(
+                requested_dept,
+                kpis,
+                month=req_month_all,
+                year=req_year_all,
+                include_debug=_wants_tile_debug(request),
+                aggregation_mode=aggregation_mode,
+                selected_quarters=selected_quarters,
+            )
+            return JsonResponse(
+                {'department': requested_dept, 'kpi_count': payload['Плитки']['count'], **payload},
+                json_dumps_params={'ensure_ascii': False},
+            )
         payload = _build_universal_payload(
             requested_dept,
             kpis,
@@ -5011,6 +5271,17 @@ def get_all_departments(request):
             dg = dept_guid_for_kpi_key(ck)
             payload = _build_komdir_style_payload(ck, ck_kpis, request, dept_guid=dg)
             dept_protocol_tables.enrich_payload_tables(payload, dept)
+            return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
+        if _is_prod_deputy_department(dept):
+            payload = _build_prod_deputy_payload(
+                dept,
+                kpis,
+                month=req_month_all,
+                year=req_year_all,
+                include_debug=include_debug_all,
+                aggregation_mode=aggregation_mode_all,
+                selected_quarters=selected_quarters_all,
+            )
             return {'department': dept, 'kpi_count': payload['Плитки']['count'], **payload}
         payload = _build_universal_payload(
             dept,

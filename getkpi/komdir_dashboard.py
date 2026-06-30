@@ -72,7 +72,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 1
+KOMDIR_PAYLOAD_CACHE_VERSION = 2
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -313,10 +313,11 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
     plans_payload — результат calc_plan.get_plans_monthly().
     """
     plans_months = (plans_payload or {}).get('months', [])
+    dept_lock_suffix = f"_{_payload_cache_dept_part(dept_guid)}" if dept_guid else ""
 
     if kpi_id == 'KD-M1':
         dengi = cache_manager.locked_call(
-            f'dengi_{ref_y}_{series_m}',
+            f'dengi_{ref_y}_{series_m}{dept_lock_suffix}',
             calc_dengi_fact.get_dengi_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
@@ -328,7 +329,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M2':
         otg = cache_manager.locked_call(
-            f'otgruzki_{ref_y}_{series_m}',
+            f'otgruzki_{ref_y}_{series_m}{dept_lock_suffix}',
             calc_otgruzki_fact.get_otgruzki_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
@@ -340,7 +341,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M3':
         dog = cache_manager.locked_call(
-            f'dogovory_{ref_y}_{series_m}',
+            f'dogovory_{ref_y}_{series_m}{dept_lock_suffix}',
             calc_dogovory_fact.get_dogovory_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
@@ -430,7 +431,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M8':
         fot = cache_manager.locked_call(
-            f'fot_{ref_y}_{series_m}',
+            f'fot_{ref_y}_{series_m}{dept_lock_suffix}',
             calc_fot.get_fot_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
@@ -478,7 +479,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M11':
         tek = cache_manager.locked_call(
-            f'tekuchest_{ref_y}_{series_m}',
+            f'tekuchest_{ref_y}_{series_m}{dept_lock_suffix}',
             calc_tekuchest.get_tekuchest_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
@@ -526,7 +527,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M7':
         rash = cache_manager.locked_call(
-            f'rashody_{ref_y}_{series_m}',
+            f'rashody_{ref_y}_{series_m}{dept_lock_suffix}',
             calc_rashody.get_rashody_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
@@ -574,7 +575,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M9':
         kp = cache_manager.locked_call(
-            f'kp_price_{ref_y}_{series_m}',
+            f'kp_price_{ref_y}_{series_m}{dept_lock_suffix}',
             calc_kp_price.get_kp_price_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
@@ -620,7 +621,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M10':
         sla = cache_manager.locked_call(
-            f'tkp_sla_{ref_y}_{series_m}',
+            f'tkp_sla_{ref_y}_{series_m}{dept_lock_suffix}',
             calc_tkp_sla.get_tkp_sla_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
@@ -1583,8 +1584,9 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
         calc_debitorka.get_komdir_dz_monthly,
         year=ref_y, month=series_m, dept_name=dz_dept_name,
     )
+    dept_lock_suffix = f"_{_payload_cache_dept_part(dept_guid)}" if dept_guid else ""
     plans_payload = cache_manager.locked_call(
-        f'plans_{ref_y}_{series_m}',
+        f'plans_{ref_y}_{series_m}{dept_lock_suffix}',
         calc_plan.get_plans_monthly,
         year=ref_y, month=series_m, dept_guid=dept_guid,
     )
