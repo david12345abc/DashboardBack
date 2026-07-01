@@ -22,8 +22,8 @@ AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_SOURCE_TAG = "metrolog_fot_account26_v1"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "metrolog_fot_account26_v2_zero_is_real"
+CACHE_VERSION = 2
 
 ACCOUNT_26_ROOT = "fb2bde43-6250-11e7-812d-001e67112509"
 SUBCONTO_TYPE_COST = "fb2bdde9-6250-11e7-812d-001e67112509"
@@ -261,7 +261,7 @@ def compute_metrolog_fot_month(year: int, month: int) -> dict:
             "plan": plan,
             "fact": total_fact,
             "kpi_pct": round(total_fact / plan * 100, 1) if plan else None,
-            "has_data": records_taken > 0,
+            "has_data": True,
             "values_unit": "руб.",
             "matrix": matrix,
             "missing_combinations": missing_combinations,

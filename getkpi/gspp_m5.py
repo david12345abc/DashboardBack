@@ -18,13 +18,18 @@ from typing import Any
 from .cache_manager import locked_call
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from .gspp_q4 import get_manager_project_pairs, _project_display_name, _project_in_work_in_month
+from .gspp_q4 import (
+    get_manager_project_pairs,
+    _name_matches_nomenclature,
+    _project_display_name,
+    _project_in_work_in_month,
+)
 
 logger = logging.getLogger(__name__)
 
 GSPP_M5_CACHE_PREFIX = "gspp_m5_ytd"
-GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v5"
-GSPP_M5_DISK_VERSION = 5
+GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v6_nomenclature_only"
+GSPP_M5_DISK_VERSION = 6
 
 
 def _safe_float(value: Any) -> float | None:
@@ -126,6 +131,11 @@ def _budget_totals_for_month(
     month: int,
 ) -> tuple[float | None, float | None]:
     """Сумма plan/fact по проектам Q4-когорты, активным в месяце."""
+    fallback_plan = None
+    for _item, details in project_pairs:
+        fallback_plan = _safe_float((details.get("data_1c") or {}).get("byudzhet_plan"))
+        if fallback_plan is not None:
+            break
     plan_sum = 0.0
     fact_sum = 0.0
     has_plan = False
@@ -147,7 +157,7 @@ def _budget_totals_for_month(
             fact_sum += fact
             has_fact = True
     if not any_alive:
-        return None, None
+        return (round(fallback_plan, 2), 0.0) if fallback_plan is not None else (None, None)
     return (
         round(plan_sum, 2) if has_plan else None,
         round(fact_sum, 2) if has_fact else None,
@@ -172,6 +182,10 @@ def _build_gspp_m5_payload(year: int | None = None, month: int | None = None) ->
         if not project_pairs:
             debug["hint"] = err
         else:
+            project_pairs = [
+                pair for pair in project_pairs
+                if _name_matches_nomenclature(_project_display_name(pair[1], pair[0]))
+            ][:1]
             debug.update({
                 "status": "ok",
                 "projects_count": len(project_pairs),

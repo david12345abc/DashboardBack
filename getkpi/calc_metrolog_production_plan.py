@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
 EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v4_survey_titles"
-CACHE_VERSION = 4
+CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v5_zero_is_real"
+CACHE_VERSION = 5
 
 BASE = DEFAULT_BASE_URL.rstrip("/") + "/odata/standard.odata"
 if os.getenv("ONEC_BASE_URL"):
@@ -421,10 +421,10 @@ def _month_row(year: int, month: int) -> dict:
         "month": int(month),
         "year": int(year),
         "month_name": MONTH_NAMES.get(int(month), str(month)),
-        "plan": total if total else None,
-        "fact": on_time if total else None,
+        "plan": total,
+        "fact": on_time,
         "kpi_pct": pct,
-        "has_data": total > 0,
+        "has_data": True,
         "total_stages": total,
         "late_stages": late,
         "on_time_stages": on_time,

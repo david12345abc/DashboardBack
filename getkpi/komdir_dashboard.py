@@ -1017,8 +1017,8 @@ def _build_pie_charts(
 
 def _build_bar_chart(by_id: dict, tiles_data: dict,
                      ref_y: int, ref_m: int) -> dict:
-    """KD-C3: столбчатый — KPI за месяц для Деньги, Отгрузки, Договоры, Валовая прибыль."""
-    kids = ['KD-M1', 'KD-M2', 'KD-M3', 'KD-M6']
+    """KD-C3: столбчатый — KPI за месяц для Деньги, Отгрузки, Договоры."""
+    kids = ['KD-M1', 'KD-M2', 'KD-M3']
     categories = []
     plan_values = []
     fact_values = []
@@ -1048,7 +1048,7 @@ def _build_bar_chart(by_id: dict, tiles_data: dict,
 
     return {
         "kpi_id": "KD-C3",
-        "name": "KPI за месяц: Деньги, Отгрузки, Договоры, Валовая прибыль",
+        "name": "KPI за месяц: Деньги, Отгрузки, Договоры",
         "periodicity": "ежемесячно",
         "chart_type": "column_plan_fact_monthly",
         "chart_type_label": "Столбцы: план/факт за месяц",

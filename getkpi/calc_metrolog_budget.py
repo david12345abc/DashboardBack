@@ -27,8 +27,8 @@ from . import cache_manager
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_SOURCE_TAG = "metrolog_budget_paid_requests_v1"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "metrolog_budget_paid_requests_v2_zero_is_real"
+CACHE_VERSION = 2
 
 TARGET_CFO = "МС и Рем.участок"
 
@@ -326,7 +326,7 @@ def compute_metrolog_budget_month(year: int, month: int) -> dict:
             "plan": plan,
             "fact": round(total_fact, 2),
             "kpi_pct": round(total_fact / plan * 100, 1) if plan else None,
-            "has_data": bool(counted_requests),
+            "has_data": True,
             "values_unit": "руб.",
             "by_article": {key: round(value, 2) for key, value in by_article.items()},
             "missing_articles": [

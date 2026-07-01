@@ -3504,7 +3504,7 @@ def _build_universal_payload(
     return result
 
 
-CHIEF_METROLOG_PAYLOAD_CACHE_VERSION = 1
+CHIEF_METROLOG_PAYLOAD_CACHE_VERSION = 2
 PROD_DEPUTY_PAYLOAD_CACHE_VERSION = 1
 
 
@@ -3574,9 +3574,11 @@ def _payload_without_cache_refresh_status(payload: dict) -> dict:
 def _unwrap_chief_metrolog_payload_cache(raw: dict) -> dict:
     if (
         isinstance(raw, dict)
-        and raw.get('cache_version') == CHIEF_METROLOG_PAYLOAD_CACHE_VERSION
         and isinstance(raw.get('payload'), dict)
     ):
+        # locked_call может вернуть stale snapshot старой версии, пока новый payload
+        # пересчитывается в фоне. Для ответа разворачиваем его, но fresh-loader
+        # всё равно принимает только актуальную CHIEF_METROLOG_PAYLOAD_CACHE_VERSION.
         return _mark_payload_cache_refreshing(raw['payload'])
     return raw
 

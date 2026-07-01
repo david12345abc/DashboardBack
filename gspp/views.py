@@ -1,6 +1,7 @@
 """Склейка KPI дашборда ГСП для общего ``getkpi.views``."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from gspp.tkp_lifecycle import get_gspp_m1_ytd
@@ -106,6 +107,97 @@ def _merge_monthly(entry: dict[str, Any], payload: dict[str, Any]) -> None:
         entry["debug"] = payload["debug"]
 
 
+def _target_to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip().replace("\xa0", " ")
+    if not text:
+        return None
+    matches = re.findall(r"\d[\d\s]*(?:[,.]\d+)?", text)
+    if not matches:
+        return None
+    raw = matches[-1].replace(" ", "").replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _ensure_m5_zero_project_month(entry: dict[str, Any], *, year: int | None, month: int | None) -> None:
+    """Для ГСП-M5 отсутствие проектов = реальный факт 0, а не пустая плитка."""
+    from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+
+    ref_y, ref_m = normalize_rd_tile_period(year, month)
+    kper = entry.get("kpi_period") or {}
+    if isinstance(kper, dict):
+        ref_y = int(kper.get("year") or ref_y)
+        ref_m = max(1, min(12, int(kper.get("month") or ref_m)))
+
+    rows = [dict(row) for row in (entry.get("monthly_data") or []) if isinstance(row, dict)]
+    idx = next(
+        (
+            i for i, row in enumerate(rows)
+            if int(row.get("year") or ref_y) == ref_y and int(row.get("month") or 0) == ref_m
+        ),
+        -1,
+    )
+    row = rows[idx] if idx >= 0 else {
+        "month": ref_m,
+        "year": ref_y,
+        "month_name": MONTH_NAMES[ref_m],
+        "values_unit": "руб.",
+    }
+    if row.get("has_data") and row.get("plan") is not None and row.get("fact") is not None:
+        return
+
+    plan = row.get("plan")
+    if plan is None:
+        monthly_target = str(entry.get("monthly_target") or "")
+        plan = None if "%" in monthly_target else _target_to_float(monthly_target)
+    if plan is None:
+        yearly_plan = _target_to_float(entry.get("yearly_target"))
+        plan = round(yearly_plan / 12.0, 2) if yearly_plan is not None else 0.0
+
+    fact = 0.0 if row.get("fact") is None else row.get("fact")
+    try:
+        pct = round(float(fact) / float(plan) * 100, 2) if float(plan) > 0 else None
+    except (TypeError, ValueError):
+        pct = None
+
+    row.update({
+        "month": ref_m,
+        "year": ref_y,
+        "month_name": MONTH_NAMES[ref_m],
+        "plan": plan,
+        "fact": fact,
+        "kpi_pct": pct,
+        "has_data": True,
+        "values_unit": "руб.",
+    })
+    if idx >= 0:
+        rows[idx] = row
+    else:
+        rows.append(row)
+        rows.sort(key=lambda item: (int(item.get("year") or ref_y), int(item.get("month") or 0)))
+
+    entry["monthly_data"] = rows
+    entry["last_full_month_row"] = dict(row)
+    entry["ytd"] = {
+        "total_plan": row.get("plan"),
+        "total_fact": row.get("fact"),
+        "kpi_pct": row.get("kpi_pct"),
+        "months_with_data": sum(1 for item in rows if item.get("has_data")),
+        "months_total": len(rows),
+        "values_unit": "руб.",
+    }
+    entry["kpi_period"] = {
+        "type": "last_full_month",
+        "year": ref_y,
+        "month": ref_m,
+        "month_name": MONTH_NAMES[ref_m],
+    }
+
+
 def merge_kpi_entry_if_applicable(
     kpi_id: str,
     entry: dict[str, Any],
@@ -139,6 +231,7 @@ def merge_kpi_entry_if_applicable(
         if payload is None:
             return False
         _merge_monthly(entry, payload)
+        _ensure_m5_zero_project_month(entry, year=year, month=month)
         return True
 
     if _normalize_kpi_id(kpi_id) in GSPP_Q5_TILE_IDS:
