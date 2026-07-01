@@ -1062,6 +1062,9 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     ytd = entry.get('ytd') or {}
     kid = _normalize_dashboard_kpi_id(kpi.get('kpi_id'))
 
+    if kid in _qualdir_kpi_views.TILE_FACT_ONLY_IDS:
+        return None, None
+
     if kid == 'METD-Q2':
         fact = ytd.get('total_fact')
         plan = ytd.get('total_plan')
@@ -1838,11 +1841,6 @@ def _build_tile_item(
         tile['cache_refresh_status'] = 'running'
     if entry.get('last_full_month_row'):
         lfr = entry['last_full_month_row']
-        if kpi.get('kpi_id') == 'QD-Q1' and isinstance(lfr, dict):
-            lfr = {
-                **lfr,
-                'kpi_pct': _qd_q2_kpi_pct(lfr.get('plan'), lfr.get('fact')),
-            }
         if isinstance(lfr, dict):
             if _is_gspp_m1_tile(kpi) or _is_gspp_m2_tile(kpi):
                 if lfr.get('kpi_pct') is not None:
@@ -1887,6 +1885,8 @@ def _build_tile_item(
                         'kpi_pct': pct_lfr,
                         'color': _devdir_kpi_views.rag_devdir_plan_fact_pct(pct_lfr),
                     }
+            elif _kid_gspp in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:
+                lfr = _qualdir_kpi_views.enrich_qualdir_plan_fact_row(lfr)
         tile['last_full_month_row'] = _public_unit_row(lfr)
         if isinstance(lfr, dict):
             if 'project_deviation_rows' in lfr:
@@ -1895,12 +1895,9 @@ def _build_tile_item(
                 tile['max_allowed_delay_workdays'] = lfr.get('max_allowed_delay_workdays')
     if entry.get('monthly_data') is not None:
         raw_rows = entry.get('monthly_data') or []
-        if kpi.get('kpi_id') == 'QD-Q1':
+        if _kid_gspp in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:
             raw_rows = [
-                {
-                    **row,
-                    'kpi_pct': _qd_q2_kpi_pct(row.get('plan'), row.get('fact')),
-                }
+                _qualdir_kpi_views.enrich_qualdir_plan_fact_row(row)
                 if isinstance(row, dict)
                 else row
                 for row in raw_rows
@@ -2927,7 +2924,7 @@ def _build_universal_payload(
                     'kpi_pct': None,
                     'has_data': False,
                 }
-        if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10'}:
+        if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10', 'QD-Q1'}:
             lfr = entry.get('last_full_month_row') or {}
             if lfr.get('plan') is not None and (
                 not lm or (lm.get('plan') is None and lm.get('fact') is not None)
@@ -2962,7 +2959,7 @@ def _build_universal_payload(
                     tile['kinds'] = lm.get('kinds')
                 if lm.get('significant') is not None:
                     tile['significant'] = lm.get('significant')
-            if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10'}:
+            if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10', 'QD-Q1'}:
                 if lm.get('kpi_pct') is not None:
                     tile['kpi_pct'] = lm.get('kpi_pct')
                     tile['color'] = _qualdir_kpi_views.rag_plan_fact_pct(float(lm['kpi_pct']))
@@ -3103,6 +3100,8 @@ def _build_universal_payload(
             tile['debug'] = entry['debug']
 
         _devdir_kpi_views.sync_devdir_piece_tile_color(tile)
+        _qualdir_kpi_views.sync_qualdir_plan_fact_tile_color(tile)
+        _qualdir_kpi_views.clear_qualdir_fact_only_tile_rag(tile)
 
         plitki_items.append(tile)
 
