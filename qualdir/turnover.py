@@ -66,6 +66,8 @@ def _qd_q2_kpi_pct(plan: Any, fact: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     if pv <= 0:
+        if fv <= 0:
+            return 100.0
         return None
     return round(fv / pv * 100.0, 1)
 
