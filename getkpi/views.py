@@ -743,6 +743,9 @@ def _is_c1auto_department(dept: str | None) -> bool:
     return _c1auto_kpi_views.is_c1auto_department(dept)
 
 
+DEVDIR_GENERATED_TILE_IDS = frozenset({'RD-M2', 'RD-Q1', 'RD-Y1'})
+
+
 def _thresholds_block(kpi: dict) -> dict:
     return {
         'green': kpi.get('green_threshold'),
@@ -1822,6 +1825,8 @@ def _build_tile_item(
         tile['rag_direction'] = 'lower_better'
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
+    if entry.get('generated_data'):
+        tile['generated_data'] = True
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
         tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
     tile['cache_updated_at'] = _tile_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
@@ -4762,6 +4767,8 @@ def _build_kpi_entry(
             entry['data_granularity'] = 'quarterly'
             entry['quarterly_data'] = [qrow]
             entry['kpi_period'] = kper
+            if kpi_id in DEVDIR_GENERATED_TILE_IDS:
+                entry['generated_data'] = True
             fp = qrow.get('fact_turnover_pct')
             if fp is not None:
                 entry['ytd'] = {
@@ -4784,6 +4791,8 @@ def _build_kpi_entry(
             entry['data_granularity'] = 'yearly'
             entry['yearly_data'] = [yrow]
             entry['kpi_period'] = kper
+            if kpi_id in DEVDIR_GENERATED_TILE_IDS:
+                entry['generated_data'] = True
             entry['ytd'] = {
                 'total_plan': yrow['plan'],
                 'total_fact': yrow['fact'],
@@ -4808,6 +4817,8 @@ def _build_kpi_entry(
                 ref_year=year,
                 ref_month=month,
             )
+            if kpi_id in DEVDIR_GENERATED_TILE_IDS:
+                entry['generated_data'] = True
             months = entry['monthly_data']
             with_data = [r for r in months if r.get('kpi_pct') is not None]
             last = months[-1] if months else None
