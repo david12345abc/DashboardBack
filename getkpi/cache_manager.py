@@ -958,6 +958,52 @@ def warm_all_caches_all_months(*, force: bool = False):
     _run_warm_cycle(all_months=True, force=force, label='all-months')
 
 
+def _run_warm_period_cycle(ref_y: int, ref_m: int, *, force: bool = False, label: str = 'period') -> None:
+    """Один цикл прогрева за явно выбранный месяц."""
+    global _warming
+
+    if not _warm_cycle_lock.acquire(blocking=False):
+        logger.warning("cache_manager: warm cycle already running, skip (%s)", label)
+        return
+
+    _warming = True
+    try:
+        tasks = _build_warm_tasks(int(ref_y), max(1, min(12, int(ref_m))))
+        logger.info(
+            "cache_manager: warming %d cache tasks (%04d-%02d, %s)",
+            len(tasks),
+            int(ref_y),
+            max(1, min(12, int(ref_m))),
+            label,
+        )
+        _prefetch_gspp_projects()
+        _run_warm_tasks(tasks, force=force)
+        logger.info("cache_manager: warming complete (%s)", label)
+    finally:
+        _warming = False
+        _warm_cycle_lock.release()
+
+
+def start_period_warming_if_stale(ref_y: int, ref_m: int) -> dict[str, Any]:
+    """Запустить фоновый прогрев выбранного месяца, если есть stale/missing кэши."""
+    y = int(ref_y)
+    m = max(1, min(12, int(ref_m)))
+    tasks = _build_warm_tasks(y, m)
+    if not any(not is_cache_fresh(path) for _key, path, _fn in tasks):
+        return {'started': False, 'reason': 'fresh', 'year': y, 'month': m}
+    if _warm_cycle_lock.locked():
+        return {'started': False, 'reason': 'already_running', 'year': y, 'month': m}
+
+    t = threading.Thread(
+        target=lambda: _run_warm_period_cycle(y, m, force=True, label='first-access'),
+        name=f'cache-warmer-first-access-{y}-{m:02d}',
+        daemon=True,
+    )
+    t.start()
+    logger.info("cache_manager: first-access warm queued for %04d-%02d", y, m)
+    return {'started': True, 'year': y, 'month': m}
+
+
 def _seconds_until_next_midnight() -> float:
     now = datetime.now()
     next_midnight = (now + timedelta(days=1)).replace(

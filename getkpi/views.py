@@ -27,6 +27,7 @@ from . import (
     calc_tekuchest_opdir,
     calc_vyruchka_opdir,
     chairman_data,
+    commercial_cache_scheduler,
     denzhi_dz,
     dept_budget_m3,
     dept_dz,
@@ -2912,7 +2913,15 @@ def _build_universal_payload(
                 else {}
             )
             if not lm:
-                lm = entry.get('last_full_month_row') or {}
+                lm = {
+                    'year': tile_lm_y,
+                    'month': tile_lm_m,
+                    'month_name': MONTH_NAMES.get(tile_lm_m, str(tile_lm_m)),
+                    'plan': None,
+                    'fact': None,
+                    'kpi_pct': None,
+                    'has_data': False,
+                }
         if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10'}:
             lfr = entry.get('last_full_month_row') or {}
             if lfr.get('plan') is not None and (
@@ -4854,6 +4863,7 @@ def get_kpi(request):
     req_month = int(month_param) if month_param else None
     req_year = int(year_param) if year_param else None
     aggregation_mode, selected_quarters = _request_aggregation_params(request)
+    is_own_dashboard = str(requested_dept).strip() == str(user_department).strip()
 
     ck = commercial_kpi_key(requested_dept)
     if ck is None:
@@ -4876,6 +4886,15 @@ def get_kpi(request):
                 'error': f'No KPIs configured for department key "{ck}"',
             }, status=404)
         dg = dept_guid_for_kpi_key(ck)
+        if is_own_dashboard:
+            try:
+                commercial_cache_scheduler.start_first_access_refresh_if_stale(
+                    month=req_month,
+                    year=req_year,
+                    payload_departments=[ck],
+                )
+            except Exception:
+                logger.exception("commercial first-access cache refresh failed [%s]", requested_dept)
         payload = komdir_dashboard.build_komdir_payload(
             kpis, month=req_month, year=req_year, dept_guid=dg,
         )
@@ -4892,7 +4911,26 @@ def get_kpi(request):
             'available_departments': _get_departments(),
         }, status=404)
 
+    if is_own_dashboard and not _is_komdir_department(requested_dept):
+        try:
+            today = date.today()
+            cache_manager.start_period_warming_if_stale(
+                req_year if req_year is not None else today.year,
+                req_month if req_month is not None else today.month,
+            )
+        except Exception:
+            logger.exception("first-access cache warm failed [%s]", requested_dept)
+
     if _is_komdir_department(requested_dept):
+        if is_own_dashboard:
+            try:
+                commercial_cache_scheduler.start_first_access_refresh_if_stale(
+                    month=req_month,
+                    year=req_year,
+                    payload_departments=["коммерческий директор"],
+                )
+            except Exception:
+                logger.exception("commercial first-access cache refresh failed [%s]", requested_dept)
         payload = komdir_dashboard.build_komdir_payload(kpis, month=req_month, year=req_year)
         dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
         return JsonResponse(

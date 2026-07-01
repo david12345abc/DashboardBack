@@ -23,6 +23,7 @@ COMMERCIAL_CACHE_REFRESH_ENABLED = os.getenv("COMMERCIAL_CACHE_REFRESH_ENABLED",
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
 _run_lock = threading.Lock()
+_first_access_lock = threading.Lock()
 
 
 def _seconds_until_next_run(now: datetime | None = None) -> float:
@@ -38,10 +39,10 @@ def _seconds_until_next_run(now: datetime | None = None) -> float:
     return max(1.0, (target - now).total_seconds())
 
 
-def _commercial_period() -> tuple[int, int, int]:
+def _commercial_period(month: int | None = None, year: int | None = None) -> tuple[int, int, int]:
     from . import komdir_dashboard
 
-    ref_y, ref_m, series_m = komdir_dashboard._komdir_payload_period(None, None)
+    ref_y, ref_m, series_m = komdir_dashboard._komdir_payload_period(month, year)
     return ref_y, ref_m, series_m
 
 
@@ -162,6 +163,45 @@ def _commercial_payload_specs(ref_y: int, ref_m: int) -> list[tuple[str, str, st
     return specs
 
 
+def _filtered_payload_paths(ref_y: int, ref_m: int, departments: Iterable[str] | None = None) -> list[Path]:
+    wanted = {str(dep).strip().lower() for dep in departments or [] if str(dep).strip()}
+    paths: list[Path] = []
+    for department, _kpi_key, _dept_guid, path in _commercial_payload_specs(ref_y, ref_m):
+        if wanted and department.strip().lower() not in wanted:
+            continue
+        paths.append(path)
+    return paths
+
+
+def _commercial_cache_paths(
+    ref_y: int,
+    ref_m: int,
+    series_m: int,
+    *,
+    payload_departments: Iterable[str] | None = None,
+) -> list[Path]:
+    return [
+        path
+        for _key, path, _fn in _commercial_source_tasks(ref_y, ref_m, series_m)
+    ] + _filtered_payload_paths(ref_y, ref_m, payload_departments)
+
+
+def _has_stale_commercial_cache(
+    ref_y: int,
+    ref_m: int,
+    series_m: int,
+    *,
+    payload_departments: Iterable[str] | None = None,
+) -> bool:
+    paths = _commercial_cache_paths(
+        ref_y,
+        ref_m,
+        series_m,
+        payload_departments=payload_departments,
+    )
+    return any(not cache_manager.is_cache_fresh(path) for path in paths)
+
+
 def _rebuild_payload_snapshots(ref_y: int, ref_m: int, departments: Iterable[str] | None = None) -> None:
     from . import komdir_dashboard
     from . import views
@@ -192,6 +232,8 @@ def run_commercial_cache_refresh_once(
     task_keys: set[str] | None = None,
     rebuild_payloads: bool = True,
     payload_departments: Iterable[str] | None = None,
+    month: int | None = None,
+    year: int | None = None,
 ) -> dict[str, object]:
     """Запустить один цикл пересчёта коммерческих кэшей.
 
@@ -203,12 +245,12 @@ def run_commercial_cache_refresh_once(
         logger.warning("commercial cache scheduler: refresh already running, skip")
         return {"started": False, "reason": "already_running"}
     try:
-        ref_y, ref_m, series_m = _commercial_period()
+        ref_y, ref_m, series_m = _commercial_period(month, year)
         tasks = _commercial_source_tasks(ref_y, ref_m, series_m)
         if task_keys:
             wanted = {str(key).strip().lower() for key in task_keys}
             tasks = [task for task in tasks if any(token in task[0].lower() for token in wanted)]
-        payload_paths = [path for _department, _kpi_key, _dept_guid, path in _commercial_payload_specs(ref_y, ref_m)]
+        payload_paths = _filtered_payload_paths(ref_y, ref_m, payload_departments)
         logger.info(
             "commercial cache scheduler: start refresh, tasks=%d, period=%04d-%02d",
             len(tasks),
@@ -230,6 +272,53 @@ def run_commercial_cache_refresh_once(
         }
     finally:
         _run_lock.release()
+
+
+def start_first_access_refresh_if_stale(
+    *,
+    month: int | None = None,
+    year: int | None = None,
+    payload_departments: Iterable[str] | None = None,
+) -> dict[str, object]:
+    """Фоновый пересчёт коммерческих кэшей при первом открытии дашборда за день."""
+    ref_y, ref_m, series_m = _commercial_period(month, year)
+    if not _has_stale_commercial_cache(
+        ref_y,
+        ref_m,
+        series_m,
+        payload_departments=payload_departments,
+    ):
+        return {"started": False, "reason": "fresh", "year": ref_y, "month": series_m}
+    if _run_lock.locked():
+        return {"started": False, "reason": "already_running", "year": ref_y, "month": series_m}
+    if not _first_access_lock.acquire(blocking=False):
+        return {"started": False, "reason": "first_access_already_starting", "year": ref_y, "month": series_m}
+
+    def _runner() -> None:
+        try:
+            run_commercial_cache_refresh_once(
+                force=True,
+                rebuild_payloads=True,
+                payload_departments=payload_departments,
+                month=month,
+                year=year,
+            )
+        except Exception:
+            logger.exception("commercial cache scheduler: first-access refresh failed")
+        finally:
+            _first_access_lock.release()
+
+    threading.Thread(
+        target=_runner,
+        name=f"commercial-first-access-refresh-{ref_y}-{series_m:02d}",
+        daemon=True,
+    ).start()
+    logger.info(
+        "commercial cache scheduler: first-access refresh queued, period=%04d-%02d",
+        ref_y,
+        series_m,
+    )
+    return {"started": True, "year": ref_y, "month": series_m}
 
 
 def _scheduler_loop() -> None:
