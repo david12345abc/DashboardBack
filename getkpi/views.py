@@ -772,8 +772,10 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif kid in techdir_kpi_entry.TILE_COLOR_DZ_LOWER_IDS:
         color = _rag_dz_lower_better(pct)
-    elif kid in techdir_kpi_entry.TILE_COLOR_TD_M4_LIMIT_IDS | _qualdir_kpi_views.TILE_COLOR_TD_M4_LIMIT_IDS:
+    elif kid in _qualdir_kpi_views.TILE_COLOR_TD_M4_LIMIT_IDS:
         color = _rag_td_m4_limit(pct)
+    elif kid in komdir_dashboard.LOWER_IS_BETTER_IDS:
+        color = komdir_dashboard._rag_lower_better(pct)
     else:
         color = _rag_higher_better(pct)
     return pct, color
@@ -1049,6 +1051,10 @@ def _build_tile_item(
     elif _kid_gspp in _devdir_kpi_views.DEVDIR_RUB_UNIT_KPI_IDS:
         tile['pct_lower_is_better'] = True
         tile['rag_direction'] = 'lower_better'
+    elif _kid_gspp in komdir_dashboard.LOWER_IS_BETTER_IDS:
+        tile['pct_lower_is_better'] = True
+    elif _kid_gspp in komdir_dashboard.HIGHER_IS_BETTER_IDS:
+        tile['pct_higher_is_better'] = True
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
     if ref_y and ref_m and tile.get('data_granularity') == 'monthly':

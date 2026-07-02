@@ -1043,6 +1043,17 @@ def build_komdir_payload(kpi_list: list[dict],
             pct = float(pct)
         color = _tile_rag(kid, pct)
         lm = td.get('last_full_month_row')
+        monthly_data = td.get("monthly_data") or []
+        if kid in LOWER_IS_BETTER_IDS or kid in HIGHER_IS_BETTER_IDS:
+            monthly_data = [
+                {
+                    **row,
+                    "color": _tile_rag(kid, row.get("kpi_pct")),
+                }
+                if isinstance(row, dict) and row.get("kpi_pct") is not None
+                else row
+                for row in monthly_data
+            ]
         tile_item = {
             "kpi_id": kid,
             "name": meta["name"],
@@ -1062,8 +1073,12 @@ def build_komdir_payload(kpi_list: list[dict],
             "has_data": lm.get("has_data", True) if lm else False,
             "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
             "cache_updated_at": _tile_cache_updated_at(kid, ref_y, series_m),
-            "monthly_data": td.get("monthly_data") or [],
+            "monthly_data": monthly_data,
         }
+        if kid in LOWER_IS_BETTER_IDS:
+            tile_item["pct_lower_is_better"] = True
+        elif kid in HIGHER_IS_BETTER_IDS:
+            tile_item["pct_higher_is_better"] = True
         plitki_items.append(tile_item)
 
     grafiki = {
