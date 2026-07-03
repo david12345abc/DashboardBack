@@ -34,12 +34,12 @@ logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 _MONTH_CACHE_META = frozenset({"source", "cache_version", "cache_date"})
-SOURCE_TAG = "qualdir_internal_brak_month_v9"
-CACHE_VERSION = 9
+SOURCE_TAG = "qualdir_internal_brak_month_v11"
+CACHE_VERSION = 11
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
-QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v12"
-QD_M5_YTD_DISK_VERSION = 12
+QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_v14"
+QD_M5_YTD_DISK_VERSION = 14
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
