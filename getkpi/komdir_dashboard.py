@@ -72,7 +72,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 2
+KOMDIR_PAYLOAD_CACHE_VERSION = 3
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -1108,15 +1108,23 @@ def _build_claims_table(ref_y: int, ref_m: int,
     dept_guid=None  → коммерческий директор, все претензии;
     dept_guid='...' → дочернее подразделение, только его претензии.
     """
-    from .komdir_claims import fetch_claims_for_month
+    from .komdir_claims import VED_DEPT_KEY, fetch_claims_for_month, _is_uztransgaz_partner
 
     rows = cache_manager.locked_call(
-        f'claims_{ref_y}_{ref_m}',
+        f'claims_all_{ref_y}_{ref_m}' if dept_guid is None or dept_guid == VED_DEPT_KEY else f'claims_{ref_y}_{ref_m}',
         fetch_claims_for_month, ref_y, ref_m,
+        include_all=dept_guid is None or dept_guid == VED_DEPT_KEY,
     )
 
     if dept_guid:
-        rows = [r for r in rows if r.get("order_dept_key") == dept_guid]
+        rows = [
+            r for r in rows
+            if (
+                r.get("order_dept_key") == dept_guid
+                or r.get("normalized_order_dept_key") == dept_guid
+                or (dept_guid == VED_DEPT_KEY and _is_uztransgaz_partner(r.get("partner", "")))
+            )
+        ]
 
     return {
         "KD-T-CLAIMS": {

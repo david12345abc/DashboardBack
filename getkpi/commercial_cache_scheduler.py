@@ -128,8 +128,8 @@ def _commercial_source_tasks(ref_y: int, ref_m: int, series_m: int) -> list[tupl
         ("commercial_vp", cd / "vp_result_cache.json", valovaya_pribyl.get_vp_ytd),
         (
             f"commercial_claims_{ref_y}_{series_m:02d}",
-            cd / f"claims_{ref_y}_{series_m:02d}.json",
-            lambda: fetch_claims_for_month(ref_y, series_m),
+            cd / f"claims_all_{ref_y}_{series_m:02d}.json",
+            lambda: fetch_claims_for_month(ref_y, series_m, include_all=True),
         ),
         (
             f"commercial_lawsuits_{ref_y}_{series_m:02d}",

@@ -2948,6 +2948,8 @@ def _build_universal_payload(
                 tile['plan_by_dept'] = lm.get('plan_by_dept')
             if 'fact_by_dept' in lm:
                 tile['fact_by_dept'] = lm.get('fact_by_dept')
+            if 'production_plan_rows' in lm:
+                tile['production_plan_rows'] = lm.get('production_plan_rows')
             if 'project_deviation_rows' in lm:
                 tile['project_deviation_rows'] = lm.get('project_deviation_rows')
             if 'max_allowed_delay_workdays' in lm:
@@ -3948,15 +3950,21 @@ def _fetch_claims_rows_for_department(
     *,
     psd_filters: bool = False,
 ) -> list[dict]:
-    from .komdir_claims import fetch_claims_for_month
+    from .komdir_claims import VED_DEPT_KEY, fetch_claims_for_month, _is_uztransgaz_partner
 
     canonical_dept, dept_guid = _normalize_commercial_context_department(department)
-    include_all = not isinstance(commercial_kpi_key(canonical_dept), str) and dept_guid is None
+    include_all = (
+        not isinstance(commercial_kpi_key(canonical_dept), str)
+        and dept_guid is None
+    ) or dept_guid == VED_DEPT_KEY
     rows = fetch_claims_for_month(year, month, include_all=include_all)
     if dept_guid:
         rows = [
             r for r in rows
-            if (r.get('normalized_order_dept_key') or r.get('order_dept_key')) == dept_guid
+            if (
+                (r.get('normalized_order_dept_key') or r.get('order_dept_key')) == dept_guid
+                or (dept_guid == VED_DEPT_KEY and _is_uztransgaz_partner(r.get('partner', '')))
+            )
         ]
     if psd_filters:
         rows = _filter_psd_claim_rows(rows)

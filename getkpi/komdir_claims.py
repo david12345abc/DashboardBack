@@ -32,9 +32,12 @@ ALLOWED_DEPARTMENTS = {
     "7587c178-92f6-11f0-96f9-6cb31113810e",
     "bd7b5184-9f9c-11e4-80da-001e67112509",
 }
+VED_DEPT_KEY = "49480c10-e401-11e8-8283-ac1f6b05524d"
+VED_DEPT_NAME = "Отдел ВЭД"
+UZTRANSGAZ_PARTNER_MARKER = "узтрансгаз"
 
 CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
-CACHE_VERSION = 7
+CACHE_VERSION = 9
 ALLOWED_CLAIM_STATUSES = frozenset({
     "Зарегистрирована",
     "Обрабатывается",
@@ -139,6 +142,10 @@ def _fetch_single(session: requests.Session,
     except Exception:
         pass
     return None
+
+
+def _is_uztransgaz_partner(partner_name: str) -> bool:
+    return UZTRANSGAZ_PARTNER_MARKER in str(partner_name or "").strip().lower().replace("ё", "е")
 
 
 def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[dict]:
@@ -268,22 +275,28 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
     for c in claims:
         order_key = c.get("ТД_ЗаказКлиента_Key", "")
         order = orders_info.get(order_key)
-        if not order:
+        partner = partners.get(c.get("Партнер_Key", ""), c.get("Партнер_Key", ""))
+        is_uztransgaz = _is_uztransgaz_partner(partner)
+        if not order and not include_all and not is_uztransgaz:
             continue
 
-        order_dept_key = order.get("Подразделение_Key", "")
+        order_dept_key = order.get("Подразделение_Key", "") if order else ""
         normalized_dept_key = normalize_commercial_dept_guid(order_dept_key)
+        if is_uztransgaz:
+            normalized_dept_key = VED_DEPT_KEY
+            if not order_dept_key:
+                order_dept_key = VED_DEPT_KEY
         if not include_all and normalized_dept_key not in ALLOWED_DEPARTMENTS:
             continue
-
-        partner = partners.get(c.get("Партнер_Key", ""), c.get("Партнер_Key", ""))
         date_reg = (c.get("ДатаРегистрации") or "")[:10]
         date_plan = (c.get("ТД_ДатаОкончанияПлан") or "")[:10]
         date_end = (c.get("ДатаОкончания") or "")[:10]
 
-        order_num = order.get("Number", "").strip()
+        order_num = order.get("Number", "").strip() if order else ""
         order_dept = depts.get(order_dept_key, order_dept_key)
-        order_sum = order.get("СуммаДокумента", 0)
+        if is_uztransgaz:
+            order_dept = VED_DEPT_NAME
+        order_sum = order.get("СуммаДокумента", 0) if order else 0
 
         nom_key = c.get("ТД_Номенклатура_Key", "")
         nom = nom_display.get(nom_key, nom_key if nom_key and nom_key != EMPTY else "")
