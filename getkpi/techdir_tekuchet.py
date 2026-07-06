@@ -36,7 +36,6 @@ from urllib.parse import quote
 
 import requests
 
-from .cache_manager import locked_call
 from . import techdir_cache
 from .odata_http import request_with_retry
 
@@ -665,7 +664,7 @@ def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
                 },
             }
 
-    return locked_call("techdir_td_q2", _runner)
+    return _runner()
 
 
 def main():

@@ -914,6 +914,8 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
         ]
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
+        if not cache_files and _gspp_kpi_views.is_gspp_tile_kpi_id(kpi_id):
+            cache_files = _gspp_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
         if not cache_files and kpi_id == 'QD-Q2':
             cache_files = [
                 qd_q2_ytd_cache_path(ref_y, ref_m),
@@ -1729,6 +1731,7 @@ def _build_universal_payload(
     month: int | None = None,
     year: int | None = None,
     include_debug: bool = False,
+    _skip_disk_cache: bool = False,
 ) -> dict:
     """
     Универсальный билдер: Плитки, Графики, Таблицы.
@@ -1779,11 +1782,43 @@ def _build_universal_payload(
         ref_y, ref_m = _lfm(today)
 
     gspp_memo_key: str | None = None
+    techdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
         gspp_memo_key = f"gspp_dashboard:v3:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
+    if techdir_dashboard.is_techdir_department(dept) and not include_debug:
+        techdir_memo_key = f"techdir_dashboard:v1:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(techdir_memo_key)
+        if cached_payload is not None:
+            return cached_payload
+
+    dashboard_disk_key: str | None = None
+    dashboard_mem_key: str | None = None
+    if not _skip_disk_cache and not include_debug:
+        if gspp_memo_key:
+            dashboard_disk_key = f"gspp_v1_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = gspp_memo_key
+        elif techdir_memo_key:
+            dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = techdir_memo_key
+
+    if dashboard_disk_key and dashboard_mem_key:
+        disk_cached = cache_manager.try_serve_dashboard_disk_cache(
+            dashboard_disk_key,
+            dashboard_mem_key,
+            refresh_fn=lambda: _build_universal_payload(
+                dept,
+                all_kpis,
+                month=month,
+                year=year,
+                include_debug=include_debug,
+                _skip_disk_cache=True,
+            ),
+        )
+        if disk_cached is not None:
+            return disk_cached
 
     for kpi in tiles_meta:
         entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
@@ -2136,6 +2171,10 @@ def _build_universal_payload(
     }
     if gspp_memo_key:
         cache_manager.set_memoized_dashboard_payload(gspp_memo_key, result)
+    if techdir_memo_key:
+        cache_manager.set_memoized_dashboard_payload(techdir_memo_key, result)
+    if dashboard_disk_key:
+        cache_manager.save_dashboard_disk(dashboard_disk_key, result)
     return result
 
 

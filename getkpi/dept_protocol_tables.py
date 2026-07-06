@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 
-from getkpi.cache_manager import locked_call
+from getkpi.cache_manager import locked_call, schedule_background_refresh
 
 
 
@@ -119,6 +119,24 @@ def build_protocol_overdue_table_cached(
     if cached_table is not None and cached_table.get("months_total") == len(pairs):
 
         return cached_table
+
+
+
+    stale_table = build_from_cached_months(department, ref_y, ref_m, allow_stale=True)
+
+    if stale_table is not None and stale_table.get("months_total") == len(pairs):
+
+        key = lock_key(department)
+
+        schedule_background_refresh(
+
+            key,
+
+            lambda: build_protocol_overdue_table(department, year=ref_y, month=ref_m),
+
+        )
+
+        return stale_table
 
 
 

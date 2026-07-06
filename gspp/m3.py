@@ -10,7 +10,6 @@ from typing import Any
 
 import requests
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from getkpi.fot_techdir_fact import (
@@ -237,15 +236,7 @@ def get_gspp_m3_ytd(year: int | None = None, month: int | None = None) -> dict[s
     cache_path = gspp_m3_ytd_cache_path(ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict[str, Any] | None:
-        cached = ytd_json_cache.load_payload(
-            cache_path,
-            source_tag=GSPP_M3_DISK_TAG,
-            version=GSPP_M3_DISK_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict[str, Any] | None:
         payload = _build_gspp_m3_payload(year=ref_y, month=ref_m)
         if (payload.get("debug") or {}).get("status") != "error":
             ytd_json_cache.save_payload(
@@ -256,7 +247,14 @@ def get_gspp_m3_ytd(year: int | None = None, month: int | None = None) -> dict[s
             )
         return payload
 
-    return locked_call(f"gspp_m3_fot_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        cache_path,
+        source_tag=GSPP_M3_DISK_TAG,
+        version=GSPP_M3_DISK_VERSION,
+        perpetual=perpetual,
+        lock_key=f"gspp_m3_fot_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )
 
 
 def main() -> None:

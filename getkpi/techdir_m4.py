@@ -6,7 +6,6 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from .cache_manager import locked_call
 from . import fot_techdir_fact, fot_techdir_plan
 from . import techdir_cache
 
@@ -162,4 +161,4 @@ def get_td_m4_ytd(year: int | None = None, month: int | None = None) -> dict | N
             logger.exception("Ошибка при расчёте TD-M4 (ФОТ техдирекции в пределах лимита)")
             return None
 
-    return locked_call("techdir_td_m4", _runner)
+    return _runner()

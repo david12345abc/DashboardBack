@@ -107,3 +107,32 @@ def save_payload(
             )
     except OSError:
         pass
+
+
+def resolve_payload(
+    path: Path,
+    *,
+    source_tag: str,
+    version: int,
+    perpetual: bool,
+    lock_key: str,
+    compute_fn,
+) -> dict[str, Any] | None:
+    """Stale-while-revalidate для YTD-payload (GSPP, devdir, qualdir)."""
+    from getkpi.cache_manager import stale_while_revalidate
+
+    return stale_while_revalidate(
+        lock_key,
+        lambda: load_payload(
+            path,
+            source_tag=source_tag,
+            version=version,
+            perpetual=perpetual,
+        ),
+        lambda: load_stale_payload(
+            path,
+            source_tag=source_tag,
+            version=version,
+        ),
+        compute_fn,
+    )

@@ -601,7 +601,44 @@ def _month_pairs_until(ref_y: int, ref_m: int) -> list[tuple[int, int]]:
     return [(ref_y, mm) for mm in range(1, ref_m + 1)]
 
 
+def _snapshot_mtime_ns() -> int:
+    try:
+        return CACHE_PATH.stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
+@lru_cache(maxsize=32)
+def _build_monthly_payload_cached(
+    project_type: str | None,
+    year: int,
+    month: int,
+    departments_key: str,
+    snapshot_mtime_ns: int,
+) -> dict:
+    departments = set(departments_key.split("\0")) if departments_key else None
+    return _build_monthly_payload_impl(project_type, year=year, month=month, departments=departments)
+
+
 def _build_monthly_payload(
+    project_type: str | None,
+    year: int | None = None,
+    month: int | None = None,
+    *,
+    departments: set[str] | None = None,
+) -> dict:
+    ref_y, ref_m = _normalize_ref_period(year, month)
+    dept_key = "\0".join(sorted(departments)) if departments else ""
+    return _build_monthly_payload_cached(
+        project_type,
+        ref_y,
+        ref_m,
+        dept_key,
+        _snapshot_mtime_ns(),
+    )
+
+
+def _build_monthly_payload_impl(
     project_type: str | None,
     year: int | None = None,
     month: int | None = None,
@@ -682,7 +719,6 @@ def _build_monthly_payload(
                 }
                 for row in monthly_rows
             ],
-            "target_projects": target_projects,
         },
     }
 
@@ -972,7 +1008,7 @@ def get_td_deviation_tables(month: int | None = None, year: int | None = None) -
             logger.exception("Ошибка при расчёте таблиц техдирекции из TurboProject")
             return None
 
-    return cache_manager.locked_call("techdir_td_tables", _runner)
+    return _runner()
 
 
 def get_td_m1_ytd() -> dict | None:
@@ -983,7 +1019,7 @@ def get_td_m1_ytd() -> dict | None:
             logger.exception("Ошибка при расчёте TD-M1 из TurboProject")
             return None
 
-    return cache_manager.locked_call("techdir_td_m1", _runner)
+    return _runner()
 
 
 def get_td_m5_ytd(year: int | None = None, month: int | None = None) -> dict | None:
@@ -1004,7 +1040,7 @@ def get_td_q1_ytd() -> dict | None:
             logger.exception("Ошибка при расчёте TD-Q1 из TurboProject")
             return None
 
-    return cache_manager.locked_call("techdir_td_q1", _runner)
+    return _runner()
 
 
 def get_od_q1_monthly(year: int | None = None, month: int | None = None) -> dict | None:
