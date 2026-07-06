@@ -9,7 +9,6 @@ import requests
 
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from getkpi.cache_manager import locked_call
 from servhead.claims_common import (
     AUTH,
     aggregate_client_sla_rows,
@@ -85,15 +84,7 @@ def get_sh_t1_table(year: int | None = None, month: int | None = None) -> dict[s
     cache_path = sh_t1_cache_path(ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict[str, Any]:
-        cached = ytd_json_cache.load_payload(
-            cache_path,
-            source_tag=CACHE_SOURCE_TAG,
-            version=CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict[str, Any]:
         try:
             payload = _build_table_payload(year=ref_y, month=ref_m)
         except Exception as exc:
@@ -134,7 +125,14 @@ def get_sh_t1_table(year: int | None = None, month: int | None = None) -> dict[s
         )
         return payload
 
-    return locked_call(f"servhead_sh_t1_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        cache_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"servhead_sh_t1_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )
 
 
 def main() -> None:
