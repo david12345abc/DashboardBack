@@ -815,6 +815,8 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
         cache_files = _qualdir_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     elif _sup_kpi_views.is_sup_tile_kpi_id(kpi_id):
         cache_files = _sup_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+    elif _autoit_kpi_views.is_autoit_tile_kpi_id(kpi_id):
+        cache_files = _autoit_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
         if not cache_files:
@@ -825,26 +827,6 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             devdir_paths = _devdir_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
             if devdir_paths:
                 cache_files = devdir_paths
-        if not cache_files and kpi_id in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS:
-            from getkpi.autoit.it_m1_sla import (
-                cache_file_path_for_period as it_m1_cache,
-                monthly_cache_path as it_m1_monthly_cache,
-            )
-
-            cache_files = [
-                it_m1_cache(ref_y, ref_m),
-                it_m1_monthly_cache(ref_y, ref_m),
-            ]
-        if not cache_files and kpi_id in _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS:
-            from getkpi.autoit.it_m3 import (
-                cache_file_path_for_period as it_m3_cache,
-                monthly_cache_path as it_m3_monthly_cache,
-            )
-
-            cache_files = [
-                it_m3_cache(ref_y, ref_m),
-                it_m3_monthly_cache(ref_y, ref_m),
-            ]
         if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
             from getkpi.c1auto.c1_m1_sla import (
                 cache_file_path_for_period as c1_m1_cache,
@@ -863,10 +845,6 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1_q5_cache
 
             cache_files = [c1_q5_cache(ref_y, ref_m)]
-        if not cache_files and kpi_id == 'IT-Q2':
-            from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as it_q2_cache
-
-            cache_files = [it_q2_cache(ref_y, ref_m)]
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -1670,6 +1648,7 @@ def _build_universal_payload(
     techdir_memo_key: str | None = None
     qualdir_memo_key: str | None = None
     sup_memo_key: str | None = None
+    autoit_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
         gspp_memo_key = f"gspp_dashboard:v4:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
@@ -1690,6 +1669,11 @@ def _build_universal_payload(
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
+    if _is_autoit_department(dept) and not include_debug:
+        autoit_memo_key = f"autoit_dashboard:v2:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(autoit_memo_key)
+        if cached_payload is not None:
+            return cached_payload
 
     dashboard_disk_key: str | None = None
     dashboard_mem_key: str | None = None
@@ -1706,6 +1690,9 @@ def _build_universal_payload(
         elif sup_memo_key:
             dashboard_disk_key = f"sup_v1_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
+        elif autoit_memo_key:
+            dashboard_disk_key = f"autoit_v2_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = autoit_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
         disk_cached = cache_manager.try_serve_dashboard_disk_cache(
@@ -2080,6 +2067,8 @@ def _build_universal_payload(
         cache_manager.set_memoized_dashboard_payload(qualdir_memo_key, result)
     if sup_memo_key:
         cache_manager.set_memoized_dashboard_payload(sup_memo_key, result)
+    if autoit_memo_key:
+        cache_manager.set_memoized_dashboard_payload(autoit_memo_key, result)
     if dashboard_disk_key:
         cache_manager.save_dashboard_disk(dashboard_disk_key, result)
     return result

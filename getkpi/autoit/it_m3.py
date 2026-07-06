@@ -11,7 +11,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 from qualdir.turnover import _qd_q2_kpi_pct
 
@@ -63,22 +62,23 @@ def _save_monthly_cache(year: int, month: int, payload: dict[str, Any]) -> None:
 
 
 def get_it_m3_fact_monthly(year: int, month: int) -> dict[str, Any]:
-    """Факт бюджета за один месяц с дисковым кэшем и блокировкой по ключу."""
-    cached = _load_monthly_cache(year, month)
-    if cached is not None:
-        return cached
+    """Факт бюджета за один месяц с дисковым кэшем."""
+    path = monthly_cache_path(year, month)
+    perpetual = _monthly_cache_is_perpetual(year, month)
 
-    lock_key = f"autoit_it_m3_fact_monthly_{year}_{month:02d}"
-
-    def _runner() -> dict[str, Any]:
-        again = _load_monthly_cache(year, month)
-        if again is not None:
-            return again
+    def _compute_and_save() -> dict[str, Any]:
         payload = compute_it_m3_fact_monthly(year, month)
         _save_monthly_cache(year, month, payload)
         return payload
 
-    return locked_call(lock_key, _runner)
+    return ytd_json_cache.resolve_payload(
+        path,
+        source_tag=MONTHLY_SOURCE_TAG,
+        version=MONTHLY_CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"autoit_it_m3_fact_monthly_{year}_{month:02d}",
+        compute_fn=_compute_and_save,
+    )
 
 
 def _month_row_from_snapshot(ref_y: int, m: int, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -159,27 +159,32 @@ def get_it_m3_ytd(year: int | None = None, month: int | None = None) -> dict | N
     cache_path = cache_file_path_for_period(year, month)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict | None:
-        cached = ytd_json_cache.load_payload(
-            cache_path,
-            source_tag=CACHE_SOURCE_TAG,
-            version=CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict | None:
         try:
             payload = _build_it_m3_payload(year=year, month=month)
         except Exception:
             logger.exception("Ошибка при расчёте ИТ-M3 (бюджет)")
-            return None
-        if payload is not None:
-            ytd_json_cache.save_payload(
+            stale = ytd_json_cache.load_stale_payload(
                 cache_path,
-                payload,
                 source_tag=CACHE_SOURCE_TAG,
                 version=CACHE_VERSION,
             )
+            if stale is not None:
+                return stale
+            return None
+        ytd_json_cache.save_payload(
+            cache_path,
+            payload,
+            source_tag=CACHE_SOURCE_TAG,
+            version=CACHE_VERSION,
+        )
         return payload
 
-    return locked_call(f"autoit_it_m3_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        cache_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"autoit_it_m3_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )
