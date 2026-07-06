@@ -51,19 +51,24 @@ def is_qualdir_tile_kpi_id(kpi_id: str) -> bool:
 def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     """Файлы кэша, по mtime которых на плитке показывается ``cache_updated_at`` (как TD-* / GSPP)."""
     from qualdir.brak_tables import _ytd_table_cache_path as brak_ytd_table_path
-    from qualdir.qd_m1 import external_brak_month_cache_path, qd_m1_ytd_cache_path
+    from qualdir.qd_m1 import (
+        external_brak_month_cache_path,
+        qd_m1_tile_cache_path,
+        qd_m1_ytd_cache_path,
+    )
     from qualdir.qd_m3 import qd_m3_ytd_cache_path
     from qualdir.qd_m4 import qd_m4_ytd_cache_path
-    from qualdir.qd_m5 import internal_brak_month_cache_path, qd_m5_ytd_cache_path
+    from qualdir.qd_m5 import internal_brak_month_cache_path, qd_m5_tile_cache_path, qd_m5_ytd_cache_path
     from qualdir.qd_m6 import (
         legacy_otk_predyavlenie_month_cache_path,
         otk_predyavlenie_month_cache_path,
+        qd_m6_tile_cache_path,
         qd_m6_ytd_cache_path,
     )
-    from qualdir.qd_m7 import qd_m7_ytd_cache_path, vyhod_kontrol_month_cache_path
-    from qualdir.qd_m8 import forma0317_month_cache_path, qd_m8_ytd_cache_path
-    from qualdir.qd_m9 import otk_predyavlenie_npo_month_cache_path, qd_m9_ytd_cache_path
-    from qualdir.qd_m10 import otk_predyavlenie_almaz_month_cache_path, qd_m10_ytd_cache_path
+    from qualdir.qd_m7 import qd_m7_tile_cache_path, qd_m7_ytd_cache_path, vyhod_kontrol_month_cache_path
+    from qualdir.qd_m8 import forma0317_month_cache_path, qd_m8_tile_cache_path, qd_m8_ytd_cache_path
+    from qualdir.qd_m9 import otk_predyavlenie_npo_month_cache_path, qd_m9_tile_cache_path, qd_m9_ytd_cache_path
+    from qualdir.qd_m10 import otk_predyavlenie_almaz_month_cache_path, qd_m10_tile_cache_path, qd_m10_ytd_cache_path
     from qualdir.turnover import qd_q2_ytd_cache_path, turnover_month_cache_path
 
     kid = _normalize_qualdir_kpi_id(kpi_id)
@@ -84,6 +89,7 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
             qd_m1_ytd_cache_path(ref_y, ref_m),
             external_brak_month_cache_path(ref_y, ref_m),
             brak_ytd_table_path("external", ref_y, ref_m),
+            qd_m1_tile_cache_path(ref_y, ref_m),
         ])
     elif kid == "QD-M3":
         paths.append(qd_m3_ytd_cache_path(ref_y, ref_m))
@@ -94,10 +100,14 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
             qd_m5_ytd_cache_path(ref_y, ref_m),
             internal_brak_month_cache_path(ref_y, ref_m),
             brak_ytd_table_path("internal", ref_y, ref_m),
+            qd_m5_tile_cache_path(ref_y, ref_m),
         ])
     elif kid == "QD-M6":
-        paths.append(qd_m6_ytd_cache_path(ref_y, ref_m))
-        paths.append(otk_predyavlenie_month_cache_path(ref_y, ref_m))
+        paths.extend([
+            qd_m6_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_month_cache_path(ref_y, ref_m),
+            qd_m6_tile_cache_path(ref_y, ref_m),
+        ])
         legacy = legacy_otk_predyavlenie_month_cache_path(ref_y, ref_m)
         if legacy is not None:
             paths.append(legacy)
@@ -105,22 +115,26 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
         paths.extend([
             qd_m7_ytd_cache_path(ref_y, ref_m),
             vyhod_kontrol_month_cache_path(ref_y, ref_m),
+            qd_m7_tile_cache_path(ref_y, ref_m),
         ])
     elif kid == "QD-M8":
         paths.extend([
             qd_m8_ytd_cache_path(ref_y, ref_m),
             forma0317_month_cache_path(ref_y, ref_m),
             brak_ytd_table_path("forma0317", ref_y, ref_m),
+            qd_m8_tile_cache_path(ref_y, ref_m),
         ])
     elif kid == "QD-M9":
         paths.extend([
             qd_m9_ytd_cache_path(ref_y, ref_m),
             otk_predyavlenie_npo_month_cache_path(ref_y, ref_m),
+            qd_m9_tile_cache_path(ref_y, ref_m),
         ])
     elif kid == "QD-M10":
         paths.extend([
             qd_m10_ytd_cache_path(ref_y, ref_m),
             otk_predyavlenie_almaz_month_cache_path(ref_y, ref_m),
+            qd_m10_tile_cache_path(ref_y, ref_m),
         ])
 
     return paths
@@ -356,9 +370,7 @@ def merge_kpi_entry_if_applicable(
     month: int | None,
 ) -> bool:
     """По ``kpi_id`` заполняет ``entry``. Возвращает True, если надо ``return entry`` в ``getkpi.views``."""
-    kid = str(kpi_id or "").strip().upper()
-    for cyr, lat in (("М", "M"), ("С", "C")):
-        kid = kid.replace(cyr, lat)
+    kid = _normalize_qualdir_kpi_id(kpi_id)
     merger = _MERGE_BY_ID.get(kid)
     if merger is None:
         return False
