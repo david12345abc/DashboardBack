@@ -18,7 +18,7 @@ from getkpi.gspp_q4 import (
 )
 
 GSPP_TILE_KPI_IDS: frozenset[str] = frozenset({
-    "ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4",
+    "ГСП-Q4", "GSP-Q4", "GSPP-Q4", "ГCP-Q4", "ГCП-Q4", "ГСПП-Q4", "ГCПП-Q4",
     "ГСП-M1", "ГCП-M1", "GSP-M1", "ГСПП-M1", "ГCПП-M1", "GSPP-M1",
     "ГСП-M2", "ГCП-M2", "GSP-M2", "ГСПП-M2", "ГCПП-M2", "GSPP-M2",
     "ГСП-M3", "ГCП-M3", "GSP-M3", "ГСПП-M3", "ГCПП-M3", "GSPP-M3",
@@ -27,7 +27,7 @@ GSPP_TILE_KPI_IDS: frozenset[str] = frozenset({
 })
 
 GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
-    "ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4",
+    "ГСП-Q4", "GSP-Q4", "GSPP-Q4", "ГCP-Q4", "ГCП-Q4", "ГСПП-Q4", "ГCПП-Q4",
     "ГСП-M1", "ГCП-M1", "GSP-M1", "ГСПП-M1", "ГCПП-M1", "GSPP-M1",
     "ГСП-M2", "ГCП-M2", "GSP-M2", "ГСПП-M2", "ГCПП-M2", "GSPP-M2",
     "ГСП-M3", "ГCП-M3", "GSP-M3", "ГСПП-M3", "ГCПП-M3", "GSPP-M3",

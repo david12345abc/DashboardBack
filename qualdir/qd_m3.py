@@ -16,7 +16,6 @@ from typing import Any
 
 import requests
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 from getkpi.fot_techdir_fact import AUTH
 
@@ -284,4 +283,11 @@ def get_qd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[str
             )
         return _out
 
-    return locked_call(f"qualdir_qd_m3_v6_{lock_y}_{lock_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        _disk_path,
+        source_tag=QD_M3_YTD_DISK_TAG,
+        version=QD_M3_YTD_DISK_VERSION,
+        perpetual=_perpetual,
+        lock_key=f"qualdir_qd_m3_v6_{lock_y}_{lock_m:02d}",
+        compute_fn=_runner,
+    )

@@ -22,7 +22,6 @@ from typing import Any
 
 import requests
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
@@ -272,4 +271,11 @@ def get_qd_m7_ytd(year: int | None = None, month: int | None = None) -> dict[str
             )
         return payload
 
-    return locked_call(f"qualdir_qd_m7_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        disk_path,
+        source_tag=QD_M7_YTD_DISK_TAG,
+        version=QD_M7_YTD_DISK_VERSION,
+        perpetual=perpetual,
+        lock_key=f"qualdir_qd_m7_{ref_y}_{ref_m:02d}",
+        compute_fn=_runner,
+    )

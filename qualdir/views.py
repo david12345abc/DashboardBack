@@ -2,9 +2,10 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable
 
-from .mpp_tasks_report import get_qd_q1_ytd
+from .mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
 from .qd_m1 import get_qd_m1_ytd
 from .qd_m3 import get_qd_m3_ytd
 from .qd_m4 import get_qd_m4_ytd
@@ -31,6 +32,98 @@ TILE_COLOR_PLAN_FACT_IDS: frozenset[str] = frozenset(
 )
 TILE_FACT_ONLY_IDS: frozenset[str] = frozenset({'QD-M7'})
 OTK_INCOMING_TILE_IDS: frozenset[str] = frozenset({'QD-M6', 'QD-M9', 'QD-M10'})
+
+
+def _normalize_qualdir_kpi_id(kpi_id: str) -> str:
+    kid = str(kpi_id or "").strip().upper()
+    for cyr, lat in (("М", "M"), ("С", "C")):
+        kid = kid.replace(cyr, lat)
+    return kid
+
+
+_QUALDIR_TILE_IDS_NORM = frozenset(_normalize_qualdir_kpi_id(x) for x in QUALDIR_TILE_KPI_IDS)
+
+
+def is_qualdir_tile_kpi_id(kpi_id: str) -> bool:
+    return _normalize_qualdir_kpi_id(kpi_id) in _QUALDIR_TILE_IDS_NORM
+
+
+def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
+    """Файлы кэша, по mtime которых на плитке показывается ``cache_updated_at`` (как TD-* / GSPP)."""
+    from qualdir.brak_tables import _ytd_table_cache_path as brak_ytd_table_path
+    from qualdir.qd_m1 import external_brak_month_cache_path, qd_m1_ytd_cache_path
+    from qualdir.qd_m3 import qd_m3_ytd_cache_path
+    from qualdir.qd_m4 import qd_m4_ytd_cache_path
+    from qualdir.qd_m5 import internal_brak_month_cache_path, qd_m5_ytd_cache_path
+    from qualdir.qd_m6 import (
+        legacy_otk_predyavlenie_month_cache_path,
+        otk_predyavlenie_month_cache_path,
+        qd_m6_ytd_cache_path,
+    )
+    from qualdir.qd_m7 import qd_m7_ytd_cache_path, vyhod_kontrol_month_cache_path
+    from qualdir.qd_m8 import forma0317_month_cache_path, qd_m8_ytd_cache_path
+    from qualdir.qd_m9 import otk_predyavlenie_npo_month_cache_path, qd_m9_ytd_cache_path
+    from qualdir.qd_m10 import otk_predyavlenie_almaz_month_cache_path, qd_m10_ytd_cache_path
+    from qualdir.turnover import qd_q2_ytd_cache_path, turnover_month_cache_path
+
+    kid = _normalize_qualdir_kpi_id(kpi_id)
+    paths: list[Path] = []
+
+    if kid == "QD-Q1":
+        mpp_path = qd_q1_mpp_path_for_stamp()
+        if mpp_path is not None:
+            paths.append(mpp_path)
+        paths.append(qd_q1_tile_cache_path(ref_y, ref_m))
+    elif kid == "QD-Q2":
+        paths.extend([
+            qd_q2_ytd_cache_path(ref_y, ref_m),
+            turnover_month_cache_path(ref_y, ref_m),
+        ])
+    elif kid == "QD-M1":
+        paths.extend([
+            qd_m1_ytd_cache_path(ref_y, ref_m),
+            external_brak_month_cache_path(ref_y, ref_m),
+            brak_ytd_table_path("external", ref_y, ref_m),
+        ])
+    elif kid == "QD-M3":
+        paths.append(qd_m3_ytd_cache_path(ref_y, ref_m))
+    elif kid == "QD-M4":
+        paths.append(qd_m4_ytd_cache_path(ref_y, ref_m))
+    elif kid == "QD-M5":
+        paths.extend([
+            qd_m5_ytd_cache_path(ref_y, ref_m),
+            internal_brak_month_cache_path(ref_y, ref_m),
+            brak_ytd_table_path("internal", ref_y, ref_m),
+        ])
+    elif kid == "QD-M6":
+        paths.append(qd_m6_ytd_cache_path(ref_y, ref_m))
+        paths.append(otk_predyavlenie_month_cache_path(ref_y, ref_m))
+        legacy = legacy_otk_predyavlenie_month_cache_path(ref_y, ref_m)
+        if legacy is not None:
+            paths.append(legacy)
+    elif kid == "QD-M7":
+        paths.extend([
+            qd_m7_ytd_cache_path(ref_y, ref_m),
+            vyhod_kontrol_month_cache_path(ref_y, ref_m),
+        ])
+    elif kid == "QD-M8":
+        paths.extend([
+            qd_m8_ytd_cache_path(ref_y, ref_m),
+            forma0317_month_cache_path(ref_y, ref_m),
+            brak_ytd_table_path("forma0317", ref_y, ref_m),
+        ])
+    elif kid == "QD-M9":
+        paths.extend([
+            qd_m9_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_npo_month_cache_path(ref_y, ref_m),
+        ])
+    elif kid == "QD-M10":
+        paths.extend([
+            qd_m10_ytd_cache_path(ref_y, ref_m),
+            otk_predyavlenie_almaz_month_cache_path(ref_y, ref_m),
+        ])
+
+    return paths
 
 
 def kpi_pct_from_plan_fact(plan: Any, fact: Any) -> float | None:
