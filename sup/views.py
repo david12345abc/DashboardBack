@@ -1,6 +1,7 @@
 """Склейка KPI дашборда службы управления персоналом для общего ``getkpi.views``."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from sup.hrd_m1 import get_hrd_m1_ytd
@@ -14,6 +15,58 @@ SUP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = SUP_KPI_IDS
 SUP_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({"HRD-M2"})
 SUP_BUDGET_LIMIT_KPI_IDS: frozenset[str] = frozenset({"HRD-M3"})
 SUP_TURNOVER_FACT_RAG_IDS: frozenset[str] = frozenset({"HRD-M4", "HRD-Q4"})
+
+
+def _normalize_sup_kpi_id(kpi_id: str) -> str:
+    kid = str(kpi_id or "").strip().upper()
+    for cyr, lat in (("М", "M"), ("С", "C")):
+        kid = kid.replace(cyr, lat)
+    return kid
+
+
+_SUP_KPI_IDS_NORM = frozenset(_normalize_sup_kpi_id(x) for x in SUP_KPI_IDS)
+
+
+def is_sup_tile_kpi_id(kpi_id: str) -> bool:
+    return _normalize_sup_kpi_id(kpi_id) in _SUP_KPI_IDS_NORM
+
+
+def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
+    """Файлы кэша, по mtime которых на плитке показывается ``cache_updated_at``."""
+    from sup.hc_reports import hc_report_path
+    from sup.hrd_m1 import cache_file_path_for_period as hrd_m1_cache
+    from sup.hrd_m2 import cache_file_path_for_period as hrd_m2_cache, monthly_cache_path as hrd_m2_monthly
+    from sup.hrd_m3 import cache_file_path_for_period as hrd_m3_cache, monthly_cache_path as hrd_m3_monthly
+    from sup.hrd_m4 import cache_file_path_for_period as hrd_m4_cache
+    from sup.hrd_q4 import cache_file_path_for_period as hrd_q4_cache
+
+    kid = _normalize_sup_kpi_id(kpi_id)
+    paths: list[Path] = []
+
+    if kid == "HRD-M1":
+        paths.append(hrd_m1_cache(ref_y, ref_m))
+        for m in range(1, ref_m + 1):
+            paths.append(hc_report_path(ref_y, m))
+    elif kid == "HRD-M2":
+        paths.extend([
+            hrd_m2_cache(ref_y, ref_m),
+            hrd_m2_monthly(ref_y, ref_m),
+        ])
+    elif kid == "HRD-M3":
+        paths.extend([
+            hrd_m3_cache(ref_y, ref_m),
+            hrd_m3_monthly(ref_y, ref_m),
+        ])
+    elif kid == "HRD-M4":
+        paths.append(hrd_m4_cache(ref_y, ref_m))
+        for m in range(1, ref_m + 1):
+            paths.append(hc_report_path(ref_y, m))
+    elif kid == "HRD-Q4":
+        paths.append(hrd_q4_cache(ref_y, ref_m))
+        for m in range(1, ref_m + 1):
+            paths.append(hc_report_path(ref_y, m))
+
+    return paths
 
 
 def rag_hrd_turnover_fact_pct(fact_pct: float | None, *, kpi_id: str) -> str:

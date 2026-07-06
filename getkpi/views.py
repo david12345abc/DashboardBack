@@ -813,6 +813,8 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
 
     if _qualdir_kpi_views.is_qualdir_tile_kpi_id(kpi_id):
         cache_files = _qualdir_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+    elif _sup_kpi_views.is_sup_tile_kpi_id(kpi_id):
+        cache_files = _sup_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
         if not cache_files:
@@ -865,25 +867,6 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as it_q2_cache
 
             cache_files = [it_q2_cache(ref_y, ref_m)]
-        if not cache_files and kpi_id in _sup_kpi_views.SUP_KPI_IDS:
-            from sup import hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_q4
-
-            if kpi_id == 'HRD-M1':
-                cache_files = [hrd_m1.cache_file_path_for_period(ref_y, ref_m)]
-            elif kpi_id == 'HRD-M2':
-                cache_files = [
-                    hrd_m2.cache_file_path_for_period(ref_y, ref_m),
-                    hrd_m2.monthly_cache_path(ref_y, ref_m),
-                ]
-            elif kpi_id == 'HRD-M3':
-                cache_files = [
-                    hrd_m3.cache_file_path_for_period(ref_y, ref_m),
-                    hrd_m3.monthly_cache_path(ref_y, ref_m),
-                ]
-            elif kpi_id == 'HRD-M4':
-                cache_files = [hrd_m4.cache_file_path_for_period(ref_y, ref_m)]
-            elif kpi_id == 'HRD-Q4':
-                cache_files = [hrd_q4.cache_file_path_for_period(ref_y, ref_m)]
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -1686,6 +1669,7 @@ def _build_universal_payload(
     gspp_memo_key: str | None = None
     techdir_memo_key: str | None = None
     qualdir_memo_key: str | None = None
+    sup_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
         gspp_memo_key = f"gspp_dashboard:v4:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
@@ -1701,6 +1685,11 @@ def _build_universal_payload(
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return cached_payload
+    if _is_sup_department(dept) and not include_debug:
+        sup_memo_key = f"sup_dashboard:v1:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
+        if cached_payload is not None:
+            return cached_payload
 
     dashboard_disk_key: str | None = None
     dashboard_mem_key: str | None = None
@@ -1714,6 +1703,9 @@ def _build_universal_payload(
         elif qualdir_memo_key:
             dashboard_disk_key = f"qualdir_v1_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
+        elif sup_memo_key:
+            dashboard_disk_key = f"sup_v1_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = sup_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
         disk_cached = cache_manager.try_serve_dashboard_disk_cache(
@@ -2086,6 +2078,8 @@ def _build_universal_payload(
         cache_manager.set_memoized_dashboard_payload(techdir_memo_key, result)
     if qualdir_memo_key:
         cache_manager.set_memoized_dashboard_payload(qualdir_memo_key, result)
+    if sup_memo_key:
+        cache_manager.set_memoized_dashboard_payload(sup_memo_key, result)
     if dashboard_disk_key:
         cache_manager.save_dashboard_disk(dashboard_disk_key, result)
     return result

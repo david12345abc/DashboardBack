@@ -14,7 +14,7 @@ from typing import Any
 
 import xlrd
 
-from getkpi.cache_manager import locked_call
+from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
@@ -242,23 +242,50 @@ def _save_cache(path: Path, payload: dict[str, Any], *, source_mtime_ns: int) ->
         logger.exception("HRD-M4: не удалось сохранить кэш")
 
 
+def _load_stale_cache(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if raw.get("cache_source") != CACHE_SOURCE_TAG:
+        return None
+    if raw.get("cache_version") != CACHE_VERSION:
+        return None
+    payload = raw.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
 def get_hrd_m4_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any] | None:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     cache_path = ytd_json_cache.cache_path(CACHE_PREFIX, ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
+    lock_key = f"sup_hrd_m4_{ref_y}_{ref_m:02d}"
 
-    def _runner() -> dict[str, Any] | None:
+    def _load_fresh() -> dict[str, Any] | None:
         source_mtime_ns = reports_mtime_ns(ref_y, ref_m)
-        cached = _load_cache(cache_path, source_mtime_ns=source_mtime_ns, perpetual=perpetual)
-        if cached is not None:
-            return cached
+        return _load_cache(cache_path, source_mtime_ns=source_mtime_ns, perpetual=perpetual)
 
+    def _compute_and_save() -> dict[str, Any] | None:
         try:
             payload = _build_payload(year=ref_y, month=ref_m)
         except Exception:
             logger.exception("HRD-M4: ошибка расчёта текучести")
+            stale = _load_stale_cache(cache_path)
+            if stale is not None:
+                return stale
             return None
+        source_mtime_ns = reports_mtime_ns(ref_y, ref_m)
         _save_cache(cache_path, payload, source_mtime_ns=source_mtime_ns)
         return payload
 
-    return locked_call(f"sup_hrd_m4_{ref_y}_{ref_m:02d}", _runner)
+    return stale_while_revalidate(
+        lock_key,
+        _load_fresh,
+        lambda: _load_stale_cache(cache_path),
+        _compute_and_save,
+    )
