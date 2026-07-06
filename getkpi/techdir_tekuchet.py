@@ -37,6 +37,7 @@ from urllib.parse import quote
 import requests
 
 from .cache_manager import locked_call
+from . import techdir_cache
 from .odata_http import request_with_retry
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -217,24 +218,6 @@ def _cache_path(year: int, month: int) -> Path:
 def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
     """Месяцы, которые нужно вернуть в monthly_data для плитки."""
     return [(year, mm) for mm in range(1, ref_month + 1)]
-
-
-def _load_cache(year: int, month: int) -> dict | None:
-    path = _cache_path(year, month)
-    if not path.exists():
-        return None
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return None
-    if data.get("source") != SOURCE_TAG:
-        return None
-    if data.get("cache_version") != CACHE_VERSION:
-        return None
-    if data.get("cache_date") != date.today().isoformat():
-        return None
-    return data
 
 
 def _save_cache(year: int, month: int, payload: dict) -> None:
@@ -568,19 +551,28 @@ def build_turnover_month_payload(
 
 
 def compute_td_turnover_month(year: int, month: int) -> dict:
-    cached = _load_cache(year, month)
-    if cached is not None:
-        return cached
+    path = _cache_path(year, month)
 
-    result = build_turnover_month_payload(
-        year,
-        month,
-        group_aliases=GROUP_ALIASES,
-        group_order=GROUP_ORDER,
-        fact_from_hr=True,
+    def _compute_and_save() -> dict:
+        result = build_turnover_month_payload(
+            year,
+            month,
+            group_aliases=GROUP_ALIASES,
+            group_order=GROUP_ORDER,
+            fact_from_hr=True,
+        )
+        _save_cache(year, month, result)
+        return result
+
+    return techdir_cache.resolve_month_file(
+        f"techdir_tekuchet_{year}_{month:02d}",
+        path,
+        source_tag=SOURCE_TAG,
+        cache_version=CACHE_VERSION,
+        year=year,
+        month=month,
+        compute_fn=_compute_and_save,
     )
-    _save_cache(year, month, result)
-    return result
 
 
 def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:

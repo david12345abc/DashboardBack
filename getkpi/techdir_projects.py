@@ -13,6 +13,7 @@ from typing import Any
 import requests
 
 from . import cache_manager
+from . import techdir_cache
 from .kpi_periods import last_full_quarter, quarter_month_tuples
 from .list_enterprise_positions import employees_by_position
 from .turboproject_config import API_BASE as TURBO_CFG_API_BASE, EMAIL as TURBO_CFG_EMAIL, PASSWORD as TURBO_CFG_PASSWORD
@@ -91,20 +92,24 @@ def _get_credentials() -> tuple[str, str, str]:
     return file_api_base.rstrip("/"), file_email, file_password
 
 
+def _snapshot_is_valid(data: dict) -> bool:
+    return data.get("od_overdue_milestones_schema") == OD_OVERDUE_MILESTONES_SCHEMA
+
+
 def _load_cache() -> dict | None:
-    if not CACHE_PATH.exists():
-        return None
-    try:
-        data = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if (
-        data.get("cache_date") == date.today().isoformat()
-        and data.get("cache_version") == CACHE_VERSION
-        and data.get("od_overdue_milestones_schema") == OD_OVERDUE_MILESTONES_SCHEMA
-    ):
-        return data
-    return None
+    return techdir_cache.load_fresh_snapshot_file(
+        CACHE_PATH,
+        cache_version=CACHE_VERSION,
+        extra_validators=_snapshot_is_valid,
+    )
+
+
+def _load_stale_cache() -> dict | None:
+    return techdir_cache.load_stale_snapshot_file(
+        CACHE_PATH,
+        cache_version=CACHE_VERSION,
+        extra_validators=_snapshot_is_valid,
+    )
 
 
 def _save_cache(payload: dict) -> None:
@@ -451,11 +456,8 @@ def _project_progress_pct(project_meta: dict[str, Any], tasks: list[dict[str, An
     return round(task_done / task_total * 100, 1)
 
 
-def _compute_projects_snapshot() -> dict:
-    cached = _load_cache()
-    if cached is not None:
-        return cached
-
+def _fetch_projects_snapshot() -> dict:
+    """Загрузить снимок проектов из TurboProject и сохранить на диск."""
     session = requests.Session()
     token = _login(session)
 
@@ -497,6 +499,15 @@ def _compute_projects_snapshot() -> dict:
     }
     _save_cache(payload)
     return payload
+
+
+def _compute_projects_snapshot() -> dict:
+    return cache_manager.stale_while_revalidate(
+        "techdir_projects",
+        _load_cache,
+        _load_stale_cache,
+        _fetch_projects_snapshot,
+    )
 
 
 def get_projects_snapshot() -> dict:

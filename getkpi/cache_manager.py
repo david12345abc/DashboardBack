@@ -27,6 +27,8 @@ DASHBOARD_PAYLOAD_MEM_TTL = 3600  # 1 час — повторные запрос
 _locks: dict[str, threading.Lock] = {}
 _meta = threading.Lock()
 _warming = False
+_bg_pending: set[str] = set()
+_bg_meta = threading.Lock()
 _payload_mem_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _payload_mem_lock = threading.Lock()
 
@@ -57,6 +59,43 @@ def locked_call(key: str, fn, *args, **kwargs):
     """
     with _get_lock(key):
         return fn(*args, **kwargs)
+
+
+def schedule_background_refresh(key: str, fn, *args, **kwargs) -> None:
+    """Запустить пересчёт кэша в фоне, если он ещё не выполняется."""
+    with _bg_meta:
+        if key in _bg_pending or is_computing(key):
+            return
+        _bg_pending.add(key)
+
+    def _worker() -> None:
+        try:
+            locked_call(key, fn, *args, **kwargs)
+        except Exception:
+            logger.exception("cache_manager: background refresh failed for %s", key)
+        finally:
+            with _bg_meta:
+                _bg_pending.discard(key)
+
+    threading.Thread(
+        target=_worker,
+        name=f"cache-refresh-{key}",
+        daemon=True,
+    ).start()
+
+
+def stale_while_revalidate(key: str, load_fresh, load_stale, compute):
+    """Stale-while-revalidate: свежий кэш → устаревший + фон → синхронный пересчёт."""
+    fresh = load_fresh()
+    if fresh is not None:
+        return fresh
+
+    stale = load_stale()
+    if stale is not None:
+        schedule_background_refresh(key, compute)
+        return stale
+
+    return locked_call(key, compute)
 
 
 def get_memoized_dashboard_payload(key: str) -> dict[str, Any] | None:

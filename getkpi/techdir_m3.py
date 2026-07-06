@@ -9,6 +9,7 @@ from typing import Any
 from .cache_manager import locked_call
 from . import calc_budget_techdir_m3
 from . import calc_budget_fact_techdir
+from . import techdir_cache
 
 logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
@@ -58,23 +59,6 @@ def _cache_path(year: int, month: int) -> Path:
     return CACHE_DIR / f"techdir_m3_monthly_{year}_{month:02d}.json"
 
 
-def _load_json(path: Path) -> dict | None:
-    if not path.exists():
-        return None
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return None
-    if data.get("source") != SOURCE_TAG:
-        return None
-    if data.get("cache_version") != CACHE_VERSION:
-        return None
-    if data.get("year") == date.today().year and data.get("month") == date.today().month:
-        return data if data.get("cache_date") == date.today().isoformat() else None
-    return data
-
-
 def _save_json(path: Path, payload: dict) -> None:
     try:
         with path.open("w", encoding="utf-8") as f:
@@ -83,11 +67,7 @@ def _save_json(path: Path, payload: dict) -> None:
         logger.exception("Не удалось сохранить кэш TD-M3 в %s", path)
 
 
-def _month_payload(year: int, month: int) -> dict[str, Any]:
-    path = _cache_path(year, month)
-    cached = _load_json(path)
-    if cached is not None:
-        return cached
+def _compute_month_payload(year: int, month: int) -> dict[str, Any]:
     payload = calc_budget_techdir_m3.get_td_m3_costs_monthly(year, month)
     fact_payload = calc_budget_fact_techdir.get_td_m3_fact_month(year, month)
     fact_total = fact_payload.get("total_fact")
@@ -117,13 +97,32 @@ def _month_payload(year: int, month: int) -> dict[str, Any]:
         "fact_algorithm": "request_based_fact",
         "fact_counts": fact_payload.get("counts"),
     }
-    payload = {
+    return {
         **payload,
         "source": SOURCE_TAG,
         "cache_date": date.today().isoformat(),
+        "year": year,
+        "month": month,
     }
-    _save_json(path, payload)
-    return payload
+
+
+def _month_payload(year: int, month: int) -> dict[str, Any]:
+    path = _cache_path(year, month)
+
+    def _compute_and_save() -> dict[str, Any]:
+        payload = _compute_month_payload(year, month)
+        _save_json(path, payload)
+        return payload
+
+    return techdir_cache.resolve_month_file(
+        f"techdir_m3_month_{year}_{month:02d}",
+        path,
+        source_tag=SOURCE_TAG,
+        cache_version=CACHE_VERSION,
+        year=year,
+        month=month,
+        compute_fn=_compute_and_save,
+    )
 
 
 def _build_td_m3_charts(monthly_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
