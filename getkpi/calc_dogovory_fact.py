@@ -43,7 +43,7 @@ print = functools.partial(print, flush=True)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
-CACHE_VERSION = 11
+CACHE_VERSION = 12
 
 DEPARTMENTS = {
     "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел ВЭД",
@@ -85,6 +85,9 @@ EXCLUDED_ORDER_PARTNER_NAMES = (
     "Турбулентность-ДОН ООО НПО",
     "СКТБ Турбо-Дон ООО",
     "Метрогазсервис ООО",
+)
+EXCLUDED_ORDER_PARTNER_NAMES_NO_MGS = tuple(
+    name for name in EXCLUDED_ORDER_PARTNER_NAMES if name != "Метрогазсервис ООО"
 )
 
 MONTH_RU = {
@@ -336,6 +339,7 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
 
     resale_partners, resale_partners_without_mgs = _partner_resale_sets(session)
     excluded_order_partners = _load_partner_keys_by_names(session, EXCLUDED_ORDER_PARTNER_NAMES)
+    excluded_order_partners_without_mgs = _load_partner_keys_by_names(session, EXCLUDED_ORDER_PARTNER_NAMES_NO_MGS)
 
     partner_ok = []
     for x in spec_ok:
@@ -362,7 +366,12 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
             if od:
                 if od["ne_uchit"]:
                     continue
-                if od["partner"] in excluded_order_partners:
+                excluded_for_dept = (
+                    excluded_order_partners_without_mgs
+                    if _effective_dept(x, order_data) == OPBO_DEPT
+                    else excluded_order_partners
+                )
+                if od["partner"] in excluded_for_dept:
                     continue
                 if od["soprovozhd"]:
                     continue
@@ -393,7 +402,11 @@ def _load_stale_monthly_cache(year: int, month: int) -> dict | None:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
         first_m = (data.get("months") or [{}])[0]
-        if "by_dept" in first_m and _has_nonzero_months(data):
+        if (
+            data.get("cache_version") == CACHE_VERSION
+            and "by_dept" in first_m
+            and _has_nonzero_months(data)
+        ):
             return data
     except (OSError, json.JSONDecodeError):
         pass

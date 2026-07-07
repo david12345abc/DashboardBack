@@ -52,7 +52,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -523,16 +523,19 @@ def _payment_dept_if_passes_plan_fact(
         return None
     if order.get("soprovozhd"):
         return None
-    if order.get("partner", "") in excl_full:
-        return None
 
     partner = catalog_obj.get("partner", "")
     order_dept = normalize_commercial_dept_guid(order.get("dept", ""))
     if opbo_mgs_exception and order_dept == OPBO_DEPT:
+        if order.get("partner", "") in excl_no_mgs:
+            return None
         if partner in excl_no_mgs:
             return None
-    elif partner in excl_full:
-        return None
+    else:
+        if order.get("partner", "") in excl_full:
+            return None
+        if partner in excl_full:
+            return None
 
     return dept
 

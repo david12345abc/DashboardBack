@@ -153,9 +153,9 @@ def is_cache_fresh(path: Path | str) -> bool:
     try:
         data = _load_json_cache(p)
         if isinstance(data, dict):
-            if p.name.startswith('dengi_') and data.get('cache_version') != 3:
+            if p.name.startswith('dengi_') and data.get('cache_version') != 6:
                 return False
-            if p.name.startswith('dengi_monthly_') and data.get('cache_version') != 3:
+            if p.name.startswith('dengi_monthly_') and data.get('cache_version') != 6:
                 return False
             if p.name.startswith('rashody_') and data.get('cache_version') != 2:
                 return False

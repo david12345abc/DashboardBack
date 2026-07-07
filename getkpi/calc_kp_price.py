@@ -4,9 +4,12 @@ calc_kp_price.py — Плитка «Цена фактическая / Цена �
 Источник: Document_КоммерческоеПредложениеКлиенту
 
 Цена фактическая = реквизит СуммаДокумента (если 0, то СуммаДокументаТКП)
-Цена расчетная    = Σ(СуммаСНДС) − Σ(СуммаРучнойСкидки) по всем строкам ТЧ «Товары»
+Цена расчетная    = СуммаДокументаТКП + СуммаСкидкиТКП × (−1)
+                    («Всего по ТКП» + итоговая скидка/наценка, скидка в 1С отрицательная)
 
-Фильтр: Статус ∈ {"Действует", "Исполнено"}, дата в заданном периоде, DeletionMark=false.
+Фильтр: дата в заданном периоде, DeletionMark=false, статус:
+  • «Действует» или «Исполнено»;
+  • либо «Согласовано» и СогласованоСКлиентом=true.
 
 API:
   from getkpi.calc_kp_price import get_kp_price_monthly
@@ -55,6 +58,7 @@ MONTH_RU = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
+KP_PRICE_FORMULA_VERSION = 3
 
 
 def _last_full_month(today: date) -> tuple[int, int]:
@@ -75,7 +79,10 @@ def _load_cache(year: int, ref_month: int) -> dict | None:
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if data.get("cache_date") == date.today().isoformat():
+        if (
+            data.get("cache_date") == date.today().isoformat()
+            and data.get("formula_version") == KP_PRICE_FORMULA_VERSION
+        ):
             return data
     except (OSError, json.JSONDecodeError):
         pass
@@ -117,12 +124,13 @@ def _fetch_docs_for_month(session: requests.Session,
     flt = (
         f"Date ge datetime'{p_start}'"
         f" and Date lt datetime'{p_end}'"
-        f" and (Статус eq 'Действует' or Статус eq 'Исполнено')"
         f" and DeletionMark eq false"
+        f" and (Статус eq 'Действует' or Статус eq 'Исполнено'"
+        f" or (Статус eq 'Согласовано' and СогласованоСКлиентом eq true))"
     )
     sel = (
         "Ref_Key,Date,СуммаДокумента,СуммаДокументаТКП,"
-        "Менеджер_Key,Товары"
+        "СуммаСкидкиТКП,Менеджер_Key"
     )
 
     docs: list[dict] = []
@@ -184,6 +192,13 @@ def _resolve_manager_depts(session: requests.Session,
     return result
 
 
+def _calc_price_from_doc(doc: dict) -> float:
+    """Расчётная цена: «Всего по ТКП» + итоговая скидка/наценка × (−1)."""
+    sum_tkp = float(doc.get("СуммаДокументаТКП") or 0)
+    discount = float(doc.get("СуммаСкидкиТКП") or 0)
+    return round(sum_tkp + (-1) * discount, 2)
+
+
 def _aggregate_docs(docs: list[dict],
                     mgr_to_dept: dict[str, str]) -> dict:
     """Агрегирует цену фактическую/расчетную по подразделениям."""
@@ -199,14 +214,7 @@ def _aggregate_docs(docs: list[dict],
         sum_doc = doc.get("СуммаДокумента", 0) or 0
         sum_tkp = doc.get("СуммаДокументаТКП", 0) or 0
         fact_price = sum_doc if sum_doc != 0 else sum_tkp
-
-        tovary = doc.get("Товары", [])
-        sum_s_nds = 0.0
-        sum_ruch = 0.0
-        for t in tovary:
-            sum_s_nds += (t.get("СуммаСНДС", 0) or 0)
-            sum_ruch += (t.get("СуммаРучнойСкидки", 0) or 0)
-        calc_price = sum_s_nds - sum_ruch
+        calc_price = _calc_price_from_doc(doc)
 
         total_fact += fact_price
         total_calc += calc_price
@@ -330,6 +338,7 @@ def get_kp_price_monthly(year: int | None = None,
 
     payload = {
         "cache_date": today.isoformat(),
+        "formula_version": KP_PRICE_FORMULA_VERSION,
         "year": ref_y,
         "ref_month": ref_m,
         "months": out_months,

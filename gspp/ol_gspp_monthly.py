@@ -52,8 +52,8 @@ STAGE_POINT_PDN = "ПроверкаОпросногоЛистаДиспетче�
 EMPTY_DATE = "0001-01-01T00:00:00"
 SCRIPT_DIR = Path(__file__).resolve().parent
 GSPP_M2_CACHE_PREFIX = "gspp_m2_ol_monthly"
-GSPP_M2_DISK_TAG = "gspp_m2_ol_monthly_payload_v2"
-GSPP_M2_DISK_VERSION = 2
+GSPP_M2_DISK_TAG = "gspp_m2_ol_monthly_payload_v3"
+GSPP_M2_DISK_VERSION = 3
 
 
 def normalize_odata_base(raw_base_url: str) -> str:
@@ -228,6 +228,24 @@ def load_register_rows(
     return fetch_all(session, url, page=5000, timeout=120)
 
 
+def dedupe_register_rows_by_recorder(rows: list[dict]) -> list[dict]:
+    """Один ОЛ — одна строка: актуальная ``ДатаЗавершенияПлан`` (как в ``gspp.tkp``)."""
+    rows_by_recorder: dict[str, dict] = {}
+    for row in rows:
+        recorder = row.get("Recorder", "")
+        if not recorder:
+            continue
+        prev = rows_by_recorder.get(recorder)
+        if prev is None:
+            rows_by_recorder[recorder] = row
+            continue
+        prev_plan = prev.get("ДатаЗавершенияПлан", "")
+        curr_plan = row.get("ДатаЗавершенияПлан", "")
+        if curr_plan > prev_plan:
+            rows_by_recorder[recorder] = row
+    return list(rows_by_recorder.values())
+
+
 def build_monthly_report(
     session: requests.Session,
     start_period: tuple[int, int],
@@ -236,7 +254,9 @@ def build_monthly_report(
     point_key, point_name = resolve_stage_point(session, STAGE_POINT_PDN)
     start_dt = month_start(*start_period)
     end_dt = month_end(*end_period)
-    rows = load_register_rows(session, point_key, start_dt, end_dt)
+    rows = dedupe_register_rows_by_recorder(
+        load_register_rows(session, point_key, start_dt, end_dt),
+    )
 
     stats: dict[str, dict[str, int]] = defaultdict(lambda: {"plan": 0, "late": 0})
     for row in rows:
