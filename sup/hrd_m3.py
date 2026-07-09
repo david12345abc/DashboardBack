@@ -9,7 +9,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from qualdir.turnover import _qd_q2_kpi_pct
@@ -40,37 +39,27 @@ def monthly_cache_path(year: int, month: int) -> Path:
 
 
 def get_hrd_m3_fact_monthly(year: int, month: int) -> dict[str, Any]:
+    path = monthly_cache_path(year, month)
     perpetual = ytd_json_cache.is_ref_period_fully_past(year, month)
-    cached = ytd_json_cache.load_payload(
-        monthly_cache_path(year, month),
-        source_tag=MONTHLY_SOURCE_TAG,
-        version=MONTHLY_CACHE_VERSION,
-        perpetual=perpetual,
-    )
-    if cached is not None:
-        return cached
 
-    lock_key = f"sup_hrd_m3_fact_monthly_{year}_{month:02d}"
-
-    def _runner() -> dict[str, Any]:
-        again = ytd_json_cache.load_payload(
-            monthly_cache_path(year, month),
-            source_tag=MONTHLY_SOURCE_TAG,
-            version=MONTHLY_CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if again is not None:
-            return again
+    def _compute_and_save() -> dict[str, Any]:
         payload = compute_hrd_m3_budget_fact_monthly(year, month)
         ytd_json_cache.save_payload(
-            monthly_cache_path(year, month),
+            path,
             payload,
             source_tag=MONTHLY_SOURCE_TAG,
             version=MONTHLY_CACHE_VERSION,
         )
         return payload
 
-    return locked_call(lock_key, _runner)
+    return ytd_json_cache.resolve_payload(
+        path,
+        source_tag=MONTHLY_SOURCE_TAG,
+        version=MONTHLY_CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"sup_hrd_m3_fact_monthly_{year}_{month:02d}",
+        compute_fn=_compute_and_save,
+    )
 
 
 def _month_row(ref_y: int, m: int, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -140,15 +129,7 @@ def get_hrd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[st
     cache_path = ytd_json_cache.cache_path(CACHE_PREFIX, ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict[str, Any] | None:
-        cached = ytd_json_cache.load_payload(
-            cache_path,
-            source_tag=CACHE_SOURCE_TAG,
-            version=CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict[str, Any] | None:
         try:
             payload = _build_payload(year=ref_y, month=ref_m)
         except Exception:
@@ -161,16 +142,22 @@ def get_hrd_m3_ytd(year: int | None = None, month: int | None = None) -> dict[st
             if stale is not None:
                 return stale
             return None
-        if payload is not None:
-            ytd_json_cache.save_payload(
-                cache_path,
-                payload,
-                source_tag=CACHE_SOURCE_TAG,
-                version=CACHE_VERSION,
-            )
+        ytd_json_cache.save_payload(
+            cache_path,
+            payload,
+            source_tag=CACHE_SOURCE_TAG,
+            version=CACHE_VERSION,
+        )
         return payload
 
-    return locked_call(f"sup_hrd_m3_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        cache_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"sup_hrd_m3_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )
 
 
 def main() -> None:

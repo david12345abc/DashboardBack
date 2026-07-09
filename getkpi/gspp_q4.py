@@ -40,7 +40,7 @@ from typing import Any
 
 import requests
 
-from .cache_manager import locked_call
+from .cache_manager import locked_call, stale_while_revalidate
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from .list_enterprise_positions import employees_by_position
@@ -81,6 +81,9 @@ GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v4"
 GSPP_Q4_DEVIATION_DISK_VERSION = 4
 
 _MANAGER_PROJECTS_TTL = 3600
+_MANAGER_PROJECTS_DISK_TAG = "gspp_manager_projects_v1"
+_MANAGER_PROJECTS_DISK_VERSION = 1
+_MANAGER_PROJECTS_DISK_PATH = ytd_json_cache.CACHE_DIR / "gspp_manager_projects_snapshot.json"
 _manager_projects_cache: tuple[
     float,
     list[tuple[dict[str, Any], dict[str, Any]]],
@@ -448,28 +451,99 @@ def _load_manager_project_pairs(
     return pairs, errors
 
 
+def _serialize_manager_project_pairs(
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+) -> list[list[dict[str, Any]]]:
+    return [[item, details] for item, details in pairs]
+
+
+def _deserialize_manager_project_pairs(
+    raw_pairs: object,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    if not isinstance(raw_pairs, list):
+        return []
+    out: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for entry in raw_pairs:
+        if isinstance(entry, list) and len(entry) == 2 and all(isinstance(x, dict) for x in entry):
+            out.append((entry[0], entry[1]))
+    return out
+
+
+def _unpack_manager_projects_payload(payload: dict[str, Any]) -> tuple[
+    list[tuple[dict[str, Any], dict[str, Any]]], str | None,
+]:
+    pairs = _deserialize_manager_project_pairs(payload.get("pairs"))
+    err = payload.get("error")
+    return pairs, err if isinstance(err, str) or err is None else str(err)
+
+
+def _store_manager_projects_cache(
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+    err: str | None,
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None]:
+    global _manager_projects_cache
+    ytd_json_cache.save_payload(
+        _MANAGER_PROJECTS_DISK_PATH,
+        {"pairs": _serialize_manager_project_pairs(pairs), "error": err},
+        source_tag=_MANAGER_PROJECTS_DISK_TAG,
+        version=_MANAGER_PROJECTS_DISK_VERSION,
+    )
+    with _manager_projects_lock:
+        _manager_projects_cache = (time.monotonic() + _MANAGER_PROJECTS_TTL, pairs, err)
+    return pairs, err
+
+
+def _fetch_manager_project_pairs_from_api() -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None]:
+    session = requests.Session()
+    token = _login(session)
+    return _find_manager_projects(session, token)
+
+
 def get_manager_project_pairs() -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None]:
-    """Список проектов TurboProject для Q4/M5/таблицы — один login/API на TTL (см. ``_MANAGER_PROJECTS_TTL``)."""
+    """Список проектов TurboProject для Q4/M5/таблицы — RAM TTL + файловый stale-while-revalidate."""
     now = time.monotonic()
     with _manager_projects_lock:
         entry = _manager_projects_cache
         if entry is not None and now < entry[0]:
             return entry[1], entry[2]
 
-    def _fetch() -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None]:
-        global _manager_projects_cache
+    perpetual = False
+
+    def _load_fresh() -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None] | None:
+        payload = ytd_json_cache.load_payload(
+            _MANAGER_PROJECTS_DISK_PATH,
+            source_tag=_MANAGER_PROJECTS_DISK_TAG,
+            version=_MANAGER_PROJECTS_DISK_VERSION,
+            perpetual=perpetual,
+        )
+        if payload is None:
+            return None
+        return _unpack_manager_projects_payload(payload)
+
+    def _load_stale() -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None] | None:
+        payload = ytd_json_cache.load_stale_payload(
+            _MANAGER_PROJECTS_DISK_PATH,
+            source_tag=_MANAGER_PROJECTS_DISK_TAG,
+            version=_MANAGER_PROJECTS_DISK_VERSION,
+        )
+        if payload is None:
+            return None
+        return _unpack_manager_projects_payload(payload)
+
+    def _compute_and_save() -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str | None]:
         with _manager_projects_lock:
             entry = _manager_projects_cache
             if entry is not None and time.monotonic() < entry[0]:
                 return entry[1], entry[2]
-        session = requests.Session()
-        token = _login(session)
-        pairs, err = _find_manager_projects(session, token)
-        with _manager_projects_lock:
-            _manager_projects_cache = (time.monotonic() + _MANAGER_PROJECTS_TTL, pairs, err)
-        return pairs, err
+        pairs, err = _fetch_manager_project_pairs_from_api()
+        return _store_manager_projects_cache(pairs, err)
 
-    return locked_call("gspp_turbo_manager_projects", _fetch)
+    return stale_while_revalidate(
+        "gspp_turbo_manager_projects",
+        _load_fresh,
+        _load_stale,
+        _compute_and_save,
+    )
 
 
 def _find_manager_projects(
@@ -696,15 +770,7 @@ def get_gspp_q4_ytd(year: int | None = None, month: int | None = None) -> dict[s
     c_path = ytd_json_cache.cache_path(GSPP_Q4_CACHE_PREFIX, ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict[str, Any] | None:
-        cached = ytd_json_cache.load_payload(
-            c_path,
-            source_tag=GSPP_Q4_DISK_TAG,
-            version=GSPP_Q4_DISK_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict[str, Any] | None:
         try:
             payload = _build_gspp_q4_payload(year=year, month=month)
         except Exception:
@@ -719,7 +785,14 @@ def get_gspp_q4_ytd(year: int | None = None, month: int | None = None) -> dict[s
             )
         return payload
 
-    return locked_call(f"gspp_q4_turbo_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        c_path,
+        source_tag=GSPP_Q4_DISK_TAG,
+        version=GSPP_Q4_DISK_VERSION,
+        perpetual=perpetual,
+        lock_key=f"gspp_q4_turbo_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )
 
 
 def _gspp_project_row_for_deviation(
@@ -881,15 +954,7 @@ def get_gspp_q4_deviation_tables(year: int | None = None, month: int | None = No
     cache_path = gspp_q4_deviation_tables_cache_path(ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict[str, Any]:
-        cached = ytd_json_cache.load_payload(
-            cache_path,
-            source_tag=GSPP_Q4_DEVIATION_DISK_TAG,
-            version=GSPP_Q4_DEVIATION_DISK_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict[str, Any]:
         result = _compute_gspp_q4_deviation_tables(ref_y, ref_m)
         if isinstance(result, dict):
             ytd_json_cache.save_payload(
@@ -901,9 +966,16 @@ def get_gspp_q4_deviation_tables(year: int | None = None, month: int | None = No
         return result
 
     try:
-        out = locked_call(f"gspp_q4_deviation_tables_{ref_y}_{ref_m:02d}", _runner)
+        out = ytd_json_cache.resolve_payload(
+            cache_path,
+            source_tag=GSPP_Q4_DEVIATION_DISK_TAG,
+            version=GSPP_Q4_DEVIATION_DISK_VERSION,
+            perpetual=perpetual,
+            lock_key=f"gspp_q4_deviation_tables_{ref_y}_{ref_m:02d}",
+            compute_fn=_compute_and_save,
+        )
     except Exception:
-        logger.exception("ГСП-Q4: сбой locked_call таблицы отклонений")
+        logger.exception("ГСП-Q4: сбой resolve таблицы отклонений")
         return dict(fallback)
     return out if isinstance(out, dict) else dict(fallback)
 

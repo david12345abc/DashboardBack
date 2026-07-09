@@ -1,6 +1,8 @@
 """KPI ИТ-M4 (ФОТ): план из it_m4_fot_plan, факт из it_m4_fot_fact.
 
-Кэш: ``getkpi/dashboard/autoit_it_m4_fot_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
+Кэш:
+  • помесячно — ``getkpi/dashboard/autoit_it_m4_fot_fact_monthly_<год>_<месяц>.json``;
+  • YTD-плитка — ``getkpi/dashboard/autoit_it_m4_fot_<год>_<месяц>.json``.
 """
 
 from __future__ import annotations
@@ -9,7 +11,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 
 from .it_m4_fot_fact import compute_it_m4_fot_fact_monthly
@@ -20,7 +21,44 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "autoit_it_m4_fot"
 CACHE_SOURCE_TAG = "autoit_it_m4_fot_ytd"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
+
+MONTHLY_CACHE_PREFIX = "autoit_it_m4_fot_fact_monthly"
+MONTHLY_SOURCE_TAG = "autoit_it_m4_fot_fact_monthly_v1"
+MONTHLY_CACHE_VERSION = 1
+
+
+def monthly_cache_path(year: int, month: int) -> Path:
+    return ytd_json_cache.cache_path(MONTHLY_CACHE_PREFIX, year, month)
+
+
+def _monthly_cache_is_perpetual(year: int, month: int) -> bool:
+    return ytd_json_cache.is_ref_period_fully_past(year, month)
+
+
+def get_it_m4_fot_fact_monthly(year: int, month: int) -> dict[str, Any]:
+    """Факт ФОТ за один месяц с дисковым кэшем."""
+    path = monthly_cache_path(year, month)
+    perpetual = _monthly_cache_is_perpetual(year, month)
+
+    def _compute_and_save() -> dict[str, Any]:
+        payload = compute_it_m4_fot_fact_monthly(year, month)
+        ytd_json_cache.save_payload(
+            path,
+            payload,
+            source_tag=MONTHLY_SOURCE_TAG,
+            version=MONTHLY_CACHE_VERSION,
+        )
+        return payload
+
+    return ytd_json_cache.resolve_payload(
+        path,
+        source_tag=MONTHLY_SOURCE_TAG,
+        version=MONTHLY_CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"autoit_it_m4_fot_fact_monthly_{year}_{month:02d}",
+        compute_fn=_compute_and_save,
+    )
 
 
 def _plan_for_month(year: int, month: int) -> float | None:
@@ -42,7 +80,7 @@ def _build_it_m4_fot_payload(year: int | None = None, month: int | None = None) 
 
     for m in range(1, ref_m + 1):
         plan = _plan_for_month(ref_y, m)
-        fact_payload = compute_it_m4_fot_fact_monthly(ref_y, m)
+        fact_payload = get_it_m4_fot_fact_monthly(ref_y, m)
         fact_raw = fact_payload.get("total_fact")
         fact_value = float(fact_raw) if fact_raw is not None else None
         has_data = plan is not None and fact_value is not None
@@ -84,6 +122,8 @@ def _build_it_m4_fot_payload(year: int | None = None, month: int | None = None) 
             "kpi_id": "IT-M4",
             "plan_source": "getkpi/autoit/it_m4_fot_plan.py",
             "fact_source": "getkpi/autoit/it_m4_fot_fact.py",
+            "monthly_cache_prefix": MONTHLY_CACHE_PREFIX,
+            "monthly_cache_version": MONTHLY_CACHE_VERSION,
         },
     }
 
@@ -98,27 +138,32 @@ def get_it_m4_fot_ytd(year: int | None = None, month: int | None = None) -> dict
     cache_path = cache_file_path_for_period(year, month)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict | None:
-        cached = ytd_json_cache.load_payload(
-            cache_path,
-            source_tag=CACHE_SOURCE_TAG,
-            version=CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict | None:
         try:
             payload = _build_it_m4_fot_payload(year=year, month=month)
         except Exception:
             logger.exception("Ошибка при расчёте ИТ-M4 (ФОТ)")
-            return None
-        if payload is not None:
-            ytd_json_cache.save_payload(
+            stale = ytd_json_cache.load_stale_payload(
                 cache_path,
-                payload,
                 source_tag=CACHE_SOURCE_TAG,
                 version=CACHE_VERSION,
             )
+            if stale is not None:
+                return stale
+            return None
+        ytd_json_cache.save_payload(
+            cache_path,
+            payload,
+            source_tag=CACHE_SOURCE_TAG,
+            version=CACHE_VERSION,
+        )
         return payload
 
-    return locked_call(f"autoit_it_m4_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        cache_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"autoit_it_m4_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )

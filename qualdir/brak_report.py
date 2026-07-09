@@ -86,18 +86,30 @@ FORM_0317_CONFIG = ReportConfig(
 EXCLUDED_APPROVAL_STATUSES = frozenset({
     "НеСогласовано",
     "Подготовлен",
+    "Подготовлено",
     "НаСогласовании",
     "Отменена",
 })
 EXECUTED_APPROVAL_STATUS = "Выполнено"
-# В plan не входят отклонённые, отменённые и ещё не согласованные заявки.
-PLAN_EXCLUDED_APPROVAL_STATUSES = frozenset({"НеСогласовано", "Отменена", "НаСогласовании"})
+# В plan не входят отклонённые, отменённые, ещё не согласованные и подготовленные заявки.
+PLAN_EXCLUDED_APPROVAL_STATUSES = frozenset({
+    "НеСогласовано",
+    "Отменена",
+    "НаСогласовании",
+    "Подготовлен",
+    "Подготовлено",
+})
 
 
 def normalize_text(value: str | None) -> str:
     text = (value or "").strip().lower().replace("ё", "е")
     text = re.sub(r"[^0-9a-zа-я]+", " ", text)
     return " ".join(text.split())
+
+
+PLAN_EXCLUDED_APPROVAL_STATUSES_NORM = frozenset(
+    normalize_text(status) for status in PLAN_EXCLUDED_APPROVAL_STATUSES
+)
 
 
 def _http_get(session: requests.Session, url: str, *, timeout: int = 180) -> requests.Response:
@@ -197,11 +209,11 @@ def is_countable_brak_document(row: dict) -> bool:
 
 
 def is_plan_brak_document(row: dict) -> bool:
-    """Заявка в plan: документ месяца, кроме ``НеСогласовано``, ``Отменена``, ``НаСогласовании``."""
+    """Заявка в plan: документ месяца, кроме черновиков/отменённых/несогласованных."""
     status = (row.get("Статус") or "").strip()
     if not status:
         return False
-    return status not in PLAN_EXCLUDED_APPROVAL_STATUSES
+    return normalize_text(status) not in PLAN_EXCLUDED_APPROVAL_STATUSES_NORM
 
 
 def is_executed_brak_document(row: dict) -> bool:

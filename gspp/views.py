@@ -2,17 +2,24 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
-from gspp.tkp_lifecycle import get_gspp_m1_ytd
-from gspp.ol_gspp_monthly import get_gspp_m2_ytd
-from gspp.m3 import get_gspp_m3_ytd
-from gspp.m5 import get_gspp_m5_ytd
-from gspp.q5 import get_gspp_q5_ytd
-from getkpi.gspp_q4 import get_gspp_q4_deviation_tables, get_gspp_q4_ytd, gspp_q4_kpi_id_matches
+from gspp.tkp_lifecycle import get_gspp_m1_ytd, gspp_m1_ytd_cache_path
+from gspp.ol_gspp_monthly import get_gspp_m2_ytd, gspp_m2_ytd_cache_path
+from gspp.m3 import get_gspp_m3_ytd, gspp_m3_ytd_cache_path
+from gspp.m5 import get_gspp_m5_ytd, gspp_m5_ytd_cache_path
+from gspp.q5 import get_gspp_q5_ytd, gspp_q5_ytd_cache_path
+from getkpi.gspp_q4 import (
+    get_gspp_q4_deviation_tables,
+    get_gspp_q4_ytd,
+    gspp_q4_kpi_id_matches,
+    gspp_q4_ytd_cache_path,
+    _MANAGER_PROJECTS_DISK_PATH,
+)
 
 GSPP_TILE_KPI_IDS: frozenset[str] = frozenset({
-    "ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4",
+    "ГСП-Q4", "GSP-Q4", "GSPP-Q4", "ГCP-Q4", "ГCП-Q4", "ГСПП-Q4", "ГCПП-Q4",
     "ГСП-M1", "ГCП-M1", "GSP-M1", "ГСПП-M1", "ГCПП-M1", "GSPP-M1",
     "ГСП-M2", "ГCП-M2", "GSP-M2", "ГСПП-M2", "ГCПП-M2", "GSPP-M2",
     "ГСП-M3", "ГCП-M3", "GSP-M3", "ГСПП-M3", "ГCПП-M3", "GSPP-M3",
@@ -21,7 +28,7 @@ GSPP_TILE_KPI_IDS: frozenset[str] = frozenset({
 })
 
 GSPP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
-    "ГСП-Q4", "GSP-Q4", "ГCP-Q4", "ГCП-Q4",
+    "ГСП-Q4", "GSP-Q4", "GSPP-Q4", "ГCP-Q4", "ГCП-Q4", "ГСПП-Q4", "ГCПП-Q4",
     "ГСП-M1", "ГCП-M1", "GSP-M1", "ГСПП-M1", "ГCПП-M1", "GSPP-M1",
     "ГСП-M2", "ГCП-M2", "GSP-M2", "ГСПП-M2", "ГCПП-M2", "GSPP-M2",
     "ГСП-M3", "ГCП-M3", "GSP-M3", "ГСПП-M3", "ГCПП-M3", "GSPP-M3",
@@ -95,6 +102,45 @@ def _normalize_kpi_id(raw: object) -> str:
     for cyr, lat in (("М", "M"), ("С", "C"), ("Р", "P")):
         s = s.replace(cyr, lat)
     return s
+
+
+_GSPP_M1_IDS_NORM = frozenset(_normalize_kpi_id(x) for x in GSPP_M1_TILE_IDS)
+_GSPP_M2_IDS_NORM = frozenset(_normalize_kpi_id(x) for x in GSPP_M2_TILE_IDS)
+_GSPP_M3_IDS_NORM = frozenset(_normalize_kpi_id(x) for x in GSPP_M3_TILE_IDS)
+_GSPP_M5_IDS_NORM = frozenset(_normalize_kpi_id(x) for x in GSPP_M5_TILE_IDS)
+_GSPP_Q5_IDS_NORM = frozenset(_normalize_kpi_id(x) for x in GSPP_Q5_TILE_IDS)
+_GSPP_TILE_IDS_NORM = frozenset(_normalize_kpi_id(x) for x in GSPP_TILE_KPI_IDS)
+
+
+def is_gspp_tile_kpi_id(kpi_id: str) -> bool:
+    return _normalize_kpi_id(kpi_id) in _GSPP_TILE_IDS_NORM
+
+
+def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
+    """Файлы кэша, по mtime которых на плитке показывается ``cache_updated_at`` (как TD-*)."""
+    kid = _normalize_kpi_id(kpi_id)
+    paths: list[Path] = []
+
+    if kid in _GSPP_M1_IDS_NORM:
+        paths.append(gspp_m1_ytd_cache_path(ref_y, ref_m))
+    elif kid in _GSPP_M2_IDS_NORM:
+        paths.append(gspp_m2_ytd_cache_path(ref_y, ref_m))
+    elif kid in _GSPP_M3_IDS_NORM:
+        paths.append(gspp_m3_ytd_cache_path(ref_y, ref_m))
+    elif kid in _GSPP_M5_IDS_NORM:
+        paths.extend([
+            gspp_m5_ytd_cache_path(ref_y, ref_m),
+            _MANAGER_PROJECTS_DISK_PATH,
+        ])
+    elif gspp_q4_kpi_id_matches(kid):
+        paths.extend([
+            gspp_q4_ytd_cache_path(ref_y, ref_m),
+            _MANAGER_PROJECTS_DISK_PATH,
+        ])
+    elif kid in _GSPP_Q5_IDS_NORM:
+        paths.append(gspp_q5_ytd_cache_path(ref_y, ref_m))
+
+    return paths
 
 
 def _merge_monthly(entry: dict[str, Any], payload: dict[str, Any]) -> None:

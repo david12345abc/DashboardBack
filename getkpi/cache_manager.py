@@ -10,9 +10,9 @@ cache_manager.py — Предотвращение параллельных вы�
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
-import json
 import threading
 import time
 from contextlib import contextmanager
@@ -26,11 +26,14 @@ CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
 MAX_AGE_SECONDS = 86400  # 1 день
 DASHBOARD_PAYLOAD_MEM_TTL = 3600  # 1 час — повторные запросы дашборда ГСПП
 WARM_TASK_DELAY_SECONDS = float(os.getenv('CACHE_WARM_TASK_DELAY_SECONDS', '1.0'))
+DASHBOARD_DISK_VERSION = 1
 
 _locks: dict[str, threading.Lock] = {}
 _meta = threading.Lock()
 _warming = False
 _warm_cycle_lock = threading.Lock()
+_bg_pending: set[str] = set()
+_bg_meta = threading.Lock()
 _payload_mem_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _payload_mem_lock = threading.Lock()
 _refresh_local = threading.local()
@@ -230,6 +233,43 @@ def _start_background_refresh(key: str, cache_path: Path, fn, args: tuple, kwarg
     ).start()
 
 
+def schedule_background_refresh(key: str, fn, *args, **kwargs) -> None:
+    """Запустить пересчёт кэша в фоне, если он ещё не выполняется."""
+    with _bg_meta:
+        if key in _bg_pending or is_computing(key):
+            return
+        _bg_pending.add(key)
+
+    def _worker() -> None:
+        try:
+            locked_call(key, fn, *args, **kwargs)
+        except Exception:
+            logger.exception("cache_manager: background refresh failed for %s", key)
+        finally:
+            with _bg_meta:
+                _bg_pending.discard(key)
+
+    threading.Thread(
+        target=_worker,
+        name=f"cache-refresh-{key}",
+        daemon=True,
+    ).start()
+
+
+def stale_while_revalidate(key: str, load_fresh, load_stale, compute):
+    """Stale-while-revalidate: свежий кэш → устаревший + фон → синхронный пересчёт."""
+    fresh = load_fresh()
+    if fresh is not None:
+        return fresh
+
+    stale = load_stale()
+    if stale is not None:
+        schedule_background_refresh(key, compute)
+        return stale
+
+    return locked_call(key, compute)
+
+
 def get_memoized_dashboard_payload(key: str) -> dict[str, Any] | None:
     """In-memory кэш собранного JSON дашборда (TTL см. ``DASHBOARD_PAYLOAD_MEM_TTL``)."""
     now = time.monotonic()
@@ -265,6 +305,98 @@ def clear_memoized_dashboard_payload(prefix: str | None = None) -> None:
                 del _payload_mem_cache[key]
 
 
+def _dashboard_disk_path(disk_key: str) -> Path:
+    return CACHE_DIR / f"dashboard_payload_{disk_key}.json"
+
+
+def _read_dashboard_disk_wrapper(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("cache_version") != DASHBOARD_DISK_VERSION:
+        return None
+    payload = raw.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    return raw
+
+
+def load_dashboard_disk_fresh(disk_key: str) -> dict[str, Any] | None:
+    wrapper = _read_dashboard_disk_wrapper(_dashboard_disk_path(disk_key))
+    if wrapper is None:
+        return None
+    if wrapper.get("cache_date") != date.today().isoformat():
+        return None
+    return wrapper
+
+
+def load_dashboard_disk_stale(disk_key: str) -> dict[str, Any] | None:
+    return _read_dashboard_disk_wrapper(_dashboard_disk_path(disk_key))
+
+
+def save_dashboard_disk(disk_key: str, payload: dict[str, Any]) -> None:
+    path = _dashboard_disk_path(disk_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "cache_version": DASHBOARD_DISK_VERSION,
+                    "cache_date": date.today().isoformat(),
+                    "payload": payload,
+                },
+                handle,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except OSError:
+        logger.exception("cache_manager: failed to save dashboard disk cache %s", path)
+
+
+def try_serve_dashboard_disk_cache(
+    disk_key: str,
+    mem_key: str | None,
+    *,
+    refresh_fn,
+) -> dict[str, Any] | None:
+    """Вернуть payload с диска (свежий или устаревший) и при необходимости запланировать пересборку."""
+    fresh = load_dashboard_disk_fresh(disk_key)
+    if fresh is not None:
+        payload = fresh["payload"]
+        if mem_key:
+            set_memoized_dashboard_payload(mem_key, payload)
+        return payload
+
+    stale = load_dashboard_disk_stale(disk_key)
+    if stale is None:
+        return None
+
+    payload = stale["payload"]
+    if mem_key:
+        set_memoized_dashboard_payload(mem_key, payload)
+
+    refresh_key = f"dashboard_disk_{disk_key}"
+
+    def _worker() -> None:
+        try:
+            new_payload = refresh_fn()
+            save_dashboard_disk(disk_key, new_payload)
+            if mem_key:
+                set_memoized_dashboard_payload(mem_key, new_payload)
+        except Exception:
+            logger.exception("cache_manager: dashboard disk refresh failed for %s", disk_key)
+
+    schedule_background_refresh(refresh_key, _worker)
+    logger.info("cache_manager: served stale dashboard disk cache %s", disk_key)
+    return payload
+
+
 def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     """Список (key, cache_path, compute_fn) для всех источников данных."""
     from . import (
@@ -280,7 +412,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
         calc_metrolog_budget, calc_metrolog_fot, calc_metrolog_production_plan,
         calc_metrolog_projects, calc_metrolog_turnover,
-        techdir_m3, techdir_m4, techdir_m5, techdir_projects, techdir_tekuchet,
+        techdir_m3, techdir_m4, techdir_m5, techdir_m6_bdds, techdir_projects, techdir_tekuchet,
     )
     from .calc_prod_deputy_pc_common import cache_path as prod_deputy_pc_cache_path
     from . import gspp_q4
@@ -319,8 +451,12 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         get_it_m3_ytd,
         monthly_cache_path as autoit_it_m3_monthly_cache_path,
     )
-    from getkpi.autoit.it_m4_fot import cache_file_path_for_period as autoit_it_m4_cache_path
-    from getkpi.autoit.it_m4_fot import get_it_m4_fot_ytd
+    from getkpi.autoit.it_m4_fot import (
+        cache_file_path_for_period as autoit_it_m4_cache_path,
+        get_it_m4_fot_fact_monthly,
+        get_it_m4_fot_ytd,
+        monthly_cache_path as autoit_it_m4_monthly_cache_path,
+    )
     from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as autoit_it_q2_cache_path
     from getkpi.autoit.it_q2_tekuchest import get_it_q2_tekuchest_ytd
     from getkpi.c1auto.c1_m1_sla import (
@@ -427,6 +563,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         ('techdir_tekuchet',
          techdir_tekuchet._cache_path(y, m),
          lambda: techdir_tekuchet.get_td_q2_ytd(year=y, month=m)),
+
+        (f'techdir_m6_{y}_{m}',
+         techdir_m6_bdds._td_m6_cache_path(y, m),
+         lambda yy=y, mm=m: techdir_m6_bdds.get_td_m6_ytd(year=yy, month=mm)),
 
         ('qualdir_qd_q2_ytd',
          qd_q2_ytd_cache_path(y, m),
@@ -611,6 +751,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'autoit_it_m3_{y}_{m}',
          autoit_it_m3_cache_path(y, m),
          lambda yy=y, mm=m: get_it_m3_ytd(year=yy, month=mm)),
+
+        (f'autoit_it_m4_fot_fact_monthly_{y}_{m}',
+         autoit_it_m4_monthly_cache_path(y, m),
+         lambda yy=y, mm=m: get_it_m4_fot_fact_monthly(yy, mm)),
 
         (f'autoit_it_m4_fot_{y}_{m}',
          autoit_it_m4_cache_path(y, m),

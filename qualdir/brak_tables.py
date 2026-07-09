@@ -10,7 +10,7 @@ from typing import Any
 
 import requests
 
-from getkpi.cache_manager import locked_call
+from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
@@ -321,14 +321,47 @@ def merge_qualdir_brak_tables(
     ref_y, ref_m = int(year), max(1, min(12, int(month)))
     lock_key = f"qualdir_brak_tables_{ref_y}_{ref_m:02d}"
 
-    def _runner() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    def _load_fresh() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]] | None:
+        external = _load_ytd_table_cache("external", ref_y, ref_m)
+        internal = _load_ytd_table_cache("internal", ref_y, ref_m)
+        forma0317 = _load_ytd_table_cache("forma0317", ref_y, ref_m)
+        if external is None or internal is None or forma0317 is None:
+            return None
+        return external, internal, forma0317
+
+    def _load_stale() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]] | None:
+        external = ytd_json_cache.load_stale_payload(
+            _ytd_table_cache_path("external", ref_y, ref_m),
+            source_tag=f"{TABLE_YTD_DISK_TAG}_external",
+            version=TABLE_YTD_DISK_VERSION,
+        )
+        internal = ytd_json_cache.load_stale_payload(
+            _ytd_table_cache_path("internal", ref_y, ref_m),
+            source_tag=f"{TABLE_YTD_DISK_TAG}_internal",
+            version=TABLE_YTD_DISK_VERSION,
+        )
+        forma0317 = ytd_json_cache.load_stale_payload(
+            _ytd_table_cache_path("forma0317", ref_y, ref_m),
+            source_tag=f"{TABLE_YTD_DISK_TAG}_forma0317",
+            version=TABLE_YTD_DISK_VERSION,
+        )
+        if external is None or internal is None or forma0317 is None:
+            return None
+        return external, internal, forma0317
+
+    def _compute() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         return (
             build_external_brak_table(ref_y, ref_m),
             build_internal_brak_table(ref_y, ref_m),
             build_forma0317_table(ref_y, ref_m),
         )
 
-    external_table, internal_table, forma0317_table = locked_call(lock_key, _runner)
+    external_table, internal_table, forma0317_table = stale_while_revalidate(
+        lock_key,
+        _load_fresh,
+        _load_stale,
+        _compute,
+    )
     tablitsy[TABLE_ID_EXTERNAL] = external_table
     tablitsy[TABLE_ID_INTERNAL] = internal_table
     tablitsy[TABLE_ID_FORMA0317] = forma0317_table

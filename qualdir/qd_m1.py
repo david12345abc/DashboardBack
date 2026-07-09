@@ -23,7 +23,6 @@ from typing import Any
 
 import requests
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
@@ -34,12 +33,12 @@ logger = logging.getLogger(__name__)
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 _MONTH_CACHE_META = frozenset({"source", "cache_version", "cache_date"})
-SOURCE_TAG = "qualdir_external_brak_month_v9"
-CACHE_VERSION = 9
+SOURCE_TAG = "qualdir_external_brak_month_v12"
+CACHE_VERSION = 12
 
 QD_M1_YTD_CACHE_PREFIX = "qualdir_qd_m1_ytd"
-QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v13"
-QD_M1_YTD_DISK_VERSION = 13
+QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_v16"
+QD_M1_YTD_DISK_VERSION = 16
 
 
 def _normalize_period(year: int | None, month: int | None) -> tuple[int, int]:
@@ -355,4 +354,12 @@ def get_qd_m1_ytd(year: int | None = None, month: int | None = None) -> dict[str
             )
         return payload
 
-    return locked_call(f"qualdir_qd_m1_{ref_y}_{ref_m:02d}", _runner)
+    perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
+    return ytd_json_cache.resolve_payload(
+        disk_path,
+        source_tag=QD_M1_YTD_DISK_TAG,
+        version=QD_M1_YTD_DISK_VERSION,
+        perpetual=perpetual,
+        lock_key=f"qualdir_qd_m1_{ref_y}_{ref_m:02d}",
+        compute_fn=_runner,
+    )

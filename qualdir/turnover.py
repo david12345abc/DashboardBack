@@ -15,7 +15,6 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU, TURNOVER_VALUES_UNIT, build_turnover_month_payload
 from getkpi.turnover_hr_scope import TurnoverHrScope
@@ -275,4 +274,11 @@ def get_qd_q2_ytd(year: int | None = None, month: int | None = None) -> dict[str
             )
         return _out
 
-    return locked_call(f"qualdir_qd_q2_{cy}_{cm:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        _disk_path,
+        source_tag=QD_Q2_YTD_DISK_TAG,
+        version=QD_Q2_YTD_DISK_VERSION,
+        perpetual=_perpetual,
+        lock_key=f"qualdir_qd_q2_{cy}_{cm:02d}",
+        compute_fn=_runner,
+    )

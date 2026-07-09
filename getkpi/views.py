@@ -61,50 +61,7 @@ import servhead.views as _servhead_kpi_views
 import autoit.views as _autoit_kpi_views
 import c1auto.views as _c1auto_kpi_views
 from . import techdir_kpi_entry
-from qualdir.qd_m1 import (
-    external_brak_month_cache_path,
-    get_qd_m1_ytd,
-    qd_m1_tile_cache_path,
-    qd_m1_ytd_cache_path,
-)
-from qualdir.qd_m8 import (
-    forma0317_month_cache_path,
-    get_qd_m8_ytd,
-    qd_m8_tile_cache_path,
-    qd_m8_ytd_cache_path,
-)
-from qualdir.qd_m7 import (
-    get_qd_m7_ytd,
-    qd_m7_tile_cache_path,
-    qd_m7_ytd_cache_path,
-    vyhod_kontrol_month_cache_path,
-)
-from qualdir.qd_m6 import (
-    get_qd_m6_ytd,
-    legacy_otk_predyavlenie_month_cache_path,
-    otk_predyavlenie_month_cache_path,
-    qd_m6_tile_cache_path,
-    qd_m6_ytd_cache_path,
-)
-from qualdir.qd_m9 import (
-    get_qd_m9_ytd,
-    otk_predyavlenie_npo_month_cache_path,
-    qd_m9_tile_cache_path,
-    qd_m9_ytd_cache_path,
-)
-from qualdir.qd_m10 import (
-    get_qd_m10_ytd,
-    otk_predyavlenie_almaz_month_cache_path,
-    qd_m10_tile_cache_path,
-    qd_m10_ytd_cache_path,
-)
-from qualdir.mpp_tasks_report import get_qd_q1_ytd, qd_q1_mpp_path_for_stamp, qd_q1_tile_cache_path
-from qualdir.turnover import (
-    _qd_q2_kpi_pct,
-    get_qd_q2_ytd,
-    qd_q2_ytd_cache_path,
-    turnover_month_cache_path,
-)
+from qualdir.turnover import _qd_q2_kpi_pct
 
 _STRUCTURE_FILE = Path(__file__).resolve().parent / 'structure.json'
 _structure_cache: dict | None = None
@@ -1238,24 +1195,12 @@ def _public_unit_row(row: dict) -> dict:
     return out
 
 
-def _qd_q1_stamp_paths(ref_y: int | None, ref_m: int | None) -> list:
-    paths = []
-    p = qd_q1_mpp_path_for_stamp()
-    if p is not None:
-        paths.append(p)
-    if ref_y is not None and ref_m is not None:
-        paths.append(qd_q1_tile_cache_path(ref_y, ref_m))
-    return paths
-
-
 def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) -> str | None:
     if ref_y is None or ref_m is None:
         return None
     kid = _normalize_dashboard_kpi_id(kpi_id)
 
-    if kid == 'QD-Q1':
-        cache_files = _qd_q1_stamp_paths(ref_y, ref_m)
-    elif kid == 'METD-M3.B':
+    if kid == 'METD-M3.B':
         cache_files = [cache_manager.CACHE_DIR / f'metrolog_budget_{ref_y}_{ref_m:02d}.json']
     elif kid == 'METD-M3.F':
         cache_files = [cache_manager.CACHE_DIR / f'metrolog_fot_{ref_y}_{ref_m:02d}.json']
@@ -1276,120 +1221,31 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             calc_debitorka.overdue_detail_cache_path(ref_y, ref_m),
             cache_manager.CACHE_DIR / f'debitorka_monthly_{ref_y}_{ref_m:02d}.json',
         ]
-    elif kpi_id == 'QD-M1':
-        cache_files = [
-            qd_m1_ytd_cache_path(ref_y, ref_m),
-            external_brak_month_cache_path(ref_y, ref_m),
-            qd_m1_tile_cache_path(ref_y, ref_m),
-        ]
-    elif kpi_id == 'QD-M5':
-        from qualdir.qd_m5 import internal_brak_month_cache_path, qd_m5_ytd_cache_path
-
-        cache_files = [
-            qd_m5_ytd_cache_path(ref_y, ref_m),
-            internal_brak_month_cache_path(ref_y, ref_m),
-        ]
-    elif kpi_id == 'QD-M6':
-        cache_files = [
-            qd_m6_ytd_cache_path(ref_y, ref_m),
-            otk_predyavlenie_month_cache_path(ref_y, ref_m),
-            qd_m6_tile_cache_path(ref_y, ref_m),
-        ]
-        legacy_month = legacy_otk_predyavlenie_month_cache_path(ref_y, ref_m)
-        if legacy_month is not None:
-            cache_files.append(legacy_month)
-    elif kpi_id == 'QD-M9':
-        cache_files = [
-            qd_m9_ytd_cache_path(ref_y, ref_m),
-            otk_predyavlenie_npo_month_cache_path(ref_y, ref_m),
-            qd_m9_tile_cache_path(ref_y, ref_m),
-        ]
-    elif kpi_id == 'QD-M10':
-        cache_files = [
-            qd_m10_ytd_cache_path(ref_y, ref_m),
-            otk_predyavlenie_almaz_month_cache_path(ref_y, ref_m),
-            qd_m10_tile_cache_path(ref_y, ref_m),
-        ]
-    elif kpi_id == 'QD-M7':
-        cache_files = [
-            qd_m7_ytd_cache_path(ref_y, ref_m),
-            vyhod_kontrol_month_cache_path(ref_y, ref_m),
-            qd_m7_tile_cache_path(ref_y, ref_m),
-        ]
-    elif kpi_id == 'QD-M8':
-        cache_files = [
-            qd_m8_ytd_cache_path(ref_y, ref_m),
-            forma0317_month_cache_path(ref_y, ref_m),
-            qd_m8_tile_cache_path(ref_y, ref_m),
-        ]
+    elif kid == 'IT-M3':
+        cache_files = (
+            _autoit_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+            + _c1auto_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+        )
+    elif _qualdir_kpi_views.is_qualdir_tile_kpi_id(kpi_id):
+        cache_files = _qualdir_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+    elif _sup_kpi_views.is_sup_tile_kpi_id(kpi_id):
+        cache_files = _sup_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+    elif _autoit_kpi_views.is_autoit_tile_kpi_id(kpi_id):
+        cache_files = _autoit_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+    elif _c1auto_kpi_views.is_c1auto_tile_kpi_id(kpi_id):
+        cache_files = _c1auto_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+    elif _servhead_kpi_views.is_servhead_tile_kpi_id(kpi_id):
+        cache_files = _servhead_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
-        if not cache_files and kpi_id == 'QD-Q2':
-            cache_files = [
-                qd_q2_ytd_cache_path(ref_y, ref_m),
-                turnover_month_cache_path(ref_y, ref_m),
-            ]
-        if not cache_files and kpi_id in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS:
-            from getkpi.autoit.it_m1_sla import (
-                cache_file_path_for_period as it_m1_cache,
-                monthly_cache_path as it_m1_monthly_cache,
-            )
-
-            cache_files = [
-                it_m1_cache(ref_y, ref_m),
-                it_m1_monthly_cache(ref_y, ref_m),
-            ]
-        if not cache_files and kpi_id in _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS:
-            from getkpi.autoit.it_m3 import (
-                cache_file_path_for_period as it_m3_cache,
-                monthly_cache_path as it_m3_monthly_cache,
-            )
-
-            cache_files = [
-                it_m3_cache(ref_y, ref_m),
-                it_m3_monthly_cache(ref_y, ref_m),
-            ]
-        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
-            from getkpi.c1auto.c1_m1_sla import (
-                cache_file_path_for_period as c1_m1_cache,
-                monthly_cache_path as c1_m1_monthly_cache,
-            )
-
-            cache_files = [
-                c1_m1_cache(ref_y, ref_m),
-                c1_m1_monthly_cache(ref_y, ref_m),
-            ]
-        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS:
-            from getkpi.c1auto.c1_m3 import cache_file_path_for_period as c1_m3_cache
-
-            cache_files = [c1_m3_cache(ref_y, ref_m)]
-        if not cache_files and kpi_id in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS:
-            from getkpi.c1auto.it_q5_tekuchest import cache_file_path_for_period as c1_q5_cache
-
-            cache_files = [c1_q5_cache(ref_y, ref_m)]
-        if not cache_files and kpi_id == 'IT-Q2':
-            from getkpi.autoit.it_q2_tekuchest import cache_file_path_for_period as it_q2_cache
-
-            cache_files = [it_q2_cache(ref_y, ref_m)]
-        if not cache_files and kpi_id in _sup_kpi_views.SUP_KPI_IDS:
-            from sup import hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_q4
-
-            if kpi_id == 'HRD-M1':
-                cache_files = [hrd_m1.cache_file_path_for_period(ref_y, ref_m)]
-            elif kpi_id == 'HRD-M2':
-                cache_files = [
-                    hrd_m2.cache_file_path_for_period(ref_y, ref_m),
-                    hrd_m2.monthly_cache_path(ref_y, ref_m),
-                ]
-            elif kpi_id == 'HRD-M3':
-                cache_files = [
-                    hrd_m3.cache_file_path_for_period(ref_y, ref_m),
-                    hrd_m3.monthly_cache_path(ref_y, ref_m),
-                ]
-            elif kpi_id == 'HRD-M4':
-                cache_files = [hrd_m4.cache_file_path_for_period(ref_y, ref_m)]
-            elif kpi_id == 'HRD-Q4':
-                cache_files = [hrd_q4.cache_file_path_for_period(ref_y, ref_m)]
+        if not cache_files:
+            gspp_paths = _gspp_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+            if gspp_paths:
+                cache_files = gspp_paths
+        if not cache_files:
+            devdir_paths = _devdir_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+            if devdir_paths:
+                cache_files = devdir_paths
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -1519,59 +1375,8 @@ def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int 
         paths.append(cd / f'chief_metrolog_payload_{ref_y}_{ref_m:02d}.json')
     if kid == 'KD-T-OVERDUE' and ref_y is not None and ref_m is not None:
         paths.append(cd / f'chief_metrolog_payload_{ref_y}_{ref_m:02d}.json')
-    elif kid == 'QD-Q1':
-        paths.extend(_qd_q1_stamp_paths(ref_y, ref_m))
-    elif kid == 'QD-M1':
-        paths.extend([
-            qd_m1_ytd_cache_path(ref_y, ref_m),
-            external_brak_month_cache_path(ref_y, ref_m),
-            qd_m1_tile_cache_path(ref_y, ref_m),
-        ])
-    elif kid == 'QD-M5':
-        from qualdir.qd_m5 import internal_brak_month_cache_path, qd_m5_ytd_cache_path
-
-        paths.extend([
-            qd_m5_ytd_cache_path(ref_y, ref_m),
-            internal_brak_month_cache_path(ref_y, ref_m),
-        ])
-    elif kid == 'QD-M6':
-        paths.extend([
-            qd_m6_ytd_cache_path(ref_y, ref_m),
-            otk_predyavlenie_month_cache_path(ref_y, ref_m),
-            qd_m6_tile_cache_path(ref_y, ref_m),
-        ])
-        legacy_month = legacy_otk_predyavlenie_month_cache_path(ref_y, ref_m)
-        if legacy_month is not None:
-            paths.append(legacy_month)
-    elif kid == 'QD-M7':
-        paths.extend([
-            qd_m7_ytd_cache_path(ref_y, ref_m),
-            vyhod_kontrol_month_cache_path(ref_y, ref_m),
-            qd_m7_tile_cache_path(ref_y, ref_m),
-        ])
-    elif kid == 'QD-M8':
-        paths.extend([
-            qd_m8_ytd_cache_path(ref_y, ref_m),
-            forma0317_month_cache_path(ref_y, ref_m),
-            qd_m8_tile_cache_path(ref_y, ref_m),
-        ])
-    elif kid == 'QD-M9':
-        paths.extend([
-            qd_m9_ytd_cache_path(ref_y, ref_m),
-            otk_predyavlenie_npo_month_cache_path(ref_y, ref_m),
-            qd_m9_tile_cache_path(ref_y, ref_m),
-        ])
-    elif kid == 'QD-M10':
-        paths.extend([
-            qd_m10_ytd_cache_path(ref_y, ref_m),
-            otk_predyavlenie_almaz_month_cache_path(ref_y, ref_m),
-            qd_m10_tile_cache_path(ref_y, ref_m),
-        ])
-    elif kid == 'QD-Q2':
-        paths.extend([
-            qd_q2_ytd_cache_path(ref_y, ref_m),
-            turnover_month_cache_path(ref_y, ref_m),
-        ])
+    elif _qualdir_kpi_views.is_qualdir_tile_kpi_id(kid):
+        paths.extend(_qualdir_kpi_views.cache_stamp_paths(kid, ref_y, ref_m))
 
     if kid in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS:
         from getkpi.autoit.it_m1_sla import (
@@ -2819,6 +2624,7 @@ def _build_universal_payload(
     include_debug: bool = False,
     aggregation_mode: str | None = None,
     selected_quarters: list[int] | None = None,
+    _skip_disk_cache: bool = False,
 ) -> dict:
     """
     Универсальный билдер: Плитки, Графики, Таблицы.
@@ -2873,11 +2679,90 @@ def _build_universal_payload(
         ref_y, ref_m = _lfm(today)
 
     gspp_memo_key: str | None = None
+    techdir_memo_key: str | None = None
+    qualdir_memo_key: str | None = None
+    sup_memo_key: str | None = None
+    autoit_memo_key: str | None = None
+    c1auto_memo_key: str | None = None
+    servhead_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        gspp_memo_key = f"gspp_dashboard:v3:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        gspp_memo_key = f"gspp_dashboard:v4:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
+    if techdir_dashboard.is_techdir_department(dept) and not include_debug:
+        techdir_memo_key = f"techdir_dashboard:v1:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(techdir_memo_key)
+        if cached_payload is not None:
+            return cached_payload
+    if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
+        qualdir_memo_key = f"qualdir_dashboard:v2:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
+        if cached_payload is not None:
+            return cached_payload
+    if _is_sup_department(dept) and not include_debug:
+        sup_memo_key = f"sup_dashboard:v1:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
+        if cached_payload is not None:
+            return cached_payload
+    if _is_autoit_department(dept) and not include_debug:
+        autoit_memo_key = f"autoit_dashboard:v2:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(autoit_memo_key)
+        if cached_payload is not None:
+            return cached_payload
+    if _is_c1auto_department(dept) and not include_debug:
+        c1auto_memo_key = f"c1auto_dashboard:v1:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(c1auto_memo_key)
+        if cached_payload is not None:
+            return cached_payload
+    if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
+        servhead_memo_key = f"servhead_dashboard:v1:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
+        if cached_payload is not None:
+            return cached_payload
+
+    dashboard_disk_key: str | None = None
+    dashboard_mem_key: str | None = None
+    if not _skip_disk_cache and not include_debug:
+        if gspp_memo_key:
+            dashboard_disk_key = f"gspp_v2_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = gspp_memo_key
+        elif techdir_memo_key:
+            dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = techdir_memo_key
+        elif qualdir_memo_key:
+            dashboard_disk_key = f"qualdir_v2_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = qualdir_memo_key
+        elif sup_memo_key:
+            dashboard_disk_key = f"sup_v1_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = sup_memo_key
+        elif autoit_memo_key:
+            dashboard_disk_key = f"autoit_v2_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = autoit_memo_key
+        elif c1auto_memo_key:
+            dashboard_disk_key = f"c1auto_v1_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = c1auto_memo_key
+        elif servhead_memo_key:
+            dashboard_disk_key = f"servhead_v1_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = servhead_memo_key
+
+    if dashboard_disk_key and dashboard_mem_key:
+        disk_cached = cache_manager.try_serve_dashboard_disk_cache(
+            dashboard_disk_key,
+            dashboard_mem_key,
+            refresh_fn=lambda: _build_universal_payload(
+                dept,
+                all_kpis,
+                month=month,
+                year=year,
+                include_debug=include_debug,
+                aggregation_mode=aggregation_mode,
+                selected_quarters=selected_quarters,
+                _skip_disk_cache=True,
+            ),
+        )
+        if disk_cached is not None:
+            return disk_cached
 
     for kpi in tiles_meta:
         entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
@@ -3513,6 +3398,20 @@ def _build_universal_payload(
     }
     if gspp_memo_key:
         cache_manager.set_memoized_dashboard_payload(gspp_memo_key, result)
+    if techdir_memo_key:
+        cache_manager.set_memoized_dashboard_payload(techdir_memo_key, result)
+    if qualdir_memo_key:
+        cache_manager.set_memoized_dashboard_payload(qualdir_memo_key, result)
+    if sup_memo_key:
+        cache_manager.set_memoized_dashboard_payload(sup_memo_key, result)
+    if autoit_memo_key:
+        cache_manager.set_memoized_dashboard_payload(autoit_memo_key, result)
+    if c1auto_memo_key:
+        cache_manager.set_memoized_dashboard_payload(c1auto_memo_key, result)
+    if servhead_memo_key:
+        cache_manager.set_memoized_dashboard_payload(servhead_memo_key, result)
+    if dashboard_disk_key:
+        cache_manager.save_dashboard_disk(dashboard_disk_key, result)
     return result
 
 

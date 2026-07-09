@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from pathlib import Path
 from typing import Any
 
 from devdir.rd_monthly_period import MONTH_NAMES
@@ -105,6 +106,32 @@ def servhead_m5_tile_matches(kpi_id: str) -> bool:
 
 def servhead_tile_matches(kpi_id: str) -> bool:
     return _normalize_kpi_id(kpi_id) in SERVHEAD_TILE_KPI_IDS
+
+
+def is_servhead_tile_kpi_id(kpi_id: str) -> bool:
+    return servhead_tile_matches(kpi_id)
+
+
+def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
+    """Файлы кэша, по mtime которых на плитке показывается ``cache_updated_at``."""
+    from servhead.sh_m1 import sh_m1_ytd_cache_path
+    from servhead.sh_m2 import sh_m2_ytd_cache_path
+    from servhead.sh_m3 import sh_m3_ytd_cache_path
+    from servhead.sh_m4 import sh_m4_ytd_cache_path
+    from servhead.sh_m5 import sh_m5_ytd_cache_path
+
+    kid = _normalize_kpi_id(kpi_id)
+    if kid == "SH-M1":
+        return [sh_m1_ytd_cache_path(ref_y, ref_m)]
+    if kid == "SH-M2":
+        return [sh_m2_ytd_cache_path(ref_y, ref_m)]
+    if kid == "SH-M3":
+        return [sh_m3_ytd_cache_path(ref_y, ref_m)]
+    if kid == "SH-M4":
+        return [sh_m4_ytd_cache_path(ref_y, ref_m)]
+    if kid == "SH-M5":
+        return [sh_m5_ytd_cache_path(ref_y, ref_m)]
+    return []
 
 
 def servhead_lower_better_tile_matches(kpi_id: str) -> bool:

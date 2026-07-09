@@ -12,7 +12,6 @@ from typing import Any, Callable
 import requests
 
 from devdir import ytd_json_cache
-from getkpi.cache_manager import locked_call
 from getkpi.techdir_tekuchet import MONTH_RU
 
 from qualdir.brak_report import AUTH
@@ -426,7 +425,15 @@ def get_ytd(
             )
         return payload
 
-    return locked_call(lock_key, _runner)
+    perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
+    return ytd_json_cache.resolve_payload(
+        disk_path,
+        source_tag=config.ytd_disk_tag,
+        version=config.ytd_disk_version,
+        perpetual=perpetual,
+        lock_key=lock_key,
+        compute_fn=_runner,
+    )
 
 
 def build_tile_exports(config: OtkOrgTileConfig) -> dict[str, Callable[..., Any]]:

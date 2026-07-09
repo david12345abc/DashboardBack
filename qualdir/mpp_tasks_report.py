@@ -33,7 +33,7 @@ from typing import Any, Iterable, Iterator
 
 import aspose.tasks as tasks
 
-from getkpi.cache_manager import locked_call
+from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
@@ -644,22 +644,42 @@ def _save_qd_q1_tile_cache(ref_y: int, ref_m: int, tile: dict[str, Any]) -> None
         pass
 
 
+def _load_stale_qd_q1_tile_cache(ref_y: int, ref_m: int) -> dict[str, Any] | None:
+    path = qd_q1_tile_cache_path(ref_y, ref_m)
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("source") != SOURCE_TAG:
+        return None
+    if data.get("cache_version") != QD_Q1_TILE_CACHE_VERSION:
+        return None
+    tile = data.get("tile")
+    return tile if isinstance(tile, dict) else None
+
+
 def get_qd_q1_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     """
-    Плитка QD-Q1 для API: чтение из JSON-кэша (сутки + совпадение mtime MPP) либо расчёт из MPP.
-    Параллельные запросы с тем же периодом сериализуются через ``locked_call``.
+    Плитка QD-Q1 для API: stale-while-revalidate по JSON-кэшу (mtime MPP учитывается только в «свежем» кэше).
     """
+    from getkpi.cache_manager import stale_while_revalidate
+
     lock_y, lock_m = normalize_qd_q1_tile_period(year, month)
 
-    def _runner() -> dict[str, Any]:
-        cached = _load_qd_q1_tile_cache(lock_y, lock_m)
-        if cached is not None:
-            return cached
+    def _compute() -> dict[str, Any]:
         payload = build_qd_q1_tile_json(year=year, month=month)
         _save_qd_q1_tile_cache(lock_y, lock_m, payload)
         return payload
 
-    return locked_call(f"qualdir_qd_q1_{lock_y}_{lock_m:02d}", _runner)
+    return stale_while_revalidate(
+        f"qualdir_qd_q1_{lock_y}_{lock_m:02d}",
+        lambda: _load_qd_q1_tile_cache(lock_y, lock_m),
+        lambda: _load_stale_qd_q1_tile_cache(lock_y, lock_m),
+        _compute,
+    )
 
 
 def parse_args() -> argparse.Namespace:

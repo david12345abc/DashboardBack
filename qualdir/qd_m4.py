@@ -19,7 +19,6 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from getkpi.cache_manager import locked_call
 from devdir import ytd_json_cache
 
 from qualdir.qd_m4_fact import compute_qd_m4_fact_monthly
@@ -234,4 +233,11 @@ def get_qd_m4_ytd(year: int | None = None, month: int | None = None) -> dict[str
             )
         return _out
 
-    return locked_call(f"qualdir_qd_m4_v3_{lock_y}_{lock_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        _disk_path,
+        source_tag=QD_M4_YTD_DISK_TAG,
+        version=QD_M4_YTD_DISK_VERSION,
+        perpetual=_perpetual,
+        lock_key=f"qualdir_qd_m4_v3_{lock_y}_{lock_m:02d}",
+        compute_fn=_runner,
+    )

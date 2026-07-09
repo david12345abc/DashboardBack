@@ -16,6 +16,8 @@ import os
 import re
 import sys
 from collections import defaultdict
+from datetime import date
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -23,11 +25,14 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from . import cache_manager
+from . import techdir_cache
 from . import techdir_projects as tp
 
 logger = logging.getLogger(__name__)
 
 MONTH_NAMES = tp.MONTH_NAMES
+TD_M6_SOURCE_TAG = "techdir_m6_ytd_v1"
+TD_M6_CACHE_VERSION = 1
 
 # --- OData / БДДС (ранее calc_bdds_project_costs.py) ---------------------------------
 
@@ -669,19 +674,55 @@ def _build_payload(year: int | None, month: int | None) -> dict[str, Any]:
     }
 
 
+def _td_m6_cache_path(year: int, month: int) -> Path:
+    return cache_manager.CACHE_DIR / f"techdir_m6_ytd_{year}_{month:02d}.json"
+
+
+def _save_td_m6_cache(path: Path, payload: dict[str, Any], year: int, month: int) -> None:
+    import json
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    **payload,
+                    "source": TD_M6_SOURCE_TAG,
+                    "cache_version": TD_M6_CACHE_VERSION,
+                    "cache_date": date.today().isoformat(),
+                    "year": year,
+                    "month": month,
+                },
+                handle,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except OSError:
+        logger.exception("Не удалось сохранить кэш TD-M6 в %s", path)
+
+
 def get_td_m6_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     """Плитка TD-M6: план/факт ФОТ по внешним заказам. При сбое — нули, не null."""
+    ry, rm = tp._normalize_ref_period(year, month)
+    cache_path = _td_m6_cache_path(ry, rm)
 
-    def _runner() -> dict[str, Any]:
-        ry, rm = tp._normalize_ref_period(year, month)
+    def _compute_and_save() -> dict[str, Any]:
         try:
-            return _build_payload(year, month)
+            payload = _build_payload(year, month)
         except Exception:
             logger.exception("Ошибка при расчёте TD-M6 (БДДС по внешним заказам)")
-            return _zero_payload_for_period(ry, rm)
+            payload = _zero_payload_for_period(ry, rm)
+        _save_td_m6_cache(cache_path, payload, ry, rm)
+        return payload
 
-    ry, rm = tp._normalize_ref_period(year, month)
-    return cache_manager.locked_call(f"techdir_td_m6_bdds_{ry}_{rm:02d}_v12", _runner)
+    return techdir_cache.resolve_month_file(
+        f"techdir_m6_{ry}_{rm:02d}",
+        cache_path,
+        source_tag=TD_M6_SOURCE_TAG,
+        cache_version=TD_M6_CACHE_VERSION,
+        year=ry,
+        month=rm,
+        compute_fn=_compute_and_save,
+    )
 
 
 # --- Опциональный CLI: один проект (как прежний calc_bdds_project_costs.main) -----------

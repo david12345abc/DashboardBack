@@ -9,9 +9,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from getkpi.cache_manager import locked_call
-from getkpi.autoit.it_monthly_period import MONTH_NAMES, normalize_it_tile_period
 from devdir import ytd_json_cache
+
+from getkpi.autoit.it_monthly_period import MONTH_NAMES, normalize_it_tile_period
 
 from .c1_m4_fot_fact import compute_c1_m4_fot_fact_monthly
 from .c1_m4_fot_plan import C1_M4_FOT_PLAN_BY_MONTH_2026
@@ -98,27 +98,32 @@ def get_c1_m4_fot_ytd(year: int | None = None, month: int | None = None) -> dict
     cache_path = cache_file_path_for_period(year, month)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict | None:
-        cached = ytd_json_cache.load_payload(
-            cache_path,
-            source_tag=CACHE_SOURCE_TAG,
-            version=CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict | None:
         try:
             payload = _build_c1_m4_fot_payload(year=year, month=month)
         except Exception:
             logger.exception("Ошибка при расчёте 1С-M4 (ФОТ)")
-            return None
-        if payload is not None:
-            ytd_json_cache.save_payload(
+            stale = ytd_json_cache.load_stale_payload(
                 cache_path,
-                payload,
                 source_tag=CACHE_SOURCE_TAG,
                 version=CACHE_VERSION,
             )
+            if stale is not None:
+                return stale
+            return None
+        ytd_json_cache.save_payload(
+            cache_path,
+            payload,
+            source_tag=CACHE_SOURCE_TAG,
+            version=CACHE_VERSION,
+        )
         return payload
 
-    return locked_call(f"c1auto_c1_m4_fot_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        cache_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"c1auto_c1_m4_fot_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )

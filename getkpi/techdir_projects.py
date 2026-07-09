@@ -13,6 +13,7 @@ from typing import Any
 import requests
 
 from . import cache_manager
+from . import techdir_cache
 from .kpi_periods import last_full_quarter, quarter_month_tuples
 from .list_enterprise_positions import employees_by_position
 from .turboproject_config import API_BASE as TURBO_CFG_API_BASE, EMAIL as TURBO_CFG_EMAIL, PASSWORD as TURBO_CFG_PASSWORD
@@ -91,20 +92,24 @@ def _get_credentials() -> tuple[str, str, str]:
     return file_api_base.rstrip("/"), file_email, file_password
 
 
+def _snapshot_is_valid(data: dict) -> bool:
+    return data.get("od_overdue_milestones_schema") == OD_OVERDUE_MILESTONES_SCHEMA
+
+
 def _load_cache() -> dict | None:
-    if not CACHE_PATH.exists():
-        return None
-    try:
-        data = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if (
-        data.get("cache_date") == date.today().isoformat()
-        and data.get("cache_version") == CACHE_VERSION
-        and data.get("od_overdue_milestones_schema") == OD_OVERDUE_MILESTONES_SCHEMA
-    ):
-        return data
-    return None
+    return techdir_cache.load_fresh_snapshot_file(
+        CACHE_PATH,
+        cache_version=CACHE_VERSION,
+        extra_validators=_snapshot_is_valid,
+    )
+
+
+def _load_stale_cache() -> dict | None:
+    return techdir_cache.load_stale_snapshot_file(
+        CACHE_PATH,
+        cache_version=CACHE_VERSION,
+        extra_validators=_snapshot_is_valid,
+    )
 
 
 def _save_cache(payload: dict) -> None:
@@ -451,11 +456,8 @@ def _project_progress_pct(project_meta: dict[str, Any], tasks: list[dict[str, An
     return round(task_done / task_total * 100, 1)
 
 
-def _compute_projects_snapshot() -> dict:
-    cached = _load_cache()
-    if cached is not None:
-        return cached
-
+def _fetch_projects_snapshot() -> dict:
+    """Загрузить снимок проектов из TurboProject и сохранить на диск."""
     session = requests.Session()
     token = _login(session)
 
@@ -497,6 +499,15 @@ def _compute_projects_snapshot() -> dict:
     }
     _save_cache(payload)
     return payload
+
+
+def _compute_projects_snapshot() -> dict:
+    return cache_manager.stale_while_revalidate(
+        "techdir_projects",
+        _load_cache,
+        _load_stale_cache,
+        _fetch_projects_snapshot,
+    )
 
 
 def get_projects_snapshot() -> dict:
@@ -590,7 +601,44 @@ def _month_pairs_until(ref_y: int, ref_m: int) -> list[tuple[int, int]]:
     return [(ref_y, mm) for mm in range(1, ref_m + 1)]
 
 
+def _snapshot_mtime_ns() -> int:
+    try:
+        return CACHE_PATH.stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
+@lru_cache(maxsize=32)
+def _build_monthly_payload_cached(
+    project_type: str | None,
+    year: int,
+    month: int,
+    departments_key: str,
+    snapshot_mtime_ns: int,
+) -> dict:
+    departments = set(departments_key.split("\0")) if departments_key else None
+    return _build_monthly_payload_impl(project_type, year=year, month=month, departments=departments)
+
+
 def _build_monthly_payload(
+    project_type: str | None,
+    year: int | None = None,
+    month: int | None = None,
+    *,
+    departments: set[str] | None = None,
+) -> dict:
+    ref_y, ref_m = _normalize_ref_period(year, month)
+    dept_key = "\0".join(sorted(departments)) if departments else ""
+    return _build_monthly_payload_cached(
+        project_type,
+        ref_y,
+        ref_m,
+        dept_key,
+        _snapshot_mtime_ns(),
+    )
+
+
+def _build_monthly_payload_impl(
     project_type: str | None,
     year: int | None = None,
     month: int | None = None,
@@ -671,7 +719,6 @@ def _build_monthly_payload(
                 }
                 for row in monthly_rows
             ],
-            "target_projects": target_projects,
         },
     }
 
@@ -961,7 +1008,7 @@ def get_td_deviation_tables(month: int | None = None, year: int | None = None) -
             logger.exception("Ошибка при расчёте таблиц техдирекции из TurboProject")
             return None
 
-    return cache_manager.locked_call("techdir_td_tables", _runner)
+    return _runner()
 
 
 def get_td_m1_ytd() -> dict | None:
@@ -972,7 +1019,7 @@ def get_td_m1_ytd() -> dict | None:
             logger.exception("Ошибка при расчёте TD-M1 из TurboProject")
             return None
 
-    return cache_manager.locked_call("techdir_td_m1", _runner)
+    return _runner()
 
 
 def get_td_m5_ytd(year: int | None = None, month: int | None = None) -> dict | None:
@@ -993,7 +1040,7 @@ def get_td_q1_ytd() -> dict | None:
             logger.exception("Ошибка при расчёте TD-Q1 из TurboProject")
             return None
 
-    return cache_manager.locked_call("techdir_td_q1", _runner)
+    return _runner()
 
 
 def get_od_q1_monthly(year: int | None = None, month: int | None = None) -> dict | None:

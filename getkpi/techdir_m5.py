@@ -17,6 +17,7 @@ import requests
 
 from . import cache_manager
 from . import ext_budj_fact
+from . import techdir_cache
 from . import techdir_m5_fact_cache
 from .techdir_m5_fact import (
     FACT_CRITERION,
@@ -75,6 +76,20 @@ def _load_ytd_cache(path: Path, ref_y: int, ref_m: int) -> dict[str, Any] | None
     if data.get("cache_date") == date.today().isoformat():
         return payload
     return None
+
+
+def _load_stale_ytd_cache(path: Path, ref_y: int, ref_m: int) -> dict[str, Any] | None:
+    data = techdir_cache.read_json(path)
+    if data is None:
+        return None
+    if data.get("source") != SOURCE_TAG:
+        return None
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
+    if data.get("year") != ref_y or data.get("month") != ref_m:
+        return None
+    payload = data.get("payload")
+    return payload if isinstance(payload, dict) else None
 
 
 def _save_ytd_cache(path: Path, ref_y: int, ref_m: int, payload: dict[str, Any]) -> None:
@@ -284,11 +299,9 @@ def get_td_m5_ytd(year: int | None = None, month: int | None = None) -> dict | N
 
     ref_y, ref_m = _normalize_ref_period(year, month)
     cache_path = ytd_cache_path(ref_y, ref_m)
+    lock_key = f"techdir_td_m5_{ref_y}_{ref_m:02d}"
 
-    def _runner() -> dict | None:
-        cached = _load_ytd_cache(cache_path, ref_y, ref_m)
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict | None:
         try:
             payload = build_td_m5_budget_payload(year=year, month=month)
             if payload is not None:
@@ -298,4 +311,9 @@ def get_td_m5_ytd(year: int | None = None, month: int | None = None) -> dict | N
             logger.exception("Ошибка при расчёте TD-M5 (бюджет проектов по внешним заказам)")
             return None
 
-    return cache_manager.locked_call(f"techdir_td_m5_{ref_y}_{ref_m:02d}", _runner)
+    return cache_manager.stale_while_revalidate(
+        lock_key,
+        lambda: _load_ytd_cache(cache_path, ref_y, ref_m),
+        lambda: _load_stale_ytd_cache(cache_path, ref_y, ref_m),
+        _compute_and_save,
+    )
