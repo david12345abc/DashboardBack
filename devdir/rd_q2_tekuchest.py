@@ -15,7 +15,6 @@ from typing import Any
 from getkpi.techdir_tekuchet import TURNOVER_VALUES_UNIT, build_turnover_month_payload
 from getkpi.turnover_hr_scope import TurnoverHrScope
 
-from getkpi.cache_manager import locked_call
 from . import ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from .rd_q2_tekuchest_plan import plan_for_month as rd_q2_plan_for_month
@@ -118,27 +117,32 @@ def get_rd_q2_tekuchest_ytd(year: int | None = None, month: int | None = None) -
     c_path = ytd_json_cache.cache_path(CACHE_FILE_PREFIX, ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict | None:
-        cached = ytd_json_cache.load_payload(
-            c_path,
-            source_tag=CACHE_SOURCE_TAG,
-            version=CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict | None:
         try:
             payload = _build_rd_q2_monthly_payload(year=year, month=month)
         except Exception:
             logger.exception("Ошибка при расчёте RD-Q2 (текучесть)")
-            return None
-        if payload is not None:
-            ytd_json_cache.save_payload(
+            stale = ytd_json_cache.load_stale_payload(
                 c_path,
-                payload,
                 source_tag=CACHE_SOURCE_TAG,
                 version=CACHE_VERSION,
             )
+            if stale is not None:
+                return stale
+            return None
+        ytd_json_cache.save_payload(
+            c_path,
+            payload,
+            source_tag=CACHE_SOURCE_TAG,
+            version=CACHE_VERSION,
+        )
         return payload
 
-    return locked_call(f"devdir_rd_q2_tekuchest_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        c_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"devdir_rd_q2_tekuchest_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )

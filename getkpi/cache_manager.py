@@ -66,15 +66,32 @@ def locked_call(key: str, fn, *args, **kwargs):
 def schedule_background_refresh(key: str, fn, *args, **kwargs) -> None:
     """Запустить пересчёт кэша в фоне, если он ещё не выполняется."""
     with _bg_meta:
-        if key in _bg_pending or is_computing(key):
+        if key in _bg_pending:
+            logger.info("cache_manager: [%s] background refresh already pending, skip", key)
+            return
+        if is_computing(key):
+            logger.info("cache_manager: [%s] already computing, skip background schedule", key)
             return
         _bg_pending.add(key)
 
+    logger.info("cache_manager: [%s] background refresh scheduled", key)
+
     def _worker() -> None:
+        t0 = time.monotonic()
+        logger.info("cache_manager: [%s] background refresh started", key)
         try:
             locked_call(key, fn, *args, **kwargs)
+            logger.info(
+                "cache_manager: [%s] background refresh done in %.1fs",
+                key,
+                time.monotonic() - t0,
+            )
         except Exception:
-            logger.exception("cache_manager: background refresh failed for %s", key)
+            logger.exception(
+                "cache_manager: [%s] background refresh failed after %.1fs",
+                key,
+                time.monotonic() - t0,
+            )
         finally:
             with _bg_meta:
                 _bg_pending.discard(key)
@@ -94,10 +111,22 @@ def stale_while_revalidate(key: str, load_fresh, load_stale, compute):
 
     stale = load_stale()
     if stale is not None:
+        logger.info(
+            "cache_manager: [%s] serving stale cache, scheduling background refresh",
+            key,
+        )
         schedule_background_refresh(key, compute)
         return stale
 
-    return locked_call(key, compute)
+    logger.info("cache_manager: [%s] no cache file, synchronous compute", key)
+    t0 = time.monotonic()
+    result = locked_call(key, compute)
+    logger.info(
+        "cache_manager: [%s] synchronous compute done in %.1fs",
+        key,
+        time.monotonic() - t0,
+    )
+    return result
 
 
 def get_memoized_dashboard_payload(key: str) -> dict[str, Any] | None:
@@ -203,13 +232,24 @@ def try_serve_dashboard_disk_cache(
     refresh_key = f"dashboard_disk_{disk_key}"
 
     def _worker() -> None:
+        t0 = time.monotonic()
+        logger.info("cache_manager: dashboard disk refresh started for %s", disk_key)
         try:
             new_payload = refresh_fn()
             save_dashboard_disk(disk_key, new_payload)
             if mem_key:
                 set_memoized_dashboard_payload(mem_key, new_payload)
+            logger.info(
+                "cache_manager: dashboard disk refresh done for %s in %.1fs",
+                disk_key,
+                time.monotonic() - t0,
+            )
         except Exception:
-            logger.exception("cache_manager: dashboard disk refresh failed for %s", disk_key)
+            logger.exception(
+                "cache_manager: dashboard disk refresh failed for %s after %.1fs",
+                disk_key,
+                time.monotonic() - t0,
+            )
 
     schedule_background_refresh(refresh_key, _worker)
     logger.info("cache_manager: served stale dashboard disk cache %s", disk_key)

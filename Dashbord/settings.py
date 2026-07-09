@@ -142,3 +142,18 @@ CORS_ALLOW_ALL_ORIGINS = True
 JWT_SECRET = SECRET_KEY
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_DAYS = 7
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'getkpi.cache_manager': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'getkpi.views': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'devdir': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}

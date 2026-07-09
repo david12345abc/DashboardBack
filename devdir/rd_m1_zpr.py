@@ -11,8 +11,7 @@ from typing import Any
 
 import requests
 
-from getkpi.cache_manager import locked_call
-from . import calc_zpr_fact, calc_zpr_plan, ytd_json_cache
+from devdir import calc_zpr_fact, calc_zpr_plan, ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 
 logger = logging.getLogger(__name__)
@@ -90,15 +89,7 @@ def get_rd_m1_zpr_ytd(year: int | None = None, month: int | None = None) -> dict
     c_path = ytd_json_cache.cache_path(CACHE_FILE_PREFIX, ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict | None:
-        cached = ytd_json_cache.load_payload(
-            c_path,
-            source_tag=CACHE_SOURCE_TAG,
-            version=CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict | None:
         try:
             payload = _build_rd_m1_zpr_monthly_payload(year=year, month=month)
         except Exception as exc:
@@ -120,13 +111,19 @@ def get_rd_m1_zpr_ytd(year: int | None = None, month: int | None = None) -> dict
                 stale["debug"] = debug
                 return stale
             return None
-        if payload is not None:
-            ytd_json_cache.save_payload(
-                c_path,
-                payload,
-                source_tag=CACHE_SOURCE_TAG,
-                version=CACHE_VERSION,
-            )
+        ytd_json_cache.save_payload(
+            c_path,
+            payload,
+            source_tag=CACHE_SOURCE_TAG,
+            version=CACHE_VERSION,
+        )
         return payload
 
-    return locked_call(f"devdir_rd_m1_zpr_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        c_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"devdir_rd_m1_zpr_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )

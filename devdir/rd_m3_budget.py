@@ -9,7 +9,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from getkpi.cache_manager import locked_call
 from qualdir.turnover import _qd_q2_kpi_pct
 
 from . import ytd_json_cache
@@ -134,27 +133,32 @@ def get_rd_m3_budget_ytd(year: int | None = None, month: int | None = None) -> d
     c_path = ytd_json_cache.cache_path(CACHE_FILE_PREFIX, ry, rm)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ry, rm)
 
-    def _runner() -> dict | None:
-        cached = ytd_json_cache.load_payload(
-            c_path,
-            source_tag=CACHE_SOURCE_TAG,
-            version=CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict | None:
         try:
             payload = _build_rd_m3_budget_monthly_payload(year=year, month=month)
         except Exception:
             logger.exception("Ошибка при расчёте RD-M3 (бюджет)")
-            return None
-        if payload is not None:
-            ytd_json_cache.save_payload(
+            stale = ytd_json_cache.load_stale_payload(
                 c_path,
-                payload,
                 source_tag=CACHE_SOURCE_TAG,
                 version=CACHE_VERSION,
             )
+            if stale is not None:
+                return stale
+            return None
+        ytd_json_cache.save_payload(
+            c_path,
+            payload,
+            source_tag=CACHE_SOURCE_TAG,
+            version=CACHE_VERSION,
+        )
         return payload
 
-    return locked_call(f"devdir_rd_m3_budget_{ry}_{rm:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        c_path,
+        source_tag=CACHE_SOURCE_TAG,
+        version=CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"devdir_rd_m3_budget_{ry}_{rm:02d}",
+        compute_fn=_compute_and_save,
+    )
