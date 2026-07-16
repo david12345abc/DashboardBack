@@ -1236,16 +1236,14 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
         cache_files = _c1auto_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     elif _servhead_kpi_views.is_servhead_tile_kpi_id(kpi_id):
         cache_files = _servhead_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+    elif _devdir_kpi_views.is_devdir_tile_kpi_id(kpi_id):
+        cache_files = _devdir_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     else:
         cache_files = techdir_dashboard.cache_stamp_paths(kpi_id, ref_y, ref_m)
         if not cache_files:
             gspp_paths = _gspp_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
             if gspp_paths:
                 cache_files = gspp_paths
-        if not cache_files:
-            devdir_paths = _devdir_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
-            if devdir_paths:
-                cache_files = devdir_paths
 
     latest_mtime: float | None = None
     for path in cache_files:
@@ -2685,6 +2683,7 @@ def _build_universal_payload(
     autoit_memo_key: str | None = None
     c1auto_memo_key: str | None = None
     servhead_memo_key: str | None = None
+    devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
         gspp_memo_key = f"gspp_dashboard:v4:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
@@ -2720,6 +2719,12 @@ def _build_universal_payload(
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return cached_payload
+    if _is_devdir_department(dept) and not include_debug:
+        devdir_memo_key = f"devdir_dashboard:v1:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
+        if cached_payload is not None:
+            logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
+            return cached_payload
 
     dashboard_disk_key: str | None = None
     dashboard_mem_key: str | None = None
@@ -2745,6 +2750,9 @@ def _build_universal_payload(
         elif servhead_memo_key:
             dashboard_disk_key = f"servhead_v1_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
+        elif devdir_memo_key:
+            dashboard_disk_key = f"devdir_v1_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = devdir_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
         disk_cached = cache_manager.try_serve_dashboard_disk_cache(
@@ -3410,6 +3418,13 @@ def _build_universal_payload(
         cache_manager.set_memoized_dashboard_payload(c1auto_memo_key, result)
     if servhead_memo_key:
         cache_manager.set_memoized_dashboard_payload(servhead_memo_key, result)
+    if devdir_memo_key:
+        cache_manager.set_memoized_dashboard_payload(devdir_memo_key, result)
+        logger.info(
+            "cache_manager: devdir dashboard built and memoized %s (%d tiles)",
+            devdir_memo_key,
+            len(plitki_items),
+        )
     if dashboard_disk_key:
         cache_manager.save_dashboard_disk(dashboard_disk_key, result)
     return result

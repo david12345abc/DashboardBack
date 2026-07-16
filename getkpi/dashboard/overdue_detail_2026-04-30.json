@@ -1,8 +1,8 @@
 {
   "na_datu": "2026-04-30",
-  "cache_date": "2026-07-08",
+  "cache_date": "2026-07-16",
   "dept_alias_source": "debitorka_department_aliases_v3",
-  "total_overdue": 144212503.71,
+  "total_overdue": 145012503.71,
   "rows": [
     {
       "dept_key": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
@@ -147,6 +147,32 @@
           "amount": 1489233.12,
           "days_overdue": 318,
           "bucket": "180+ дн."
+        }
+      ],
+      "reason": "",
+      "action": ""
+    },
+    {
+      "dept_key": "639ec87b-67b6-11eb-8523-ac1f6b05524d",
+      "dept_name": "Отдел ключевых клиентов",
+      "source_dept_key": "639ec87b-67b6-11eb-8523-ac1f6b05524d",
+      "liquidated_dept_name": "",
+      "partner_key": "3d578692-bb3f-11e8-8282-ac1f6b05524d",
+      "partner_name": "СНГ ООО",
+      "counterparty": "СНГ ООО",
+      "order_key": "681c9ad0-117e-11f1-97ac-6cb31113810c",
+      "order_num": "НП00-000252",
+      "order_date": "2026-02-24",
+      "amount": 800000.0,
+      "dz_total": 800000.0,
+      "days_overdue": 51,
+      "installments_count": 1,
+      "installments": [
+        {
+          "planned_date": "2026-03-10",
+          "amount": 800000.0,
+          "days_overdue": 51,
+          "bucket": "30-59 дн."
         }
       ],
       "reason": "",

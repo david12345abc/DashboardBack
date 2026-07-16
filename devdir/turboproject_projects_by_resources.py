@@ -6,7 +6,7 @@
   - исключаются проекты с типом «ОПЭ».
 
 План = все подходящие «живые» проекты в месяце.
-Факт = проекты без отклонений по вехам.
+Факт = проекты без отклонения ≥10 р.д. по вехам (отклонение < 10 р.д. или нет отклонений).
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import sys
+import time
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from functools import lru_cache
@@ -23,7 +24,7 @@ from typing import Any
 
 import requests
 
-from getkpi.cache_manager import locked_call
+from getkpi.cache_manager import stale_while_revalidate
 from getkpi.list_enterprise_positions import employees_by_position
 from . import ytd_json_cache
 from .rd_monthly_period import MONTH_NAMES
@@ -41,12 +42,15 @@ DEVDIR_OWNER_POSITION = "Директор по развитию"
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
 CACHE_PATH = CACHE_DIR / "devdir_turboproject_projects_by_resources_snapshot.json"
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 TABLE_CACHE_PREFIX = "devdir_turboproject_projects_by_resources_deviations"
-TABLE_CACHE_VERSION = 9
+TABLE_CACHE_VERSION = 10
 TILE_CACHE_PREFIX = "devdir_rd_m3_1_turboproject_projects_by_resources"
 TILE_CACHE_SOURCE_TAG = "devdir_rd_m3_1_turboproject_projects_by_resources_ytd"
-TILE_CACHE_VERSION = 8
+TILE_CACHE_VERSION = 9
+
+# Факт: максимальное отклонение по вехам строго меньше порога (как «без отклонения >10 р.д.»).
+MAX_FACT_DEVIATION_WORKDAYS = 10
 
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
@@ -284,6 +288,11 @@ def _milestone_is_zero_percent_complete(raw: Any) -> bool:
     return abs(frac) < 1e-9
 
 
+def _project_max_delay_counts_as_fact(max_delay_workdays: int) -> bool:
+    """Проект в факте, если нет отклонений или макс. отклонение < 10 р.д."""
+    return max_delay_workdays < MAX_FACT_DEVIATION_WORKDAYS
+
+
 def _working_days_between(start: date, end: date) -> int:
     """Считает рабочие дни между датами, исключая выходные."""
     if start >= end:
@@ -384,7 +393,7 @@ def _project_summary(
     tasks = details.get("tasks") or []
     project_progress_pct = _project_progress_pct(tasks, project_meta)
     max_delay_workdays = max((int(row.get("delay_workdays") or 0) for row in overdue_milestones), default=0)
-    is_fact = not overdue_milestones
+    is_fact = _project_max_delay_counts_as_fact(max_delay_workdays)
     return {
         "file_id": summary_item.get("id"),
         "project_name": project_name(summary_item, details),
@@ -538,6 +547,8 @@ def _build_projects_deviation_table(
             (int(row.get("delay_workdays") or 0) for row in milestone_rows),
             default=0,
         )
+        if _project_max_delay_counts_as_fact(max_delay_workdays):
+            continue
         rows.append({
             "number": len(rows) + 1,
             "project_code": project.get("project_code") or "",
@@ -566,7 +577,7 @@ def _build_projects_deviation_table(
         "name": table_name,
         "periodicity": "ежемесячно",
         "description": (
-            "Проекты, в которых есть отклонения по вехам. "
+            "Проекты с отклонением по вехам ≥10 р.д. "
             "Одна строка = один проект."
         ),
         "period": {
@@ -618,10 +629,10 @@ def _build_projects_monthly_payload(
                 (int(row.get("delay_workdays") or 0) for row in milestone_rows),
                 default=0,
             )
-            if milestone_rows:
-                deviation_projects += 1
-            else:
+            if _project_max_delay_counts_as_fact(max_delay_workdays):
                 fact_projects += 1
+            else:
+                deviation_projects += 1
         plan_count = len(month_projects)
         kpi_pct = round(fact_projects / plan_count * 100, 1) if plan_count else None
         row = {
@@ -635,6 +646,7 @@ def _build_projects_monthly_payload(
             "projects_in_scope": plan_count,
             "projects_without_deviations": fact_projects,
             "projects_with_deviations": deviation_projects,
+            "max_fact_deviation_workdays": MAX_FACT_DEVIATION_WORKDAYS,
             "values_unit": "шт.",
         }
         monthly_rows.append(row)
@@ -676,30 +688,63 @@ def get_rd_m3_1_ytd(year: int | None = None, month: int | None = None) -> dict |
     c_path = ytd_json_cache.cache_path(TILE_CACHE_PREFIX, ref_y, ref_m)
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
-    def _runner() -> dict | None:
-        cached = ytd_json_cache.load_payload(
-            c_path,
-            source_tag=TILE_CACHE_SOURCE_TAG,
-            version=TILE_CACHE_VERSION,
-            perpetual=perpetual,
-        )
-        if cached is not None:
-            return cached
+    def _compute_and_save() -> dict | None:
+        t0 = time.monotonic()
+        logger.info("devdir: RD-M3-1 compute started for %04d-%02d", ref_y, ref_m)
         try:
             payload = _build_projects_monthly_payload(year=year, month=month)
         except Exception:
-            logger.exception("Ошибка при расчёте RD-M3-1 (TurboProject, проекты директора по развитию)")
-            return None
-        if payload is not None:
-            ytd_json_cache.save_payload(
+            logger.exception(
+                "devdir: RD-M3-1 compute failed after %.1fs for %04d-%02d",
+                time.monotonic() - t0,
+                ref_y,
+                ref_m,
+            )
+            stale = ytd_json_cache.load_stale_payload(
                 c_path,
-                payload,
                 source_tag=TILE_CACHE_SOURCE_TAG,
                 version=TILE_CACHE_VERSION,
             )
+            if stale is not None:
+                logger.info(
+                    "devdir: RD-M3-1 serving stale fallback for %04d-%02d",
+                    ref_y,
+                    ref_m,
+                )
+                return stale
+            return None
+        ytd_json_cache.save_payload(
+            c_path,
+            payload,
+            source_tag=TILE_CACHE_SOURCE_TAG,
+            version=TILE_CACHE_VERSION,
+        )
+        ref_row = next(
+            (
+                row
+                for row in (payload.get("monthly_data") or [])
+                if row.get("year") == ref_y and row.get("month") == ref_m
+            ),
+            payload.get("last_full_month_row") or {},
+        )
+        logger.info(
+            "devdir: RD-M3-1 compute done in %.1fs for %04d-%02d plan=%s fact=%s",
+            time.monotonic() - t0,
+            ref_y,
+            ref_m,
+            ref_row.get("plan"),
+            ref_row.get("fact"),
+        )
         return payload
 
-    return locked_call(f"{TILE_CACHE_PREFIX}_{ref_y}_{ref_m:02d}", _runner)
+    return ytd_json_cache.resolve_payload(
+        c_path,
+        source_tag=TILE_CACHE_SOURCE_TAG,
+        version=TILE_CACHE_VERSION,
+        perpetual=perpetual,
+        lock_key=f"{TILE_CACHE_PREFIX}_{ref_y}_{ref_m:02d}",
+        compute_fn=_compute_and_save,
+    )
 
 
 def cache_file_path_for_period(year: int | None = None, month: int | None = None) -> Path:
@@ -847,21 +892,37 @@ def get_projects_snapshot() -> dict:
     return _compute_projects_snapshot()
 
 
+def _load_table_cache_stale(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("cache_version") != TABLE_CACHE_VERSION:
+        return None
+    payload = data.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
 def get_projects_deviation_table(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y = int(year) if year is not None else date.today().year
     ref_m = int(month) if month is not None else date.today().month
     ref_m = max(1, min(12, ref_m))
     cache_path = _table_cache_path(ref_y, ref_m)
+    lock_key = f"{TABLE_CACHE_PREFIX}_{ref_y}_{ref_m:02d}"
 
-    def _runner() -> dict[str, Any]:
-        cached = _load_table_cache(cache_path)
-        if cached is not None:
-            return cached
+    def _compute() -> dict[str, Any]:
         payload = _build_projects_deviation_table(ref_y, ref_m)
         _save_table_cache(cache_path, payload)
         return payload
 
-    return locked_call(f"{TABLE_CACHE_PREFIX}_{ref_y}_{ref_m:02d}", _runner)
+    return stale_while_revalidate(
+        lock_key,
+        lambda: _load_table_cache(cache_path),
+        lambda: _load_table_cache_stale(cache_path),
+        _compute,
+    )
 
 
 def main() -> None:

@@ -159,3 +159,18 @@ EMAIL_HOST_USER = os.environ.get('DASHBOARD_FEEDBACK_EMAIL_USER', 'mangasaryange
 EMAIL_HOST_PASSWORD = os.environ.get('DASHBOARD_FEEDBACK_EMAIL_PASSWORD', 'udhttlogbcmaxebf')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 FEEDBACK_EMAIL_TO = os.environ.get('DASHBOARD_FEEDBACK_EMAIL_TO', 'mangasaryandon@outlook.com')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'getkpi.cache_manager': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'getkpi.views': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'devdir': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}
