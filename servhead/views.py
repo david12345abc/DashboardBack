@@ -17,6 +17,7 @@ from servhead.sh_m3 import get_sh_m3_ytd
 from servhead.sh_m4 import get_sh_m4_ytd
 from servhead.sh_m5 import get_sh_m5_ytd
 from servhead.sh_t1 import TABLE_ID as SH_T1_TABLE_ID, get_sh_t1_table
+from servhead.sh_t2 import TABLE_ID as SH_T2_TABLE_ID, get_sh_t2_table
 
 SERVHEAD_TILE_KPI_IDS: frozenset[str] = frozenset({
     "SH-M1",
@@ -225,3 +226,20 @@ def merge_servhead_tables_into_universal_payload(
         }
     if isinstance(table, dict):
         tablitsy[SH_T1_TABLE_ID] = table
+
+    try:
+        satisfaction_table = get_sh_t2_table(year=ref_y, month=ref_m)
+    except Exception as exc:
+        logger.exception("SH-T2: ошибка сборки таблицы удовлетворённости для дашборда servhead")
+        satisfaction_table = {
+            "kpi_id": SH_T2_TABLE_ID,
+            "name": "Анкеты удовлетворённости клиентов",
+            "periodicity": "за всё время",
+            "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES[ref_m], "scope": "all_time"},
+            "columns": [],
+            "rows": [],
+            "totals": {"count": 0},
+            "debug": {"kpi_id": SH_T2_TABLE_ID, "status": "error", "error": str(exc)[:500]},
+        }
+    if isinstance(satisfaction_table, dict):
+        tablitsy[SH_T2_TABLE_ID] = satisfaction_table
