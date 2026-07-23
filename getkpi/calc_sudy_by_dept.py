@@ -102,7 +102,8 @@ def get_sudy_by_department(year: int, month: int, department: str) -> dict:
     if cached is not None:
         return cached
 
-    all_rows = fetch_lawsuits_for_month(year, month)
+    # include_all=True: иначе строки без инициатора отфильтровываются.
+    all_rows = fetch_lawsuits_for_month(year, month, include_all=True)
     if dept_guid:
         rows = [r for r in all_rows if (r.get("initiator_dept_key") or "") == dept_guid]
     else:

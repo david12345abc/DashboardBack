@@ -17,10 +17,12 @@ komdir_lawsuits.py — Выгрузка судов (Document_ТД_Претенз
   - Подразделение инициатора       (ИнициаторЗаказчикВнутриГК_Key → Catalog_Пользователи.Подразделение_Key
                                     → Catalog_СтруктураПредприятия.Description)
 
-Фильтр: в выдачу попадают только те документы, где подразделение инициатора
-входит в множество «детей коммерческого директора» (ALLOWED_DEPARTMENTS).
+Фильтр:
+  - Date <= конец выбранного месяца (портфель дел «на дату», не только созданные в месяце);
+  - статус ≠ «Закрыта»;
+  - при include_all=False — подразделение инициатора ∈ ALLOWED_DEPARTMENTS.
 
-Результат кэшируется на день в JSON: dashboard/lawsuits_<year>_<month>.json.
+Результат кэшируется на день в JSON: dashboard/lawsuits[_all]_<year>_<month>.json.
 """
 from __future__ import annotations
 
@@ -41,6 +43,8 @@ logger = logging.getLogger(__name__)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
+LAWSUITS_CACHE_VERSION = 2
+CLOSED_STATUSES = {"закрыта"}
 
 # Дети «коммерческого директора» (по structure.json + аналогично komdir_claims.ALLOWED_DEPARTMENTS).
 ALLOWED_DEPARTMENTS = {
@@ -128,7 +132,11 @@ def _load_cache(year: int, month: int, include_all: bool = False) -> list[dict] 
     try:
         with open(p, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        if data.get('date') == date.today().isoformat():
+        if (
+            data.get('date') == date.today().isoformat()
+            and data.get('cache_version') == LAWSUITS_CACHE_VERSION
+            and isinstance(data.get('rows'), list)
+        ):
             return data.get('rows')
     except (json.JSONDecodeError, OSError):
         pass
@@ -140,11 +148,26 @@ def _save_cache(year: int, month: int, rows: list[dict], include_all: bool = Fal
     try:
         with open(_cache_path(year, month, include_all=include_all), 'w', encoding='utf-8') as f:
             json.dump(
-                {'date': date.today().isoformat(), 'rows': rows},
+                {
+                    'date': date.today().isoformat(),
+                    'cache_version': LAWSUITS_CACHE_VERSION,
+                    'rows': rows,
+                },
                 f, ensure_ascii=False,
             )
     except OSError:
         pass
+
+
+def normalize_lawsuits_rows(raw) -> list[dict]:
+    """locked_call / JSON-кэш могут вернуть list или обёртку {rows: [...]}."""
+    if isinstance(raw, list):
+        return [r for r in raw if isinstance(r, dict)]
+    if isinstance(raw, dict):
+        rows = raw.get("rows")
+        if isinstance(rows, list):
+            return [r for r in rows if isinstance(r, dict)]
+    return []
 
 
 def _load_catalog_full(session: requests.Session,
@@ -197,18 +220,14 @@ def _fetch_single(session: requests.Session,
 
 def _fetch_documents(session: requests.Session,
                      year: int, month: int) -> list[dict]:
-    """Документы судов за указанный месяц по Date."""
+    """Документы судов с Date <= конец выбранного месяца (портфель на дату)."""
     last_day = calendar.monthrange(year, month)[1]
-    date_from = f"{year}-{month:02d}-01T00:00:00"
     date_to = f"{year}-{month:02d}-{last_day}T23:59:59"
 
     entity = _discover_doc_entity(session)
     docs: list[dict] = []
     skip = 0
-    odata_filter = (
-        f"Date ge datetime'{date_from}'"
-        f" and Date le datetime'{date_to}'"
-    )
+    odata_filter = f"Date le datetime'{date_to}'"
 
     while True:
         # Для этого документа 1С OData нестабильно обрабатывает $select даже для
@@ -241,7 +260,11 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
     session.auth = AUTH
 
     docs = _fetch_documents(session, year, month)
-    docs = [d for d in docs if not d.get("DeletionMark")]
+    docs = [
+        d for d in docs
+        if not d.get("DeletionMark")
+        and str(d.get("Статус") or "").strip().lower() not in CLOSED_STATUSES
+    ]
 
     # ── Контрагенты ──
     raw_contr = _load_catalog_full(

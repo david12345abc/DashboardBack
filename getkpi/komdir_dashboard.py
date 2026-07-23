@@ -1143,31 +1143,47 @@ def _build_claims_table(ref_y: int, ref_m: int,
 
 def _build_lawsuits_table(ref_y: int, ref_m: int,
                           dept_guid: str | None = None) -> dict:
-    """Таблица судов за выбранный месяц.
+    """Таблица судов на конец выбранного месяца.
 
     Источник — Document_ТД_ПретензииСудебныеСпорыИсковаяРабота (через komdir_lawsuits).
+    В таблице — активные (не закрытые) дела с Date <= конец месяца.
 
     dept_guid=None  → коммерческий директор: видит ВСЕ суды компании;
     dept_guid='...' → оставляем только суды конкретного отдела (по инициатору).
     """
-    from .komdir_lawsuits import fetch_lawsuits_for_month
+    from .komdir_lawsuits import (
+        fetch_lawsuits_for_month,
+        normalize_lawsuits_rows,
+        _cache_path as lawsuits_cache_path,
+    )
 
-    rows = cache_manager.locked_call(
-        f'lawsuits_all_{ref_y}_{ref_m}',
-        fetch_lawsuits_for_month, ref_y, ref_m,
-        include_all=True,
+    cache_key = f'lawsuits_all_{ref_y}_{ref_m}'
+    cache_manager.register_cache_path(
+        cache_key, lawsuits_cache_path(ref_y, ref_m, include_all=True),
+    )
+    rows = normalize_lawsuits_rows(
+        cache_manager.locked_call(
+            cache_key,
+            fetch_lawsuits_for_month, ref_y, ref_m,
+            include_all=True,
+        )
     )
 
     if dept_guid:
-        rows = [r for r in rows if r.get("initiator_dept_key") == dept_guid]
+        dept_lower = str(dept_guid).lower()
+        rows = [
+            r for r in rows
+            if str(r.get("initiator_dept_key") or "").lower() == dept_lower
+        ]
 
     return {
         "KD-T-LAWSUITS": {
-            "name": f"Суды за {MONTH_NAMES_RU[ref_m]} {ref_y}",
+            "name": f"Суды на {MONTH_NAMES_RU[ref_m]} {ref_y}",
             "periodicity": "ежемесячно",
             "description": (
-                "Судебные споры и исковая работа из 1С "
-                "(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) за выбранный месяц"
+                "Активные судебные споры и исковая работа из 1С "
+                "(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) "
+                "на конец выбранного месяца (статус ≠ Закрыта)"
             ),
             "period": {
                 "year": ref_y,
@@ -1175,10 +1191,9 @@ def _build_lawsuits_table(ref_y: int, ref_m: int,
                 "month_name": MONTH_NAMES_RU[ref_m],
             },
             "columns": [
-                "Номер", "Статус", "Тип документа", "Контрагент",
-                "Предмет спора", "Сумма требований",
-                "Роль ГК в споре", "Площадка (юрлицо ГК)",
-                "Подразделение инициатора",
+                "Тип документа", "Контрагент", "Предмет спора",
+                "Роль ГК в споре", "Юр. лицо", "Подразделение",
+                "Сумма требований, руб.",
             ],
             "rows": rows,
         },

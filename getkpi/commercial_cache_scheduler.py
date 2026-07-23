@@ -133,7 +133,7 @@ def _commercial_source_tasks(ref_y: int, ref_m: int, series_m: int) -> list[tupl
         ),
         (
             f"commercial_lawsuits_{ref_y}_{series_m:02d}",
-            cd / f"lawsuits_{ref_y}_{series_m:02d}.json",
+            cd / f"lawsuits_all_{ref_y}_{series_m:02d}.json",
             lambda: fetch_lawsuits_for_month(ref_y, series_m, include_all=True),
         ),
         (

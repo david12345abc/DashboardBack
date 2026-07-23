@@ -33,6 +33,7 @@ from pathlib import Path
 from . import cache_manager
 from .commercial_department_aliases import (
     COMMERCIAL_DEPT_ALIASES,
+    normalize_commercial_dept_guid,
 )
 from .odata_http import request_with_retry
 
@@ -57,6 +58,9 @@ DEPARTMENTS = {
 
 TOLERANCE = 0.01
 DEPT_ALIAS_SOURCE = "debitorka_department_aliases_v3"
+# Версия только для детализации просрочки: при смене инвалидируется overdue_detail,
+# не трогая помесячные снимки ДЗ (dept_alias_source).
+OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_with_liquidated_v1"
 DEALER_SALES_DEPT_GUID = "7587c178-92f6-11f0-96f9-6cb31113810e"
 DEBITORKA_DEPT_ALIASES = {
     source: target
@@ -208,11 +212,9 @@ def resolve_objects(session, obj_keys: set):
             if k in needed:
                 raw_dept = str(item.get("Подразделение_Key", EMPTY)).lower()
                 normalized_dept = normalize_debitorka_dept_guid(raw_dept).lower()
-                liquidated_dept_name = (
-                    LIQUIDATED_DEPT_NAMES.get(raw_dept, "")
-                    if raw_dept in COMMERCIAL_DEPT_ALIASES
-                    else ""
-                )
+                # Всегда сохраняем исходный ликвидированный отдел для колонки
+                # «Подразделение» (даже если для KPI GUID не алиасится в ОДП).
+                liquidated_dept_name = LIQUIDATED_DEPT_NAMES.get(raw_dept, "")
                 catalog[k] = {
                     "dept": normalized_dept,
                     "source_dept": raw_dept,
@@ -571,6 +573,8 @@ def _overdue_detail_cache_is_current(data: dict | None) -> bool:
         return False
     if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
         return False
+    if data.get("overdue_detail_version") != OVERDUE_DETAIL_CACHE_VERSION:
+        return False
     rows = data.get("rows") or []
     return not rows or all(
         "department" in row and "liquidated_dept_name" in row for row in rows
@@ -581,6 +585,8 @@ def _overdue_detail_cache_is_usable(data: dict | None) -> bool:
     if data is None:
         return False
     if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
+        return False
+    if data.get("overdue_detail_version") != OVERDUE_DETAIL_CACHE_VERSION:
         return False
     rows = data.get("rows") or []
     return not rows or all(
@@ -765,6 +771,7 @@ def _build_overdue_detail_from_data(na_datu: date, records: list,
         "na_datu": na_datu_str,
         "cache_date": date.today().isoformat(),
         "dept_alias_source": DEPT_ALIAS_SOURCE,
+        "overdue_detail_version": OVERDUE_DETAIL_CACHE_VERSION,
         "total_overdue": total,
         "rows": rows,
     }
@@ -990,6 +997,7 @@ def _calc_overdue_detail(na_datu: date) -> dict:
         "na_datu": na_datu_str,
         "cache_date": date.today().isoformat(),
         "dept_alias_source": DEPT_ALIAS_SOURCE,
+        "overdue_detail_version": OVERDUE_DETAIL_CACHE_VERSION,
         "total_overdue": total,
         "rows": rows,
     }
@@ -1041,13 +1049,16 @@ def get_overdue_detail(year: int | None = None,
 
     rows = data.get("rows", [])
     if dept_guid:
-        dept_lower = normalize_debitorka_dept_guid(dept_guid.lower()).lower()
-        # Включаем строки действующего отдела и ликвидированных-алиасов этого отдела.
+        dept_lower = str(dept_guid).lower()
+        dept_norm = normalize_debitorka_dept_guid(dept_lower).lower()
+        # В т.ч. ликвидированные дилерские (алиас в COMMERCIAL, но не в DEBITORKA).
         rows = [
             r for r in rows
-            if str(r.get("dept_key") or "").lower() == dept_lower
+            if str(r.get("dept_key") or "").lower() in {dept_lower, dept_norm}
             or normalize_debitorka_dept_guid(str(r.get("source_dept_key") or "").lower())
-            == dept_lower
+            in {dept_lower, dept_norm}
+            or normalize_commercial_dept_guid(str(r.get("source_dept_key") or "").lower())
+            in {dept_lower, dept_norm}
         ]
 
     enriched_rows = []
