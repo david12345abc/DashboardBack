@@ -72,7 +72,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 3
+KOMDIR_PAYLOAD_CACHE_VERSION = 4
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -1290,6 +1290,56 @@ def get_tiles_cache_status(ref_y: int | None = None,
     }
 
 
+def _department_cell_from_overdue_row(row: dict) -> str:
+    """Единое значение колонки «Подразделение» (в т.ч. ликвидированные с пометкой)."""
+    liquidated = (
+        (row.get("liquidated_dept_name") or "").strip()
+        or (row.get("Ликвидированное подразделение") or "").strip()
+    )
+    dept_name = (row.get("dept_name") or "").strip()
+    return (
+        (row.get("department") or "").strip()
+        or (row.get("Подразделение") or "").strip()
+        or liquidated
+        or dept_name
+    )
+
+
+def _normalize_overdue_table(table: dict | None) -> dict | None:
+    """Миграция старого формата KD-T-OVERDUE: колонка и поле «Подразделение»."""
+    if not isinstance(table, dict):
+        return table
+    columns = list(table.get("columns") or [])
+    table["columns"] = [
+        "Подразделение" if str(col).strip() == "Ликвидированное подразделение" else col
+        for col in columns
+    ] or [
+        "№ Заказа клиента", "Контрагент", "Дн. просрочки",
+        "Подразделение", "Причина", "Действие", "Сумма",
+    ]
+    rows = []
+    for r in table.get("rows") or []:
+        if not isinstance(r, dict):
+            continue
+        department = _department_cell_from_overdue_row(r)
+        next_row = dict(r)
+        next_row["department"] = department
+        next_row["Подразделение"] = department
+        next_row.pop("Ликвидированное подразделение", None)
+        rows.append(next_row)
+    table["rows"] = rows
+    return table
+
+
+def _normalize_komdir_payload_tables(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return payload
+    tables = payload.get("Таблицы")
+    if isinstance(tables, dict) and isinstance(tables.get("KD-T-OVERDUE"), dict):
+        tables["KD-T-OVERDUE"] = _normalize_overdue_table(tables["KD-T-OVERDUE"])
+    return payload
+
+
 def _build_overdue_table(ref_y: int, ref_m: int,
                          dept_guid: str | None = None) -> dict:
     """Таблица детализации просроченной ДЗ по контрагентам.
@@ -1305,6 +1355,9 @@ def _build_overdue_table(ref_y: int, ref_m: int,
 
     rows = []
     for r in detail.get("rows", []):
+        liquidated = (r.get("liquidated_dept_name") or "").strip()
+        dept_name = (r.get("dept_name") or "").strip()
+        department = _department_cell_from_overdue_row(r)
         rows.append({
             "counterparty": r.get("partner_name") or r.get("counterparty") or "",
             "partner_name": r.get("partner_name") or "",
@@ -1319,10 +1372,11 @@ def _build_overdue_table(ref_y: int, ref_m: int,
             "reason": r.get("reason") or "",
             "action": r.get("action") or "",
             "dept_key": r.get("dept_key") or "",
-            "dept_name": r.get("dept_name") or "",
+            "dept_name": dept_name,
             "source_dept_key": r.get("source_dept_key") or "",
-            "liquidated_dept_name": r.get("liquidated_dept_name") or "",
-            "Ликвидированное подразделение": r.get("liquidated_dept_name") or "",
+            "liquidated_dept_name": liquidated,
+            "department": department,
+            "Подразделение": department,
         })
 
     table = {
@@ -1337,7 +1391,7 @@ def _build_overdue_table(ref_y: int, ref_m: int,
         "total_overdue": detail.get("total_overdue", 0),
         "columns": [
             "№ Заказа клиента", "Контрагент", "Дн. просрочки",
-            "Ликвидированное подразделение", "Причина", "Действие", "Сумма",
+            "Подразделение", "Причина", "Действие", "Сумма",
         ],
         "rows": rows,
     }
@@ -1372,16 +1426,20 @@ def _save_payload_cache(ref_y: int, ref_m: int, dept_guid: str | None, payload: 
 
 
 def _unwrap_payload_cache(raw: dict) -> dict:
-    if raw.get("cache_version") == KOMDIR_PAYLOAD_CACHE_VERSION and isinstance(raw.get("payload"), dict):
+    if isinstance(raw.get("payload"), dict):
         payload = dict(raw["payload"])
-        payload["cache_refresh_status"] = "running"
-        for tile in (payload.get("Плитки") or {}).get("items") or []:
-            if isinstance(tile, dict):
-                tile["cache_refresh_status"] = "running"
-        for table in (payload.get("Таблицы") or {}).values():
-            if isinstance(table, dict):
-                table["cache_refresh_status"] = "running"
+        _normalize_komdir_payload_tables(payload)
+        if raw.get("cache_version") == KOMDIR_PAYLOAD_CACHE_VERSION:
+            payload["cache_refresh_status"] = "running"
+            for tile in (payload.get("Плитки") or {}).get("items") or []:
+                if isinstance(tile, dict):
+                    tile["cache_refresh_status"] = "running"
+            for table in (payload.get("Таблицы") or {}).values():
+                if isinstance(table, dict):
+                    table["cache_refresh_status"] = "running"
         return payload
+    if isinstance(raw, dict) and ("Плитки" in raw or "Таблицы" in raw):
+        _normalize_komdir_payload_tables(raw)
     return raw
 
 
@@ -1424,7 +1482,7 @@ def _load_fresh_payload_cache(path: Path) -> dict | None:
         and raw.get("cache_date") == date.today().isoformat()
         and isinstance(raw.get("payload"), dict)
     ):
-        return raw["payload"]
+        return _normalize_komdir_payload_tables(raw["payload"])
     return None
 
 

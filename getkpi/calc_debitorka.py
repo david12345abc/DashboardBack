@@ -374,12 +374,17 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
     partner_keys_used: set[str] = set()
     order_numbers_used: set[str] = set()
 
+    liquidated_keys_lower = {k.lower() for k in LIQUIDATED_DEPT_NAMES}
+
     for (obj_key, planned_dt), balance in balances.items():
         cat = obj_catalog.get(obj_key)
         if not cat:
             continue
         dept = cat["dept"]
-        if dept not in dept_keys_lower:
+        liquidated_name = (cat.get("liquidated_dept_name") or "").strip()
+        source_dept = str(cat.get("source_dept") or "").lower()
+        # Действующие коммерческие отделы + ликвидированные (даже без алиаса в ОДП).
+        if dept not in dept_keys_lower and source_dept not in liquidated_keys_lower:
             continue
 
         partner_key = cat["partner"]
@@ -389,9 +394,15 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
         key = (dept, partner_key, obj_key)
         entry = by_order[key]
         entry["dept"] = dept
-        entry["dept_name"] = DEPARTMENTS.get(dept, dept[:8])
-        entry["source_dept"] = cat.get("source_dept", "")
-        entry["liquidated_dept_name"] = cat.get("liquidated_dept_name", "")
+        entry["dept_name"] = (
+            DEPARTMENTS.get(dept)
+            or liquidated_name
+            or LIQUIDATED_DEPT_NAMES.get(source_dept, dept[:8])
+        )
+        entry["source_dept"] = source_dept
+        entry["liquidated_dept_name"] = liquidated_name or LIQUIDATED_DEPT_NAMES.get(
+            source_dept, ""
+        )
         entry["partner"] = partner_key
         entry["order_num"] = order_num
         entry["order_date"] = order_date
@@ -438,11 +449,17 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
         installments = sorted(
             data["installments"], key=lambda x: x["planned_date"]
         )
+        liquidated_name = (data.get("liquidated_dept_name") or "").strip()
+        dept_name = data["dept_name"]
+        # В колонке «Подразделение»: действующее имя, а для ликвидированных —
+        # исходное с пометкой «(ликв.)» (см. LIQUIDATED_DEPT_NAMES).
+        department = liquidated_name or dept_name
         rows.append({
             "dept_key": dept,
-            "dept_name": data["dept_name"],
+            "dept_name": dept_name,
             "source_dept_key": data.get("source_dept", ""),
-            "liquidated_dept_name": data.get("liquidated_dept_name", ""),
+            "liquidated_dept_name": liquidated_name,
+            "department": department,
             "partner_key": partner_key,
             "partner_name": partner_name,
             "counterparty": partner_name,
@@ -547,7 +564,7 @@ def _monthly_cache_is_current(data: dict | None, ref_y: int, ref_m: int) -> bool
 
 
 def _overdue_detail_cache_is_current(data: dict | None) -> bool:
-    """Кэш детализации должен содержать новую колонку ликвидированных подразделений."""
+    """Кэш детализации должен содержать колонку подразделения (в т.ч. ликвидированных)."""
     if data is None:
         return False
     if data.get("cache_date") != date.today().isoformat():
@@ -555,7 +572,9 @@ def _overdue_detail_cache_is_current(data: dict | None) -> bool:
     if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
         return False
     rows = data.get("rows") or []
-    return not rows or all("liquidated_dept_name" in row for row in rows)
+    return not rows or all(
+        "department" in row and "liquidated_dept_name" in row for row in rows
+    )
 
 
 def _overdue_detail_cache_is_usable(data: dict | None) -> bool:
@@ -564,7 +583,10 @@ def _overdue_detail_cache_is_usable(data: dict | None) -> bool:
     if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
         return False
     rows = data.get("rows") or []
-    return not rows or all("liquidated_dept_name" in row for row in rows)
+    return not rows or all(
+        ("department" in row or "dept_name" in row) and "liquidated_dept_name" in row
+        for row in rows
+    )
 
 
 def _monthly_overdue_total(data: dict | None, year: int, month: int) -> float | None:
@@ -1020,7 +1042,26 @@ def get_overdue_detail(year: int | None = None,
     rows = data.get("rows", [])
     if dept_guid:
         dept_lower = normalize_debitorka_dept_guid(dept_guid.lower()).lower()
-        rows = [r for r in rows if r.get("dept_key") == dept_lower]
+        # Включаем строки действующего отдела и ликвидированных-алиасов этого отдела.
+        rows = [
+            r for r in rows
+            if str(r.get("dept_key") or "").lower() == dept_lower
+            or normalize_debitorka_dept_guid(str(r.get("source_dept_key") or "").lower())
+            == dept_lower
+        ]
+
+    enriched_rows = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        row = dict(r)
+        liquidated = (row.get("liquidated_dept_name") or "").strip()
+        dept_name = (row.get("dept_name") or "").strip()
+        department = (row.get("department") or "").strip() or liquidated or dept_name
+        row["department"] = department
+        row["liquidated_dept_name"] = liquidated
+        enriched_rows.append(row)
+    rows = enriched_rows
 
     if rows:
         total = round(sum(r["amount"] for r in rows), 2)
