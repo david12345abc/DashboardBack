@@ -112,16 +112,27 @@ FULL_DASHBOARD: list[dict] = [
         "block": "плитка",
         "frequency": "Ежемесячно",
         "perspective": "Развитие",
-        "goal": "Видеть объём проектного портфеля по вехам и долю проектов с отклонением по baseline",
-        "formula": "Количество проектов с вехами в месяце и отклонения по ним; KPI = Отклонения / Портфель × 100%",
+        "goal": (
+            "Контролировать проектный портфель: долю проектов "
+            "без отклонений по вехам"
+        ),
+        "formula": (
+            "KPI = (Количество всех проектов - проекты с отклонениями по вехам) / "
+            "Количество всех проектов × 100%"
+        ),
+        "description": (
+            "Все проекты портфеля за период; красным выделены проекты "
+            "с отклонениями по вехам. KPI — проекты без отклонений по вехам, "
+            "делённые на все проекты (выше — лучше)."
+        ),
         "unit": "%",
         "source": "TurboProject / данные 1С",
-        "monthly_target": "≤100%",
+        "monthly_target": "≥95%",
         "quarterly_target": None,
-        "yearly_target": "≤100%",
-        "green_threshold": "<100%",
-        "yellow_threshold": "100–110%",
-        "red_threshold": ">110%",
+        "yearly_target": "≥95%",
+        "green_threshold": "≥95%",
+        "yellow_threshold": "85–94,9%",
+        "red_threshold": "<85%",
         "weight_pct": 10.0,
     },
     {
@@ -262,7 +273,7 @@ FULL_DASHBOARD: list[dict] = [
 
 FIELDS = (
     "name", "block", "frequency", "perspective", "goal",
-    "formula", "unit", "source",
+    "formula", "description", "unit", "source",
     "monthly_target", "quarterly_target", "yearly_target",
     "green_threshold", "yellow_threshold", "red_threshold",
     "weight_pct", "chart_type", "chart_type_label",

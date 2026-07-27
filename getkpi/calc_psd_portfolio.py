@@ -6,16 +6,18 @@ calc_psd_portfolio.py — Портфель проектов ПСД по меся
       - `has_1c == true`,
       - есть хотя бы одна веха (`is_milestone=true`) с датой окончания в месяце.
   • deviation_count  — из portfolio_count проекты со сдвигом по baseline
-                       на уровне проекта: finish_date > baseline_finish.
+                       на уровне проекта: finish_date > baseline_finish
+                       (в UI это «отклонения по вехам»).
+  • without_deviation_count — portfolio_count − deviation_count.
 
 Публичный API:
   • get_psd_portfolio_snapshot(month_arg)
   • get_psd_portfolio_monthly(year, ref_month)
 
-Агрегация на фронте:
-  в `plan` кладём portfolio_count,
-  в `fact` кладём deviation_count,
-  процент = fact / plan × 100.
+KPI (FND-T6):
+  проекты без отклонений по вехам / все проекты × 100%
+  = without_deviation_count / portfolio_count × 100
+  = (portfolio_count − deviation_count) / portfolio_count × 100.
 """
 
 import functools
@@ -34,7 +36,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "psd_portfolio_1c_milestones_v2"
+SOURCE_TAG = "psd_portfolio_1c_milestones_v4"
 
 
 # ═══════════════════════════════════════════════════════
@@ -195,6 +197,21 @@ def _fetch_all_project_details(session: requests.Session, token: str) -> list[di
     return projects
 
 
+def _project_card_row(
+    info: dict[str, Any],
+    *,
+    is_deviated: bool,
+    slip_days: int | None = None,
+) -> dict[str, Any]:
+    return {
+        "project_name": info.get("project_name") or "",
+        "project_manager": info.get("project_manager") or "",
+        "file_id": info.get("file_id"),
+        "delay_workdays": int(slip_days or 0),
+        "is_deviated": bool(is_deviated),
+    }
+
+
 def _calc_month_payload(
     month_arg: str,
     projects: list[dict[str, Any]],
@@ -204,6 +221,7 @@ def _calc_month_payload(
     m_start, m_end = parse_month_arg(month_arg)
     portfolio: list[dict[str, Any]] = []
     with_deviation: list[dict[str, Any]] = []
+    project_rows: list[dict[str, Any]] = []
 
     for item in projects:
         summary = item.get("summary") or {}
@@ -216,15 +234,31 @@ def _calc_month_payload(
         info = _build_project_info(summary, project_meta)
         portfolio.append(info)
 
-        if project_slips_baseline(project_meta):
+        slipped = project_slips_baseline(project_meta)
+        slip_days = None
+        if slipped:
             fin = parse_iso_date(project_meta.get("finish_date"))
             base = parse_iso_date(project_meta.get("baseline_finish"))
             info_dev = dict(info)
-            info_dev["slip_days"] = (
+            slip_days = (
                 (fin.date() - base.date()).days if fin and base else None
             )
+            info_dev["slip_days"] = slip_days
             with_deviation.append(info_dev)
 
+        project_rows.append(
+            _project_card_row(info, is_deviated=slipped, slip_days=slip_days)
+        )
+
+    project_rows.sort(
+        key=lambda row: (
+            0 if row.get("is_deviated") else 1,
+            -(int(row.get("delay_workdays") or 0)),
+            str(row.get("project_name") or ""),
+        )
+    )
+
+    without_deviation_count = len(portfolio) - len(with_deviation)
     payload = {
         "month": month_arg,
         "period_from": m_start.isoformat(),
@@ -233,6 +267,8 @@ def _calc_month_payload(
         "source": SOURCE_TAG,
         "portfolio_count": len(portfolio),
         "deviation_count": len(with_deviation),
+        "without_deviation_count": without_deviation_count,
+        "project_deviation_rows": project_rows,
     }
     if include_details:
         payload["portfolio"] = portfolio
@@ -260,7 +296,11 @@ def get_psd_portfolio_monthly(year: int, ref_month: int) -> dict:
     if cached is not None and cached.get("source") == SOURCE_TAG:
         rows = cached.get("months") or []
         if rows and all(
-            "portfolio_count" in row and "deviation_count" in row for row in rows
+            "portfolio_count" in row
+            and "deviation_count" in row
+            and "without_deviation_count" in row
+            and "project_deviation_rows" in row
+            for row in rows
         ):
             return cached
 
@@ -296,6 +336,8 @@ def get_psd_portfolio_monthly(year: int, ref_month: int) -> dict:
             "period_to": month_payload["period_to"],
             "portfolio_count": month_payload["portfolio_count"],
             "deviation_count": month_payload["deviation_count"],
+            "without_deviation_count": month_payload["without_deviation_count"],
+            "project_deviation_rows": month_payload.get("project_deviation_rows") or [],
         })
         snapshot = _calc_month_payload(month_arg, projects, include_details=True)
         _save_json(_cache_path_snapshot(month_arg), snapshot)
@@ -341,8 +383,13 @@ def main() -> None:
     print("\n" + "=" * 78)
     print(f"  РЕЗУЛЬТАТ · {month_arg}")
     print("=" * 78)
-    print(f"  Портфель (план) — проектов с вехами в месяце:  {len(portfolio):>4d}")
-    print(f"  Отклонения по baseline (сдвиг):                 {len(with_deviation):>4d}")
+    without_n = int(payload.get("without_deviation_count") or (len(portfolio) - len(with_deviation)))
+    ratio = (without_n / len(portfolio) * 100) if portfolio else None
+    print(f"  Портфель — проектов с вехами в месяце:          {len(portfolio):>4d}")
+    print(f"  Без отклонений по вехам:                        {without_n:>4d}")
+    print(f"  С отклонениями по вехам (baseline):             {len(with_deviation):>4d}")
+    if ratio is not None:
+        print(f"  KPI = без отклонений / все × 100%:             {ratio:>6.1f}%")
 
     if show_details and portfolio:
         print(f"\n  Портфель:")

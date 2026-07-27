@@ -1366,6 +1366,10 @@ def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int 
 
         paths.append(calc_debitorka.overdue_detail_cache_path(ref_y, ref_m))
         paths.append(cd / f'debitorka_monthly_{ref_y}_{ref_m:02d}.json')
+    elif kid == 'FND-T6':
+        paths.append(cd / f'psd_portfolio_monthly_{ref_y}_{ref_m:02d}.json')
+        for m in range(1, ref_m + 1):
+            paths.append(cd / f'psd_portfolio_{ref_y}-{m:02d}.json')
     elif kid.startswith('PD-'):
         paths.extend(_prod_deputy_cache_files_for_kpi(kid, ref_y, ref_m))
 

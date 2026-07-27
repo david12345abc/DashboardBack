@@ -536,6 +536,87 @@ def _save_json(path: Path, data: dict) -> None:
         pass
 
 
+def _snapshot_is_empty(data: dict | None) -> bool:
+    """Пустой/сбойный снимок: нет ни ДЗ, ни КЗ (типичный результат failed OData)."""
+    if data is None:
+        return True
+    try:
+        dz = float(data.get("total_dz") or 0)
+        kz = float(data.get("total_kz") or 0)
+    except (TypeError, ValueError):
+        return True
+    return dz == 0.0 and kz == 0.0
+
+
+def _find_nonzero_snapshot_on_or_before(na_datu: date) -> dict | None:
+    """Последний ненулевой daily-снимок на дату или раньше (сначала тот же месяц)."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    candidates: list[tuple[date, Path]] = []
+    for path in CACHE_DIR.glob("debitorka_????-??-??.json"):
+        try:
+            d = date.fromisoformat(path.stem.replace("debitorka_", "", 1))
+        except ValueError:
+            continue
+        if d <= na_datu:
+            candidates.append((d, path))
+    if not candidates:
+        return None
+
+    same_month = [(d, p) for d, p in candidates if d.year == na_datu.year and d.month == na_datu.month]
+    # Сначала тот же месяц, затем более ранние даты (если в месяце только нули).
+    seen: set[Path] = set()
+    ordered: list[tuple[date, Path]] = []
+    for pool in (same_month, candidates):
+        for item in sorted(pool, key=lambda pair: pair[0], reverse=True):
+            if item[1] in seen:
+                continue
+            seen.add(item[1])
+            ordered.append(item)
+    for _, path in ordered:
+        snap = _load_json(path)
+        if (
+            snap is not None
+            and snap.get("kz_source") == "predoplata_upr"
+            and snap.get("dept_alias_source") == DEPT_ALIAS_SOURCE
+            and not _snapshot_is_empty(snap)
+        ):
+            return snap
+    return None
+
+
+def _save_snapshot_json(na_datu: date, data: dict) -> None:
+    """Сохранить снимок; не затирать хороший кэш пустым результатом fetch."""
+    path = _cache_path_snapshot(na_datu)
+    if _snapshot_is_empty(data):
+        existing = _load_json(path)
+        if existing is not None and not _snapshot_is_empty(existing):
+            logger.warning(
+                "calc_debitorka: skip saving empty snapshot %s (keep non-zero cache)",
+                na_datu.isoformat(),
+            )
+            return
+    _save_json(path, data)
+
+
+def _resolve_snapshot_for_monthly(na_datu: date) -> dict:
+    """Снимок для помесячного ряда: при нулях — fallback на более ранний ненулевой файл."""
+    snapshot = get_snapshot_for_date(na_datu)
+    if not _snapshot_is_empty(snapshot):
+        return snapshot
+    fallback = _find_nonzero_snapshot_on_or_before(na_datu)
+    if fallback is None:
+        return snapshot
+    logger.warning(
+        "calc_debitorka: empty snapshot %s, fallback to %s",
+        na_datu.isoformat(),
+        fallback.get("na_datu"),
+    )
+    resolved = dict(fallback)
+    # В monthly-ряду фиксируем ожидаемую дату снимка, чтобы кэш оставался «текущим».
+    resolved["na_datu"] = na_datu.isoformat()
+    return resolved
+
+
 def _monthly_cache_is_current(data: dict | None, ref_y: int, ref_m: int) -> bool:
     """Месячный агрегат валиден только если строки построены на нужные даты снимков."""
     if data is None:
@@ -562,6 +643,19 @@ def _monthly_cache_is_current(data: dict | None, ref_y: int, ref_m: int) -> bool
         row = rows_by_month.get(month)
         if row is None or row.get("na_datu") != expected_date:
             return False
+        # Нулевая строка при наличии более раннего ненулевого daily — устаревший/отравленный кэш.
+        try:
+            dz = float(row.get("dz_fact") or 0)
+            kz = float(row.get("kz_fact") or 0)
+        except (TypeError, ValueError):
+            dz, kz = 0.0, 0.0
+        if dz == 0.0 and kz == 0.0:
+            try:
+                snap_d = date.fromisoformat(expected_date)
+            except ValueError:
+                return False
+            if _find_nonzero_snapshot_on_or_before(snap_d) is not None:
+                return False
     return True
 
 
@@ -815,7 +909,27 @@ def _calc_snapshots_batch(dates_to_compute: list[date],
     results: dict[date, dict] = {}
     for na_datu in sorted_dates:
         snapshot = _build_snapshot_from_data(na_datu, records, obj_catalog)
-        _save_json(_cache_path_snapshot(na_datu), snapshot)
+        if _snapshot_is_empty(snapshot):
+            existing = _load_json(_cache_path_snapshot(na_datu))
+            if existing is not None and not _snapshot_is_empty(existing):
+                results[na_datu] = existing
+                logger.warning(
+                    "calc_debitorka: batch empty %s, keep existing non-zero cache",
+                    na_datu.isoformat(),
+                )
+                continue
+            fallback = _find_nonzero_snapshot_on_or_before(na_datu)
+            if fallback is not None:
+                kept = dict(fallback)
+                kept["na_datu"] = na_datu.isoformat()
+                results[na_datu] = kept
+                logger.warning(
+                    "calc_debitorka: batch empty %s, use fallback %s",
+                    na_datu.isoformat(),
+                    fallback.get("na_datu"),
+                )
+                continue
+        _save_snapshot_json(na_datu, snapshot)
         results[na_datu] = snapshot
         logger.info("calc_debitorka: batch snapshot %s done", na_datu.isoformat())
 
@@ -836,10 +950,33 @@ def get_snapshot_for_date(na_datu: date) -> dict:
         cached is not None
         and cached.get("kz_source") == "predoplata_upr"
         and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
+        and not _snapshot_is_empty(cached)
     ):
         return cached
+    # Пустой кэш на дату не считаем валидным — пробуем пересчитать, но не затираем
+    # хороший файл нулями (см. _save_snapshot_json).
+    if (
+        cached is not None
+        and cached.get("kz_source") == "predoplata_upr"
+        and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
+        and _snapshot_is_empty(cached)
+    ):
+        fallback = _find_nonzero_snapshot_on_or_before(na_datu)
+        if fallback is not None and fallback.get("na_datu") != na_datu.isoformat():
+            # Есть более ранний хороший снимок — не ходим в OData сразу (часто тот же сбой).
+            kept = dict(fallback)
+            kept["na_datu"] = na_datu.isoformat()
+            return kept
     payload = _calc_snapshot_for_date(na_datu)
-    _save_json(_cache_path_snapshot(na_datu), payload)
+    if _snapshot_is_empty(payload):
+        if cached is not None and not _snapshot_is_empty(cached):
+            return cached
+        fallback = _find_nonzero_snapshot_on_or_before(na_datu)
+        if fallback is not None:
+            kept = dict(fallback)
+            kept["na_datu"] = na_datu.isoformat()
+            return kept
+    _save_snapshot_json(na_datu, payload)
     return payload
 
 
@@ -870,7 +1007,7 @@ def get_komdir_dz_monthly(year: int | None = None,
 
     out_rows = []
     for mm, snap_date in snap_dates:
-        snapshot = get_snapshot_for_date(snap_date)
+        snapshot = _resolve_snapshot_for_monthly(snap_date)
         if dept_name is not None:
             dept_data = snapshot.get("by_dept", {}).get(dept_name, {})
             dz = float(dept_data.get("dz", 0))
@@ -883,7 +1020,7 @@ def get_komdir_dz_monthly(year: int | None = None,
         out_rows.append({
             "year": ref_y,
             "month": mm,
-            "na_datu": snapshot.get("na_datu"),
+            "na_datu": snap_date.isoformat(),
             "dz_fact": dz,
             "kz_fact": kz,
             "overdue_fact": overdue,
@@ -944,14 +1081,21 @@ def _ensure_debitorka_caches_for_period(
 
     def _snapshot_needs_refresh(d: date) -> bool:
         snap = _load_json(_cache_path_snapshot(d))
-        # «Старые» файлы (до v2 КЗ по ПредоплатаУпр или до алиасов коммерческих
-        # подразделений) пересобираем.
-        return (
-            snap is None
-            or snap.get("kz_source") != "predoplata_upr"
-            or snap.get("dept_alias_source") != DEPT_ALIAS_SOURCE
-            or snap.get("na_datu") != d.isoformat()
-        )
+        # «Старые» файлы (до v2 КЗ по ПредоплатаУпр) пересобираем.
+        # Ненулевой снимок со старым dept_alias_source — только патчим метку,
+        # без полного OData-batch (иначе пустой/зависший fetch затирает кэш).
+        if snap is None or snap.get("na_datu") != d.isoformat():
+            return True
+        if snap.get("kz_source") != "predoplata_upr":
+            return True
+        if _snapshot_is_empty(snap):
+            # Пустой файл: OData только если нет локального ненулевого fallback.
+            return _find_nonzero_snapshot_on_or_before(d) is None
+        if snap.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
+            snap["dept_alias_source"] = DEPT_ALIAS_SOURCE
+            _save_json(_cache_path_snapshot(d), snap)
+            return False
+        return False
 
     uncached = [d for _, d in snap_dates if _snapshot_needs_refresh(d)]
 

@@ -38,7 +38,7 @@ MONTH_NAMES = {
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
 
-LOWER_IS_BETTER = frozenset({"FND-T6", "FND-T7"})
+LOWER_IS_BETTER = frozenset({"FND-T7"})
 
 # ═══════════════════════════════════════════════════════════════
 #  Захардкоженные данные по месяцам
@@ -98,6 +98,10 @@ def _kpi_pct(fact, plan) -> float | None:
 def _rag(kpi_id: str, pct: float | None) -> str:
     if pct is None:
         return "unknown"
+    # FND-T6: higher is better (доля проектов без отклонений по вехам).
+    if kpi_id == "FND-T6":
+        return _rag_fnd_t6(pct)
+    # FND-T7: lower is better (ДЗ к лимиту).
     if kpi_id in LOWER_IS_BETTER:
         if pct < 100:
             return "green"
@@ -107,6 +111,17 @@ def _rag(kpi_id: str, pct: float | None) -> str:
     if pct >= 100:
         return "green"
     if pct >= 90:
+        return "yellow"
+    return "red"
+
+
+def _rag_fnd_t6(pct: float | None) -> str:
+    """Доля проектов без отклонений: зелёный ближе к 100%."""
+    if pct is None:
+        return "unknown"
+    if pct >= 95:
+        return "green"
+    if pct >= 85:
         return "yellow"
     return "red"
 
@@ -433,13 +448,13 @@ def _build_fnd_t7_debitorka_rows(months: list[int], ref_y: int) -> list[dict]:
 def _build_fnd_t6_portfolio_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T6 «Портфель проектов».
 
-    plan = количество проектов из TurboProject, пришедших из 1С (`has_1c=true`)
-           и имеющих хотя бы одну веху в выбранном месяце.
-    fact = количество проектов из этого портфеля со сдвигом по baseline.
-    kpi_pct = fact / plan × 100.
+    portfolio_count = проекты TurboProject с has_1c и хотя бы одной вехой в месяце.
+    deviation_count = проекты со сдвигом baseline (отклонения по вехам).
+    without_deviation_count = portfolio_count − deviation_count.
 
-    Для фронта важно, что plan/fact помесячные и дальше могут суммироваться
-    за квартал / YTD с повторным пересчётом процента.
+    KPI = without_deviation_count / portfolio_count × 100
+        = (portfolio_count − deviation_count) / portfolio_count × 100.
+    plan = все проекты, fact = без отклонений (higher_better fact/plan).
     """
     if not months:
         return []
@@ -461,19 +476,26 @@ def _build_fnd_t6_portfolio_rows(months: list[int], ref_y: int) -> list[dict]:
     rows: list[dict] = []
     for m in months:
         row = by_m.get(m) or {}
-        plan = float(row.get("portfolio_count") or 0)
-        fact = float(row.get("deviation_count") or 0)
-        pct = round(fact / plan * 100, 1) if plan > 0 else None
+        portfolio = float(row.get("portfolio_count") or 0)
+        deviation = float(row.get("deviation_count") or 0)
+        without = row.get("without_deviation_count")
+        if without is None:
+            without = max(portfolio - deviation, 0)
+        without = float(without or 0)
+        pct = round(without / portfolio * 100, 1) if portfolio > 0 else None
         rows.append({
             "month": m,
             "year": ref_y,
             "month_name": MONTH_NAMES[m],
-            "plan": round(plan, 2),
-            "fact": round(fact, 2),
+            "plan": round(portfolio, 2),
+            "fact": round(without, 2),
             "kpi_pct": pct,
-            "has_data": plan > 0 or fact > 0,
-            "portfolio_count": round(plan, 2),
-            "deviation_count": round(fact, 2),
+            "has_data": portfolio > 0 or deviation > 0 or without > 0,
+            "portfolio_count": round(portfolio, 2),
+            "deviation_count": round(deviation, 2),
+            "without_deviation_count": round(without, 2),
+            "project_deviation_rows": row.get("project_deviation_rows") or [],
+            "max_allowed_delay_workdays": 1,
         })
     return rows
 
@@ -1873,6 +1895,7 @@ def build_chairman_payload(
         tile = {
             "kpi_id": kid,
             "name": meta["name"],
+            "goal": meta.get("goal"),
             "kpi_pct": month_pct,
             "ytd_pct": ytd_pct,
             "color": color,
@@ -1901,7 +1924,13 @@ def build_chairman_payload(
                 if extra_key in lm:
                     tile[extra_key] = lm[extra_key]
         if kid == "FND-T6" and lm:
-            for extra_key in ("portfolio_count", "deviation_count"):
+            for extra_key in (
+                "portfolio_count",
+                "deviation_count",
+                "without_deviation_count",
+                "project_deviation_rows",
+                "max_allowed_delay_workdays",
+            ):
                 if extra_key in lm:
                     tile[extra_key] = lm[extra_key]
         if kid == "FND-T9":
