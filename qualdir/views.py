@@ -15,7 +15,7 @@ from .qd_m9 import get_qd_m9_ytd
 from .qd_m10 import get_qd_m10_ytd
 from .qd_m7 import get_qd_m7_ytd
 from .qd_m8 import get_qd_m8_ytd
-from .turnover import get_qd_q2_ytd
+from .qd_q2 import get_qd_q2_ytd
 
 QUALDIR_TILE_KPI_IDS: frozenset[str] = frozenset({
     'QD-Q2', 'QD-Q1', 'QD-M1', 'QD-M4', 'QD-M3', 'QD-M5',
@@ -69,7 +69,7 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     from qualdir.qd_m8 import forma0317_month_cache_path, qd_m8_tile_cache_path, qd_m8_ytd_cache_path
     from qualdir.qd_m9 import otk_predyavlenie_npo_month_cache_path, qd_m9_tile_cache_path, qd_m9_ytd_cache_path
     from qualdir.qd_m10 import otk_predyavlenie_almaz_month_cache_path, qd_m10_tile_cache_path, qd_m10_ytd_cache_path
-    from qualdir.turnover import qd_q2_ytd_cache_path, turnover_month_cache_path
+    from qualdir.qd_q2 import qd_q2_ytd_cache_path, turnover_month_cache_path
 
     kid = _normalize_qualdir_kpi_id(kpi_id)
     paths: list[Path] = []
