@@ -4887,53 +4887,53 @@ def get_kpi(request):
         payload, for_block = chairman_data.build_chairman_payload_by_for(
             kpis, month=req_month, year=req_year, for_raw=for_raw,
         )
-        if req_month and req_year:
-            ref_y, ref_m = req_year, req_month
-        else:
-            _t = date.today()
-            ref_y, ref_m = _t.year, _t.month
-        tables = payload.get('Таблицы') or {}
-        target_dept = requested_dept
-        if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
-            target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
-        try:
-            claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
-        except Exception:
-            claims_rows = []
-        try:
-            lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
-        except Exception:
-            lawsuits_rows = []
-        month_name = MONTH_NAMES.get(ref_m, str(ref_m))
-        tables.update({
-            'KD-T-CLAIMS': {
-                'name': 'Активные претензии',
-                'periodicity': 'ежемесячно',
-                'description': (
-                    'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
-                    'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
-                ),
-                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                'rows': claims_rows,
-            },
-            'KD-T-LAWSUITS': {
-                'name': f'Суды на {month_name} {ref_y}',
-                'periodicity': 'ежемесячно',
-                'description': (
-                    'Активные судебные споры и исковая работа из 1С '
-                    '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) '
-                    'на конец выбранного месяца (статус ≠ Закрыта)'
-                ),
-                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                'columns': [
-                    'Тип документа', 'Контрагент', 'Предмет спора',
-                    'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
-                    'Сумма требований, руб.',
-                ],
-                'rows': lawsuits_rows,
-            },
-        })
-        payload['Таблицы'] = tables
+        # Коммерческий блок уже кладёт претензии/суды/ДЗ в payload — не дублируем запросы в 1С.
+        if for_block != chairman_data.CHAIRMAN_BLOCK_COMMERCE:
+            if req_month and req_year:
+                ref_y, ref_m = req_year, req_month
+            else:
+                _t = date.today()
+                ref_y, ref_m = _t.year, _t.month
+            tables = payload.get('Таблицы') or {}
+            target_dept = requested_dept
+            try:
+                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
+            except Exception:
+                claims_rows = []
+            try:
+                lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
+            except Exception:
+                lawsuits_rows = []
+            month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+            tables.update({
+                'KD-T-CLAIMS': {
+                    'name': 'Активные претензии',
+                    'periodicity': 'ежемесячно',
+                    'description': (
+                        'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
+                        'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
+                    ),
+                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                    'rows': claims_rows,
+                },
+                'KD-T-LAWSUITS': {
+                    'name': f'Суды на {month_name} {ref_y}',
+                    'periodicity': 'ежемесячно',
+                    'description': (
+                        'Активные судебные споры и исковая работа из 1С '
+                        '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) '
+                        'на конец выбранного месяца (статус ≠ Закрыта)'
+                    ),
+                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                    'columns': [
+                        'Тип документа', 'Контрагент', 'Предмет спора',
+                        'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                        'Сумма требований, руб.',
+                    ],
+                    'rows': lawsuits_rows,
+                },
+            })
+            payload['Таблицы'] = tables
         dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
         return JsonResponse(
             {
@@ -5076,53 +5076,52 @@ def get_all_departments(request):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
                 kpis, month=req_m, year=req_yr, for_raw=for_raw,
             )
-            if req_m and req_yr:
-                ref_y, ref_m = req_yr, req_m
-            else:
-                _t = date.today()
-                ref_y, ref_m = _t.year, _t.month
-            tables = payload.get('Таблицы') or {}
-            target_dept = requested_dept
-            if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
-                target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
-            try:
-                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
-            except Exception:
-                claims_rows = []
-            try:
-                lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
-            except Exception:
-                lawsuits_rows = []
-            month_name = MONTH_NAMES.get(ref_m, str(ref_m))
-            tables.update({
-                'KD-T-CLAIMS': {
-                    'name': 'Активные претензии',
-                    'periodicity': 'ежемесячно',
-                    'description': (
-                        'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
-                        'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
-                    ),
-                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                    'rows': claims_rows,
-                },
-                'KD-T-LAWSUITS': {
-                    'name': f'Суды на {month_name} {ref_y}',
-                    'periodicity': 'ежемесячно',
-                    'description': (
-                        'Активные судебные споры и исковая работа из 1С '
-                        '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) '
-                        'на конец выбранного месяца (статус ≠ Закрыта)'
-                    ),
-                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                    'columns': [
-                        'Тип документа', 'Контрагент', 'Предмет спора',
-                        'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
-                        'Сумма требований, руб.',
-                    ],
-                    'rows': lawsuits_rows,
-                },
-            })
-            payload['Таблицы'] = tables
+            if for_block != chairman_data.CHAIRMAN_BLOCK_COMMERCE:
+                if req_m and req_yr:
+                    ref_y, ref_m = req_yr, req_m
+                else:
+                    _t = date.today()
+                    ref_y, ref_m = _t.year, _t.month
+                tables = payload.get('Таблицы') or {}
+                target_dept = requested_dept
+                try:
+                    claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
+                except Exception:
+                    claims_rows = []
+                try:
+                    lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
+                except Exception:
+                    lawsuits_rows = []
+                month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+                tables.update({
+                    'KD-T-CLAIMS': {
+                        'name': 'Активные претензии',
+                        'periodicity': 'ежемесячно',
+                        'description': (
+                            'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
+                            'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
+                        ),
+                        'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                        'rows': claims_rows,
+                    },
+                    'KD-T-LAWSUITS': {
+                        'name': f'Суды на {month_name} {ref_y}',
+                        'periodicity': 'ежемесячно',
+                        'description': (
+                            'Активные судебные споры и исковая работа из 1С '
+                            '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) '
+                            'на конец выбранного месяца (статус ≠ Закрыта)'
+                        ),
+                        'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                        'columns': [
+                            'Тип документа', 'Контрагент', 'Предмет спора',
+                            'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                            'Сумма требований, руб.',
+                        ],
+                        'rows': lawsuits_rows,
+                    },
+                })
+                payload['Таблицы'] = tables
             dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
             return JsonResponse(
                 {
@@ -5189,53 +5188,52 @@ def get_all_departments(request):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
                 kpis, month=req_month_all, year=req_year_all, for_raw=chairman_for_raw,
             )
-            if req_month_all and req_year_all:
-                ref_y, ref_m = req_year_all, req_month_all
-            else:
-                _t = date.today()
-                ref_y, ref_m = _t.year, _t.month
-            tables = payload.get('Таблицы') or {}
-            target_dept = dept
-            if for_block == chairman_data.CHAIRMAN_BLOCK_COMMERCE:
-                target_dept = chairman_data.chairman_for_target_department(for_block) or 'коммерческий директор'
-            try:
-                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
-            except Exception:
-                claims_rows = []
-            try:
-                lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
-            except Exception:
-                lawsuits_rows = []
-            month_name = MONTH_NAMES.get(ref_m, str(ref_m))
-            tables.update({
-                'KD-T-CLAIMS': {
-                    'name': 'Активные претензии',
-                    'periodicity': 'ежемесячно',
-                    'description': (
-                        'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
-                        'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
-                    ),
-                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                    'rows': claims_rows,
-                },
-                'KD-T-LAWSUITS': {
-                    'name': f'Суды на {month_name} {ref_y}',
-                    'periodicity': 'ежемесячно',
-                    'description': (
-                        'Активные судебные споры и исковая работа из 1С '
-                        '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) '
-                        'на конец выбранного месяца (статус ≠ Закрыта)'
-                    ),
-                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                    'columns': [
-                        'Тип документа', 'Контрагент', 'Предмет спора',
-                        'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
-                        'Сумма требований, руб.',
-                    ],
-                    'rows': lawsuits_rows,
-                },
-            })
-            payload['Таблицы'] = tables
+            if for_block != chairman_data.CHAIRMAN_BLOCK_COMMERCE:
+                if req_month_all and req_year_all:
+                    ref_y, ref_m = req_year_all, req_month_all
+                else:
+                    _t = date.today()
+                    ref_y, ref_m = _t.year, _t.month
+                tables = payload.get('Таблицы') or {}
+                target_dept = dept
+                try:
+                    claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
+                except Exception:
+                    claims_rows = []
+                try:
+                    lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
+                except Exception:
+                    lawsuits_rows = []
+                month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+                tables.update({
+                    'KD-T-CLAIMS': {
+                        'name': 'Активные претензии',
+                        'periodicity': 'ежемесячно',
+                        'description': (
+                            'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
+                            'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
+                        ),
+                        'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                        'rows': claims_rows,
+                    },
+                    'KD-T-LAWSUITS': {
+                        'name': f'Суды на {month_name} {ref_y}',
+                        'periodicity': 'ежемесячно',
+                        'description': (
+                            'Активные судебные споры и исковая работа из 1С '
+                            '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) '
+                            'на конец выбранного месяца (статус ≠ Закрыта)'
+                        ),
+                        'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                        'columns': [
+                            'Тип документа', 'Контрагент', 'Предмет спора',
+                            'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                            'Сумма требований, руб.',
+                        ],
+                        'rows': lawsuits_rows,
+                    },
+                })
+                payload['Таблицы'] = tables
             dept_protocol_tables.enrich_payload_tables(payload, dept)
             return {
                 'department': dept,

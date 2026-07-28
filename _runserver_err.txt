@@ -1,0 +1,166 @@
+cache_manager: warming thread started
+cache_manager: next midnight warm in 36335 s (10.1 h)
+cache_manager: midnight cache scheduler started
+Watching for file changes with StatReloader
+cache_manager: warming 221 cache tasks (2026-07, startup)
+cache_manager: prefetched GSPP TurboProject projects
+cache_manager: [dengi_2026_7] fresh, skip
+cache_manager: [otgruzki_2026_7] fresh, skip
+cache_manager: [dogovory_2026_7] fresh, skip
+cache_manager: [plans_2026_7] fresh, skip
+cache_manager: [psd_vipusk_2026_7] fresh, skip
+cache_manager: [debitorka_2026_7] fresh, skip
+cache_manager: [dz_limits] fresh, skip
+cache_manager: [rashody_2026_7] fresh, skip
+cache_manager: [fot_2026_7] fresh, skip
+cache_manager: [kp_price_2026_7] fresh, skip
+cache_manager: [tkp_sla_2026_7] fresh, skip
+cache_manager: [tekuchest_2026_7] fresh, skip
+cache_manager: [svoevremennaya_monthly_2026_7] fresh, skip
+cache_manager: [reclamations_monthly_2026_7] fresh, skip
+cache_manager: [overdue_detail_2026_7] fresh, skip
+cache_manager: [vp] fresh, skip
+cache_manager: [claims_2026_7] fresh, skip
+cache_manager: [techdir_projects] computing...
+cache_manager: [techdir_projects] serving stale cache, scheduling background refresh
+cache_manager: [techdir_projects] already computing, skip background schedule
+cache_manager: [techdir_projects] done
+cache_manager: [techdir_m3] fresh, skip
+cache_manager: [techdir_m4] fresh, skip
+cache_manager: [techdir_m5_2026_7] fresh, skip
+cache_manager: [techdir_tekuchet] fresh, skip
+cache_manager: [techdir_m6_2026_7] fresh, skip
+cache_manager: [qualdir_qd_q2_ytd] fresh, skip
+cache_manager: [qualdir_qd_m3_ytd_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m4_ytd_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m1_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m5_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m6_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m6_month_2026_7] computing...
+cache_manager: [qualdir_qd_m6_month_2026_7] done
+cache_manager: [qualdir_qd_m9_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m9_month_2026_7] computing...
+cache_manager: [qualdir_qd_m9_month_2026_7] done
+cache_manager: [qualdir_qd_m10_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m10_month_2026_7] computing...
+cache_manager: [qualdir_qd_m10_month_2026_7] done
+cache_manager: [qualdir_qd_m7_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m8_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_q1_tile_2026_7] fresh, skip
+cache_manager: [pd_m2_otif_2026_7] fresh, skip
+cache_manager: [pd_m1_output_pc1_2026_7] fresh, skip
+cache_manager: [pd_m1_output_pc2_2026_7] fresh, skip
+cache_manager: [pd_pc_budget_pc1_2026_7] fresh, skip
+cache_manager: [pd_pc_budget_pc2_2026_7] fresh, skip
+cache_manager: [pd_pc_fot_pc1_2026_7] fresh, skip
+cache_manager: [pd_pc_fot_pc2_2026_7] fresh, skip
+cache_manager: [prod_deputy_projects] fresh, skip
+cache_manager: [pd_q2_turnover_pc1_2026_7] fresh, skip
+cache_manager: [pd_q2_turnover_pc2_2026_7] fresh, skip
+cache_manager: [log_m1_tmc_on_time_2026_7] fresh, skip
+cache_manager: [log_m2_price_deviation_2026_7] fresh, skip
+cache_manager: [log_q1_supplier_share_2026_7] fresh, skip
+cache_manager: [ks_razvitie_2026] fresh, skip
+cache_manager: [metrolog_m1_production_plan_2026_7] fresh, skip
+cache_manager: [metrolog_m3_budget_2026_7] fresh, skip
+cache_manager: [metrolog_m3_fot_2026_7] fresh, skip
+cache_manager: [metrolog_q1_projects_2026_7] fresh, skip
+cache_manager: [metrolog_q3_certification_projects_2026_7] fresh, skip
+cache_manager: [metrolog_q2_turnover_2026_7] fresh, skip
+cache_manager: [devdir_rd_m1_zpr_2026_7] fresh, skip
+cache_manager: [devdir_rd_m3_budget_2026_7] fresh, skip
+cache_manager: [devdir_rd_m4_fot_2026_7] fresh, skip
+cache_manager: [devdir_rd_q2_tekuchest_2026_7] fresh, skip
+cache_manager: [devdir_turboproject_projects_by_resources] fresh, skip
+cache_manager: [devdir_turboproject_ope_projects] fresh, skip
+cache_manager: [devdir_rd_m3_1_projects_2026_7] fresh, skip
+cache_manager: [devdir_rd_m2_1_ope_2026_7] fresh, skip
+cache_manager: [autoit_it_m1_sla_monthly_2026_7] fresh, skip
+cache_manager: [autoit_it_m1_sla_2026_7] fresh, skip
+cache_manager: [autoit_it_m3_fact_monthly_2026_7] fresh, skip
+cache_manager: [autoit_it_m3_2026_7] fresh, skip
+cache_manager: [autoit_it_m4_fot_fact_monthly_2026_7] fresh, skip
+cache_manager: [autoit_it_m4_fot_2026_7] fresh, skip
+cache_manager: [autoit_it_q2_tekuchest_2026_7] fresh, skip
+cache_manager: [c1auto_c1_m1_sla_monthly_2026_7] fresh, skip
+cache_manager: [c1auto_c1_m1_sla_2026_7] fresh, skip
+cache_manager: [c1auto_c1_m3_2026_7] fresh, skip
+cache_manager: [c1auto_c1_m4_fot_2026_7] fresh, skip
+cache_manager: [c1auto_it_q5_tekuchest_2026_7] fresh, skip
+cache_manager: [active_dealers_2026-07-28] fresh, skip
+cache_manager: [new_dealers_2026-07-28] fresh, skip
+cache_manager: [gspp_q4_ytd_2026_01] computing...
+cache_manager: [gspp_q4_ytd_2026_01] done
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+cache_manager: [gspp_m1_tkp_2026_01] computing...
+cache_manager: [gspp_m1_tkp_2026_01] done
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 11210.35it/s]
+cache_manager: [gspp_m2_ol_2026_01] computing...
+cache_manager: [gspp_m2_ol_2026_01] no cache file, synchronous compute
+cache_manager: [gspp_m2_ol_2026_01] synchronous compute done in 0.0s
+cache_manager: [gspp_m2_ol_2026_01] done
+cache_manager: [gspp_m3_ytd_2026_01] computing...
+cache_manager: [gspp_m3_ytd_2026_01] done
+cache_manager: [gspp_m5_ytd_2026_01] computing...
+cache_manager: [gspp_m5_ytd_2026_01] done
+cache_manager: [gspp_q5_tekuchest_2026_01] computing...
+cache_manager: [gspp_q5_tekuchest_2026_01] done
+cache_manager: [gspp_q4_deviation_2026_01] computing...
+cache_manager: [gspp_q4_deviation_2026_01] done
+cache_manager: [gspp_q4_ytd_2026_02] computing...
+cache_manager: [gspp_q4_ytd_2026_02] done
+cache_manager: [gspp_m1_tkp_2026_02] computing...
+cache_manager: [gspp_m1_tkp_2026_02] done
+cache_manager: [gspp_m2_ol_2026_02] computing...
+cache_manager: [gspp_m2_ol_2026_02] no cache file, synchronous compute
+cache_manager: [gspp_m2_ol_2026_02] synchronous compute done in 0.0s
+cache_manager: [gspp_m2_ol_2026_02] done
+[28/Jul/2026 13:54:38] "GET /api/user/departments/ HTTP/1.1" 200 7023
+[28/Jul/2026 13:54:38] "GET /api/kpi/users/ HTTP/1.1" 200 3823
+cache_manager: [gspp_m3_ytd_2026_02] computing...
+cache_manager: [gspp_m3_ytd_2026_02] done
+cache_manager: [gspp_m5_ytd_2026_02] computing...
+cache_manager: [gspp_m5_ytd_2026_02] done
+cache_manager: [gspp_q5_tekuchest_2026_02] computing...
+cache_manager: [gspp_q5_tekuchest_2026_02] done
+cache_manager: [gspp_q4_deviation_2026_02] computing...
+cache_manager: [gspp_q4_deviation_2026_02] done
+cache_manager: [gspp_q4_ytd_2026_03] computing...
+cache_manager: [gspp_q4_ytd_2026_03] done
+cache_manager: [gspp_m1_tkp_2026_03] computing...
+cache_manager: [gspp_m1_tkp_2026_03] done
+cache_manager: [gspp_m2_ol_2026_03] computing...
+cache_manager: [gspp_m2_ol_2026_03] no cache file, synchronous compute
+cache_manager: [gspp_m2_ol_2026_03] synchronous compute done in 0.0s
+cache_manager: [gspp_m2_ol_2026_03] done
+cache_manager: [gspp_m3_ytd_2026_03] computing...
+cache_manager: [gspp_m3_ytd_2026_03] done
+[28/Jul/2026 13:54:47] "POST /api/user/login/ HTTP/1.1" 200 451
+[28/Jul/2026 13:54:47] "GET /api/kpi/immediate-subordinates/?department=%D0%BA%D0%BE%D0%BC%D0%BC%D0%B5%D1%80%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B4%D0%B8%D1%80%D0%B5%D0%BA%D1%82%D0%BE%D1%80 HTTP/1.1" 200 334
+cache_manager: [commercial_dengi_2026_07] computing...
+[28/Jul/2026 13:54:47] "GET /api/kpi/?department=%D0%BA%D0%BE%D0%BC%D0%BC%D0%B5%D1%80%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B4%D0%B8%D1%80%D0%B5%D0%BA%D1%82%D0%BE%D1%80 HTTP/1.1" 200 476822
+[28/Jul/2026 13:54:47] "GET /api/kpi/immediate-subordinates/?department=%D0%BA%D0%BE%D0%BC%D0%BC%D0%B5%D1%80%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%B4%D0%B8%D1%80%D0%B5%D0%BA%D1%82%D0%BE%D1%80 HTTP/1.1" 200 334
+cache_manager: [gspp_m5_ytd_2026_03] computing...
+cache_manager: [gspp_m5_ytd_2026_03] done
+cache_manager: [gspp_q5_tekuchest_2026_03] computing...
+cache_manager: [gspp_q5_tekuchest_2026_03] done
+cache_manager: [gspp_q4_deviation_2026_03] computing...
+cache_manager: [gspp_q4_deviation_2026_03] done
+cache_manager: [gspp_q4_ytd_2026_04] computing...
+cache_manager: [gspp_q4_ytd_2026_04] done
+cache_manager: [gspp_m1_tkp_2026_04] computing...
+cache_manager: [gspp_m1_tkp_2026_04] done
+cache_manager: [gspp_m2_ol_2026_04] computing...
+cache_manager: [gspp_m2_ol_2026_04] no cache file, synchronous compute
+cache_manager: [gspp_m2_ol_2026_04] synchronous compute done in 0.0s
+cache_manager: [gspp_m2_ol_2026_04] done
+cache_manager: [gspp_m3_ytd_2026_04] computing...
+cache_manager: [gspp_m3_ytd_2026_04] done
+cache_manager: [gspp_m5_ytd_2026_04] computing...
+cache_manager: [gspp_m5_ytd_2026_04] done
+cache_manager: [gspp_q5_tekuchest_2026_04] computing...
+cache_manager: [gspp_q5_tekuchest_2026_04] done
+cache_manager: [gspp_q4_deviation_2026_04] computing...
+cache_manager: [gspp_q4_deviation_2026_04] done
+cache_manager: [gspp_q4_ytd_2026_05] computing...
+cache_manager: [gspp_q4_ytd_2026_05] done

@@ -1,0 +1,31 @@
+name: dashboard-erp-sql
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-CU25-ubuntu-22.04
+    container_name: dashboard-erp-mssql
+    restart: "no"
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in ../.env}"
+    ports:
+      - "${MSSQL_HOST_PORT:-1433}:1433"
+    volumes:
+      - "${MSSQL_DATA_DIR:-D:/mssql/data}:/var/opt/mssql/data"
+      - "${MSSQL_LOG_DATA_DIR:-C:/mssql/log}:/var/opt/mssql/log"
+      - "dashboard-erp-smb-backup:/var/opt/mssql/backup:ro"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/bin/bash -c 'SQLCMD=/opt/mssql-tools18/bin/sqlcmd; [ -x $$SQLCMD ] || SQLCMD=/opt/mssql-tools/bin/sqlcmd; $$SQLCMD -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" -b -o /dev/null'",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 60s
+
+volumes:
+  dashboard-erp-smb-backup:
+    external: true
