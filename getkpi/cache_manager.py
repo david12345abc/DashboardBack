@@ -478,7 +478,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from servhead import sh_t1 as servhead_sh_t1
     from servhead import sh_t2 as servhead_sh_t2
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8, qd_m9, qd_m10
-    from qualdir.turnover import get_qd_q2_ytd, qd_q2_ytd_cache_path
+    from qualdir.qd_q2 import get_qd_q2_ytd, qd_q2_ytd_cache_path
     from sup import hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_q4
     from getkpi.autoit.it_m1_sla import (
         cache_file_path_for_period as autoit_it_m1_cache_path,
