@@ -1,4 +1,4 @@
-"""KPI ИТ-M1 (SLA заявок в IT): план/факт из ``Document_ТД_ЗаявкаВСлужбуСопровождения``.
+"""KPI ИТ-M1 (SLA заявок в IT): план/факт из SQL ``_Document76754X1``.
 
 Кэш:
   • помесячно — ``getkpi/dashboard/autoit_it_m1_sla_monthly_<год>_<месяц>.json``;
@@ -19,12 +19,12 @@ from .it_monthly_period import MONTH_NAMES, normalize_it_tile_period
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "autoit_it_m1_sla"
-CACHE_SOURCE_TAG = "autoit_it_m1_sla_ytd"
-CACHE_VERSION = 2
+CACHE_SOURCE_TAG = "autoit_it_m1_sla_ytd_sql_v1"
+CACHE_VERSION = 4
 
 MONTHLY_CACHE_PREFIX = "autoit_it_m1_sla_monthly"
-MONTHLY_SOURCE_TAG = "autoit_it_m1_sla_monthly_v1"
-MONTHLY_CACHE_VERSION = 1
+MONTHLY_SOURCE_TAG = "autoit_it_m1_sla_monthly_sql_v1"
+MONTHLY_CACHE_VERSION = 3
 
 
 def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -146,8 +146,8 @@ def _build_it_m1_sla_payload(year: int | None = None, month: int | None = None) 
         "debug": {
             "status": "ok" if with_data else "no_data",
             "kpi_id": "IT-M1",
-            "plan_source": "getkpi/autoit/it_m1_sla_data.py (все заявки ОИТ за месяц)",
-            "fact_source": "getkpi/autoit/it_m1_sla_data.py (подтверждение автора в месяце)",
+            "plan_source": "getkpi/autoit/it_m1_core.py (SQL _Document76754X1, все заявки ОИТ)",
+            "fact_source": "getkpi/autoit/it_m1_core.py (SQL, статус Исполнен/Аннулирован)",
             "monthly_cache_prefix": MONTHLY_CACHE_PREFIX,
             "monthly_cache_version": MONTHLY_CACHE_VERSION,
             "monthly_debug": monthly_debug,

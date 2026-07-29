@@ -1,33 +1,40 @@
 """
-QD-M4 — ФОТ подразделения в пределах лимита (директор по качеству).
+QD-M4 — ФОТ подразделения в пределах лимита (директор по качеству / зам. по качеству).
 
-Эталон (OData): DashboardBack/qualdir/qd_m4.py + qd_m4_fact.py
-  → getkpi.fot_quality_seven_depts.compute_seven_depts_register26_fot_monthly
-  AccountingRegister_Хозрасчетный / RecordsWithExtDimensions
-  дебет сч. 26, Сумма, сторно инвертируется.
+Методика факта (7 п/п):
+  • сч. 26, статьи АУП НПО — Зам. тех. директора по качеству,
+    Специалист по процессному управлению, ЗАМЕСТИТЕЛЬ ДИРЕКТОРА ПО КАЧЕСТВУ,
+    Отдел управления несоответствиями (организация по умолчанию — НПО Турбулентность);
+  • сч. 25, статьи НПО — ОТК-1, Лаборатория неразрушающего контроля
+    (+ статьи «неразрушающий контроль» для ЛНК);
+  • сч. 25, статьи АЛМАЗ — ОТК-2.
+
+Эталон OData (DashboardBack qd_m4 / register26) учитывал только сч. 26 —
+здесь выборка исправлена по ОСВ 25/26.
 
 План — константы QD_M4_PLAN_BY_MONTH_2026 (руб./мес.).
-Факт — Σ дебетовых оборотов сч. 26 по 2 статьям (п. 4.2) по семи п/п
-контура качества и их поддеревьям в структуре предприятия.
+Факт — Σ дебетовых оборотов по правилам счёт×статьи×п/п (и поддеревья).
 
 SQL (erp_pm):
   _AccRg2005          — движения Хозрасчётный
-  _Acc25              — план счетов (код 26)
+  _Acc25              — план счетов (коды 25, 26)
   _Reference513       — Catalog_СтруктураПредприятия
   _Chrc1945           — ChartOfCharacteristicTypes_СтатьиРасходов
   _Fld2010            — Сумма
   _Fld2017            — Сторно (0x01 → знак −)
   _Fld2008DtRRef      — ПодразделениеDr
   _ValueDt1_RRRef     — субконто «Статья расходов»
-  Период в SQL = календарный год + 2000 (май 2026 → 4026-05).
+  Период в SQL = календарный год + 2000 (июнь 2026 → 4026-06).
 
-Сверка с кэшем OData: январь 2026 fact = 482_740.08.
+Сверка ОСВ июнь 2026: 2_208_876.68
+  (26 АУП 523_863.15 + ОТК-1 1_598_067.61 + ОТК-2 86_945.92).
 
 Использование:
   python qualdir/qd_m4.py
+  python qualdir/qd_m4.py --check
   python qualdir/qd_m4.py 2026
-  python qualdir/qd_m4.py 2026-05
-  python qualdir/qd_m4.py 2026-01 2026-05
+  python qualdir/qd_m4.py 2026-06
+  python qualdir/qd_m4.py 2026-01 2026-06
 """
 
 from __future__ import annotations
@@ -59,12 +66,31 @@ QD_M4_PLAN_BY_MONTH_2026: dict[int, int] = {
     12: 574_639 + 1_446_782 + 95_580,
 }
 
-# Две статьи п. 4.2 (как FOT_SPEC_ARTICLES в fot_techdir_fact).
-FOT_SPEC_ARTICLES: tuple[str, ...] = (
+# Статьи оплаты / взносов по методике (организация «вшита» в наименование статьи).
+ARTICLES_26_NPO_AUP: tuple[str, ...] = (
     "Оплата труда (26 сч) НПО АУП!",
     "Страховые взносы (26 сч) НПО АУП!",
 )
-SALARY_ARTICLE = FOT_SPEC_ARTICLES[0]
+ARTICLES_25_NPO: tuple[str, ...] = (
+    "Оплата труда (25 сч) НПО!",
+    "Страховые взносы (25 сч) НПО!",
+)
+ARTICLES_25_ALMAZ: tuple[str, ...] = (
+    "Оплата труда (сч 25) АЛМАЗ!",
+    "Страховые взносы (сч 25) АЛМАЗ!",
+)
+ARTICLES_25_NPO_NDT: tuple[str, ...] = (
+    "Оплата труда (25 сч) НПО неразрушающий контроль!",
+    "Страховые взносы (25 сч) НПО неразрушающий контроль!",
+)
+
+FOT_SPEC_ARTICLES: tuple[str, ...] = (
+    *ARTICLES_26_NPO_AUP,
+    *ARTICLES_25_NPO,
+    *ARTICLES_25_ALMAZ,
+    *ARTICLES_25_NPO_NDT,
+)
+SALARY_ARTICLES = frozenset(a for a in FOT_SPEC_ARTICLES if a.startswith("Оплата труда"))
 
 # Семь подразделений контура качества + алиасы поиска.
 SEVEN_DEPTS_FOT_SPEC: list[tuple[str, tuple[str, ...]]] = [
@@ -91,6 +117,27 @@ SEVEN_DEPTS_FOT_SPEC: list[tuple[str, tuple[str, ...]]] = [
     ),
 ]
 SEVEN_DEPTS_GROUP_ORDER = [t[0] for t in SEVEN_DEPTS_FOT_SPEC]
+
+# П/п → (счёт, допустимые статьи). Если организация не указана — НПО Турбулентность (статьи НПО).
+DEPT_FOT_RULES: dict[str, tuple[str, frozenset[str]]] = {
+    "Зам. технического директора по качеству": ("26", frozenset(ARTICLES_26_NPO_AUP)),
+    "Специалист по процессному управлению": ("26", frozenset(ARTICLES_26_NPO_AUP)),
+    "ЗАМЕСТИТЕЛЬ ДИРЕКТОРА ПО КАЧЕСТВУ": ("26", frozenset(ARTICLES_26_NPO_AUP)),
+    "Отдел управления несоответствиями": ("26", frozenset(ARTICLES_26_NPO_AUP)),
+    "ОТК-1": ("25", frozenset(ARTICLES_25_NPO)),
+    "ОТК-2": ("25", frozenset(ARTICLES_25_ALMAZ)),
+    "Лаборатория неразрушающего контроля": (
+        "25",
+        frozenset(ARTICLES_25_NPO + ARTICLES_25_NPO_NDT),
+    ),
+}
+
+# Сверка с ОСВ (выделенные статьи оплаты+взносов).
+REFERENCE_FACT_2026: dict[int, float] = {
+    5: 2_196_157.98,
+    6: 2_208_876.68,
+}
+ROUND_TOLERANCE = 0.05
 
 MONTH_NAMES = {
     1: "Январь",
@@ -201,12 +248,21 @@ def plan_for_month(year: int, month: int) -> float | None:
     return None
 
 
-def fetch_account_26(cur) -> bytes:
-    cur.execute(f"SELECT _IDRRef FROM dbo.[{TBL_ACC}] WHERE _Code = N'26'")
-    row = cur.fetchone()
-    if not row:
-        raise RuntimeError("Счёт 26 не найден в _Acc25")
-    return bytes(row[0])
+def fetch_accounts(cur) -> dict[str, bytes]:
+    codes = sorted({rule[0] for rule in DEPT_FOT_RULES.values()})
+    cur.execute(
+        f"""
+        SELECT _IDRRef, _Code
+        FROM dbo.[{TBL_ACC}]
+        WHERE _Code IN ({",".join("?" * len(codes))})
+        """,
+        codes,
+    )
+    out = {str(row[1]): bytes(row[0]) for row in cur.fetchall()}
+    missing = [code for code in codes if code not in out]
+    if missing:
+        raise RuntimeError(f"Счета не найдены в {TBL_ACC}: {missing}")
+    return out
 
 
 def fetch_article_ids(cur) -> dict[bytes, str]:
@@ -301,42 +357,49 @@ def resolve_quality_department_map(cur) -> tuple[dict[bytes, str], dict[str, str
 
 def calc_qd_m4_fot_month(year: int, month: int, sql: SqlConnection | None = None) -> dict[str, Any]:
     """Факт ФОТ контура качества за календарный месяц + план из констант."""
-    own_sql = sql is None
     sql = sql or SqlConnection()
     p_start, p_end = sql_period_bounds(year, month)
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
-        acc26 = fetch_account_26(cur)
+        accounts = fetch_accounts(cur)
         articles = fetch_article_ids(cur)
         id_to_group, labels = resolve_quality_department_map(cur)
 
         dept_ids = list(id_to_group.keys())
         art_ids = list(articles.keys())
+        acc_ids = list(accounts.values())
+        acc_code_by_id = {acc_id: code for code, acc_id in accounts.items()}
         cur.execute(
             f"""
             SELECT
                 r._Fld2008DtRRef AS dept_id,
+                r._AccountDtRRef AS account_id,
                 a._Description AS article,
                 SUM(
                     CASE WHEN r._Fld2017 = 0x01 THEN -r._Fld2010 ELSE r._Fld2010 END
                 ) AS amount
             FROM dbo.[{TBL_RG}] r
             JOIN dbo.[{TBL_ARTICLES}] a ON a._IDRRef = r._ValueDt1_RRRef
-            WHERE r._AccountDtRRef = ?
+            WHERE r._AccountDtRRef IN ({",".join("?" * len(acc_ids))})
               AND r._Period >= ? AND r._Period < ?
               AND r._Active = 0x01
               AND r._Fld2008DtRRef IN ({",".join("?" * len(dept_ids))})
               AND r._ValueDt1_RRRef IN ({",".join("?" * len(art_ids))})
-            GROUP BY r._Fld2008DtRRef, a._Description
+            GROUP BY r._Fld2008DtRRef, r._AccountDtRRef, a._Description
             """,
-            [acc26, p_start, p_end, *dept_ids, *art_ids],
+            [*acc_ids, p_start, p_end, *dept_ids, *art_ids],
         )
         rows = cur.fetchall()
 
     groups_out: dict[str, dict[str, float]] = {
-        name: {"fact_salary": 0.0, "fact_insurance": 0.0, "fact_total": 0.0}
+        name: {
+            "fact_salary": 0.0,
+            "fact_insurance": 0.0,
+            "fact_total": 0.0,
+            "account": DEPT_FOT_RULES[name][0],
+        }
         for name in SEVEN_DEPTS_GROUP_ORDER
     }
     by_article: dict[str, float] = {}
@@ -344,15 +407,23 @@ def calc_qd_m4_fot_month(year: int, month: int, sql: SqlConnection | None = None
     total_salary = 0.0
     total_insurance = 0.0
 
-    for dept_id, article, amount in rows:
+    for dept_id, account_id, article, amount in rows:
         amt = round(as_float(amount), 2)
         group = id_to_group.get(bytes(dept_id))
         if not group:
             continue
+        rule = DEPT_FOT_RULES.get(group)
+        if not rule:
+            continue
+        allowed_account, allowed_articles = rule
+        account_code = acc_code_by_id.get(bytes(account_id), "")
+        if account_code != allowed_account or article not in allowed_articles:
+            continue
+
         total_fact += amt
         by_article[article] = round(by_article.get(article, 0.0) + amt, 2)
         bucket = groups_out[group]
-        if article == SALARY_ARTICLE:
+        if article in SALARY_ARTICLES:
             bucket["fact_salary"] = round(bucket["fact_salary"] + amt, 2)
             total_salary += amt
         else:
@@ -387,8 +458,12 @@ def calc_qd_m4_fot_month(year: int, month: int, sql: SqlConnection | None = None
                 "cost_articles": TBL_ARTICLES,
             },
             "sql_period": {"start": p_start, "end": p_end, "year_offset": YEAR_OFFSET},
-            "account": "26",
+            "accounts": sorted(accounts.keys()),
             "cost_articles": list(FOT_SPEC_ARTICLES),
+            "dept_rules": {
+                name: {"account": acc, "articles": sorted(arts)}
+                for name, (acc, arts) in DEPT_FOT_RULES.items()
+            },
             "departments": list(SEVEN_DEPTS_GROUP_ORDER),
             "structure_labels": labels,
             "department_nodes": len(id_to_group),
@@ -410,7 +485,7 @@ def build_monthly_report(
 def format_report(rows: list[dict[str, Any]]) -> str:
     lines = [
         "ФОТ подразделения в пределах лимита · контур качества (QD-M4 / SQL)",
-        f"Источник: {TBL_RG} + {TBL_STRUCT} + {TBL_ARTICLES}, сч. 26, 2 статьи АУП, 7 п/п",
+        f"Источник: {TBL_RG} + {TBL_STRUCT} + {TBL_ARTICLES}, сч. 25/26 по правилам п/п, 7 п/п",
         "",
         f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8}",
         f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8}",
@@ -441,8 +516,13 @@ def format_report(rows: list[dict[str, Any]]) -> str:
         for name in SEVEN_DEPTS_GROUP_ORDER:
             bucket = ref["groups"].get(name) or {}
             total = float(bucket.get("fact_total") or 0)
-            if total:
-                lines.append(f"  {total:>14,.2f}  {name}")
+            acc = bucket.get("account") or DEPT_FOT_RULES[name][0]
+            salary = float(bucket.get("fact_salary") or 0)
+            insurance = float(bucket.get("fact_insurance") or 0)
+            lines.append(
+                f"  {total:>14,.2f}  {name} "
+                f"(сч.{acc}, от={salary:,.2f}, св={insurance:,.2f})"
+            )
         lines.append("")
     return "\n".join(lines)
 
@@ -508,7 +588,10 @@ def build_qd_m4_payload(year: int | None = None, month: int | None = None) -> di
             "kpi_id": "QD-M4",
             "source": "qualdir.qd_m4.sql",
             "plan_source": "QD_M4_PLAN_BY_MONTH_2026",
-            "fact_source": "Хозрасчётный сч.26, 7 п/п + поддеревья, 2 статьи АУП",
+            "fact_source": (
+                "Хозрасчётный сч.25/26 по правилам п/п (НПО АУП / НПО / АЛМАЗ), "
+                "7 п/п + поддеревья"
+            ),
             "rows_by_month": [
                 {
                     "month": f"{r['year']:04d}-{r['month']:02d}",
@@ -522,15 +605,43 @@ def build_qd_m4_payload(year: int | None = None, month: int | None = None) -> di
     }
 
 
+def run_check() -> int:
+    print("Сверка QD-M4 факт · ОСВ (REFERENCE_FACT_2026)")
+    sql = SqlConnection()
+    all_ok = True
+    for month, ref in sorted(REFERENCE_FACT_2026.items()):
+        payload = calc_qd_m4_fot_month(2026, month, sql=sql)
+        fact = float(payload["fact"])
+        ok = abs(fact - ref) <= ROUND_TOLERANCE
+        if not ok:
+            all_ok = False
+        mark = "OK" if ok else "РАСХОЖДЕНИЕ"
+        print(
+            f"  {MONTH_NAMES[month]}: fact={fact:,.2f} / ref={ref:,.2f} ({mark})"
+        )
+        for name in SEVEN_DEPTS_GROUP_ORDER:
+            bucket = payload["groups"].get(name) or {}
+            total = float(bucket.get("fact_total") or 0)
+            if total:
+                print(
+                    f"    {total:>14,.2f}  {name} "
+                    f"(сч.{bucket.get('account')})"
+                )
+    return 0 if all_ok else 2
+
+
 def main() -> None:
     try:
+        argv = sys.argv[1:]
+        if "--check" in argv:
+            sys.exit(run_check())
+
         start_period, end_period, period_slug = parse_period_args()
         rows = build_monthly_report(start_period, end_period)
         report = format_report(rows)
         print(report)
         output_path = save_report(period_slug, rows)
         print(f"Отчёт сохранён: {output_path}")
-        # удобный JSON для сверки одного месяца
         if start_period == end_period:
             print(json.dumps(rows[0], ensure_ascii=False, indent=2, default=str))
     except Exception as exc:
@@ -548,8 +659,8 @@ from pathlib import Path as _Path
 from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 QD_M4_YTD_CACHE_PREFIX = "qualdir_qd_m4_ytd"
-QD_M4_YTD_DISK_TAG = "qualdir_qd_m4_ytd_payload_sql_v1"
-QD_M4_YTD_DISK_VERSION = 10
+QD_M4_YTD_DISK_TAG = "qualdir_qd_m4_ytd_payload_sql_v2"
+QD_M4_YTD_DISK_VERSION = 11
 
 
 def qd_m4_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

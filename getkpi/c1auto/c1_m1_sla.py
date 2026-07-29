@@ -1,4 +1,4 @@
-"""KPI 1С-M1 (SLA заявок в 1С): план/факт из ``Document_ТД_ЗаявкаВСлужбуСопровождения``.
+"""KPI 1С-M1 (SLA): план/факт из SQL ``_Document76754X1``.
 
 Кэш:
   • помесячно — ``getkpi/dashboard/c1auto_c1_m1_sla_monthly_<год>_<месяц>.json``;
@@ -19,12 +19,12 @@ from .c1_m1_sla_data import compute_c1_m1_sla_monthly
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "c1auto_c1_m1_sla"
-CACHE_SOURCE_TAG = "c1auto_c1_m1_sla_ytd"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "c1auto_c1_m1_sla_ytd_sql_v1"
+CACHE_VERSION = 4
 
 MONTHLY_CACHE_PREFIX = "c1auto_c1_m1_sla_monthly"
-MONTHLY_SOURCE_TAG = "c1auto_c1_m1_sla_monthly_v1"
-MONTHLY_CACHE_VERSION = 1
+MONTHLY_SOURCE_TAG = "c1auto_c1_m1_sla_monthly_sql_v1"
+MONTHLY_CACHE_VERSION = 3
 
 
 def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -44,15 +44,6 @@ def monthly_cache_path(year: int, month: int) -> Path:
     return ytd_json_cache.cache_path(MONTHLY_CACHE_PREFIX, year, month)
 
 
-def _load_monthly_cache(year: int, month: int) -> dict[str, Any] | None:
-    return ytd_json_cache.load_payload(
-        monthly_cache_path(year, month),
-        source_tag=MONTHLY_SOURCE_TAG,
-        version=MONTHLY_CACHE_VERSION,
-        perpetual=ytd_json_cache.is_ref_period_fully_past(year, month),
-    )
-
-
 def _save_monthly_cache(year: int, month: int, payload: dict[str, Any]) -> None:
     ytd_json_cache.save_payload(
         monthly_cache_path(year, month),
@@ -63,6 +54,7 @@ def _save_monthly_cache(year: int, month: int, payload: dict[str, Any]) -> None:
 
 
 def get_c1_m1_sla_monthly(year: int, month: int) -> dict[str, Any]:
+    """План/факт SLA за один месяц с дисковым кэшем."""
     path = monthly_cache_path(year, month)
     perpetual = ytd_json_cache.is_ref_period_fully_past(year, month)
 
@@ -141,8 +133,8 @@ def _build_c1_m1_sla_payload(year: int | None = None, month: int | None = None) 
         "debug": {
             "status": "ok" if with_data else "no_data",
             "kpi_id": "1C-M1",
-            "plan_source": "getkpi/c1auto/c1_m1_sla_data.py (все заявки 1С за месяц)",
-            "fact_source": "getkpi/c1auto/c1_m1_sla_data.py (подтверждение автора в месяце)",
+            "plan_source": "getkpi/c1auto/c1_m1_core.py (SQL _Document76754X1)",
+            "fact_source": "getkpi/c1auto/c1_m1_core.py (SQL, статус Исполнен/Аннулирован)",
             "monthly_cache_prefix": MONTHLY_CACHE_PREFIX,
             "monthly_cache_version": MONTHLY_CACHE_VERSION,
             "monthly_debug": monthly_debug,

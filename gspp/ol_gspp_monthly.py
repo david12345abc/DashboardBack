@@ -1,78 +1,84 @@
 """
-Помесячный расчёт ОЛ ГСПП по ТЗ.
+ГСП-M2 — ОЛ, запущенные в производство без срыва срока.
 
-План: ВсегоОЛПоступило — количество строк регистра, где
-ДатаЗавершенияПлан попала в месяц и точка этапа =
-ПроверкаОпросногоЛистаДиспетчеромГСПП.
+Эталон (OData): DashboardBack/gspp/ol_gspp_monthly.py
 
-Факт: ВсегоОЛПоступило - КоличествоОЛНеВСрок, где ОЛ не в срок —
-строки, у которых дата ``ДатаЗавершенияФакт`` строго позже даты
-``ДатаЗавершенияПлан`` (время суток не учитывается).
+Логика:
+  План — число ОЛ (Recorder), у которых ДатаЗавершенияПлан попала в месяц
+  и точка этапа = «ПроверкаОпросногоЛистаДиспетчеромГСПП».
+  Не в срок — факт-дата строго позже плановой (время не учитывается).
+  Факт = План − Не в срок.
+
+  Один ОЛ — одна строка: берётся запись с максимальной ДатаЗавершенияПлан.
+
+SQL (erp_pm):
+  Catalog_ТД_ТочкиЭтапов
+      → dbo._Reference100508
+  AccumulationRegister_ТД_МониторингЭтаповОпросныхЛистов
+      → dbo._AccumRg127619
+        _Fld127620RRef = ТочкаЭтапа
+        _Fld127622     = ДатаЗавершенияПлан
+        _Fld127623     = ДатаЗавершенияФакт
+        _RecorderRRef  = Recorder (ОЛ)
+
+Даты в SQL хранятся со смещением _YearOffset = 2000
+(2026-03-01 → 4026-03-01; пустая дата 0001-01-01 → 2001-01-01).
 
 Использование:
-  python gspp/ol_gspp_monthly.py
-  python gspp/ol_gspp_monthly.py 2026
-  python gspp/ol_gspp_monthly.py 2026-03
-  python gspp/ol_gspp_monthly.py 2026-01 2026-05
-
-Результат сохраняется в текстовый файл рядом со скриптом.
+  python gspp/gsp_m2.py
+  python gspp/gsp_m2.py 2026
+  python gspp/gsp_m2.py 2026-03
+  python gspp/gsp_m2.py 2026-01 2026-05
 """
 
 from __future__ import annotations
 
 import functools
-import logging
-import os
 import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
-import requests
-from requests.auth import HTTPBasicAuth
-
-if __package__ is None or __package__ == "":
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from devdir import ytd_json_cache
-from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
+from sql_connection import SqlConnection
 
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
-logger = logging.getLogger(__name__)
+STAGE_TABLE = "_Reference100508"
+REGISTER_TABLE = "_AccumRg127619"
+COL_STAGE = "_Fld127620RRef"
+COL_PLAN = "_Fld127622"
+COL_FACT = "_Fld127623"
+COL_RECORDER = "_RecorderRRef"
 
-DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
-REGISTER_ENTITY = "AccumulationRegister_ТД_МониторингЭтаповОпросныхЛистов_RecordType"
-POINTS_ENTITY = "Catalog_ТД_ТочкиЭтапов"
-STAGE_POINT_PDN = "ПроверкаОпросногоЛистаДиспетчеромГСПП"
-EMPTY_DATE = "0001-01-01T00:00:00"
+STAGE_PDN = "ПроверкаОпросногоЛистаДиспетчеромГСПП"
+STAGE_DESCRIPTION = "Проверка опросного листа диспетчером ГСПП"
+# OData Ref_Key 5dc2ef78-738a-11ec-87c7-ac1f6b05524d в 1C binary
+STAGE_BIN = bytes.fromhex("87c7ac1f6b05524d11ec738a5dc2ef78")
+
+YEAR_OFFSET = 2000
+EMPTY_SQL_YEAR = 2001  # 0001 + YEAR_OFFSET
 SCRIPT_DIR = Path(__file__).resolve().parent
-GSPP_M2_CACHE_PREFIX = "gspp_m2_ol_monthly"
-GSPP_M2_DISK_TAG = "gspp_m2_ol_monthly_payload_v3"
-GSPP_M2_DISK_VERSION = 3
-
-
-def normalize_odata_base(raw_base_url: str) -> str:
-    base = (raw_base_url or DEFAULT_BASE_URL).strip().rstrip("/")
-    if base.endswith("/odata/standard.odata"):
-        return base
-    return f"{base}/odata/standard.odata"
-
-
-BASE = normalize_odata_base(os.getenv("ONEC_BASE_URL", DEFAULT_BASE_URL))
-AUTH = HTTPBasicAuth(
-    os.getenv("ODATA_USER", "odata.user"),
-    os.getenv("ODATA_PASSWORD", "npo852456"),
-)
+MONTH_NAMES = {
+    1: "Январь",
+    2: "Февраль",
+    3: "Март",
+    4: "Апрель",
+    5: "Май",
+    6: "Июнь",
+    7: "Июль",
+    8: "Август",
+    9: "Сентябрь",
+    10: "Октябрь",
+    11: "Ноябрь",
+    12: "Декабрь",
+}
 
 
 def parse_month(value: str) -> tuple[int, int]:
     if len(value) != 7 or value[4] != "-":
         raise ValueError("Месяц должен быть в формате ГГГГ-ММ")
-
     year = int(value[:4])
     month = int(value[5:7])
     if not 1 <= month <= 12:
@@ -80,8 +86,8 @@ def parse_month(value: str) -> tuple[int, int]:
     return year, month
 
 
-def parse_period_args() -> tuple[tuple[int, int], tuple[int, int], str]:
-    args = [arg.strip() for arg in sys.argv[1:] if arg.strip()]
+def parse_period_args(argv: list[str] | None = None) -> tuple[tuple[int, int], tuple[int, int], str]:
+    args = [arg.strip() for arg in (argv if argv is not None else sys.argv[1:]) if arg.strip()]
     now = datetime.now()
 
     if not args:
@@ -128,31 +134,18 @@ def iter_months(start: tuple[int, int], end: tuple[int, int]) -> list[str]:
     return result
 
 
-def fetch_all(
-    session: requests.Session,
-    url: str,
-    page: int = 5000,
-    timeout: int = 120,
-) -> list[dict]:
-    rows: list[dict] = []
-    skip = 0
-    while True:
-        sep = "&" if "?" in url else "?"
-        page_url = f"{url}{sep}$top={page}&$skip={skip}&$format=json"
-        response = session.get(page_url, timeout=timeout)
-        if not response.ok:
-            raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
+def to_sql_dt(value: date | datetime) -> datetime:
+    if isinstance(value, datetime):
+        return value.replace(year=value.year + YEAR_OFFSET)
+    return datetime(value.year + YEAR_OFFSET, value.month, value.day)
 
-        batch = response.json().get("value", [])
-        if not batch:
-            break
 
-        rows.extend(batch)
-        if len(batch) < page:
-            break
-        skip += len(batch)
-
-    return rows
+def from_sql_dt(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.year <= EMPTY_SQL_YEAR:
+        return None
+    return value.replace(year=value.year - YEAR_OFFSET)
 
 
 def normalize_text(value: str | None) -> str:
@@ -160,46 +153,40 @@ def normalize_text(value: str | None) -> str:
     return " ".join("".join(ch if ch.isalnum() else " " for ch in value).split())
 
 
-def resolve_stage_point(session: requests.Session, predefined_name: str) -> tuple[str, str]:
-    url = (
-        f"{BASE}/{quote(POINTS_ENTITY)}"
-        f"?$select={quote('Ref_Key,Description,PredefinedDataName', safe=',_')}"
-        f"&$orderby={quote('Description', safe='')}"
+def resolve_stage_point(cur) -> tuple[bytes, str]:
+    """Найти точку этапа в _Reference100508 по описанию / известному binary."""
+    cur.execute(
+        f"""
+        SELECT _IDRRef, _Description
+        FROM [{STAGE_TABLE}] WITH (NOLOCK)
+        WHERE _IDRRef = ?
+           OR _Description = ?
+        """,
+        STAGE_BIN,
+        STAGE_DESCRIPTION,
     )
-    target = normalize_text(predefined_name)
-    for row in fetch_all(session, url, page=1000, timeout=60):
-        description = row.get("Description", "")
-        predefined = row.get("PredefinedDataName", "")
-        if normalize_text(predefined) == target or normalize_text(description) == target:
-            return row["Ref_Key"], description or predefined_name
+    row = cur.fetchone()
+    if row:
+        return bytes(row[0]), row[1] or STAGE_DESCRIPTION
 
-    raise RuntimeError(f"Не найдена точка этапа: {predefined_name}")
+    cur.execute(
+        f"""
+        SELECT _IDRRef, _Description
+        FROM [{STAGE_TABLE}] WITH (NOLOCK)
+        WHERE _Description LIKE N'%Проверка%опросн%диспетчер%ГСПП%'
+        """
+    )
+    for idr, description in cur.fetchall():
+        if normalize_text(description) == normalize_text(STAGE_DESCRIPTION):
+            return bytes(idr), description or STAGE_DESCRIPTION
 
-
-def parse_odata_dt(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", ""))
-
-
-def is_empty_date(value: str | None) -> bool:
-    return not value or value.startswith(EMPTY_DATE)
-
-
-def _date_part(value: str | None) -> date | None:
-    if is_empty_date(value):
-        return None
-    try:
-        return parse_odata_dt(str(value)).date()
-    except ValueError:
-        return None
+    raise RuntimeError(f"Не найдена точка этапа: {STAGE_PDN}")
 
 
-def is_late(row: dict) -> bool:
-    """Просрок: календарная дата факта строго позже плановой (без учёта времени)."""
-    plan_date = _date_part(row.get("ДатаЗавершенияПлан"))
-    fact_date = _date_part(row.get("ДатаЗавершенияФакт"))
-    if plan_date is None or fact_date is None:
+def is_late(plan_dt: datetime | None, fact_dt: datetime | None) -> bool:
+    if plan_dt is None or fact_dt is None:
         return False
-    return fact_date > plan_date
+    return fact_dt.date() > plan_dt.date()
 
 
 def kpi_pct(fact: int, plan: int) -> float | None:
@@ -209,66 +196,75 @@ def kpi_pct(fact: int, plan: int) -> float | None:
 
 
 def load_register_rows(
-    session: requests.Session,
-    point_key: str,
+    cur,
+    stage_bin: bytes,
     start_dt: date,
     end_dt: date,
-) -> list[dict]:
-    flt = (
-        f"ДатаЗавершенияПлан ge datetime'{start_dt.isoformat()}T00:00:00'"
-        f" and ДатаЗавершенияПлан le datetime'{end_dt.isoformat()}T23:59:59'"
-        f" and ТочкаЭтапа_Key eq guid'{point_key}'"
+) -> list[tuple[bytes, datetime, datetime | None]]:
+    sql_start = to_sql_dt(start_dt)
+    # конец месяца включительно → следующий день (полуинтервал)
+    sql_end_exclusive = to_sql_dt(end_dt + timedelta(days=1))
+    cur.execute(
+        f"""
+        SELECT [{COL_RECORDER}], [{COL_PLAN}], [{COL_FACT}]
+        FROM [{REGISTER_TABLE}] WITH (NOLOCK)
+        WHERE [{COL_STAGE}] = ?
+          AND [{COL_PLAN}] >= ?
+          AND [{COL_PLAN}] < ?
+        """,
+        stage_bin,
+        sql_start,
+        sql_end_exclusive,
     )
-    url = (
-        f"{BASE}/{quote(REGISTER_ENTITY)}"
-        f"?$filter={quote(flt, safe='')}"
-        f"&$select={quote('Recorder,ДатаЗавершенияПлан,ДатаЗавершенияФакт', safe=',_')}"
-    )
-    return fetch_all(session, url, page=5000, timeout=120)
+    rows: list[tuple[bytes, datetime, datetime | None]] = []
+    for recorder, plan_raw, fact_raw in cur.fetchall():
+        if not recorder or plan_raw is None:
+            continue
+        plan_dt = from_sql_dt(plan_raw)
+        if plan_dt is None:
+            continue
+        fact_dt = from_sql_dt(fact_raw)
+        rows.append((bytes(recorder), plan_dt, fact_dt))
+    return rows
 
 
-def dedupe_register_rows_by_recorder(rows: list[dict]) -> list[dict]:
-    """Один ОЛ — одна строка: актуальная ``ДатаЗавершенияПлан`` (как в ``gspp.tkp``)."""
-    rows_by_recorder: dict[str, dict] = {}
-    for row in rows:
-        recorder = row.get("Recorder", "")
-        if not recorder:
-            continue
-        prev = rows_by_recorder.get(recorder)
-        if prev is None:
-            rows_by_recorder[recorder] = row
-            continue
-        prev_plan = prev.get("ДатаЗавершенияПлан", "")
-        curr_plan = row.get("ДатаЗавершенияПлан", "")
-        if curr_plan > prev_plan:
-            rows_by_recorder[recorder] = row
-    return list(rows_by_recorder.values())
+def dedupe_by_recorder(
+    rows: list[tuple[bytes, datetime, datetime | None]],
+) -> list[tuple[bytes, datetime, datetime | None]]:
+    best: dict[bytes, tuple[datetime, datetime | None]] = {}
+    for recorder, plan_dt, fact_dt in rows:
+        prev = best.get(recorder)
+        if prev is None or plan_dt > prev[0]:
+            best[recorder] = (plan_dt, fact_dt)
+    return [(rec, plan, fact) for rec, (plan, fact) in best.items()]
 
 
 def build_monthly_report(
-    session: requests.Session,
     start_period: tuple[int, int],
     end_period: tuple[int, int],
-) -> tuple[str, list[dict]]:
-    point_key, point_name = resolve_stage_point(session, STAGE_POINT_PDN)
-    start_dt = month_start(*start_period)
-    end_dt = month_end(*end_period)
-    rows = dedupe_register_rows_by_recorder(
-        load_register_rows(session, point_key, start_dt, end_dt),
-    )
+) -> tuple[str, list[dict[str, Any]]]:
+    sql = SqlConnection()
+    with sql.connect_ctx() as conn:
+        conn.timeout = 0
+        cur = conn.cursor()
+        stage_bin, stage_name = resolve_stage_point(cur)
+        rows = dedupe_by_recorder(
+            load_register_rows(
+                cur,
+                stage_bin,
+                month_start(*start_period),
+                month_end(*end_period),
+            )
+        )
 
     stats: dict[str, dict[str, int]] = defaultdict(lambda: {"plan": 0, "late": 0})
-    for row in rows:
-        plan_raw = row.get("ДатаЗавершенияПлан")
-        if is_empty_date(plan_raw):
-            continue
-
-        month_key = plan_raw[:7]
+    for _recorder, plan_dt, fact_dt in rows:
+        month_key = f"{plan_dt.year:04d}-{plan_dt.month:02d}"
         stats[month_key]["plan"] += 1
-        if is_late(row):
+        if is_late(plan_dt, fact_dt):
             stats[month_key]["late"] += 1
 
-    report_rows: list[dict] = []
+    report_rows: list[dict[str, Any]] = []
     for month_key in iter_months(start_period, end_period):
         plan = stats[month_key]["plan"]
         late = stats[month_key]["late"]
@@ -278,70 +274,79 @@ def build_monthly_report(
                 "plan": plan,
                 "fact": plan - late,
                 "late": late,
+                "kpi_pct": kpi_pct(plan - late, plan),
             }
         )
+    return stage_name, report_rows
 
-    return point_name, report_rows
 
-
-def format_report(point_name: str, rows: list[dict]) -> str:
+def format_report(point_name: str, rows: list[dict[str, Any]]) -> str:
     lines = [
-        "ОЛ ГСПП, запущенные в производство без срыва срока",
+        "ОЛ ГСПП, запущенные в производство без срыва срока (ГСП-M2 / SQL)",
         f"Точка этапа: {point_name}",
+        f"Источник: {REGISTER_TABLE} + {STAGE_TABLE}",
         "",
-        f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'Не в срок':>10}",
-        f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 10}",
+        f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'Не в срок':>10} {'KPI %':>8}",
+        f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 10} {'-' * 8}",
     ]
     for row in rows:
+        pct = row["kpi_pct"]
+        pct_s = f"{pct:.2f}" if pct is not None else "—"
         lines.append(
             f"{row['month']:<10} "
             f"{row['plan']:>8} "
             f"{row['fact']:>8} "
-            f"{row['late']:>10}"
+            f"{row['late']:>10} "
+            f"{pct_s:>8}"
         )
-
     lines.extend(
         [
-            f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 10}",
+            f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 10} {'-' * 8}",
             f"{'ИТОГО':<10} "
             f"{sum(row['plan'] for row in rows):>8} "
             f"{sum(row['fact'] for row in rows):>8} "
-            f"{sum(row['late'] for row in rows):>10}",
+            f"{sum(row['late'] for row in rows):>10} "
+            f"{'':>8}",
             "",
         ]
     )
     return "\n".join(lines)
 
 
-def save_report(period_slug: str, point_name: str, rows: list[dict]) -> Path:
-    output_path = SCRIPT_DIR / f"ol_gspp_monthly_{period_slug}.txt"
+def save_report(period_slug: str, point_name: str, rows: list[dict[str, Any]]) -> Path:
+    output_path = SCRIPT_DIR / f"gsp_m2_{period_slug}.txt"
     output_path.write_text(format_report(point_name, rows), encoding="utf-8-sig")
     return output_path
 
 
 def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
-    ref_y, ref_m = normalize_rd_tile_period(year, month)
-    session = requests.Session()
-    session.auth = AUTH
-    point_name, rows = build_monthly_report(session, (ref_y, 1), (ref_y, ref_m))
+    now = datetime.now()
+    ref_y = year or now.year
+    ref_m = month or (now.month - 1 if now.month > 1 else 12)
+    if month is None and now.month == 1 and year is None:
+        ref_y = now.year - 1
+        ref_m = 12
 
+    point_name, rows = build_monthly_report((ref_y, 1), (ref_y, ref_m))
     monthly_rows: list[dict[str, Any]] = []
     for row in rows:
         month_num = int(str(row["month"])[5:7])
-        plan = int(row.get("plan") or 0)
-        fact = int(row.get("fact") or 0)
-        late = int(row.get("late") or 0)
-        monthly_rows.append({
-            "month": month_num,
-            "year": ref_y,
-            "month_name": MONTH_NAMES[month_num],
-            "plan": plan,
-            "fact": fact,
-            "late": late,
-            "kpi_pct": kpi_pct(fact, plan),
-            "has_data": plan > 0,
-            "values_unit": "шт.",
-        })
+        plan = int(row["plan"])
+        fact = int(row["fact"])
+        late = int(row["late"])
+        monthly_rows.append(
+            {
+                "month": month_num,
+                "year": ref_y,
+                "month_name": MONTH_NAMES[month_num],
+                "plan": plan,
+                "fact": fact,
+                "late": late,
+                "kpi_pct": kpi_pct(fact, plan),
+                "has_data": plan > 0,
+                "values_unit": "шт.",
+            }
+        )
 
     ref_row = monthly_rows[-1] if monthly_rows else {
         "month": ref_m,
@@ -376,8 +381,15 @@ def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> 
         "debug": {
             "kpi_id": "ГСП-M2",
             "status": "ok",
-            "source": "gspp.ol_gspp_monthly",
+            "source": "gspp.ol_gspp_monthly.sql",
             "stage_point": point_name,
+            "tables": {
+                "stage_catalog": STAGE_TABLE,
+                "register": REGISTER_TABLE,
+                "stage_col": COL_STAGE,
+                "plan_col": COL_PLAN,
+                "fact_col": COL_FACT,
+            },
             "rule": (
                 "plan = rows with planned completion in month; "
                 "late = fact date strictly after plan date (time ignored); "
@@ -388,65 +400,12 @@ def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> 
     }
 
 
-def gspp_m2_ytd_cache_path(year: int | None = None, month: int | None = None) -> Path:
-    ref_y, ref_m = normalize_rd_tile_period(year, month)
-    return ytd_json_cache.cache_path(GSPP_M2_CACHE_PREFIX, ref_y, ref_m)
-
-
-def get_gspp_m2_ytd(year: int | None = None, month: int | None = None) -> dict[str, Any] | None:
-    ref_y, ref_m = normalize_rd_tile_period(year, month)
-    cache_path = gspp_m2_ytd_cache_path(ref_y, ref_m)
-    perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
-
-    def _compute_and_save() -> dict[str, Any] | None:
-        try:
-            payload = build_gspp_m2_payload(year=ref_y, month=ref_m)
-        except Exception as exc:
-            logger.exception("ГСП-M2: ошибка расчёта ОЛ ГСПП")
-            return {
-                "data_granularity": "monthly",
-                "monthly_data": [],
-                "last_full_month_row": None,
-                "kpi_period": {
-                    "type": "last_full_month",
-                    "year": ref_y,
-                    "month": ref_m,
-                    "month_name": MONTH_NAMES[ref_m],
-                },
-                "ytd": {
-                    "total_plan": None,
-                    "total_fact": None,
-                    "kpi_pct": None,
-                    "months_with_data": 0,
-                    "months_total": 0,
-                    "values_unit": "шт.",
-                },
-                "debug": {"kpi_id": "ГСП-M2", "status": "error", "error": str(exc)},
-            }
-        ytd_json_cache.save_payload(
-            cache_path,
-            payload,
-            source_tag=GSPP_M2_DISK_TAG,
-            version=GSPP_M2_DISK_VERSION,
-        )
-        return payload
-
-    return ytd_json_cache.resolve_payload(
-        cache_path,
-        source_tag=GSPP_M2_DISK_TAG,
-        version=GSPP_M2_DISK_VERSION,
-        perpetual=perpetual,
-        lock_key=f"gspp_m2_ol_{ref_y}_{ref_m:02d}",
-        compute_fn=_compute_and_save,
-    )
-
-
 def main() -> None:
     try:
         start_period, end_period, period_slug = parse_period_args()
-        session = requests.Session()
-        session.auth = AUTH
-        point_name, rows = build_monthly_report(session, start_period, end_period)
+        point_name, rows = build_monthly_report(start_period, end_period)
+        report = format_report(point_name, rows)
+        print(report)
         output_path = save_report(period_slug, point_name, rows)
         print(f"Отчёт сохранён: {output_path}")
     except Exception as exc:
@@ -456,3 +415,33 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# --- DashboardBack API (daily YTD cache) ---
+from pathlib import Path as _Path
+
+from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
+
+GSPP_M2_CACHE_PREFIX = "gspp_m2_ol_monthly"
+GSPP_M2_DISK_TAG = "gspp_m2_sql_payload_v1"
+GSPP_M2_DISK_VERSION = 1
+
+
+def gspp_m2_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:
+    from devdir import ytd_json_cache
+
+    ry, rm = normalize_period(year, month)
+    return ytd_json_cache.cache_path(GSPP_M2_CACHE_PREFIX, ry, rm)
+
+
+def get_gspp_m2_ytd(year: int | None = None, month: int | None = None) -> dict:
+    return get_ytd_via_cache(
+        year=year,
+        month=month,
+        cache_prefix=GSPP_M2_CACHE_PREFIX,
+        source_tag=GSPP_M2_DISK_TAG,
+        version=GSPP_M2_DISK_VERSION,
+        lock_key_prefix="gspp_m2_sql",
+        compute_fn=lambda y, m: build_gspp_m2_payload(y, m),
+        kpi_id="ГСП-M2",
+    )

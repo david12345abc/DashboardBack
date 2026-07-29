@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 SHEET_NAME = "Вакансии"
 CACHE_PREFIX = "sup_hrd_m1_vacancies"
-CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v5_hc_plan_month"
-CACHE_VERSION = 7
+CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v6_hc_plan_month"
+CACHE_VERSION = 8
 
 MONTH_NAME_TO_NUM: dict[str, int] = {
     "январь": 1,
@@ -109,7 +109,7 @@ def _parse_date(value: Any, *, book: xlrd.Book | None = None) -> date | None:
 
 
 def _format_date(value: date | None) -> str:
-    return value.isoformat() if value is not None else ""
+    return value.strftime("%d.%m.%Y") if value is not None else ""
 
 
 def _open_vacancies_sheet(book: xlrd.Book):
@@ -279,15 +279,13 @@ def _load_monthly_vacancies(
     }
 
 
-def _late_vacancy_rows(
-    vacancies: list[dict[str, Any]],
-    ref_y: int,
-    ref_m: int,
-) -> list[dict[str, Any]]:
+def _late_vacancy_rows(vacancies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Строки таблицы: ключи = заголовки columns (как у qualdir/брак), иначе фронт пустой."""
     rows: list[dict[str, Any]] = []
-    late_items = [item for item in vacancies if not item["on_time"]]
+    late_items = [item for item in vacancies if not item.get("on_time")]
     late_items.sort(
         key=lambda item: (
+            item.get("plan_date") or date.max,
             item.get("fact_date") or date.max,
             item.get("company") or "",
             item.get("department") or "",
@@ -295,13 +293,21 @@ def _late_vacancy_rows(
         )
     )
     for index, item in enumerate(late_items, start=1):
+        plan_s = _format_date(item.get("plan_date"))
+        fact_s = _format_date(item.get("fact_date"))
         rows.append({
             "number": index,
+            "Компания": item.get("company") or "",
+            "Подразделение": item.get("department") or "",
+            "Вакансия": item.get("vacancy") or "",
+            "Дата закрытия плановая": plan_s,
+            "Дата закрытия факт": fact_s,
+            # совместимость со старым контрактом
             "company": item.get("company") or "",
             "department": item.get("department") or "",
             "vacancy": item.get("vacancy") or "",
-            "plan_close_date": _format_date(item.get("plan_date")),
-            "fact_close_date": _format_date(item.get("fact_date")),
+            "plan_close_date": plan_s,
+            "fact_close_date": fact_s,
         })
     return rows
 
@@ -316,7 +322,8 @@ def _late_vacancies_table(
         "periodicity": "ежемесячно",
         "description": (
             "Разница между планом и фактом HRD-M1: критические вакансии типа A "
-            f"с плановым месяцем закрытия {MONTH_NAMES[ref_m]}, закрытые не в срок."
+            f"с плановым месяцем закрытия {MONTH_NAMES[ref_m]}, закрытые не в срок "
+            "(пустой факт-месяц или факт позже плана)."
         ),
         "period": {
             "year": ref_y,
@@ -330,7 +337,9 @@ def _late_vacancies_table(
             "Дата закрытия плановая",
             "Дата закрытия факт",
         ],
-        "rows": _late_vacancy_rows(vacancies, ref_y, ref_m),
+        "rows": _late_vacancy_rows(vacancies),
+        "row_count": sum(1 for item in vacancies if not item.get("on_time")),
+        "has_data": any(not item.get("on_time") for item in vacancies),
     }
 
 
@@ -354,22 +363,41 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
             "values_unit": "шт.",
         })
 
-    ref_row = monthly_rows[-1] if monthly_rows else None
-    ref_vacancies = vacancies_by_month.get(ref_m, [])
+    # Незакрытый/пустой месяц (июль plan=0) не берём опорой — иначе плитка 0/0,
+    # а таблица «не в срок» пустая, хотя во фронте видны цифры прошлого месяца.
+    display_row = next(
+        (row for row in reversed(monthly_rows) if row.get("has_data")),
+        monthly_rows[-1] if monthly_rows else None,
+    )
+    display_m = int(display_row["month"]) if display_row else ref_m
+    display_vacancies = vacancies_by_month.get(display_m, [])
+
+    # В таблицу — не в срок за опорный месяц; если там пусто, добираем из
+    # более ранних месяцев периода (типичный кейс: май 14/13 при дашборде «июль»).
+    table_m = display_m
+    table_vacancies = display_vacancies
+    if not any(not item.get("on_time") for item in table_vacancies):
+        for m in range(display_m, 0, -1):
+            month_items = vacancies_by_month.get(m, [])
+            if any(not item.get("on_time") for item in month_items):
+                table_m = m
+                table_vacancies = month_items
+                break
+
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
-        "last_full_month_row": dict(ref_row) if ref_row else None,
+        "last_full_month_row": dict(display_row) if display_row else None,
         "kpi_period": {
             "type": "last_full_month",
             "year": ref_y,
-            "month": ref_m,
-            "month_name": MONTH_NAMES[ref_m],
+            "month": display_m,
+            "month_name": MONTH_NAMES[display_m],
         },
         "ytd": {
-            "total_plan": ref_row.get("plan") if ref_row else None,
-            "total_fact": ref_row.get("fact") if ref_row else None,
-            "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+            "total_plan": display_row.get("plan") if display_row else None,
+            "total_fact": display_row.get("fact") if display_row else None,
+            "kpi_pct": display_row.get("kpi_pct") if display_row else None,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
             "values_unit": "шт.",
@@ -384,11 +412,15 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
             "note": "Исключённые вакансии не входят в план/факт HRD-M1.",
         },
         "tables": {
-            "HRD-T-M1-LATE-VACANCIES": _late_vacancies_table(ref_vacancies, ref_y, ref_m),
+            "HRD-T-M1-LATE-VACANCIES": _late_vacancies_table(
+                table_vacancies, ref_y, table_m,
+            ),
         },
         "debug": {
             "kpi_id": "HRD-M1",
             "status": "ok",
+            "display_month": display_m,
+            "late_table_month": table_m,
             "rule": (
                 "HC_сводный_{year}_{Month}.xls / sheet Вакансии; "
                 "plan close month = report file month; type A; "

@@ -1,47 +1,31 @@
 """
 QD-M3 — бюджет блока в пределах лимита (факт из MSSQL-дампа 1С).
 
-Эталон (OData, может содержать ошибки имён):
-  DashboardBack/qualdir/qd_m3_fact.py + qd_m3.py
-
-Логика факта (как docstring эталона / calc_budget_limit):
-  Факт = Σ (СуммаОплаты − СуммаКВыплатеСверхЛимита)
-  по активным движениям регистра ДДС за календарный месяц,
-  с привязкой к заявке на расход ДС, у которой:
-    • ТД_ЦФО ∈ контур качества, ИЛИ
-    • Подразделение ∈ подразделения QD-M4 (семь п/п качества);
-  и статья ДДС ∈ список статей контура качества.
-
-  Суммы в SQL уже со знаком (сторно отрицательное) — доп. инверсия не нужна.
-  В эталонном коде к сумме ошибочно добавлялись предоплата/постоплата
-  (двойной счёт при разнесении по LineNumber) — здесь только СуммаОплаты.
+Логика факта (сверка со списком заявок в 1С):
+  Факт = Σ СуммаДокумента (_Fld22781)
+  по Document_ЗаявкаНаРасходованиеДенежныхСредств за календарный месяц,
+  где:
+    • DeletionMark = false, Posted = true
+    • Дата документа (дата заявки) попадает в месяц
+    • Подразделение ∈ контур качества (7 п/п QD-M4)
+      или ТД_ЦФО ∈ метки качества
+      (плюс потомки п/п — маппинг к ближайшей карточке)
 
 План 2026 — константы из DashboardBack/qualdir/qd_m3.py.
 
 SQL (erp_pm):
-  AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент
-      → dbo._AccumRg51416
-        _Fld51418RRef  = Организация
-        _Fld51419RRef  = Подразделение
-        _Fld51423RRef  = СтатьяДвиженияДенежныхСредств
-        _Fld140229RRef = ЗаявкаНаРасходованиеДенежныхСредств
-        _Fld51433      = СуммаОплаты
-        _Fld51443      = СуммаКВыплатеСверхЛимита
-        _Fld140228     = Сторно (0x01)
-  Document_ЗаявкаНаРасходованиеДенежныхСредств
-      → dbo._Document726
-        _Fld127709RRef = ТД_ЦФО → _Reference127708
-        _Fld22796RRef  = Подразделение → _Reference513
-  Catalog_СтатьиДвиженияДенежныхСредств → dbo._Reference503
-  Catalog_СтруктураПредприятия          → dbo._Reference513
-
-Период в SQL = календарный год + 2000.
+  Document_ЗаявкаНаРасходованиеДенежныхСредств → dbo._Document726
+    _Fld22781      = СуммаДокумента
+    _Fld22796RRef  = Подразделение → _Reference513
+    _Fld127709RRef = ТД_ЦФО → _Reference127708
+  Catalog_СтруктураПредприятия → dbo._Reference513
+  Период в SQL = календарный год + 2000.
 
 Использование:
   python qualdir/qd_m3.py
   python qualdir/qd_m3.py 2026
-  python qualdir/qd_m3.py 2026-03
-  python qualdir/qd_m3.py 2026-01 2026-06
+  python qualdir/qd_m3.py 2026-06
+  python qualdir/qd_m3.py 2026-01 2026-07
 """
 
 from __future__ import annotations
@@ -49,6 +33,7 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import re
 import sys
 from datetime import date, datetime
 from decimal import Decimal
@@ -60,25 +45,13 @@ from sql_connection import SqlConnection
 SCRIPT_DIR = Path(__file__).resolve().parent
 YEAR_OFFSET = 2000
 
-REG = "_AccumRg51416"
 DOC = "_Document726"
-ART = "_Reference503"
 STRUCT = "_Reference513"
 CFO_CAT = "_Reference127708"
-
-COL_ORG = "_Fld51418RRef"
-COL_ART = "_Fld51423RRef"
-COL_REQ = "_Fld140229RRef"
-COL_PAY = "_Fld51433"
-COL_OVER = "_Fld51443"
-COL_DOC_CFO = "_Fld127709RRef"
-COL_DOC_DEPT = "_Fld22796RRef"
-
-# Организации контура (как в calc_budget_limit.TURB_ORGS).
-ORG_GUIDS = (
-    "fbca2148-6cfd-11e7-812d-001e67112509",  # ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО
-    "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
-)
+COL_SUM = "_Fld22781"
+COL_DEPT = "_Fld22796RRef"
+COL_CFO = "_Fld127709RRef"
+EMPTY = b"\x00" * 16
 
 # План 2026, руб./мес. (DashboardBack/qualdir/qd_m3.py).
 QD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
@@ -98,7 +71,7 @@ QD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
 
 # ЦФО: эталон + фактическое имя в _Reference127708.
 QD_M3_CFO_LABELS: tuple[str, ...] = (
-    "Зам.директора по качеству",  # как в SQL-справочнике ТД_ЦФО
+    "Зам.директора по качеству",
     "Директор по качеству",
     "Зам. технического директора по качеству",
     "ЗАМЕСТИТЕЛЬ ДИРЕКТОРА ПО КАЧЕСТВУ",
@@ -130,32 +103,7 @@ QD_FOT_SPEC: list[tuple[str, tuple[str, ...]]] = [
         ),
     ),
 ]
-
-# Статьи ДДС: эталонные имена + фактические из _Reference503.
-QD_M3_DDS_ARTICLE_DESCRIPTIONS: tuple[str, ...] = (
-    "Услуги сторонних организаций_2_ТС_СК+ПО_4.15.",
-    "Услуги сторонних организаций_2_ТС_СМК_4.15.",
-    "Выплаты  ГПРПС/Предложения по улучшению_2_ТС_СК+ПО_4.39.",
-    "Выплаты ГПРПС/Предложения по улучшению_2_ТС_СК+ПО_4.39.",
-    "Выплаты  ГПРПС/Предложения по улучшению_2_ТС_СК_4.39.",
-    "ТМЦ_2_ТС_ОТК_3.11.",
-    "ТМЦ_2_ТС_ОТК_3.11.с НДС",
-    "Услуги сторонних организаций_2_ТС_ОТК_3.9.",
-    "Услуги сторонних организаций_2_ТС_ОТК_3.9. Без НДС",
-    "Инструмент и оборудование_2_ТС_ОТК_3.10.",
-    "Инструмент и оборудование_2_ТС_ОТК_3.10. с НДС",
-)
-
-# Маркеры по нормализованному имени (устойчивы к НДС / СК+ПО vs СК / СМК).
-QD_M3_DDS_ARTICLE_MARKERS: tuple[str, ...] = (
-    "тс ск по 4 15",
-    "тс смк 4 15",
-    "тс ск по 4 39",
-    "тс ск 4 39",
-    "тс отк 3 11",
-    "тс отк 3 9",
-    "тс отк 3 10",
-)
+QD_GROUP_ORDER = [t[0] for t in QD_FOT_SPEC]
 
 MONTH_NAMES = {
     1: "Январь",
@@ -172,20 +120,12 @@ MONTH_NAMES = {
     12: "Декабрь",
 }
 
-EMPTY_BIN = b"\x00" * 16
-
-
-def guid_to_1c_binary(guid_str: str) -> bytes:
-    b = bytes.fromhex(guid_str.replace("-", ""))
-    return b[8:10] + b[10:16] + b[6:8] + b[4:6] + b[0:4]
-
-
-ORG_BINS: tuple[bytes, ...] = tuple(guid_to_1c_binary(g) for g in ORG_GUIDS)
-
 
 def normalize_name(value: str | None) -> str:
-    value = (value or "").lower().replace("ё", "е")
-    return " ".join("".join(ch if ch.isalnum() else " " for ch in value).split())
+    text = re.sub(r"\s+", " ", (value or "").strip())
+    text = text.lower().replace("ё", "е")
+    text = re.sub(r"[^0-9a-zа-я]+", " ", text)
+    return " ".join(text.split())
 
 
 def _as_float(value: Any) -> float:
@@ -196,22 +136,14 @@ def _as_float(value: Any) -> float:
     return float(value)
 
 
-def _sql_period_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+def sql_period_bounds(year: int, month: int) -> tuple[str, str]:
     y = year + YEAR_OFFSET
-    start = datetime(y, month, 1)
+    start = f"{y}{month:02d}01"
     if month == 12:
-        end = datetime(y + 1, 1, 1)
+        end = f"{y + 1}0101"
     else:
-        end = datetime(y, month + 1, 1)
+        end = f"{y}{month + 1:02d}01"
     return start, end
-
-
-def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
-    if plan is None or fact is None:
-        return None
-    if plan <= 0:
-        return 100.0 if fact <= 0 else None
-    return round(fact / plan * 100.0, 1)
 
 
 def _plan_for_month(year: int, month: int) -> float | None:
@@ -220,54 +152,12 @@ def _plan_for_month(year: int, month: int) -> float | None:
     return None
 
 
-def _quality_dept_norms() -> frozenset[str]:
-    acc: set[str] = set()
-    for title, aliases in QD_FOT_SPEC:
-        t = normalize_name(title)
-        if t:
-            acc.add(t)
-        for a in aliases:
-            n = normalize_name(a)
-            if n:
-                acc.add(n)
-    return frozenset(acc)
-
-
-def _cfo_norms() -> frozenset[str]:
-    return frozenset(n for n in (normalize_name(s) for s in QD_M3_CFO_LABELS) if n)
-
-
-def _dds_allowed_norms() -> frozenset[str]:
-    return frozenset(n for n in (normalize_name(s) for s in QD_M3_DDS_ARTICLE_DESCRIPTIONS) if n)
-
-
-CFO_NORMS = _cfo_norms()
-DEPT_NORMS = _quality_dept_norms()
-DDS_NORMS = _dds_allowed_norms()
-
-
-def _label_matches(norm: str, needles: frozenset[str]) -> bool:
-    if not norm:
-        return False
-    for needle in needles:
-        if len(needle) < 3:
-            continue
-        if norm == needle or needle in norm or norm in needle:
-            return True
-    return False
-
-
-def _dds_matches(label: str) -> bool:
-    norm = normalize_name(label)
-    if not norm:
-        return False
-    if norm in DDS_NORMS:
-        return True
-    # точное совпадение без суффикса «с ндс» / «без ндс»
-    for base in DDS_NORMS:
-        if norm.startswith(base) or base.startswith(norm):
-            return True
-    return any(m in norm for m in QD_M3_DDS_ARTICLE_MARKERS)
+def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
+    if plan is None or fact is None:
+        return None
+    if plan <= 0:
+        return 100.0 if fact <= 0 else None
+    return round(fact / plan * 100.0, 1)
 
 
 def parse_month(value: str) -> tuple[int, int]:
@@ -282,12 +172,11 @@ def parse_month(value: str) -> tuple[int, int]:
 
 def parse_period_args(argv: list[str] | None = None) -> tuple[tuple[int, int], tuple[int, int], str]:
     args = [a.strip() for a in (argv if argv is not None else sys.argv[1:]) if a.strip()]
-    # флаги argparse обрабатываются отдельно в main; здесь только позиционные
     args = [a for a in args if not a.startswith("-")]
     now = datetime.now()
     if not args:
         return (now.year, 1), (now.year, 12), str(now.year)
-    if len(args) == 1 and len(args[0]) == 4:
+    if len(args) == 1 and len(args[0]) == 4 and args[0].isdigit():
         year = int(args[0])
         return (year, 1), (year, 12), args[0]
     if len(args) == 1:
@@ -315,139 +204,108 @@ def iter_months(start: tuple[int, int], end: tuple[int, int]) -> list[tuple[int,
     return out
 
 
-def _load_allowed_articles(cur) -> dict[bytes, str]:
-    cur.execute(f"SELECT _IDRRef, _Description FROM [{ART}] WITH (NOLOCK)")
-    out: dict[bytes, str] = {}
-    for rid, desc in cur.fetchall():
-        label = desc or ""
-        if _dds_matches(label):
-            out[bytes(rid)] = label
-    return out
+def _label_matches(norm: str, needles: frozenset[str]) -> bool:
+    if not norm:
+        return False
+    for needle in needles:
+        if len(needle) < 3:
+            continue
+        if norm == needle or needle in norm or norm in needle:
+            return True
+    return False
 
 
-def _classify_requests(
-    cur, req_keys: list[bytes]
-) -> tuple[set[bytes], dict[str, int]]:
-    """Из списка Ref заявок оставляет контур качества (ЦФО или подразделение)."""
-    counts = {"docs_loaded": 0, "by_cfo": 0, "by_dept": 0, "rejected": 0}
-    allowed: set[bytes] = set()
-    if not req_keys:
-        return allowed, counts
-
-    batch = 40
-    for i in range(0, len(req_keys), batch):
-        chunk = req_keys[i : i + batch]
-        ph = ",".join("?" * len(chunk))
-        cur.execute(
-            f"""
-            SELECT d._IDRRef, cfo._Description, dept._Description
-            FROM [{DOC}] d WITH (NOLOCK)
-            LEFT JOIN [{CFO_CAT}] cfo WITH (NOLOCK)
-                   ON cfo._IDRRef = d.[{COL_DOC_CFO}]
-            LEFT JOIN [{STRUCT}] dept WITH (NOLOCK)
-                   ON dept._IDRRef = d.[{COL_DOC_DEPT}]
-            WHERE d._IDRRef IN ({ph})
-            """,
-            chunk,
-        )
-        for rid, cfo_name, dept_name in cur.fetchall():
-            counts["docs_loaded"] += 1
-            cfo_n = normalize_name(cfo_name)
-            dept_n = normalize_name(dept_name)
-            if _label_matches(cfo_n, CFO_NORMS):
-                counts["by_cfo"] += 1
-                allowed.add(bytes(rid))
-            elif _label_matches(dept_n, DEPT_NORMS):
-                counts["by_dept"] += 1
-                allowed.add(bytes(rid))
-            else:
-                counts["rejected"] += 1
-    return allowed, counts
+def _cfo_norms() -> frozenset[str]:
+    return frozenset(n for n in (normalize_name(s) for s in QD_M3_CFO_LABELS) if n)
 
 
-# (req, art, pay, over, calendar_year, calendar_month)
-_RegRow = tuple[bytes, bytes, float, float, int, int]
+CFO_NORMS = _cfo_norms()
 
 
-def _load_period_rows(
-    cur,
-    p_start: datetime,
-    p_end: datetime,
-    art_ids: list[bytes],
-) -> list[_RegRow]:
-    if not art_ids:
-        return []
-    org_ph = ",".join("?" * len(ORG_BINS))
-    art_ph = ",".join("?" * len(art_ids))
+def _pick_best(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda row: (
+            1 if row["marked"] else 0,
+            len(normalize_name(row["desc"])),
+            row["desc"],
+        ),
+    )[0]
+
+
+def resolve_quality_department_map(cur) -> tuple[dict[bytes, str], dict[str, str]]:
+    """id подразделения → карточка из 7 п/п качества (ближайший предок)."""
     cur.execute(
         f"""
-        SELECT r._Period, r.[{COL_REQ}], r.[{COL_ART}], r.[{COL_PAY}], r.[{COL_OVER}]
-        FROM [{REG}] r WITH (NOLOCK)
-        WHERE r._Period >= ? AND r._Period < ?
-          AND r._Active = 0x01
-          AND r.[{COL_ORG}] IN ({org_ph})
-          AND r.[{COL_PAY}] <> 0
-          AND r.[{COL_REQ}] <> ?
-          AND r.[{COL_ART}] IN ({art_ph})
-        """,
-        [p_start, p_end, *ORG_BINS, EMPTY_BIN, *art_ids],
+        SELECT _IDRRef, _Description, _ParentIDRRef, _Marked
+        FROM dbo.[{STRUCT}] WITH (NOLOCK)
+        """
     )
-    out: list[_RegRow] = []
-    for period_raw, req, art, pay, over in cur.fetchall():
-        if period_raw is None:
-            continue
-        year = int(period_raw.year) - YEAR_OFFSET
-        month = int(period_raw.month)
-        if year < 1 or not 1 <= month <= 12:
-            continue
-        out.append(
-            (
-                bytes(req) if req else EMPTY_BIN,
-                bytes(art) if art else EMPTY_BIN,
-                _as_float(pay),
-                _as_float(over),
-                year,
-                month,
-            )
+    rows: list[dict[str, Any]] = []
+    for idr, desc, parent, marked in cur.fetchall():
+        mb = bytes(marked) if marked is not None else b"\x00"
+        rows.append(
+            {
+                "id": bytes(idr),
+                "desc": desc or "",
+                "parent": bytes(parent) if parent else None,
+                "marked": mb != b"\x00",
+            }
         )
+
+    by_id = {row["id"]: row for row in rows}
+    by_norm: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_norm.setdefault(normalize_name(row["desc"]), []).append(row)
+
+    roots: dict[str, bytes] = {}
+    labels: dict[str, str] = {}
+    for display, aliases in QD_FOT_SPEC:
+        found = None
+        for alias in (display,) + aliases:
+            found = _pick_best(by_norm.get(normalize_name(alias), []))
+            if found:
+                break
+        if not found:
+            alias_norm = normalize_name(display)
+            contains = [
+                r for r in rows if alias_norm and alias_norm in normalize_name(r["desc"])
+            ]
+            found = _pick_best(contains)
+        if not found:
+            raise RuntimeError(f"Подразделение не найдено в {STRUCT}: {display}")
+        roots[display] = found["id"]
+        labels[display] = found["desc"]
+
+    root_ids = {root_id: display for display, root_id in roots.items()}
+    id_to_group: dict[bytes, str] = {}
+    for row in rows:
+        if row["marked"]:
+            continue
+        cur_id = row["id"]
+        seen: set[bytes] = set()
+        while cur_id and cur_id not in seen:
+            seen.add(cur_id)
+            if cur_id in root_ids:
+                id_to_group[row["id"]] = root_ids[cur_id]
+                break
+            parent = by_id.get(cur_id, {}).get("parent")
+            if not parent or parent == EMPTY:
+                break
+            cur_id = parent
+
+    return id_to_group, labels
+
+
+def _load_cfo_ids(cur) -> dict[bytes, str]:
+    cur.execute(f"SELECT _IDRRef, _Description FROM dbo.[{CFO_CAT}] WITH (NOLOCK)")
+    out: dict[bytes, str] = {}
+    for rid, desc in cur.fetchall():
+        if _label_matches(normalize_name(desc), CFO_NORMS):
+            out[bytes(rid)] = desc or ""
     return out
-
-
-def _sum_fact_from_rows(
-    rows: list[_RegRow],
-    allowed_art: dict[bytes, str],
-    allowed_req_cache: dict[bytes, bool],
-) -> tuple[float, dict[str, int]]:
-    """Агрегация уже загруженных строк регистра (без SQL)."""
-    counts = {
-        "register_rows": len(rows),
-        "fact_rows_with_request": 0,
-        "skipped_no_article_match": 0,
-        "skipped_td_cfo": 0,
-        "rows_counted": 0,
-        "allowed_articles": len(allowed_art),
-        "requests_classified": 0,
-    }
-    total = 0.0
-    req_seen: set[bytes] = set()
-    for req_b, art_b, pay, over, _y, _m in rows:
-        if req_b == EMPTY_BIN:
-            continue
-        counts["fact_rows_with_request"] += 1
-        req_seen.add(req_b)
-        if art_b not in allowed_art:
-            counts["skipped_no_article_match"] += 1
-            continue
-        if not allowed_req_cache.get(req_b):
-            counts["skipped_td_cfo"] += 1
-            continue
-        net = pay - over
-        if net == 0:
-            continue
-        total += net
-        counts["rows_counted"] += 1
-    counts["requests_classified"] = sum(1 for k in req_seen if allowed_req_cache.get(k))
-    return round(total, 2), counts
 
 
 def compute_qd_m3_fact_monthly(
@@ -455,55 +313,93 @@ def compute_qd_m3_fact_monthly(
     month: int,
     sql: SqlConnection | None = None,
     *,
-    allowed_art: dict[bytes, str] | None = None,
-    allowed_req_cache: dict[bytes, bool] | None = None,
+    id_to_group: dict[bytes, str] | None = None,
+    labels: dict[str, str] | None = None,
+    cfo_ids: dict[bytes, str] | None = None,
 ) -> dict[str, Any]:
-    """Сумма фактических оплат QD-M3 за календарный месяц (руб.)."""
+    """Σ СуммаДокумента заявок ДС контура качества за месяц (по дате заявки)."""
     sql = sql or SqlConnection()
-    p_start, p_end = _sql_period_bounds(year, month)
+    p_start, p_end = sql_period_bounds(year, month)
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
-        if allowed_art is None:
-            allowed_art = _load_allowed_articles(cur)
-        art_ids = list(allowed_art.keys())
-        rows = _load_period_rows(cur, p_start, p_end, art_ids)
+        if id_to_group is None or labels is None:
+            id_to_group, labels = resolve_quality_department_map(cur)
+        if cfo_ids is None:
+            cfo_ids = _load_cfo_ids(cur)
 
-        req_keys = sorted({r[0] for r in rows if r[0] != EMPTY_BIN})
-        if allowed_req_cache is None:
-            allowed_set, req_counts = _classify_requests(cur, req_keys)
-            allowed_req_cache = {k: True for k in allowed_set}
-            for k in req_keys:
-                allowed_req_cache.setdefault(k, False)
-            counts_extra = {f"req_{k}": v for k, v in req_counts.items()}
+        dept_ids = list(id_to_group.keys())
+        cfo_id_list = list(cfo_ids.keys())
+        if not dept_ids and not cfo_id_list:
+            raise RuntimeError("Не найден контур качества (п/п / ЦФО)")
+
+        # Подразделение ∈ контур ИЛИ ТД_ЦФО ∈ метки качества.
+        clauses: list[str] = []
+        params: list[Any] = [p_start, p_end]
+        if dept_ids:
+            clauses.append(f"d.[{COL_DEPT}] IN ({','.join('?' * len(dept_ids))})")
+            params.extend(dept_ids)
+        if cfo_id_list:
+            clauses.append(f"d.[{COL_CFO}] IN ({','.join('?' * len(cfo_id_list))})")
+            params.extend(cfo_id_list)
+        where_contour = "(" + " OR ".join(clauses) + ")"
+
+        cur.execute(
+            f"""
+            SELECT d.[{COL_DEPT}], d.[{COL_CFO}], d.[{COL_SUM}], d._Number
+            FROM dbo.[{DOC}] d WITH (NOLOCK)
+            WHERE d._Date_Time >= ? AND d._Date_Time < ?
+              AND d._Marked = 0x00
+              AND d._Posted = 0x01
+              AND {where_contour}
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+
+    groups_out: dict[str, dict[str, float | int]] = {
+        name: {"fact_total": 0.0, "docs": 0} for name in QD_GROUP_ORDER
+    }
+    by_cfo_only = 0.0
+    total_fact = 0.0
+    for dept_id, cfo_id, amount, _number in rows:
+        amt = _as_float(amount)
+        total_fact += amt
+        group = id_to_group.get(bytes(dept_id)) if dept_id else None
+        if group:
+            bucket = groups_out[group]
+            bucket["fact_total"] = round(float(bucket["fact_total"]) + amt, 2)
+            bucket["docs"] = int(bucket["docs"]) + 1
         else:
-            missing = [k for k in req_keys if k not in allowed_req_cache]
-            counts_extra = {}
-            if missing:
-                allowed_set, req_counts = _classify_requests(cur, missing)
-                counts_extra = {f"req_{k}": v for k, v in req_counts.items()}
-                for k in missing:
-                    allowed_req_cache[k] = k in allowed_set
+            by_cfo_only = round(by_cfo_only + amt, 2)
 
-    total, counts = _sum_fact_from_rows(rows, allowed_art, allowed_req_cache)
-    counts.update(counts_extra)
-
+    total_fact = round(total_fact, 2)
     return {
         "year": year,
         "month": month,
-        "total_fact": total,
-        "counts": counts,
+        "month_name": MONTH_NAMES[month],
+        "total_fact": total_fact,
+        "groups": groups_out,
+        "counts": {
+            "docs_included": len(rows),
+            "department_nodes": len(id_to_group),
+            "cfo_nodes": len(cfo_ids),
+            "by_cfo_only_amount": by_cfo_only,
+        },
         "debug": {
             "status": "ok",
             "kpi_id": "QD-M3-FACT",
-            "register": REG,
             "document": DOC,
-            "period_start": p_start.isoformat(sep="T"),
-            "period_end": p_end.isoformat(sep="T"),
+            "sum_field": COL_SUM,
+            "period_start": p_start,
+            "period_end": p_end,
+            "structure_labels": labels,
             "cfo_labels": list(QD_M3_CFO_LABELS),
-            "dds_articles_matched": sorted(set(allowed_art.values())),
-            "rule": "fact = sum(СуммаОплаты - СуммаКВыплатеСверхЛимита) for quality contour",
+            "rule": (
+                "fact = sum(СуммаДокумента) by request Date for Posted docs "
+                "in quality departments or quality ТД_ЦФО"
+            ),
         },
     }
 
@@ -512,29 +408,25 @@ def build_monthly_report(
     start_period: tuple[int, int],
     end_period: tuple[int, int],
 ) -> list[dict[str, Any]]:
-    """Один SQL-скан регистра за весь период, помесячная агрегация в Python."""
     sql = SqlConnection()
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
-        allowed_art = _load_allowed_articles(cur)
-        p0, _ = _sql_period_bounds(*start_period)
-        _, p1 = _sql_period_bounds(*end_period)
-        all_rows = _load_period_rows(cur, p0, p1, list(allowed_art.keys()))
-        req_keys = sorted({r[0] for r in all_rows if r[0] != EMPTY_BIN})
-        allowed_set, req_counts = _classify_requests(cur, req_keys)
-        allowed_req_cache = {k: (k in allowed_set) for k in req_keys}
-
-    by_month: dict[tuple[int, int], list[_RegRow]] = {}
-    for row in all_rows:
-        key = (row[4], row[5])
-        by_month.setdefault(key, []).append(row)
+        id_to_group, labels = resolve_quality_department_map(cur)
+        cfo_ids = _load_cfo_ids(cur)
 
     report: list[dict[str, Any]] = []
     for year, month in iter_months(start_period, end_period):
-        month_rows = by_month.get((year, month), [])
-        fact, counts = _sum_fact_from_rows(month_rows, allowed_art, allowed_req_cache)
+        fact_payload = compute_qd_m3_fact_monthly(
+            year,
+            month,
+            sql,
+            id_to_group=id_to_group,
+            labels=labels,
+            cfo_ids=cfo_ids,
+        )
         plan = _plan_for_month(year, month)
+        fact = float(fact_payload["total_fact"] or 0)
         report.append(
             {
                 "year": year,
@@ -543,11 +435,11 @@ def build_monthly_report(
                 "plan": plan,
                 "fact": fact,
                 "kpi_pct": _kpi_pct(plan, fact),
-                "has_data": plan is not None and fact is not None,
+                "has_data": plan is not None,
                 "values_unit": "руб.",
-                "counts": counts,
-                "req_preload": req_counts,
-                "articles": sorted(set(allowed_art.values())),
+                "groups": fact_payload.get("groups") or {},
+                "counts": fact_payload.get("counts") or {},
+                "structure_labels": labels,
             }
         )
     return report
@@ -556,34 +448,49 @@ def build_monthly_report(
 def format_report(rows: list[dict[str, Any]]) -> str:
     lines = [
         "QD-M3 — бюджет блока в пределах лимита (SQL)",
-        f"Источник: {REG} + {DOC} + {ART} + {CFO_CAT}/{STRUCT}",
+        f"Источник: {DOC}.{COL_SUM} (СуммаДокумента), дата заявки, Posted, контур качества",
         "",
-        f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Строк':>8}",
+        f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Заявок':>8}",
         f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8} {'-' * 8}",
     ]
     for row in rows:
         plan = row["plan"]
         fact = row["fact"]
         pct = row["kpi_pct"]
+        docs = (row.get("counts") or {}).get("docs_included", 0)
         plan_s = f"{plan:,.2f}" if plan is not None else "—"
         fact_s = f"{fact:,.2f}" if fact is not None else "—"
         pct_s = f"{pct:.1f}" if pct is not None else "—"
-        counted = (row.get("counts") or {}).get("rows_counted", 0)
         lines.append(
             f"{row['year']:04d}-{row['month']:02d} "
-            f"{plan_s:>14} {fact_s:>14} {pct_s:>8} {counted:>8}"
+            f"{plan_s:>14} {fact_s:>14} {pct_s:>8} {docs:>8}"
         )
     lines.append(f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8} {'-' * 8}")
     if rows:
-        arts = rows[0].get("articles") or []
-        lines.extend(["", "Статьи ДДС (matched):", *[f"  • {a}" for a in arts]])
-        preload = rows[0].get("req_preload") or {}
+        labels = rows[0].get("structure_labels") or {}
         lines.extend(
             [
                 "",
-                f"Заявки контура: {preload}",
+                "Контур подразделений:",
+                *[f"  • {name} → {labels.get(name, '—')}" for name in QD_GROUP_ORDER],
             ]
         )
+        # Разбивка последнего месяца с ненулевым фактом или последнего в отчёте
+        last = rows[-1]
+        groups = last.get("groups") or {}
+        if any(float(g.get("fact_total") or 0) for g in groups.values()):
+            lines.extend(
+                [
+                    "",
+                    f"По подразделениям ({last['year']:04d}-{last['month']:02d}):",
+                ]
+            )
+            for name in QD_GROUP_ORDER:
+                g = groups.get(name) or {}
+                amt = float(g.get("fact_total") or 0)
+                n = int(g.get("docs") or 0)
+                if amt or n:
+                    lines.append(f"  {amt:>14,.2f}  {name} (заявок={n})")
     lines.append("")
     return "\n".join(lines)
 
@@ -593,7 +500,6 @@ def build_qd_m3_payload(year: int | None = None, month: int | None = None) -> di
     ref_y = year or today.year
     ref_m = month or today.month
     if year is None and month is None:
-        # последний полный месяц
         if today.month == 1:
             ref_y, ref_m = today.year - 1, 12
         else:
@@ -637,11 +543,11 @@ def build_qd_m3_payload(year: int | None = None, month: int | None = None) -> di
             "kpi_id": "QD-M3",
             "source": "qualdir.qd_m3.sql",
             "plan_source": "QD_M3_PLAN_BY_MONTH_2026",
-            "fact_source": f"{REG} / {DOC}",
+            "fact_source": f"{DOC}.{COL_SUM} by request Date",
             "etalon_fixes": [
-                "CFO label: 'Зам.директора по качеству' (catalog _Reference127708)",
-                "DDS: ТС_СМК_4.15 / ТС_СК_4.39 + НДС suffixes from _Reference503",
-                "fact uses СуммаОплаты-СверхЛимита only (no pre/post double-count)",
+                "fact = Σ СуммаДокумента по дате заявки (не регистр ДДС)",
+                "контур: 7 п/п качества или ТД_ЦФО качества",
+                "Posted=true, DeletionMark=false",
             ],
             "monthly_counts": [
                 {"year": r["year"], "month": r["month"], "counts": r.get("counts")}
@@ -694,8 +600,8 @@ from pathlib import Path as _Path
 from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 QD_M3_YTD_CACHE_PREFIX = "qualdir_qd_m3_ytd"
-QD_M3_YTD_DISK_TAG = "qualdir_qd_m3_ytd_payload_sql_v2"
-QD_M3_YTD_DISK_VERSION = 11
+QD_M3_YTD_DISK_TAG = "qualdir_qd_m3_ytd_payload_sql_v3"
+QD_M3_YTD_DISK_VERSION = 12
 
 
 def qd_m3_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

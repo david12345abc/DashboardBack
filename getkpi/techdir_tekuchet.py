@@ -209,7 +209,8 @@ def load_docs(session: requests.Session):
     return fetch_all(session, url, page_size=500, timeout=60)
 
 
-def _cache_path(year: int, month: int) -> Path:
+def _month_cache_path(year: int, month: int) -> Path:
+    """Помесячный снимок для compute_td_turnover_month / других контуров."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return CACHE_DIR / f"techdir_tekuchet_{year}_{month:02d}.json"
 
@@ -221,7 +222,7 @@ def _tile_month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
 
 def _save_cache(year: int, month: int, payload: dict) -> None:
     try:
-        with _cache_path(year, month).open("w", encoding="utf-8") as f:
+        with _month_cache_path(year, month).open("w", encoding="utf-8") as f:
             json.dump(
                 {
                     **payload,
@@ -550,7 +551,7 @@ def build_turnover_month_payload(
 
 
 def compute_td_turnover_month(year: int, month: int) -> dict:
-    path = _cache_path(year, month)
+    path = _month_cache_path(year, month)
 
     def _compute_and_save() -> dict:
         result = build_turnover_month_payload(
@@ -574,97 +575,47 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
     )
 
 
+# YTD-кэш плитки TD-Q2 (эталон getkpi.td_q2); помесячный compute_td_turnover_month
+# остаётся для других контуров (RD/GSP/QD), которые зовут build_turnover_month_payload.
+_TD_Q2_YTD_PREFIX = "techdir_q2_ytd"
+_TD_Q2_YTD_TAG = "techdir_q2_ytd_sql_payload_v2"
+_TD_Q2_YTD_VERSION = 2
+
+
+def _cache_path(year: int, month: int) -> Path:
+    """Путь YTD-кэша плитки (для cache_manager)."""
+    from devdir import ytd_json_cache
+
+    return ytd_json_cache.cache_path(_TD_Q2_YTD_PREFIX, year, month)
+
+
 def get_td_q2_ytd(year: int | None = None, month: int | None = None) -> dict:
-    def _runner() -> dict:
-        try:
-            nonlocal year, month
-            if year is None or month is None:
-                year, month = _last_full_month()
+    """TD-Q2 YTD из ``getkpi.td_q2`` (SQL HR), кэш раз в день."""
+    from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
+    from turnover_report import apply_plan_table_to_turnover_payload
 
-            month_rows = []
-            for row_year, row_month in _tile_month_pairs(year, month):
-                snapshot = compute_td_turnover_month(row_year, row_month)
-                plan = snapshot["total_plan"]
-                fact = snapshot["total_fact"]
-                has_data = plan is not None and fact is not None
-                month_rows.append({
-                    "year": row_year,
-                    "month": row_month,
-                    "month_name": MONTH_RU[row_month].lower(),
-                    "plan": plan,
-                    "fact": fact,
-                    "kpi_pct": fact,
-                    "has_data": has_data,
-                    "values_unit": TURNOVER_VALUES_UNIT,
-                })
+    from getkpi.td_q2_tekuchest_plan import plan_for_month
 
-            with_data = [row for row in month_rows if row["has_data"]]
-            months_with_data = len(with_data)
-            ref_row = next((row for row in month_rows if row["month"] == month and row["year"] == year), None)
-            if ref_row is None and month_rows:
-                ref_row = month_rows[-1]
+    from . import td_q2
 
-            return {
-                "data_granularity": "monthly",
-                "monthly_data": month_rows,
-                "last_full_month_row": dict(ref_row) if ref_row else None,
-                "ytd": {
-                    "total_plan": ref_row.get("plan") if ref_row else None,
-                    "total_fact": ref_row.get("fact") if ref_row else None,
-                    "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
-                    "months_with_data": months_with_data,
-                    "months_total": len(month_rows),
-                    "values_unit": TURNOVER_VALUES_UNIT,
-                },
-                "kpi_period": {
-                    "type": "last_full_month",
-                    "year": year,
-                    "month": month,
-                    "month_name": MONTH_RU[month],
-                    "data_complete": ref_row is not None,
-                },
-                "debug": {
-                    "status": "ok",
-                    "kpi_id": "TD-Q2",
-                    "source": "Document_ТД_ТекучестьПерсонала + HR staffing/dismissals",
-                    "months": month_rows,
-                    "plan_source": "1c_tekuchet",
-                    "fact_source": "hr_staff_dismissals_turnover_pct",
-                },
-            }
-        except Exception as exc:
-            y, m = year, month
-            if y is None or m is None:
-                y, m = _last_full_month()
-            print(f"    ⚠ TD-Q2 runner failed for {y}-{m:02d}: {exc}")
-            return {
-                "data_granularity": "monthly",
-                "monthly_data": [],
-                "last_full_month_row": None,
-                "ytd": {
-                    "total_plan": None,
-                    "total_fact": None,
-                    "kpi_pct": None,
-                    "months_with_data": 0,
-                    "months_total": 0,
-                    "values_unit": TURNOVER_VALUES_UNIT,
-                },
-                "kpi_period": {
-                    "type": "last_full_month",
-                    "year": y,
-                    "month": m,
-                    "month_name": MONTH_RU[m],
-                    "data_complete": False,
-                },
-                "debug": {
-                    "status": "error",
-                    "kpi_id": "TD-Q2",
-                    "source": "Document_ТД_ТекучестьПерсонала",
-                    "error": str(exc),
-                },
-            }
-
-    return _runner()
+    ref_y, ref_m = normalize_period(year, month)
+    payload = get_ytd_via_cache(
+        year=ref_y,
+        month=ref_m,
+        cache_prefix=_TD_Q2_YTD_PREFIX,
+        source_tag=_TD_Q2_YTD_TAG,
+        version=_TD_Q2_YTD_VERSION,
+        lock_key_prefix="techdir_q2_sql",
+        compute_fn=lambda y, m: td_q2.build_td_q2_payload(year=y, month=m),
+        kpi_id="TD-Q2",
+    )
+    return apply_plan_table_to_turnover_payload(
+        payload,
+        ref_y,
+        ref_m,
+        plan_for_month=plan_for_month,
+        plan_source="getkpi.td_q2_tekuchest_plan",
+    )
 
 
 def main():

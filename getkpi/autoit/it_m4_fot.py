@@ -15,17 +15,22 @@ from devdir import ytd_json_cache
 
 from .it_m4_fot_fact import compute_it_m4_fot_fact_monthly
 from .it_m4_fot_plan import IT_M4_FOT_PLAN_BY_MONTH_2026
-from .it_monthly_period import MONTH_NAMES, normalize_it_tile_period
+from .it_monthly_period import (
+    MONTH_NAMES,
+    normalize_it_tile_period,
+    pick_fot_display_row,
+    trim_monthly_rows_to_display,
+)
 
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "autoit_it_m4_fot"
-CACHE_SOURCE_TAG = "autoit_it_m4_fot_ytd"
-CACHE_VERSION = 2
+CACHE_SOURCE_TAG = "autoit_it_m4_fot_ytd_sql_v1"
+CACHE_VERSION = 6
 
 MONTHLY_CACHE_PREFIX = "autoit_it_m4_fot_fact_monthly"
-MONTHLY_SOURCE_TAG = "autoit_it_m4_fot_fact_monthly_v1"
-MONTHLY_CACHE_VERSION = 1
+MONTHLY_SOURCE_TAG = "autoit_it_m4_fot_fact_monthly_sql_v1"
+MONTHLY_CACHE_VERSION = 2
 
 
 def monthly_cache_path(year: int, month: int) -> Path:
@@ -76,7 +81,6 @@ def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
 def _build_it_m4_fot_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_it_tile_period(year, month)
     monthly_rows: list[dict[str, Any]] = []
-    ref_row: dict[str, Any] | None = None
 
     for m in range(1, ref_m + 1):
         plan = _plan_for_month(ref_y, m)
@@ -84,35 +88,37 @@ def _build_it_m4_fot_payload(year: int | None = None, month: int | None = None) 
         fact_raw = fact_payload.get("total_fact")
         fact_value = float(fact_raw) if fact_raw is not None else None
         has_data = plan is not None and fact_value is not None
-        row = {
-            "month": m,
-            "year": ref_y,
-            "month_name": MONTH_NAMES[m],
-            "plan": round(plan, 2) if plan is not None else None,
-            "fact": round(fact_value, 2) if fact_value is not None else None,
-            "kpi_pct": _kpi_pct(plan, fact_value) if has_data else None,
-            "has_data": has_data,
-            "values_unit": "руб.",
-        }
-        monthly_rows.append(row)
-        if m == ref_m:
-            ref_row = row
+        monthly_rows.append(
+            {
+                "month": m,
+                "year": ref_y,
+                "month_name": MONTH_NAMES[m],
+                "plan": round(plan, 2) if plan is not None else None,
+                "fact": round(fact_value, 2) if fact_value is not None else None,
+                "kpi_pct": _kpi_pct(plan, fact_value) if has_data else None,
+                "has_data": has_data,
+                "values_unit": "руб.",
+            }
+        )
 
     with_data = [row for row in monthly_rows if row.get("has_data")]
+    display_row = pick_fot_display_row(monthly_rows, ref_m, ref_year=ref_y)
+    monthly_rows = trim_monthly_rows_to_display(monthly_rows, display_row)
+    display_m = int(display_row["month"]) if display_row and display_row.get("month") else ref_m
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
-        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+        "last_full_month_row": dict(display_row) if display_row else None,
         "kpi_period": {
             "type": "last_full_month",
             "year": ref_y,
-            "month": ref_m,
-            "month_name": MONTH_NAMES[ref_m],
+            "month": display_m,
+            "month_name": MONTH_NAMES[display_m],
         },
         "ytd": {
-            "total_plan": ref_row.get("plan") if ref_row else None,
-            "total_fact": ref_row.get("fact") if ref_row else None,
-            "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+            "total_plan": display_row.get("plan") if display_row else None,
+            "total_fact": display_row.get("fact") if display_row else None,
+            "kpi_pct": display_row.get("kpi_pct") if display_row else None,
             "months_with_data": len(with_data),
             "months_total": len(monthly_rows),
             "values_unit": "руб.",
@@ -121,7 +127,7 @@ def _build_it_m4_fot_payload(year: int | None = None, month: int | None = None) 
             "status": "ok" if with_data else "no_data",
             "kpi_id": "IT-M4",
             "plan_source": "getkpi/autoit/it_m4_fot_plan.py",
-            "fact_source": "getkpi/autoit/it_m4_fot_fact.py",
+            "fact_source": "getkpi/autoit/it_m4_core.py (SQL сч.26)",
             "monthly_cache_prefix": MONTHLY_CACHE_PREFIX,
             "monthly_cache_version": MONTHLY_CACHE_VERSION,
         },

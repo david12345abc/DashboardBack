@@ -9,7 +9,7 @@ import requests
 
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from servhead.claims_common import (
+from servhead.claims_odata import (
     AUTH,
     aggregate_client_sla_rows,
     fetch_claims_for_registration_month,

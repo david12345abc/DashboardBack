@@ -18,8 +18,8 @@ from list_enterprise_positions import normalize_text  # type: ignore[import-unty
 logger = logging.getLogger(__name__)
 
 CACHE_SUBDIR = CACHE_DIR / "dept_protocol_overdue"
-SOURCE_TAG = "dept_protocol_overdue_month_v1"
-CACHE_VERSION = 3
+SOURCE_TAG = "dept_protocol_overdue_month_v2"
+CACHE_VERSION = 4
 LEGACY_CACHE_VERSIONS = frozenset({2, 3})
 
 
