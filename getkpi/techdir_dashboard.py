@@ -27,9 +27,9 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
             techdir_m5.FACT_CACHE_DIR,
         ],
         'TD-M6': [techdir_projects.CACHE_PATH],
-        'TD-M3': [techdir_m3.CACHE_DIR / f'techdir_m3_monthly_{ref_y}_{ref_m:02d}.json'],
-        'TD-M4': [techdir_m4.CACHE_DIR / f'techdir_m4_monthly_{ref_y}_{ref_m:02d}.json'],
-        'TD-Q2': [techdir_tekuchet.CACHE_DIR / f'techdir_tekuchet_{ref_y}_{ref_m:02d}.json'],
+        'TD-M3': [techdir_m3._cache_path(ref_y, ref_m)],
+        'TD-M4': [techdir_m4._cache_path(ref_y, ref_m)],
+        'TD-Q2': [techdir_tekuchet._cache_path(ref_y, ref_m)],
     }
     return list(mapping.get(kpi_id, []))
 

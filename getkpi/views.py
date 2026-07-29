@@ -733,6 +733,7 @@ def _rag_higher_better(pct: float | None) -> str:
 
 
 def _rag_lower_turnover(fact_pct: float | None) -> str:
+    """Fallback без плана: абсолютные пороги по факту текучести (%)."""
     if fact_pct is None:
         return 'unknown'
     if fact_pct < 90:
@@ -768,6 +769,31 @@ def _turnover_fact_div_plan_pct(entry: dict) -> float | None:
     return round(fact_value / plan_value * 100, 1)
 
 
+def _rag_turnover_vs_plan(plan: float | None, fact: float | None) -> str:
+    """Текучесть: меньше — лучше. Цвет относительно плана, не абсолютный факт."""
+    if fact is None:
+        return 'unknown'
+    try:
+        fact_v = float(fact)
+    except (TypeError, ValueError):
+        return 'unknown'
+    if plan is None:
+        return _rag_lower_turnover(fact_v)
+    try:
+        plan_v = float(plan)
+    except (TypeError, ValueError):
+        return _rag_lower_turnover(fact_v)
+    if plan_v <= 0:
+        return _rag_lower_turnover(fact_v)
+    # fact/plan×100: ≤100 % план выполнен, 100–110 жёлтый, >110 красный
+    ratio = fact_v / plan_v * 100.0
+    if ratio <= 100:
+        return 'green'
+    if ratio <= 110:
+        return 'yellow'
+    return 'red'
+
+
 def _normalize_dashboard_kpi_id(raw: object) -> str:
     """Код KPI для веток views: ASCII-дефис, без ZWSP/BOM, латиница вместо «похожей» кириллицы.
 
@@ -791,6 +817,7 @@ def _normalize_dashboard_kpi_id(raw: object) -> str:
         ('\u0421', 'C'),
         ('\u0415', 'E'),
         ('\u041d', 'H'),
+        ('\u0418', 'I'),  # «ИТ-M3» → IT-M3 (иначе ИT-M3 и RAG как higher_better)
         ('\u041a', 'K'),
         ('\u041c', 'M'),
         ('\u041e', 'O'),
@@ -1070,13 +1097,20 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     elif (logistics_color := logistics_views.tile_color(kid, entry)) is not None:
         pct, color = logistics_color
     elif _is_turnover_style_tile(kpi):
-        pct = _turnover_fact_div_plan_pct(entry)
-        if pct is None:
-            md = entry.get('monthly_data') or []
-            last_row = md[-1] if md else {}
-            turnover = last_row.get('kpi_pct') if md else None
-            pct = float(turnover) if turnover is not None else None
-        color = _rag_lower_turnover(float(pct) if pct is not None else None)
+        ref = entry.get('last_full_month_row') or {}
+        md = entry.get('monthly_data') or []
+        last_row = md[-1] if md else {}
+        plan = ref.get('plan')
+        if plan is None:
+            plan = last_row.get('plan') if md else None
+        if plan is None:
+            plan = ytd.get('total_plan')
+        fact = ref.get('fact')
+        if fact is None:
+            fact = last_row.get('fact') if md else None
+        if fact is None:
+            fact = ytd.get('total_fact')
+        color = _rag_turnover_vs_plan(plan, fact)
     elif kid in {'OD-M3.1', 'OD-M3.2'}:
         pct = _budget_fact_div_plan_pct(entry)
         color = _rag_budget_fact_div_plan(pct)
@@ -1092,15 +1126,21 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
             elif ytd.get('kpi_pct') is not None:
                 pct = float(ytd['kpi_pct'])
         color = _devdir_kpi_views.rag_devdir_plan_fact_pct(pct)
-    elif kid in _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS | _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS:
-        color = _rag_td_m4_limit(pct)
-    elif kid in _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS | _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS:
+    elif kid in (
+        _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS
+        | _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS
+        | _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS
+        | _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS
+        | _sup_kpi_views.SUP_FOT_LIMIT_KPI_IDS
+        | _sup_kpi_views.SUP_BUDGET_LIMIT_KPI_IDS
+    ):
+        # Цвет от plan/fact опорной строки, не от ytd.kpi_pct текущего
+        # незакрытого месяца (часто fact=0 → pct=0 → ложный green).
+        pct = _budget_fact_div_plan_pct(entry)
+        if pct is None and ytd.get('kpi_pct') is not None:
+            pct = float(ytd['kpi_pct'])
         color = _rag_td_m4_limit(pct)
     elif kid in _devdir_kpi_views.DEVDIR_KPI_IDS:
-        color = _rag_td_m4_limit(pct)
-    elif kid in _sup_kpi_views.SUP_FOT_LIMIT_KPI_IDS:
-        color = _rag_td_m4_limit(pct)
-    elif kid in _sup_kpi_views.SUP_BUDGET_LIMIT_KPI_IDS:
         color = _rag_td_m4_limit(pct)
     elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
         color = _rag_td_m4_limit(pct)
@@ -1645,6 +1685,18 @@ def _build_tile_item(
         tile['pct_lower_is_better'] = True
     elif _kid_gspp in komdir_dashboard.HIGHER_IS_BETTER_IDS:
         tile['pct_higher_is_better'] = True
+    if _kid_gspp in (
+        _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS
+        | _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS
+        | _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS
+        | _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS
+        | _sup_kpi_views.SUP_FOT_LIMIT_KPI_IDS
+        | _sup_kpi_views.SUP_BUDGET_LIMIT_KPI_IDS
+        | _qualdir_kpi_views.TILE_COLOR_TD_M4_LIMIT_IDS
+    ):
+        # Бюджет/ФОТ «в пределах лимита»: факт ниже плана — хорошо.
+        tile['pct_lower_is_better'] = True
+        tile['rag_direction'] = 'lower_better'
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
     if entry.get('generated_data'):
@@ -2397,6 +2449,218 @@ def _build_gspp_charts(
     return charts
 
 
+def _build_dual_plan_fact_charts(
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+    *,
+    sources: list[tuple[str, str]],
+    line_chart_id: str,
+    bar_chart_id: str,
+    line_name: str,
+    bar_name: str,
+    default_unit: str = "руб.",
+) -> dict:
+    """Линия (C1) + столбцы (C2) по двум помесячным KPI (план/факт)."""
+    resolved: list[tuple[str, str, dict]] = [
+        (kid, display_name, _entry_by_kpi_id(entries_by_id, kid))
+        for kid, display_name in sources
+    ]
+
+    series: list[dict] = []
+    for kid, display_name, entry in resolved:
+        monthly = entry.get("monthly_data") or []
+        points = [
+            {
+                "month": row.get("month"),
+                "month_name": row.get("month_name"),
+                "year": row.get("year"),
+                "plan": row.get("plan"),
+                "fact": row.get("fact"),
+                "kpi_pct": row.get("kpi_pct"),
+                "has_data": row.get("has_data"),
+                "values_unit": row.get("values_unit") or default_unit,
+            }
+            for row in monthly
+            if isinstance(row, dict)
+        ]
+        if not any((p.get("plan") is not None or p.get("fact") is not None) for p in points):
+            continue
+        series.append({
+            "kpi_id": kid,
+            "name": display_name,
+            "chart_type": "line_plan_fact_monthly",
+            "chart_type_label": f"План/Факт по месяцам: {display_name}",
+            "points": points,
+        })
+
+    charts: dict = {}
+    if series:
+        charts[line_chart_id] = {
+            "kpi_id": line_chart_id,
+            "name": line_name,
+            "periodicity": "ежемесячно",
+            "chart_type": "multi_line_plan_fact_monthly",
+            "chart_type_label": "Линейный тренд по месяцам (план/факт)",
+            "series": series,
+        }
+
+    bar_categories: list[str] = []
+    bar_plan_values: list[float | None] = []
+    bar_fact_values: list[float | None] = []
+    bar_points: list[dict] = []
+    for kid, display_name, entry in resolved:
+        kper = entry.get("kpi_period") or {}
+        point_y, point_m = ref_y, ref_m
+        if isinstance(kper, dict) and kper.get("year") is not None and kper.get("month") is not None:
+            point_y = int(kper["year"])
+            point_m = max(1, min(12, int(kper["month"])))
+        point = (
+            entry.get("last_full_month_row")
+            or pick_monthly_row_for_period(entry.get("monthly_data") or [], point_y, point_m)
+            or {}
+        )
+        bar_categories.append(display_name)
+        bar_plan_values.append(point.get("plan"))
+        bar_fact_values.append(point.get("fact"))
+        bar_points.append({
+            "kpi_id": kid,
+            "name": display_name,
+            "month": point.get("month", point_m),
+            "year": point.get("year", point_y),
+            "plan": point.get("plan"),
+            "fact": point.get("fact"),
+            "kpi_pct": point.get("kpi_pct"),
+            "has_data": point.get("has_data"),
+            "values_unit": point.get("values_unit") or default_unit,
+        })
+
+    if any(v is not None for v in bar_plan_values) or any(v is not None for v in bar_fact_values):
+        charts[bar_chart_id] = {
+            "kpi_id": bar_chart_id,
+            "name": bar_name,
+            "periodicity": "ежемесячно",
+            "chart_type": "column_plan_fact_monthly",
+            "chart_type_label": "Столбцы: план/факт за месяц",
+            "series": [{
+                "kpi_id": bar_chart_id,
+                "name": "План/факт за месяц",
+                "chart_type": "column_plan_fact_monthly",
+                "chart_type_label": "Столбцы",
+                "categories": bar_categories,
+                "plan": bar_plan_values,
+                "fact": bar_fact_values,
+                "points": bar_points,
+            }],
+        }
+
+    return charts
+
+
+def _build_sup_charts(
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    """Графики SUP: линия и столбцы по ФОТ (HRD-M2) и бюджету (HRD-M3)."""
+    return _build_dual_plan_fact_charts(
+        entries_by_id,
+        ref_y,
+        ref_m,
+        sources=[("HRD-M2", "ФОТ"), ("HRD-M3", "Бюджет")],
+        line_chart_id="HRD-C1",
+        bar_chart_id="HRD-C2",
+        line_name="Динамика ФОТ и бюджета",
+        bar_name="ФОТ и бюджет за выбранный месяц",
+    )
+
+
+def _build_autoit_charts(
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    """Графики autoit: ФОТ (IT-M4) и бюджет (IT-M3)."""
+    return _build_dual_plan_fact_charts(
+        entries_by_id,
+        ref_y,
+        ref_m,
+        sources=[("IT-M4", "ФОТ"), ("IT-M3", "Бюджет")],
+        line_chart_id="IT-C1",
+        bar_chart_id="IT-C2",
+        line_name="Динамика ФОТ и бюджета",
+        bar_name="ФОТ и бюджет за выбранный месяц",
+    )
+
+
+def _build_c1auto_charts(
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    """Графики 1С: ФОТ (1C-M4) и бюджет (1C-M3)."""
+    return _build_dual_plan_fact_charts(
+        entries_by_id,
+        ref_y,
+        ref_m,
+        sources=[("1C-M4", "ФОТ"), ("1C-M3", "Бюджет")],
+        line_chart_id="1C-C1",
+        bar_chart_id="1C-C2",
+        line_name="Динамика ФОТ и бюджета",
+        bar_name="ФОТ и бюджет за выбранный месяц",
+    )
+
+
+def _build_servhead_charts(
+    entries_by_id: dict[str, dict],
+    ref_y: int,
+    ref_m: int,
+) -> dict:
+    """
+    Графики servhead.
+
+    Если есть плитки ФОТ/бюджет (СЕР-M3-1 / СЕР-M3-2) — как у SUP.
+    Иначе на дашборде «Начальник сервисной службы» только обращения:
+    SH-M1 (удовлетворённые) и SH-M4 (в срок).
+    """
+    fot_entry = (
+        _entry_by_kpi_id(entries_by_id, "СЕР-M3-1")
+        or _entry_by_kpi_id(entries_by_id, "CEP-M3-1")
+        or _entry_by_kpi_id(entries_by_id, "SER-M3-1")
+    )
+    budget_entry = (
+        _entry_by_kpi_id(entries_by_id, "СЕР-M3-2")
+        or _entry_by_kpi_id(entries_by_id, "CEP-M3-2")
+        or _entry_by_kpi_id(entries_by_id, "SER-M3-2")
+    )
+    has_fot_budget = bool(
+        (fot_entry.get("monthly_data") or fot_entry.get("last_full_month_row"))
+        or (budget_entry.get("monthly_data") or budget_entry.get("last_full_month_row"))
+    )
+    if has_fot_budget:
+        return _build_dual_plan_fact_charts(
+            entries_by_id,
+            ref_y,
+            ref_m,
+            sources=[("СЕР-M3-1", "ФОТ"), ("СЕР-M3-2", "Бюджет")],
+            line_chart_id="СЕР-C1",
+            bar_chart_id="СЕР-C2",
+            line_name="Динамика ФОТ и бюджета",
+            bar_name="ФОТ и бюджет за выбранный месяц",
+        )
+    return _build_dual_plan_fact_charts(
+        entries_by_id,
+        ref_y,
+        ref_m,
+        sources=[("SH-M1", "Удовлетворённые"), ("SH-M4", "В срок")],
+        line_chart_id="SH-C1",
+        bar_chart_id="SH-C2",
+        line_name="Динамика обращений",
+        bar_name="Обращения за выбранный месяц",
+        default_unit="шт.",
+    )
+
+
 def _build_devdir_charts(
     entries_by_id: dict[str, dict],
     ref_y: int,
@@ -2710,27 +2974,29 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        sup_memo_key = f"sup_dashboard:v1:{ref_y}:{ref_m:02d}"
+        # v5: trim monthly_data до опорного месяца (HRD-M3: не смешивать июль с цветом июня).
+        sup_memo_key = f"sup_dashboard:v6:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_autoit_department(dept) and not include_debug:
-        autoit_memo_key = f"autoit_dashboard:v2:{ref_y}:{ref_m:02d}"
+        autoit_memo_key = f"autoit_dashboard:v7:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(autoit_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_c1auto_department(dept) and not include_debug:
-        c1auto_memo_key = f"c1auto_dashboard:v1:{ref_y}:{ref_m:02d}"
+        c1auto_memo_key = f"c1auto_dashboard:v4:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(c1auto_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
-        servhead_memo_key = f"servhead_dashboard:v4:{ref_y}:{ref_m:02d}"
+        servhead_memo_key = f"servhead_dashboard:v5:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_devdir_department(dept) and not include_debug:
-        devdir_memo_key = f"devdir_dashboard:v1:{ref_y}:{ref_m:02d}"
+        # v2: сброс memo после ручной инвалидации RD-M3-1 / SQL-планов текучести
+        devdir_memo_key = f"devdir_dashboard:v2:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
         if cached_payload is not None:
             logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
@@ -2749,19 +3015,19 @@ def _build_universal_payload(
             dashboard_disk_key = f"qualdir_v2_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v1_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
-            dashboard_disk_key = f"autoit_v2_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"autoit_v7_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = autoit_memo_key
         elif c1auto_memo_key:
-            dashboard_disk_key = f"c1auto_v1_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"c1auto_v4_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
-            dashboard_disk_key = f"servhead_v4_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"servhead_v5_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
-            dashboard_disk_key = f"devdir_v1_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"devdir_v2_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = devdir_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
@@ -2904,6 +3170,64 @@ def _build_universal_payload(
                     tile['status_color'] = tile['color']
                 tile['pct_higher_is_better'] = True
                 tile['rag_direction'] = 'higher_better'
+            elif _kid_tile in (
+                _autoit_kpi_views.AUTOIT_FOT_LIMIT_KPI_IDS
+                | _autoit_kpi_views.AUTOIT_BUDGET_LIMIT_KPI_IDS
+                | _c1auto_kpi_views.C1AUTO_FOT_LIMIT_KPI_IDS
+                | _c1auto_kpi_views.C1AUTO_BUDGET_LIMIT_KPI_IDS
+                | _sup_kpi_views.SUP_FOT_LIMIT_KPI_IDS
+                | _sup_kpi_views.SUP_BUDGET_LIMIT_KPI_IDS
+            ):
+                try:
+                    p_lm = float(lm['plan']) if lm.get('plan') is not None else None
+                    f_lm = float(lm['fact']) if lm.get('fact') is not None else None
+                except (TypeError, ValueError):
+                    p_lm, f_lm = None, None
+                if p_lm is not None and f_lm is not None and p_lm > 0:
+                    sync_pct = round(f_lm / p_lm * 100, 1)
+                    tile['kpi_pct'] = sync_pct
+                    tile['color'] = _rag_td_m4_limit(sync_pct)
+                    tile['status_color'] = tile['color']
+                elif lm.get('kpi_pct') is not None:
+                    sync_pct = float(lm['kpi_pct'])
+                    tile['kpi_pct'] = sync_pct
+                    tile['color'] = _rag_td_m4_limit(sync_pct)
+                    tile['status_color'] = tile['color']
+                tile['pct_lower_is_better'] = True
+                tile['rag_direction'] = 'lower_better'
+                # Не отдавать на плитку месяцы после опоры: фронт берёт последний
+                # ненулевой факт и смешивает его с цветом закрытого месяца.
+                md_tile = tile.get('monthly_data') or []
+                if md_tile and isinstance(lm, dict) and lm.get('month') is not None:
+                    try:
+                        cut_y = int(lm.get('year') or tile_lm_y)
+                        cut_m = int(lm['month'])
+                    except (TypeError, ValueError):
+                        cut_y, cut_m = tile_lm_y, tile_lm_m
+                    trimmed_md: list[dict] = []
+                    for row in md_tile:
+                        if not isinstance(row, dict):
+                            continue
+                        try:
+                            ry = int(row['year']) if row.get('year') is not None else cut_y
+                            rm = int(row['month'])
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                        if (ry, rm) > (cut_y, cut_m):
+                            continue
+                        try:
+                            p_r = float(row['plan']) if row.get('plan') is not None else None
+                            f_r = float(row['fact']) if row.get('fact') is not None else None
+                        except (TypeError, ValueError):
+                            p_r, f_r = None, None
+                        row_out = dict(row)
+                        if p_r is not None and f_r is not None and p_r > 0:
+                            pct_r = round(f_r / p_r * 100, 1)
+                            row_out['kpi_pct'] = pct_r
+                            row_out['color'] = _rag_td_m4_limit(pct_r)
+                        trimmed_md.append(row_out)
+                    if trimmed_md:
+                        tile['monthly_data'] = trimmed_md
             if kpi.get('kpi_id') in _qualdir_kpi_views.OTK_INCOMING_TILE_IDS:
                 for extra_key in ('in_work_today', 'rejected_items_count'):
                     if extra_key in lm:
@@ -2974,6 +3298,9 @@ def _build_universal_payload(
             tile['unit'] = 'чел.'
         elif _is_turnover_style_tile(kpi):
             tile['unit'] = '%'
+            # Текучесть: рост факта над планом — плохо (бейдж/RAG на фронте).
+            tile['pct_lower_is_better'] = True
+            tile['rag_direction'] = 'lower_better'
             if _kid_tile in _c1auto_kpi_views.C1AUTO_TURNOVER_KPI_IDS | {'IT-Q2'}:
                 tile['period'] = 'ежемесячно'
                 tile['frequency'] = 'ежемесячно'
@@ -2994,7 +3321,8 @@ def _build_universal_payload(
         elif _kid_tile in _devdir_kpi_views.DEVDIR_PIECE_UNIT_KPI_IDS:
             tile['unit'] = 'шт.'
         elif _kid_tile in _autoit_kpi_views.AUTOIT_SLA_KPI_IDS | _c1auto_kpi_views.C1AUTO_SLA_KPI_IDS:
-            tile['unit'] = '%'
+            # План/факт — число заявок (шт.); % выполнения — в kpi_pct, не в unit.
+            tile['unit'] = 'шт.'
         elif _kid_tile in _autoit_kpi_views.AUTOIT_RUB_KPI_IDS | _c1auto_kpi_views.C1AUTO_RUB_KPI_IDS:
             tile['unit'] = 'руб.'
         elif _kid_tile in techdir_dashboard.TECHDIR_RUB_UNIT_KPI_IDS | _qualdir_kpi_views.RUB_UNIT_KPI_IDS | _devdir_kpi_views.DEVDIR_RUB_UNIT_KPI_IDS:
@@ -3068,6 +3396,14 @@ def _build_universal_payload(
         grafiki.update(_build_gspp_charts(tiles_meta, entries_by_id, ref_y, ref_m))
     if _is_chief_metrolog_department(dept):
         grafiki.update(_build_chief_metrolog_charts(entries_by_id, ref_y, ref_m))
+    if _is_sup_department(dept):
+        grafiki.update(_build_sup_charts(entries_by_id, ref_y, ref_m))
+    if _is_autoit_department(dept):
+        grafiki.update(_build_autoit_charts(entries_by_id, ref_y, ref_m))
+    if _is_c1auto_department(dept):
+        grafiki.update(_build_c1auto_charts(entries_by_id, ref_y, ref_m))
+    if _servhead_kpi_views.is_servhead_department(dept):
+        grafiki.update(_build_servhead_charts(entries_by_id, ref_y, ref_m))
     month_names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
         5: "май", 6: "июнь", 7: "июль", 8: "август",
@@ -3227,7 +3563,9 @@ def _build_universal_payload(
             )
         except Exception:
             devdir_table = None
-        if devdir_table and (devdir_table.get('rows') or []):
+        # Таблицу отдаём всегда (даже пустую): иначе при пустом stale-кэше
+        # фронт вообще не видит блок, хотя на плитке уже plan≠fact.
+        if devdir_table:
             tablitsy['DEVDIR-T-PROJECTS-DEVIATIONS'] = devdir_table
 
         try:

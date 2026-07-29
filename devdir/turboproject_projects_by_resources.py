@@ -42,12 +42,12 @@ DEVDIR_OWNER_POSITION = "Директор по развитию"
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
 CACHE_PATH = CACHE_DIR / "devdir_turboproject_projects_by_resources_snapshot.json"
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 TABLE_CACHE_PREFIX = "devdir_turboproject_projects_by_resources_deviations"
-TABLE_CACHE_VERSION = 10
+TABLE_CACHE_VERSION = 11
 TILE_CACHE_PREFIX = "devdir_rd_m3_1_turboproject_projects_by_resources"
-TILE_CACHE_SOURCE_TAG = "devdir_rd_m3_1_turboproject_projects_by_resources_ytd"
-TILE_CACHE_VERSION = 9
+TILE_CACHE_SOURCE_TAG = "devdir_rd_m3_1_turboproject_projects_by_resources_ytd_v2"
+TILE_CACHE_VERSION = 10
 
 # Факт: максимальное отклонение по вехам строго меньше порога (как «без отклонения >10 р.д.»).
 MAX_FACT_DEVIATION_WORKDAYS = 10
@@ -917,10 +917,20 @@ def get_projects_deviation_table(year: int | None = None, month: int | None = No
         _save_table_cache(cache_path, payload)
         return payload
 
+    def _load_stale_nonempty() -> dict[str, Any] | None:
+        # Пустой stale (часто от начала месяца) скрывает таблицу в API
+        # (`if rows`) и блокирует синхронный пересчёт через SWR.
+        stale = _load_table_cache_stale(cache_path)
+        if stale is None:
+            return None
+        if not (stale.get("rows") or []):
+            return None
+        return stale
+
     return stale_while_revalidate(
         lock_key,
         lambda: _load_table_cache(cache_path),
-        lambda: _load_table_cache_stale(cache_path),
+        _load_stale_nonempty,
         _compute,
     )
 

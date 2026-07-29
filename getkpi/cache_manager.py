@@ -26,7 +26,8 @@ CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
 MAX_AGE_SECONDS = 86400  # 1 день
 DASHBOARD_PAYLOAD_MEM_TTL = 3600  # 1 час — повторные запросы дашборда ГСПП
 WARM_TASK_DELAY_SECONDS = float(os.getenv('CACHE_WARM_TASK_DELAY_SECONDS', '1.0'))
-DASHBOARD_DISK_VERSION = 1
+# v2: после восстановления plan на SQL-плитках текучести — сброс stale aggregate.
+DASHBOARD_DISK_VERSION = 2
 
 _locks: dict[str, threading.Lock] = {}
 _meta = threading.Lock()
@@ -334,6 +335,11 @@ def clear_memoized_dashboard_payload(prefix: str | None = None) -> None:
                 del _payload_mem_cache[key]
 
 
+def invalidate_memoized_dashboard_payload(key: str) -> None:
+    with _payload_mem_lock:
+        _payload_mem_cache.pop(key, None)
+
+
 def _dashboard_disk_path(disk_key: str) -> Path:
     return CACHE_DIR / f"dashboard_payload_{disk_key}.json"
 
@@ -407,8 +413,9 @@ def try_serve_dashboard_disk_cache(
         return None
 
     payload = stale["payload"]
-    if mem_key:
-        set_memoized_dashboard_payload(mem_key, payload)
+    # Не кладём stale в memo: иначе background refresh_fn (тот же
+    # _build_universal_payload) сразу попадёт в memo-hit и пересохранит
+    # старый payload с новой cache_date — «Обновлено» залипает на старой дате.
 
     refresh_key = f"dashboard_disk_{disk_key}"
 
@@ -416,6 +423,8 @@ def try_serve_dashboard_disk_cache(
         t0 = time.monotonic()
         logger.info("cache_manager: dashboard disk refresh started for %s", disk_key)
         try:
+            if mem_key:
+                invalidate_memoized_dashboard_payload(mem_key)
             new_payload = refresh_fn()
             save_dashboard_disk(disk_key, new_payload)
             if mem_key:
@@ -479,11 +488,11 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         turboproject_ope_projects,
     )
     from .komdir_claims import fetch_claims_for_month
+    from gspp import m1 as gspp_m1
     from gspp import m3 as gspp_m3
     from gspp import m5 as gspp_m5
     from gspp import ol_gspp_monthly as gspp_ol_m2
     from gspp import q5 as gspp_q5
-    from gspp import tkp_lifecycle as gspp_tkp
     from servhead import sh_m1 as servhead_sh_m1
     from servhead import sh_m2 as servhead_sh_m2
     from servhead import sh_m3 as servhead_sh_m3
@@ -857,7 +866,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
 
     from getkpi import dept_protocol_tables
 
-    _append_gspp_warm_tasks(tasks, y, m, gspp_q4, gspp_tkp, gspp_ol_m2, gspp_m3, gspp_m5, gspp_q5)
+    _append_gspp_warm_tasks(tasks, y, m, gspp_q4, gspp_m1, gspp_ol_m2, gspp_m3, gspp_m5, gspp_q5)
     _append_servhead_warm_tasks(
         tasks, y, m,
         servhead_sh_m1, servhead_sh_m2, servhead_sh_m3, servhead_sh_m4, servhead_sh_m5,
@@ -982,7 +991,7 @@ def _append_gspp_warm_tasks(
     ref_y: int,
     ref_m: int,
     gspp_q4_mod: object,
-    gspp_tkp_mod: object,
+    gspp_m1_mod: object,
     gspp_ol_m2_mod: object,
     gspp_m3_mod: object,
     gspp_m5_mod: object,
@@ -997,12 +1006,12 @@ def _append_gspp_warm_tasks(
                 lambda yy=ref_y, mm=warm_m: gspp_q4_mod.get_gspp_q4_ytd(year=yy, month=mm),
             ),
             (
-                f"gspp_m1_tkp_{ref_y}_{warm_m:02d}",
-                gspp_tkp_mod.gspp_m1_ytd_cache_path(ref_y, warm_m),
-                lambda yy=ref_y, mm=warm_m: gspp_tkp_mod.get_gspp_m1_ytd(year=yy, month=mm),
+                f"gspp_m1_sql_{ref_y}_{warm_m:02d}",
+                gspp_m1_mod.gspp_m1_ytd_cache_path(ref_y, warm_m),
+                lambda yy=ref_y, mm=warm_m: gspp_m1_mod.get_gspp_m1_ytd(year=yy, month=mm),
             ),
             (
-                f"gspp_m2_ol_{ref_y}_{warm_m:02d}",
+                f"gspp_m2_sql_{ref_y}_{warm_m:02d}",
                 gspp_ol_m2_mod.gspp_m2_ytd_cache_path(ref_y, warm_m),
                 lambda yy=ref_y, mm=warm_m: gspp_ol_m2_mod.get_gspp_m2_ytd(year=yy, month=mm),
             ),

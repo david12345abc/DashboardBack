@@ -19,8 +19,8 @@ from .c1_m3_plan import C1_M3_PLAN_BY_MONTH_2026
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "c1auto_c1_m3"
-CACHE_SOURCE_TAG = "c1auto_c1_m3_ytd"
-CACHE_VERSION = 3
+CACHE_SOURCE_TAG = "c1auto_c1_m3_ytd_sql_v1"
+CACHE_VERSION = 4
 
 
 def _plan_for_month(year: int, month: int) -> float | None:
@@ -77,7 +77,7 @@ def _build_c1_m3_payload(year: int | None = None, month: int | None = None) -> d
             "status": "ok" if with_plan else "no_data",
             "kpi_id": "1C-M3",
             "plan_source": "getkpi/c1auto/c1_m3_plan.py (сумма 2 строк × месяц)",
-            "fact_source": "getkpi/c1auto/c1_m3_fact.py",
+            "fact_source": "getkpi/c1auto/c1_m3_core.py (SQL _AccumRg51416 / _Document726)",
         },
     }
 

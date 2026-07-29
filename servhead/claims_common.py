@@ -1,397 +1,570 @@
-"""Общая загрузка претензий из OData для плиток servhead (SH-M*)."""
+"""Общая SQL-логика претензий (Catalog_Претензии) для плиток SH-M*."""
+
 from __future__ import annotations
 
-import calendar
-import logging
-import os
+import functools
+import sys
 from collections import defaultdict
-from datetime import date
-from typing import Any, Callable
-from urllib.parse import quote
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any
 
-import requests
-from requests.auth import HTTPBasicAuth
+from sql_connection import SqlConnection
 
-from getkpi.odata_http import request_with_retry
+sys.stdout.reconfigure(encoding="utf-8")
+print = functools.partial(print, flush=True)
 
-logger = logging.getLogger(__name__)
+CLAIMS_TABLE = "_Reference389"
+ENUM_TABLE = "_Enum1688"
 
-DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
-CLAIMS_ENTITY = "Catalog_Претензии"
+COL_MARKED = "_Marked"
+COL_DATE_REG = "_Fld11617"          # ДатаРегистрации
+COL_DATE_FACT = "_Fld11618"         # ДатаОкончания
+COL_DATE_PLAN = "_Fld132055"        # ТД_ДатаОкончанияПлан
+COL_STATUS = "_Fld11625RRef"
+
+FIELD_DATE_FACT = "ДатаОкончания"
+FIELD_DATE_PLAN = "ТД_ДатаОкончанияПлан"
+
+# _Enum1688._EnumOrder → имя статуса (OData Статус / PredefinedDataName)
+STATUS_BY_ORDER: dict[int, str] = {
+    0: "Зарегистрирована",
+    1: "Обрабатывается",
+    2: "На контроле",
+    3: "Удовлетворена",
+    4: "НеУдовлетворена",
+}
 
 STATUS_SATISFIED = "Удовлетворена"
 STATUS_REGISTERED = "Зарегистрирована"
-STATUS_IN_PROCESS = frozenset({
-    "Обрабатывается",
-    "В обработке",
-})
+# OData/DashboardBack: «Обрабатывается» и алиас «В обработке»
+STATUS_IN_PROCESS = frozenset({"Обрабатывается", "В обработке"})
 
-FIELD_DATE_PLAN = "ТД_ДатаОкончанияПлан"
-FIELD_DATE_FACT = "ДатаОкончания"
-PARTNER_FIELD = "Партнер_Key"
-PARTNERS_ENTITY = "Catalog_Партнеры"
-EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
+YEAR_OFFSET = 2000
+SCRIPT_DIR = Path(__file__).resolve().parent
+MONTH_NAMES = {
+    1: "Январь",
+    2: "Февраль",
+    3: "Март",
+    4: "Апрель",
+    5: "Май",
+    6: "Июнь",
+    7: "Июль",
+    8: "Август",
+    9: "Сентябрь",
+    10: "Октябрь",
+    11: "Ноябрь",
+    12: "Декабрь",
+}
 
 
-def _normalize_odata_base(raw_base_url: str) -> str:
-    base = (raw_base_url or DEFAULT_BASE_URL).strip().rstrip("/")
-    if base.endswith("/odata/standard.odata"):
-        return base
-    return f"{base}/odata/standard.odata"
+def parse_month(value: str) -> tuple[int, int]:
+    if len(value) != 7 or value[4] != "-":
+        raise ValueError("Месяц должен быть в формате ГГГГ-ММ")
+    year = int(value[:4])
+    month = int(value[5:7])
+    if not 1 <= month <= 12:
+        raise ValueError("Месяц должен быть от 01 до 12")
+    return year, month
 
 
-BASE = _normalize_odata_base(os.getenv("ONEC_BASE_URL", DEFAULT_BASE_URL))
-AUTH = HTTPBasicAuth(
-    os.getenv("ODATA_USER", "odata.user"),
-    os.getenv("ODATA_PASSWORD", "npo852456"),
-)
+def parse_period_args(argv: list[str] | None = None) -> tuple[tuple[int, int], tuple[int, int], str]:
+    args = [arg.strip() for arg in (argv if argv is not None else sys.argv[1:]) if arg.strip()]
+    now = datetime.now()
+
+    if not args:
+        return (now.year, 1), (now.year, 12), str(now.year)
+
+    if len(args) == 1 and len(args[0]) == 4:
+        year = int(args[0])
+        return (year, 1), (year, 12), args[0]
+
+    if len(args) == 1:
+        period = parse_month(args[0])
+        return period, period, args[0]
+
+    if len(args) == 2:
+        start = parse_month(args[0])
+        end = parse_month(args[1])
+        if start > end:
+            raise ValueError("Дата начала должна быть не позже даты окончания")
+        return start, end, f"{args[0]}_{args[1]}"
+
+    raise ValueError("Используйте: ГГГГ, ГГГГ-ММ или ГГГГ-ММ ГГГГ-ММ")
+
+
+def month_start(year: int, month: int) -> date:
+    return date(year, month, 1)
+
+
+def month_end(year: int, month: int) -> date:
+    if month == 12:
+        return date(year + 1, 1, 1) - timedelta(days=1)
+    return date(year, month + 1, 1) - timedelta(days=1)
+
+
+def iter_months(start: tuple[int, int], end: tuple[int, int]) -> list[str]:
+    year, month = start
+    result: list[str] = []
+    while (year, month) <= end:
+        result.append(f"{year:04d}-{month:02d}")
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+    return result
+
+
+def to_sql_dt(value: date | datetime) -> datetime:
+    if isinstance(value, datetime):
+        return value.replace(year=value.year + YEAR_OFFSET)
+    return datetime(value.year + YEAR_OFFSET, value.month, value.day)
 
 
 def kpi_pct(plan: int, fact: int) -> float | None:
     if plan <= 0:
         return None
-    return round(fact / plan * 100, 2)
+    return round(fact / plan * 100.0, 2)
 
 
-def _period_bounds(year: int, month_from: int, month_to: int) -> tuple[str, str]:
-    date_from = f"{year}-{month_from:02d}-01T00:00:00"
-    last_day = calendar.monthrange(year, month_to)[1]
-    date_to = f"{year}-{month_to:02d}-{last_day}T23:59:59"
-    return date_from, date_to
+def load_status_bins(cur) -> dict[str, bytes]:
+    """Имя статуса → binary из _Enum1688 (по _EnumOrder)."""
+    cur.execute(
+        f"""
+        SELECT _IDRRef, _EnumOrder
+        FROM [{ENUM_TABLE}] WITH (NOLOCK)
+        """
+    )
+    result: dict[str, bytes] = {}
+    for idr, order in cur.fetchall():
+        name = STATUS_BY_ORDER.get(int(order))
+        if name:
+            result[name] = bytes(idr)
+    return result
 
 
-def _parse_registration_month(value: str | None) -> tuple[int, int] | None:
-    if not value or len(value) < 7:
+def resolve_fact_bins(status_bins: dict[str, bytes], fact_statuses: frozenset[str]) -> set[bytes]:
+    bins: set[bytes] = set()
+    for name in fact_statuses:
+        blob = status_bins.get(name)
+        if blob is not None:
+            bins.add(blob)
+    if not bins:
+        raise RuntimeError(
+            f"Не найдены статусы {sorted(fact_statuses)} в {ENUM_TABLE}; "
+            f"доступны: {sorted(status_bins)}"
+        )
+    return bins
+
+
+def sql_to_date(raw: datetime | date | None) -> date | None:
+    """SQL datetime (+2000) → календарная date; пустые даты 1С отбрасываются."""
+    if raw is None:
         return None
-    try:
-        year = int(value[:4])
-        month = int(value[5:7])
-    except ValueError:
-        return None
-    if not 1 <= month <= 12:
-        return None
-    return year, month
-
-
-def _status_matches(raw_status: object, fact_statuses: frozenset[str]) -> bool:
-    return (str(raw_status or "").strip()) in fact_statuses
-
-
-def parse_odata_date(value: str | None) -> date | None:
-    if not value or len(value) < 10:
-        return None
-    try:
-        year = int(value[:4])
-        month = int(value[5:7])
-        day = int(value[8:10])
-    except ValueError:
-        return None
+    year = raw.year - YEAR_OFFSET
     if year < 1900:
         return None
     try:
-        return date(year, month, day)
+        return date(year, raw.month, raw.day)
     except ValueError:
         return None
 
 
-def is_completed_on_time(row: dict[str, Any]) -> bool:
-    """Факт исполнения ≤ плановой даты окончания."""
-    fact_d = parse_odata_date(row.get(FIELD_DATE_FACT))
-    plan_d = parse_odata_date(row.get(FIELD_DATE_PLAN))
+def is_completed_on_time(fact_d: date | None, plan_d: date | None) -> bool:
+    """Факт исполнения ≤ плановой даты окончания (как в DashboardBack)."""
     if fact_d is None or plan_d is None:
         return False
     return fact_d <= plan_d
 
 
-def is_completed_late(row: dict[str, Any]) -> bool:
-    """Факт исполнения > плановой даты окончания."""
-    fact_d = parse_odata_date(row.get(FIELD_DATE_FACT))
-    plan_d = parse_odata_date(row.get(FIELD_DATE_PLAN))
+def is_completed_late(fact_d: date | None, plan_d: date | None) -> bool:
+    """Факт исполнения > плановой даты окончания (как в DashboardBack)."""
     if fact_d is None or plan_d is None:
         return False
     return fact_d > plan_d
 
 
-def fetch_claims_sla_counts_by_month(
-    session: requests.Session,
+def load_monthly_counts(
+    cur,
+    start_dt: date,
+    end_dt: date,
+    fact_bins: set[bytes],
+) -> dict[str, dict[str, int]]:
+    sql_start = to_sql_dt(start_dt)
+    sql_end_exclusive = to_sql_dt(end_dt + timedelta(days=1))
+    cur.execute(
+        f"""
+        SELECT
+            [{COL_DATE_REG}],
+            [{COL_STATUS}]
+        FROM [{CLAIMS_TABLE}] WITH (NOLOCK)
+        WHERE [{COL_MARKED}] = 0x00
+          AND [{COL_DATE_REG}] >= ?
+          AND [{COL_DATE_REG}] < ?
+        """,
+        sql_start,
+        sql_end_exclusive,
+    )
+
+    stats: dict[str, dict[str, int]] = defaultdict(lambda: {"plan": 0, "fact": 0})
+    for date_raw, status_bin in cur.fetchall():
+        if date_raw is None:
+            continue
+        year = date_raw.year - YEAR_OFFSET
+        month = date_raw.month
+        if year < 1:
+            continue
+        month_key = f"{year:04d}-{month:02d}"
+        stats[month_key]["plan"] += 1
+        if status_bin is not None and bytes(status_bin) in fact_bins:
+            stats[month_key]["fact"] += 1
+    return stats
+
+
+def load_monthly_sla_counts(
+    cur,
+    start_dt: date,
+    end_dt: date,
     *,
-    year: int,
-    month_from: int,
-    month_to: int,
-    log_label: str,
-    fact_match: Callable[[dict[str, Any]], bool],
-) -> dict[int, dict[str, int]]:
-    """План — все обращения за месяц; факт — по предикату SLA (в срок / не в срок)."""
-    date_from, date_to = _period_bounds(year, month_from, month_to)
-    odata_filter = (
-        f"ДатаРегистрации ge datetime'{date_from}'"
-        f" and ДатаРегистрации le datetime'{date_to}'"
-    )
-    select = quote(
-        f"Ref_Key,ДатаРегистрации,{FIELD_DATE_FACT},{FIELD_DATE_PLAN},DeletionMark",
-        safe=",_",
-    )
-
-    counts: dict[int, dict[str, int]] = defaultdict(lambda: {"plan": 0, "fact": 0})
-    skip = 0
-    page = 5000
-
-    while True:
-        url = (
-            f"{BASE}/{quote(CLAIMS_ENTITY)}?$format=json"
-            f"&$select={select}&$top={page}&$skip={skip}"
-            f"&$filter={quote(odata_filter, safe='')}"
-        )
-        response = request_with_retry(session, url, timeout=120, retries=4, label=log_label)
-        if response is None or not response.ok:
-            logger.error(
-                "%s: OData error HTTP %s",
-                log_label,
-                response.status_code if response is not None else "drop",
-            )
-            break
-        rows = response.json().get("value") or []
-        if not rows:
-            break
-        for row in rows:
-            if row.get("DeletionMark"):
-                continue
-            parsed = _parse_registration_month(row.get("ДатаРегистрации"))
-            if parsed is None or parsed[0] != year:
-                continue
-            month = parsed[1]
-            if month < month_from or month > month_to:
-                continue
-            counts[month]["plan"] += 1
-            if fact_match(row):
-                counts[month]["fact"] += 1
-        if len(rows) < page:
-            break
-        skip += len(rows)
-
-    return counts
-
-
-def fetch_claims_for_registration_month(
-    session: requests.Session,
-    *,
-    year: int,
-    month: int,
-    log_label: str,
-) -> list[dict[str, Any]]:
-    """Все претензии за месяц регистрации (для таблиц по клиентам)."""
-    date_from, date_to = _period_bounds(year, month, month)
-    odata_filter = (
-        f"ДатаРегистрации ge datetime'{date_from}'"
-        f" and ДатаРегистрации le datetime'{date_to}'"
-    )
-    select = quote(
-        f"Ref_Key,ДатаРегистрации,{PARTNER_FIELD},{FIELD_DATE_FACT},"
-        f"{FIELD_DATE_PLAN},DeletionMark",
-        safe=",_",
+    late: bool,
+) -> dict[str, dict[str, int]]:
+    """План — все обращения; факт — в срок (late=False) или не в срок (late=True)."""
+    sql_start = to_sql_dt(start_dt)
+    sql_end_exclusive = to_sql_dt(end_dt + timedelta(days=1))
+    cur.execute(
+        f"""
+        SELECT
+            [{COL_DATE_REG}],
+            [{COL_DATE_FACT}],
+            [{COL_DATE_PLAN}]
+        FROM [{CLAIMS_TABLE}] WITH (NOLOCK)
+        WHERE [{COL_MARKED}] = 0x00
+          AND [{COL_DATE_REG}] >= ?
+          AND [{COL_DATE_REG}] < ?
+        """,
+        sql_start,
+        sql_end_exclusive,
     )
 
-    result: list[dict[str, Any]] = []
-    skip = 0
-    page = 5000
-
-    while True:
-        url = (
-            f"{BASE}/{quote(CLAIMS_ENTITY)}?$format=json"
-            f"&$select={select}&$top={page}&$skip={skip}"
-            f"&$filter={quote(odata_filter, safe='')}"
-        )
-        response = request_with_retry(session, url, timeout=120, retries=4, label=log_label)
-        if response is None or not response.ok:
-            logger.error(
-                "%s: OData error HTTP %s",
-                log_label,
-                response.status_code if response is not None else "drop",
-            )
-            break
-        rows = response.json().get("value") or []
-        if not rows:
-            break
-        for row in rows:
-            if row.get("DeletionMark"):
-                continue
-            parsed = _parse_registration_month(row.get("ДатаРегистрации"))
-            if parsed != (year, month):
-                continue
-            result.append(row)
-        if len(rows) < page:
-            break
-        skip += len(rows)
-
-    return result
+    stats: dict[str, dict[str, int]] = defaultdict(lambda: {"plan": 0, "fact": 0})
+    for reg_raw, fact_raw, plan_raw in cur.fetchall():
+        reg_d = sql_to_date(reg_raw)
+        if reg_d is None:
+            continue
+        month_key = f"{reg_d.year:04d}-{reg_d.month:02d}"
+        stats[month_key]["plan"] += 1
+        fact_d = sql_to_date(fact_raw)
+        plan_d = sql_to_date(plan_raw)
+        matched = is_completed_late(fact_d, plan_d) if late else is_completed_on_time(fact_d, plan_d)
+        if matched:
+            stats[month_key]["fact"] += 1
+    return stats
 
 
-def load_partner_names(session: requests.Session) -> dict[str, str]:
-    """Справочник партнёров Ref_Key → наименование."""
-    names: dict[str, str] = {}
-    skip = 0
-    page = 5000
-    select = quote("Ref_Key,Description", safe=",_")
-    while True:
-        url = (
-            f"{BASE}/{quote(PARTNERS_ENTITY)}?$format=json"
-            f"&$select={select}&$top={page}&$skip={skip}&$orderby=Ref_Key"
-        )
-        response = request_with_retry(session, url, timeout=120, retries=4, label="SH-Partners")
-        if response is None or not response.ok:
-            break
-        rows = response.json().get("value") or []
-        if not rows:
-            break
-        for row in rows:
-            key = row.get("Ref_Key")
-            if key:
-                names[key] = (row.get("Description") or "").strip() or key
-        if len(rows) < page:
-            break
-        skip += len(rows)
-    return names
-
-
-def partner_display_name(partner_key: str | None, partners: dict[str, str]) -> str:
-    key = (partner_key or "").strip() or EMPTY_GUID
-    if key == EMPTY_GUID:
-        return "—"
-    return partners.get(key) or key
-
-
-def aggregate_client_sla_rows(
-    claims: list[dict[str, Any]],
-    partners: dict[str, str],
-) -> list[dict[str, Any]]:
-    """Агрегация: клиент → всего / в срок / не в срок."""
-    buckets: dict[str, dict[str, int]] = defaultdict(lambda: {
-        "total": 0,
-        "on_time": 0,
-        "late": 0,
-    })
-    labels: dict[str, str] = {}
-
-    for row in claims:
-        key = (row.get(PARTNER_FIELD) or "").strip() or EMPTY_GUID
-        labels[key] = partner_display_name(key, partners)
-        buckets[key]["total"] += 1
-        if is_completed_on_time(row):
-            buckets[key]["on_time"] += 1
-        elif is_completed_late(row):
-            buckets[key]["late"] += 1
-
-    rows: list[dict[str, Any]] = []
-    for key, counts in buckets.items():
-        rows.append({
-            "Клиент": labels[key],
-            "Всего обращений": counts["total"],
-            "В срок": counts["on_time"],
-            "Не в срок": counts["late"],
-            "client_key": None if key == EMPTY_GUID else key,
-        })
-    rows.sort(key=lambda item: (-int(item["Всего обращений"]), str(item["Клиент"])))
-    return rows
-
-
-def fetch_claims_counts_by_month(
-    session: requests.Session,
-    *,
-    year: int,
-    month_from: int,
-    month_to: int,
+def build_monthly_report(
+    start_period: tuple[int, int],
+    end_period: tuple[int, int],
     fact_statuses: frozenset[str],
-    log_label: str,
-) -> dict[int, dict[str, int]]:
-    """Возвращает {месяц: {"plan": n, "fact": m}} за диапазон месяцев одного года."""
-    date_from, date_to = _period_bounds(year, month_from, month_to)
-    odata_filter = (
-        f"ДатаРегистрации ge datetime'{date_from}'"
-        f" and ДатаРегистрации le datetime'{date_to}'"
-    )
-    select = quote("Ref_Key,ДатаРегистрации,Статус,DeletionMark", safe=",_")
-
-    counts: dict[int, dict[str, int]] = defaultdict(lambda: {"plan": 0, "fact": 0})
-    skip = 0
-    page = 5000
-
-    while True:
-        url = (
-            f"{BASE}/{quote(CLAIMS_ENTITY)}?$format=json"
-            f"&$select={select}&$top={page}&$skip={skip}"
-            f"&$filter={quote(odata_filter, safe='')}"
+) -> list[dict[str, Any]]:
+    sql = SqlConnection()
+    with sql.connect_ctx() as conn:
+        conn.timeout = 0
+        cur = conn.cursor()
+        status_bins = load_status_bins(cur)
+        fact_bins = resolve_fact_bins(status_bins, fact_statuses)
+        stats = load_monthly_counts(
+            cur,
+            month_start(*start_period),
+            month_end(*end_period),
+            fact_bins,
         )
-        response = request_with_retry(session, url, timeout=120, retries=4, label=log_label)
-        if response is None or not response.ok:
-            logger.error(
-                "%s: OData error HTTP %s",
-                log_label,
-                response.status_code if response is not None else "drop",
-            )
-            break
-        rows = response.json().get("value") or []
-        if not rows:
-            break
-        for row in rows:
-            if row.get("DeletionMark"):
-                continue
-            parsed = _parse_registration_month(row.get("ДатаРегистрации"))
-            if parsed is None or parsed[0] != year:
-                continue
-            month = parsed[1]
-            if month < month_from or month > month_to:
-                continue
-            counts[month]["plan"] += 1
-            if _status_matches(row.get("Статус"), fact_statuses):
-                counts[month]["fact"] += 1
-        if len(rows) < page:
-            break
-        skip += len(rows)
 
-    return counts
+    report_rows: list[dict[str, Any]] = []
+    for month_key in iter_months(start_period, end_period):
+        plan = int(stats[month_key]["plan"])
+        fact = int(stats[month_key]["fact"])
+        report_rows.append(
+            {
+                "month": month_key,
+                "plan": plan,
+                "fact": fact,
+                "kpi_pct": kpi_pct(plan, fact),
+                "has_data": plan > 0,
+            }
+        )
+    return report_rows
 
 
-def build_kpi_period(ref_y: int, ref_m: int, month_names: dict[int, str]) -> dict[str, Any]:
-    """Текущий календарный месяц — ``current_month``, завершённые — ``last_full_month``."""
+def build_monthly_sla_report(
+    start_period: tuple[int, int],
+    end_period: tuple[int, int],
+    *,
+    late: bool,
+) -> list[dict[str, Any]]:
+    sql = SqlConnection()
+    with sql.connect_ctx() as conn:
+        conn.timeout = 0
+        cur = conn.cursor()
+        stats = load_monthly_sla_counts(
+            cur,
+            month_start(*start_period),
+            month_end(*end_period),
+            late=late,
+        )
+
+    report_rows: list[dict[str, Any]] = []
+    for month_key in iter_months(start_period, end_period):
+        plan = int(stats[month_key]["plan"])
+        fact = int(stats[month_key]["fact"])
+        report_rows.append(
+            {
+                "month": month_key,
+                "plan": plan,
+                "fact": fact,
+                "kpi_pct": kpi_pct(plan, fact),
+                "has_data": plan > 0,
+            }
+        )
+    return report_rows
+
+
+def format_report(
+    rows: list[dict[str, Any]],
+    *,
+    title: str,
+    fact_label: str,
+    source_line: str | None = None,
+) -> str:
+    lines = [
+        title,
+        source_line or f"Источник: {CLAIMS_TABLE} + {ENUM_TABLE}",
+        f"План: все обращения за месяц по {COL_DATE_REG} (ДатаРегистрации)",
+        f"Факт: {fact_label}",
+        "",
+        f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'KPI %':>8}",
+        f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 8}",
+    ]
+    for row in rows:
+        pct = row["kpi_pct"]
+        pct_s = f"{pct:.2f}" if pct is not None else "—"
+        lines.append(
+            f"{row['month']:<10} "
+            f"{row['plan']:>8} "
+            f"{row['fact']:>8} "
+            f"{pct_s:>8}"
+        )
+    lines.extend(
+        [
+            f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 8}",
+            f"{'ИТОГО':<10} "
+            f"{sum(row['plan'] for row in rows):>8} "
+            f"{sum(row['fact'] for row in rows):>8} "
+            f"{'':>8}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def save_report(file_prefix: str, period_slug: str, report: str) -> Path:
+    output_path = SCRIPT_DIR / f"{file_prefix}_{period_slug}.txt"
+    output_path.write_text(report, encoding="utf-8-sig")
+    return output_path
+
+
+def _payload_from_rows(
+    rows: list[dict[str, Any]],
+    *,
+    kpi_id: str,
+    source_module: str,
+    ref_y: int,
+    ref_m: int,
+    debug_extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    monthly_rows: list[dict[str, Any]] = []
+    for row in rows:
+        month_num = int(str(row["month"])[5:7])
+        plan = int(row["plan"])
+        fact = int(row["fact"])
+        monthly_rows.append(
+            {
+                "month": month_num,
+                "year": ref_y,
+                "month_name": MONTH_NAMES[month_num].lower(),
+                "plan": plan,
+                "fact": fact,
+                "kpi_pct": kpi_pct(plan, fact),
+                "has_data": plan > 0,
+                "values_unit": "шт.",
+            }
+        )
+
+    ref_row = next(
+        (item for item in monthly_rows if item["month"] == ref_m),
+        monthly_rows[-1] if monthly_rows else {
+            "month": ref_m,
+            "year": ref_y,
+            "month_name": MONTH_NAMES[ref_m].lower(),
+            "plan": 0,
+            "fact": 0,
+            "kpi_pct": None,
+            "has_data": False,
+            "values_unit": "шт.",
+        },
+    )
     today = date.today()
     period_type = (
         "current_month"
         if (ref_y, ref_m) >= (today.year, today.month)
         else "last_full_month"
     )
-    return {
-        "type": period_type,
-        "year": ref_y,
-        "month": ref_m,
-        "month_name": month_names[ref_m],
+    debug: dict[str, Any] = {
+        "kpi_id": kpi_id,
+        "status": "ok",
+        "source": source_module,
+        "odata_entity": "Catalog_Претензии",
+        "tables": {
+            "claims": CLAIMS_TABLE,
+            "date_reg_col": COL_DATE_REG,
+            "date_fact_col": COL_DATE_FACT,
+            "date_plan_col": COL_DATE_PLAN,
+            "status_col": COL_STATUS,
+            "status_enum": ENUM_TABLE,
+        },
+        "rows_by_month": [
+            {"month": item["month"], "plan": item["plan"], "fact": item["fact"]}
+            for item in monthly_rows
+        ],
     }
-
-
-def empty_error_payload(
-    *,
-    kpi_id: str,
-    ref_y: int,
-    ref_m: int,
-    month_names: dict[int, str],
-    error: str,
-) -> dict[str, Any]:
+    if debug_extra:
+        debug.update(debug_extra)
     return {
         "data_granularity": "monthly",
-        "monthly_data": [],
-        "last_full_month_row": None,
+        "monthly_data": monthly_rows,
+        "last_full_month_row": dict(ref_row),
         "kpi_period": {
-            "type": "last_full_month",
+            "type": period_type,
             "year": ref_y,
             "month": ref_m,
-            "month_name": month_names[ref_m],
+            "month_name": MONTH_NAMES[ref_m].lower(),
         },
         "ytd": {
-            "total_plan": None,
-            "total_fact": None,
-            "kpi_pct": None,
-            "months_with_data": 0,
-            "months_total": 0,
+            "total_plan": ref_row.get("plan"),
+            "total_fact": ref_row.get("fact"),
+            "kpi_pct": ref_row.get("kpi_pct"),
+            "months_with_data": sum(1 for item in monthly_rows if item.get("has_data")),
+            "months_total": len(monthly_rows),
             "values_unit": "шт.",
         },
-        "debug": {"kpi_id": kpi_id, "status": "error", "error": error},
+        "debug": debug,
     }
+
+
+def build_claims_status_payload(
+    *,
+    kpi_id: str,
+    fact_statuses: frozenset[str],
+    source_module: str,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict[str, Any]:
+    now = datetime.now()
+    ref_y = year or now.year
+    ref_m = month or now.month
+    if year is None and month is None:
+        ref_y, ref_m = now.year, now.month
+
+    rows = build_monthly_report((ref_y, 1), (ref_y, ref_m), fact_statuses)
+    status_list = sorted(fact_statuses)
+    return _payload_from_rows(
+        rows,
+        kpi_id=kpi_id,
+        source_module=source_module,
+        ref_y=ref_y,
+        ref_m=ref_m,
+        debug_extra={
+            "fact_statuses": status_list,
+            "rule": (
+                "plan = all claims in month by ДатаРегистрации; "
+                f"fact = status in {status_list}"
+            ),
+        },
+    )
+
+
+def build_claims_sla_payload(
+    *,
+    kpi_id: str,
+    late: bool,
+    source_module: str,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict[str, Any]:
+    now = datetime.now()
+    ref_y = year or now.year
+    ref_m = month or now.month
+    if year is None and month is None:
+        ref_y, ref_m = now.year, now.month
+
+    rows = build_monthly_sla_report((ref_y, 1), (ref_y, ref_m), late=late)
+    op = ">" if late else "<="
+    return _payload_from_rows(
+        rows,
+        kpi_id=kpi_id,
+        source_module=source_module,
+        ref_y=ref_y,
+        ref_m=ref_m,
+        debug_extra={
+            "date_fact_field": FIELD_DATE_FACT,
+            "date_plan_field": FIELD_DATE_PLAN,
+            "rule": (
+                "plan = all claims in month by ДатаРегистрации; "
+                f"fact = {FIELD_DATE_FACT} {op} {FIELD_DATE_PLAN}"
+            ),
+        },
+    )
+
+
+def run_cli(
+    *,
+    kpi_id: str,
+    file_prefix: str,
+    title: str,
+    fact_label: str,
+    fact_statuses: frozenset[str],
+) -> None:
+    start_period, end_period, period_slug = parse_period_args()
+    rows = build_monthly_report(start_period, end_period, fact_statuses)
+    report = format_report(
+        rows,
+        title=title,
+        fact_label=f"{fact_label} ({COL_STATUS})",
+    )
+    print(report)
+    output_path = save_report(file_prefix, period_slug, report)
+    print(f"Отчёт сохранён: {output_path}")
+
+
+def run_sla_cli(
+    *,
+    kpi_id: str,
+    file_prefix: str,
+    title: str,
+    late: bool,
+) -> None:
+    start_period, end_period, period_slug = parse_period_args()
+    rows = build_monthly_sla_report(start_period, end_period, late=late)
+    op = ">" if late else "≤"
+    report = format_report(
+        rows,
+        title=title,
+        source_line=f"Источник: {CLAIMS_TABLE}",
+        fact_label=(
+            f"{FIELD_DATE_FACT} {op} {FIELD_DATE_PLAN} "
+            f"({COL_DATE_FACT} {op} {COL_DATE_PLAN})"
+        ),
+    )
+    print(report)
+    output_path = save_report(file_prefix, period_slug, report)
+    print(f"Отчёт сохранён: {output_path}")

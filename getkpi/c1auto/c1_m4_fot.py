@@ -11,7 +11,12 @@ from typing import Any
 
 from devdir import ytd_json_cache
 
-from getkpi.autoit.it_monthly_period import MONTH_NAMES, normalize_it_tile_period
+from getkpi.autoit.it_monthly_period import (
+    MONTH_NAMES,
+    normalize_it_tile_period,
+    pick_fot_display_row,
+    trim_monthly_rows_to_display,
+)
 
 from .c1_m4_fot_fact import compute_c1_m4_fot_fact_monthly
 from .c1_m4_fot_plan import C1_M4_FOT_PLAN_BY_MONTH_2026
@@ -19,8 +24,8 @@ from .c1_m4_fot_plan import C1_M4_FOT_PLAN_BY_MONTH_2026
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "c1auto_c1_m4_fot"
-CACHE_SOURCE_TAG = "c1auto_c1_m4_fot_ytd"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "c1auto_c1_m4_fot_ytd_sql_v1"
+CACHE_VERSION = 4
 
 
 def _plan_for_month(year: int, month: int) -> float | None:
@@ -38,7 +43,6 @@ def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
 def _build_c1_m4_fot_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_it_tile_period(year, month)
     monthly_rows: list[dict[str, Any]] = []
-    ref_row: dict[str, Any] | None = None
 
     for m in range(1, ref_m + 1):
         plan = _plan_for_month(ref_y, m)
@@ -46,35 +50,37 @@ def _build_c1_m4_fot_payload(year: int | None = None, month: int | None = None) 
         fact_raw = fact_payload.get("total_fact")
         fact_value = float(fact_raw) if fact_raw is not None else None
         has_data = plan is not None and fact_value is not None
-        row = {
-            "month": m,
-            "year": ref_y,
-            "month_name": MONTH_NAMES[m],
-            "plan": round(plan, 2) if plan is not None else None,
-            "fact": round(fact_value, 2) if fact_value is not None else None,
-            "kpi_pct": _kpi_pct(plan, fact_value) if has_data else None,
-            "has_data": has_data,
-            "values_unit": "руб.",
-        }
-        monthly_rows.append(row)
-        if m == ref_m:
-            ref_row = row
+        monthly_rows.append(
+            {
+                "month": m,
+                "year": ref_y,
+                "month_name": MONTH_NAMES[m],
+                "plan": round(plan, 2) if plan is not None else None,
+                "fact": round(fact_value, 2) if fact_value is not None else None,
+                "kpi_pct": _kpi_pct(plan, fact_value) if has_data else None,
+                "has_data": has_data,
+                "values_unit": "руб.",
+            }
+        )
 
     with_data = [row for row in monthly_rows if row.get("has_data")]
+    display_row = pick_fot_display_row(monthly_rows, ref_m, ref_year=ref_y)
+    monthly_rows = trim_monthly_rows_to_display(monthly_rows, display_row)
+    display_m = int(display_row["month"]) if display_row and display_row.get("month") else ref_m
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
-        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("has_data") else None,
+        "last_full_month_row": dict(display_row) if display_row else None,
         "kpi_period": {
             "type": "last_full_month",
             "year": ref_y,
-            "month": ref_m,
-            "month_name": MONTH_NAMES[ref_m],
+            "month": display_m,
+            "month_name": MONTH_NAMES[display_m],
         },
         "ytd": {
-            "total_plan": ref_row.get("plan") if ref_row else None,
-            "total_fact": ref_row.get("fact") if ref_row else None,
-            "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+            "total_plan": display_row.get("plan") if display_row else None,
+            "total_fact": display_row.get("fact") if display_row else None,
+            "kpi_pct": display_row.get("kpi_pct") if display_row else None,
             "months_with_data": len(with_data),
             "months_total": len(monthly_rows),
             "values_unit": "руб.",
@@ -83,7 +89,7 @@ def _build_c1_m4_fot_payload(year: int | None = None, month: int | None = None) 
             "status": "ok" if with_data else "no_data",
             "kpi_id": "1C-M4",
             "plan_source": "getkpi/c1auto/c1_m4_fot_plan.py",
-            "fact_source": "getkpi/c1auto/c1_m4_fot_fact.py",
+            "fact_source": "getkpi/c1auto/c1_m4_core.py (SQL _AccRg2005 сч.26)",
         },
     }
 

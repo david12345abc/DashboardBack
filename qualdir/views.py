@@ -69,7 +69,7 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     from qualdir.qd_m8 import forma0317_month_cache_path, qd_m8_tile_cache_path, qd_m8_ytd_cache_path
     from qualdir.qd_m9 import otk_predyavlenie_npo_month_cache_path, qd_m9_tile_cache_path, qd_m9_ytd_cache_path
     from qualdir.qd_m10 import otk_predyavlenie_almaz_month_cache_path, qd_m10_tile_cache_path, qd_m10_ytd_cache_path
-    from qualdir.qd_q2 import qd_q2_ytd_cache_path, turnover_month_cache_path
+    from qualdir.qd_q2 import qd_q2_ytd_cache_path
 
     kid = _normalize_qualdir_kpi_id(kpi_id)
     paths: list[Path] = []
@@ -80,10 +80,8 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
             paths.append(mpp_path)
         paths.append(qd_q1_tile_cache_path(ref_y, ref_m))
     elif kid == "QD-Q2":
-        paths.extend([
-            qd_q2_ytd_cache_path(ref_y, ref_m),
-            turnover_month_cache_path(ref_y, ref_m),
-        ])
+        # Только YTD SQL-кэш; старый qualdir_tekuchet_* давал залипший «Обновлено».
+        paths.append(qd_q2_ytd_cache_path(ref_y, ref_m))
     elif kid == "QD-M1":
         paths.extend([
             qd_m1_ytd_cache_path(ref_y, ref_m),
