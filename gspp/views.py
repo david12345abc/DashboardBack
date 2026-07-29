@@ -69,11 +69,11 @@ def rag_gspp_m1_m2_pct(pct: float | None) -> str:
 
 
 def gspp_m1_tile_matches(kpi_id: str) -> bool:
-    return _normalize_kpi_id(kpi_id) in GSPP_M1_TILE_IDS
+    return _normalize_kpi_id(kpi_id) in _GSPP_M1_IDS_NORM
 
 
 def gspp_m2_tile_matches(kpi_id: str) -> bool:
-    return _normalize_kpi_id(kpi_id) in GSPP_M2_TILE_IDS
+    return _normalize_kpi_id(kpi_id) in _GSPP_M2_IDS_NORM
 
 
 def gspp_m1_m2_tile_matches(kpi_id: str) -> bool:
@@ -196,14 +196,9 @@ def _ensure_m5_zero_project_month(entry: dict[str, Any], *, year: int | None, mo
     if row.get("has_data") and row.get("plan") is not None and row.get("fact") is not None:
         return
 
-    plan = row.get("plan")
-    if plan is None:
-        monthly_target = str(entry.get("monthly_target") or "")
-        plan = None if "%" in monthly_target else _target_to_float(monthly_target)
-    if plan is None:
-        yearly_plan = _target_to_float(entry.get("yearly_target"))
-        plan = round(yearly_plan / 12.0, 2) if yearly_plan is not None else 0.0
-
+    # Нет активных проектов в месяце: план/факт 0 ₽.
+    # Не брать «Ежемесячно/Ежегодно» из карточки KPI — там пороги вроде «≤100%», не рубли.
+    plan = 0.0 if row.get("plan") is None else row.get("plan")
     fact = 0.0 if row.get("fact") is None else row.get("fact")
     try:
         pct = round(float(fact) / float(plan) * 100, 2) if float(plan) > 0 else None
@@ -251,28 +246,30 @@ def merge_kpi_entry_if_applicable(
     year: int | None,
     month: int | None,
 ) -> bool:
-    if _normalize_kpi_id(kpi_id) in GSPP_M1_TILE_IDS:
+    kid = _normalize_kpi_id(kpi_id)
+
+    if kid in _GSPP_M1_IDS_NORM:
         payload = get_gspp_m1_ytd(year=year, month=month)
         if payload is None:
             return False
         _merge_monthly(entry, payload)
         return True
 
-    if _normalize_kpi_id(kpi_id) in GSPP_M2_TILE_IDS:
+    if kid in _GSPP_M2_IDS_NORM:
         payload = get_gspp_m2_ytd(year=year, month=month)
         if payload is None:
             return False
         _merge_monthly(entry, payload)
         return True
 
-    if _normalize_kpi_id(kpi_id) in GSPP_M3_TILE_IDS:
+    if kid in _GSPP_M3_IDS_NORM:
         payload = get_gspp_m3_ytd(year=year, month=month)
         if payload is None:
             return False
         _merge_monthly(entry, payload)
         return True
 
-    if _normalize_kpi_id(kpi_id) in GSPP_M5_TILE_IDS:
+    if kid in _GSPP_M5_IDS_NORM:
         payload = get_gspp_m5_ytd(year=year, month=month)
         if payload is None:
             return False
@@ -280,7 +277,7 @@ def merge_kpi_entry_if_applicable(
         _ensure_m5_zero_project_month(entry, year=year, month=month)
         return True
 
-    if _normalize_kpi_id(kpi_id) in GSPP_Q5_TILE_IDS:
+    if kid in _GSPP_Q5_IDS_NORM:
         payload = get_gspp_q5_ytd(year=year, month=month)
         if payload is None:
             return False

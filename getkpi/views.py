@@ -2959,7 +2959,8 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        gspp_memo_key = f"gspp_dashboard:v4:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v6: ГСП-M5 без ложного плана от завершённых проектов
+        gspp_memo_key = f"gspp_dashboard:v6:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2974,8 +2975,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v5: trim monthly_data до опорного месяца (HRD-M3: не смешивать июль с цветом июня).
-        sup_memo_key = f"sup_dashboard:v6:{ref_y}:{ref_m:02d}"
+        # v9: HRD-M3 показывает выбранный месяц без отката на последний полный.
+        sup_memo_key = f"sup_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -3006,7 +3007,7 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v2_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v4_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
             dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
@@ -3015,7 +3016,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"qualdir_v2_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v6_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v9_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
             dashboard_disk_key = f"autoit_v7_{ref_y}_{ref_m:02d}"

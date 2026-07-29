@@ -453,11 +453,6 @@ def build_hrd_m3_payload(year: int | None = None, month: int | None = None) -> d
         year = year or ref_y
         month = month or ref_m
 
-    from getkpi.autoit.it_monthly_period import (
-        pick_fot_display_row,
-        trim_monthly_rows_to_display,
-    )
-
     rows = build_monthly_report((year, 1), (year, month))
     monthly_rows = [
         {
@@ -472,8 +467,16 @@ def build_hrd_m3_payload(year: int | None = None, month: int | None = None) -> d
         }
         for r in rows
     ]
-    display_row = pick_fot_display_row(monthly_rows, month, ref_year=year)
-    monthly_rows = trim_monthly_rows_to_display(monthly_rows, display_row)
+    # Для HRD-M3 показываем именно выбранный месяц, включая текущий
+    # незавершённый: откат на последний полный месяц здесь не применяется.
+    display_row = next(
+        (
+            row
+            for row in monthly_rows
+            if row.get("year") == year and row.get("month") == month
+        ),
+        None,
+    )
     display_m = int(display_row["month"]) if display_row and display_row.get("month") else month
     return {
         "data_granularity": "monthly",
@@ -561,8 +564,8 @@ from pathlib import Path as _Path
 from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normalize_period
 
 HRD_M3_YTD_CACHE_PREFIX = "sup_hrd_m3_budget"
-HRD_M3_YTD_DISK_TAG = "sup_hrd_m3_budget_sql_payload_v1"
-HRD_M3_YTD_DISK_VERSION = 3
+HRD_M3_YTD_DISK_TAG = "sup_hrd_m3_budget_sql_payload_v2_selected_month"
+HRD_M3_YTD_DISK_VERSION = 4
 HRD_M3_MONTHLY_CACHE_PREFIX = "sup_hrd_m3_budget_fact_sql_monthly"
 HRD_M3_MONTHLY_SOURCE_TAG = "sup_hrd_m3_budget_fact_sql_monthly_v1"
 HRD_M3_MONTHLY_CACHE_VERSION = 1

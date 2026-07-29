@@ -20,14 +20,14 @@ import xlrd
 from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
+from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, open_hc_workbook, reports_mtime_ns
 
 logger = logging.getLogger(__name__)
 
 SHEET_NAME = "Вакансии"
 CACHE_PREFIX = "sup_hrd_m1_vacancies"
-CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v6_hc_plan_month"
-CACHE_VERSION = 8
+CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v8_period_table"
+CACHE_VERSION = 10
 
 MONTH_NAME_TO_NUM: dict[str, int] = {
     "январь": 1,
@@ -199,7 +199,7 @@ def _load_vacancies_for_report_month(
         return [], debug
 
     try:
-        book = xlrd.open_workbook(str(path))
+        book = open_hc_workbook(path)
         sheet = _open_vacancies_sheet(book)
         header_row, headers = _find_header_row(sheet)
     except Exception as exc:
@@ -372,17 +372,9 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
     display_m = int(display_row["month"]) if display_row else ref_m
     display_vacancies = vacancies_by_month.get(display_m, [])
 
-    # В таблицу — не в срок за опорный месяц; если там пусто, добираем из
-    # более ранних месяцев периода (типичный кейс: май 14/13 при дашборде «июль»).
+    # Таблица всегда относится к тому же опорному месяцу, что и плитка.
     table_m = display_m
     table_vacancies = display_vacancies
-    if not any(not item.get("on_time") for item in table_vacancies):
-        for m in range(display_m, 0, -1):
-            month_items = vacancies_by_month.get(m, [])
-            if any(not item.get("on_time") for item in month_items):
-                table_m = m
-                table_vacancies = month_items
-                break
 
     return {
         "data_granularity": "monthly",

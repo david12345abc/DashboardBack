@@ -28,8 +28,8 @@ from .gspp_q4 import (
 logger = logging.getLogger(__name__)
 
 GSPP_M5_CACHE_PREFIX = "gspp_m5_ytd"
-GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v6_nomenclature_only"
-GSPP_M5_DISK_VERSION = 6
+GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v7_no_fallback_plan"
+GSPP_M5_DISK_VERSION = 7
 
 
 def _safe_float(value: Any) -> float | None:
@@ -130,12 +130,11 @@ def _budget_totals_for_month(
     year: int,
     month: int,
 ) -> tuple[float | None, float | None]:
-    """Сумма plan/fact по проектам Q4-когорты, активным в месяце."""
-    fallback_plan = None
-    for _item, details in project_pairs:
-        fallback_plan = _safe_float((details.get("data_1c") or {}).get("byudzhet_plan"))
-        if fallback_plan is not None:
-            break
+    """Сумма plan/fact по проектам Q4-когорты, активным в месяце.
+
+    Если в месяце нет активных проектов — (0, 0), без подстановки бюджета
+    завершённого/чужого проекта.
+    """
     plan_sum = 0.0
     fact_sum = 0.0
     has_plan = False
@@ -157,10 +156,10 @@ def _budget_totals_for_month(
             fact_sum += fact
             has_fact = True
     if not any_alive:
-        return (round(fallback_plan, 2), 0.0) if fallback_plan is not None else (None, None)
+        return 0.0, 0.0
     return (
-        round(plan_sum, 2) if has_plan else None,
-        round(fact_sum, 2) if has_fact else None,
+        round(plan_sum, 2) if has_plan else 0.0,
+        round(fact_sum, 2) if has_fact else 0.0,
     )
 
 

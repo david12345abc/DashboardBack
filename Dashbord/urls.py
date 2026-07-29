@@ -26,4 +26,6 @@ urlpatterns = [
     path('api/search/', include('searchengine.urls')),
     # Потоковый чат AI-ассистента для страницы дашбордов.
     path('api/assistant/', include('aiassistant.urls')),
+    # Изолированный proxy к локальной модели в LM Studio.
+    path('api/lmstudio/', include('lmstudio_proxy.urls')),
 ]

@@ -17,14 +17,14 @@ import xlrd
 from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
+from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, open_hc_workbook, reports_mtime_ns
 
 logger = logging.getLogger(__name__)
 
 SHEET_NAME = "Текучесть"
 CACHE_PREFIX = "sup_hrd_m4_turnover"
-CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v4_hc"
-CACHE_VERSION = 4
+CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v5_hc_xls_xlsx"
+CACHE_VERSION = 5
 
 FACT_ROW = 10
 PLAN_ROW = 11
@@ -112,7 +112,7 @@ def _read_turnover_for_month(
         return None, None, debug
 
     try:
-        book = xlrd.open_workbook(str(path))
+        book = open_hc_workbook(path)
         sheet = _open_tekuchest_sheet(book)
     except Exception as exc:
         logger.warning("HRD-M4: не удалось прочитать %s: %s", path, exc)

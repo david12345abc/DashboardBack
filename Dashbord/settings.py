@@ -17,6 +17,22 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _env_positive_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {'0', 'false', 'no', 'off'}
+
+
 _PACKAGE_JSON = BASE_DIR / 'package.json'
 with open(_PACKAGE_JSON, encoding='utf-8') as _f:
     _package = json.load(_f)
@@ -53,6 +69,7 @@ INSTALLED_APPS = [
     'c1auto',
     'tools',
     'aiassistant',
+    'lmstudio_proxy',
     'servhead',
 ]
 
@@ -141,6 +158,17 @@ AI_ASSISTANT_PROJECT_ROOT = BASE_DIR.parent
 AI_ASSISTANT_AGENT_SRC = BASE_DIR / 'agent' / 'agent' / 'src'
 AI_ASSISTANT_MCP_SRC = BASE_DIR / 'agent' / 'MCP' / 'src'
 AI_ASSISTANT_MCP_CONFIG = BASE_DIR / 'agent' / 'MCP' / 'mcp_config.json'
+
+# Изолированный OpenAI-совместимый proxy к LM Studio.
+LM_STUDIO_BASE_URL = os.environ.get(
+    'LM_STUDIO_BASE_URL',
+    'http://192.168.1.157:1234/v1',
+).rstrip('/')
+LM_STUDIO_MODEL = os.environ.get('LM_STUDIO_MODEL', 'qwen3-vl-8b-thinking')
+LM_STUDIO_API_KEY = os.environ.get('LM_STUDIO_API_KEY', 'lm-studio')
+LM_STUDIO_TIMEOUT_SECONDS = _env_positive_int('LM_STUDIO_TIMEOUT_SECONDS', 180)
+LM_STUDIO_AUTO_LOAD_MODEL = _env_bool('LM_STUDIO_AUTO_LOAD_MODEL', True)
+LM_STUDIO_CONTEXT_LENGTH = _env_positive_int('LM_STUDIO_CONTEXT_LENGTH', 32768)
 
 # CORS: любой origin (с credentials несовместимо — см. django-cors-headers)
 CORS_ALLOW_ALL_ORIGINS = True
