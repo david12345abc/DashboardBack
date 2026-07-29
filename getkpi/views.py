@@ -1909,7 +1909,7 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        gspp_memo_key = f"gspp_dashboard:v4:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        gspp_memo_key = f"gspp_dashboard:v5:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -1956,7 +1956,7 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v2_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v3_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
             dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"

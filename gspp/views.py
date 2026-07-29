@@ -4,7 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from gspp.tkp_lifecycle import get_gspp_m1_ytd, gspp_m1_ytd_cache_path
+# ГСП-M1: SQL как в мотивации 1С (этап «Анализ ОЛ группой ГСПП»).
+# Не tkp_lifecycle — там lifecycle≤3 р.д., цифры расходятся с премией ТД.
+from gspp.m1 import get_gspp_m1_ytd, gspp_m1_ytd_cache_path
 from gspp.ol_gspp_monthly import get_gspp_m2_ytd, gspp_m2_ytd_cache_path
 from gspp.m3 import get_gspp_m3_ytd, gspp_m3_ytd_cache_path
 from gspp.m5 import get_gspp_m5_ytd, gspp_m5_ytd_cache_path
