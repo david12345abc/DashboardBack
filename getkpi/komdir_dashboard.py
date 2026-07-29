@@ -35,23 +35,28 @@ from urllib.parse import quote
 
 import requests
 
+from comdir import (
+    get_cena_ytd,
+    get_debitorka_ytd,
+    get_dengi_ytd,
+    get_dogovory_ytd,
+    get_fot_ytd,
+    get_otgruzki_ytd,
+    get_rashody_ytd,
+    get_tkp_sla_ytd,
+    get_vp_ytd,
+)
+from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
+
 from . import (
     cache_manager,
     calc_debitorka,
-    calc_dengi_fact,
-    calc_dogovory_fact,
     calc_dz_limits,
-    calc_fot,
-    calc_kp_price,
     calc_odp_ufgh_shipments,
-    calc_otgruzki_fact,
     calc_plan,
-    calc_rashody,
     calc_tekuchest,
-    calc_tkp_sla,
     kpi_reconciliation,
     odp_excel_breakdown,
-    valovaya_pribyl,
 )
 from .commercial_department_aliases import DEALER_SALES_DEPT, KEY_CLIENTS_DEPT, normalize_commercial_dept_guid
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
@@ -305,61 +310,54 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
     ref_y/ref_m — последний полный месяц (план/факт на плитке, KPI %).
     series_m — последний месяц в загрузке фактов (включает текущий неполный для графиков).
 
-    KD-M1/M2/M3 — факт из calc-модулей + план из plans_payload,
-    KD-M4/KD-M5 — из calc_debitorka,
-    KD-M6 — из valovaya_pribyl,
-    остальные — синтетика.
+    KD-M1/M2/M3/M6/M7/M8/M9/M10 — SQL-эталоны comdir (get_*_ytd).
+    KD-M4/KD-M5 — из comdir SQL (РасчетыСКлиентамиПоСрокам / _AccumRg107662).
+    KD-M11 — calc_tekuchest.
     dept_guid — GUID подразделения для фильтрации (None = агрегат).
-    plans_payload — результат calc_plan.get_plans_monthly().
+    plans_payload — устаревший OData-планы; для M1–M3 план берётся из comdir.
     """
-    plans_months = (plans_payload or {}).get('months', [])
     dept_lock_suffix = f"_{_payload_cache_dept_part(dept_guid)}" if dept_guid else ""
 
     if kpi_id == 'KD-M1':
         dengi = cache_manager.locked_call(
-            f'dengi_{ref_y}_{series_m}{dept_lock_suffix}',
-            calc_dengi_fact.get_dengi_monthly,
+            f'comdir_dengi_{ref_y}_{series_m}{dept_lock_suffix}',
+            get_dengi_ytd,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
-        plans_by_month = {r['month']: (r.get('dengi') or 0) for r in plans_months}
-        expected_by_month = {r['month']: (r.get('dengi_expected') or 0) for r in plans_months}
-        return _build_plan_fact_tile(dengi.get('months', []), plans_by_month,
-                                     expected_by_month,
-                                     ref_y, ref_m)
+        raw = dengi.get('months') or []
+        plans_by_month = {r['month']: (r.get('plan') or 0) for r in raw}
+        expected_by_month = {r['month']: (r.get('expected') or 0) for r in raw}
+        return _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
 
     if kpi_id == 'KD-M2':
         otg = cache_manager.locked_call(
-            f'otgruzki_{ref_y}_{series_m}{dept_lock_suffix}',
-            calc_otgruzki_fact.get_otgruzki_monthly,
+            f'comdir_otgruzki_{ref_y}_{series_m}{dept_lock_suffix}',
+            get_otgruzki_ytd,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
-        plans_by_month = {r['month']: (r.get('otgruzki') or 0) for r in plans_months}
-        expected_by_month = {r['month']: (r.get('otgruzki_expected') or 0) for r in plans_months}
-        return _build_plan_fact_tile(otg.get('months', []), plans_by_month,
-                                     expected_by_month,
-                                     ref_y, ref_m)
+        raw = otg.get('months') or []
+        plans_by_month = {r['month']: (r.get('plan') or 0) for r in raw}
+        expected_by_month = {r['month']: (r.get('expected') or 0) for r in raw}
+        return _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
 
     if kpi_id == 'KD-M3':
         dog = cache_manager.locked_call(
-            f'dogovory_{ref_y}_{series_m}{dept_lock_suffix}',
-            calc_dogovory_fact.get_dogovory_monthly,
+            f'comdir_dogovory_{ref_y}_{series_m}{dept_lock_suffix}',
+            get_dogovory_ytd,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
-        plans_by_month = {r['month']: (r.get('dogovory') or 0) for r in plans_months}
-        expected_by_month = {r['month']: (r.get('dogovory_expected') or 0) for r in plans_months}
-        return _build_plan_fact_tile(dog.get('months', []), plans_by_month,
-                                     expected_by_month,
-                                     ref_y, ref_m)
+        raw = dog.get('months') or []
+        plans_by_month = {r['month']: (r.get('plan') or 0) for r in raw}
+        expected_by_month = {r['month']: (r.get('expected') or 0) for r in raw}
+        return _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
 
     if kpi_id == 'KD-M6':
         vp = cache_manager.locked_call(
-            f'vp_{dept_guid}' if dept_guid else 'vp',
-            valovaya_pribyl.get_vp_ytd,
-            dept_guid=dept_guid,
+            f'comdir_vp_{ref_y}_{series_m}{dept_lock_suffix}',
+            get_vp_ytd,
+            year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         cal = vp.get('months_calendar') or vp.get('months') or []
-        # last_full_month_row в get_vp_ytd привязан к «сегодня», а не к ?month=&year= —
-        # без замены плитка показывала один и тот же факт при любом выбранном месяце.
         lm = _vp_row_for_period(vp, ref_y, ref_m) or vp.get('last_full_month_row')
         pct = lm.get('kpi_pct') if lm else None
         ytd = {
@@ -383,7 +381,12 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id in {'KD-M4', 'KD-M5'}:
         if dz_payload is None:
-            dz_payload = calc_debitorka.get_komdir_dz_monthly(year=ref_y, month=series_m)
+            dz_payload = cache_manager.locked_call(
+                f'comdir_debitorka_{ref_y}_{series_m}'
+                + (f'_{dept_guid}' if dept_guid else ''),
+                get_debitorka_ytd,
+                year=ref_y, month=series_m, dept_guid=dept_guid,
+            )
         raw_months = dz_payload.get('months', [])
 
         if kpi_id == 'KD-M5':
@@ -431,8 +434,8 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M8':
         fot = cache_manager.locked_call(
-            f'fot_{ref_y}_{series_m}{dept_lock_suffix}',
-            calc_fot.get_fot_monthly,
+            f'comdir_fot_{ref_y}_{series_m}{dept_lock_suffix}',
+            get_fot_ytd,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = fot.get('months', [])
@@ -527,8 +530,8 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M7':
         rash = cache_manager.locked_call(
-            f'rashody_{ref_y}_{series_m}{dept_lock_suffix}',
-            calc_rashody.get_rashody_monthly,
+            f'comdir_rashody_{ref_y}_{series_m}{dept_lock_suffix}',
+            get_rashody_ytd,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = rash.get('months', [])
@@ -575,8 +578,8 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M9':
         kp = cache_manager.locked_call(
-            f'kp_price_{ref_y}_{series_m}{dept_lock_suffix}',
-            calc_kp_price.get_kp_price_monthly,
+            f'comdir_cena_{ref_y}_{series_m}{dept_lock_suffix}',
+            get_cena_ytd,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = kp.get('months', [])
@@ -621,8 +624,8 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
 
     if kpi_id == 'KD-M10':
         sla = cache_manager.locked_call(
-            f'tkp_sla_{ref_y}_{series_m}{dept_lock_suffix}',
-            calc_tkp_sla.get_tkp_sla_monthly,
+            f'comdir_tkp_sla_{ref_y}_{series_m}{dept_lock_suffix}',
+            get_tkp_sla_ytd,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
         raw_months = sla.get('months', [])
@@ -1193,6 +1196,7 @@ def _build_lawsuits_table(ref_y: int, ref_m: int,
             "columns": [
                 "Тип документа", "Контрагент", "Предмет спора",
                 "Роль ГК в споре", "Юр. лицо", "Подразделение",
+                "Дата SLA", "Краткое описание ситуации",
                 "Сумма требований, руб.",
             ],
             "rows": rows,
@@ -1225,23 +1229,16 @@ def _tile_cache_files(kpi_id: str, ref_y: int, ref_m: int) -> list[str]:
     else:
         snap = f"{ref_y}-{ref_m:02d}-{calendar.monthrange(ref_y, ref_m)[1]:02d}"
 
+    comdir_names = [p.name for p in comdir_cache_stamp_paths(kpi_id, ref_y, ref_m)]
+    if comdir_names:
+        return comdir_names
+
     return {
-        'KD-M1': [f'dengi_monthly_{ref_y}_{ref_m:02d}.json',
-                   f'dengi_{ref_y}_{ref_m:02d}.json'],
-        'KD-M2': [f'otgruzki_monthly_{ref_y}_{ref_m:02d}.json',
-                   f'otgruzki_{ref_y}_{ref_m:02d}.json'],
-        'KD-M3': [f'dogovory_monthly_{ref_y}_{ref_m:02d}.json',
-                   f'dogovory_{ref_y}_{ref_m:02d}.json'],
         'KD-M4': [f'debitorka_monthly_{ref_y}_{ref_m:02d}.json',
                    f'debitorka_{snap}.json'],
         'KD-M5': [f'debitorka_monthly_{ref_y}_{ref_m:02d}.json',
                    f'debitorka_{snap}.json',
                    'dz_limits_latest.json'],
-        'KD-M6': ['vp_result_cache.json'],
-        'KD-M7': [f'rashody_{ref_y}_{ref_m:02d}.json'],
-        'KD-M8': [f'fot_{ref_y}_{ref_m:02d}.json'],
-        'KD-M9': [f'kp_price_{ref_y}_{ref_m:02d}.json'],
-        'KD-M10': [f'tkp_sla_{ref_y}_{ref_m:02d}.json'],
         'KD-M11': [f'tekuchest_{ref_y}_{ref_m:02d}.json'],
     }.get(kpi_id, [])
 
@@ -1659,27 +1656,22 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
         if kid in by_id
     ]
 
-    dz_dept_name = DEPT_GUID_TO_DZ_NAME.get(dept_guid) if dept_guid else None
+    dz_lock = f'comdir_debitorka_{ref_y}_{series_m}'
+    if dept_guid:
+        dz_lock = f'{dz_lock}_{dept_guid}'
     dz_payload = cache_manager.locked_call(
-        f'debitorka_{ref_y}_{series_m}',
-        calc_debitorka.get_komdir_dz_monthly,
-        year=ref_y, month=series_m, dept_name=dz_dept_name,
-    )
-    dept_lock_suffix = f"_{_payload_cache_dept_part(dept_guid)}" if dept_guid else ""
-    plans_payload = cache_manager.locked_call(
-        f'plans_{ref_y}_{series_m}{dept_lock_suffix}',
-        calc_plan.get_plans_monthly,
+        dz_lock,
+        get_debitorka_ytd,
         year=ref_y, month=series_m, dept_guid=dept_guid,
     )
-
     tiles_data: dict[str, dict] = {}
     for kid in tile_ids:
         tiles_data[kid] = _get_tile_data(
             kid, pairs, ref_y, ref_m, series_m,
             dz_payload=dz_payload,
             dept_guid=dept_guid,
-            plans_payload=plans_payload,
-    )
+            plans_payload=None,
+        )
 
     plitki_items = []
 

@@ -8,3 +8,565 @@ Quit the server with CTRL-BREAK.
 
 WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
 For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 14:10:30
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 14:10:56
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 14:11:26
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 14:11:48
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 14:12:05
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 15:29:30
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 15:30:31
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 15:30:48
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 15:52:45
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 15:54:23
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 15:54:43
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 15:55:15
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 16:05:47
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 16:12:06
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 16:12:24
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 16:56:20
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 16:57:01
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:16:53
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:17:17
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:17:37
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:18:10
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:18:26
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:18:49
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:44:17
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:44:33
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:47:54
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:48:40
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:53:31
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:53:48
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:54:07
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 17:54:35
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 19:59:18
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 19:59:36
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:00:02
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:01:05
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:01:38
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:02:21
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:03:08
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:14:42
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:15:05
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:15:38
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 28, 2026 - 20:17:40
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 29, 2026 - 07:50:09
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+  загружено 5000 записей · 1.4с
+  загружено 5000 записей · 1.4с
+  загружено 55000 записей · 21.8с
+  загружено 55000 записей · 24.1с
+  загружено 105000 записей · 52.6с
+  загружено 105000 записей · 56.3с
+  загружено 155000 записей · 92.2с
+  загружено 155000 записей · 92.7с
+  загружено 160391 записей · 99.9с
+  загружено 160391 записей · 99.3с
+  скан каталога: 10000 записей, найдено 1735/28049 · 3.5с
+  скан каталога: 10000 записей, найдено 1735/28049 · 5.8с
+  скан каталога: 20000 записей, найдено 9665/28049 · 13.0с
+  скан каталога: 20000 записей, найдено 9665/28049 · 17.7с
+  скан каталога: 30000 записей, найдено 17622/28049 · 28.6с
+  скан каталога: 30000 записей, найдено 17622/28049 · 33.4с
+  скан каталога: 40000 записей, найдено 25738/28049 · 44.4с
+  скан каталога: 40000 записей, найдено 25738/28049 · 49.4с
+  скан каталога: 50000 записей, найдено 26254/28049 · 61.1с
+  скан каталога: 50000 записей, найдено 26254/28049 · 64.4с
+  скан каталога: 60000 записей, найдено 26254/28049 · 78.3с
+  скан каталога: 60000 записей, найдено 26254/28049 · 81.9с
+  скан каталога: 70000 записей, найдено 26254/28049 · 96.4с
+  скан каталога: 70000 записей, найдено 26254/28049 · 102.4с
+Performing system checks...
+
+  загружено 5000 записей · 1.4с
+System check identified no issues (0 silenced).
+July 29, 2026 - 08:02:16
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+  загружено 55000 записей · 17.8с
+Performing system checks...
+
+  загружено 5000 записей · 2.2с
+System check identified no issues (0 silenced).
+July 29, 2026 - 08:02:41
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+  загружено 5000 записей · 0.7с
+System check identified no issues (0 silenced).
+July 29, 2026 - 08:02:55
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+  загружено 55000 записей · 14.6с
+Performing system checks...
+
+  загружено 5000 записей · 1.8с
+System check identified no issues (0 silenced).
+July 29, 2026 - 08:03:28
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+  загружено 55000 записей · 16.9с
+  загружено 105000 записей · 37.4с
+  загружено 155000 записей · 65.3с
+  загружено 160391 записей · 71.9с
+  скан каталога: 10000 записей, найдено 1735/28049 · 3.7с
+  скан каталога: 20000 записей, найдено 9665/28049 · 15.9с
+  скан каталога: 30000 записей, найдено 17622/28049 · 33.1с
+  скан каталога: 40000 записей, найдено 25738/28049 · 53.2с
+  скан каталога: 50000 записей, найдено 26254/28049 · 74.9с
+  скан каталога: 60000 записей, найдено 26254/28049 · 95.2с
+  скан каталога: 70000 записей, найдено 26254/28049 · 115.2с
+  скан каталога: 80000 записей, найдено 26254/28049 · 135.1с
+  скан каталога: 90000 записей, найдено 26254/28049 · 155.5с
+  скан каталога: 100000 записей, найдено 26254/28049 · 180.6с
+  скан каталога: 110000 записей, найдено 26485/28049 · 202.4с
+  скан каталога: 120000 записей, найдено 26567/28049 · 224.6с
+  скан каталога: 130000 записей, найдено 26676/28049 · 247.0с
+  скан каталога: 140000 записей, найдено 26685/28049 · 270.4с
+  скан каталога: 150000 записей, найдено 26741/28049 · 294.0с
+  скан каталога: 160000 записей, найдено 27601/28049 · 318.7с
+  скан каталога: 170000 записей, найдено 27711/28049 · 345.4с
+  скан каталога: 180000 записей, найдено 27757/28049 · 374.1с
+  скан каталога: 190000 записей, найдено 27783/28049 · 403.8с
+  скан каталога: 200000 записей, найдено 27836/28049 · 438.3с
+  скан каталога: 210000 записей, найдено 27871/28049 · 473.9с
+  скан каталога: 220000 записей, найдено 27895/28049 · 503.9с
+Performing system checks...
+
+  загружено 5000 записей · 1.2с
+System check identified no issues (0 silenced).
+July 29, 2026 - 08:13:33
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+  загружено 5000 записей · 4.7с
+System check identified no issues (0 silenced).
+July 29, 2026 - 08:13:52
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+  загружено 5000 записей · 3.1с
+System check identified no issues (0 silenced).
+July 29, 2026 - 08:14:11
+Django version 6.0.5, using settings 'Dashbord.settings'
+Starting development server at http://0.0.0.0:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+Performing system checks...
+
+  загружено 5000 записей · 3.1с

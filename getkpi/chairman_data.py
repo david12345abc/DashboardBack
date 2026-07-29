@@ -8,17 +8,21 @@ from __future__ import annotations
 
 from datetime import date
 
+from comdir import (
+    get_debitorka_ytd,
+    get_dengi_ytd,
+    get_dogovory_ytd,
+    get_otgruzki_ytd,
+    get_shipment_share_bmi_gazprom,
+    get_shipment_share_bmi_gazprom_monthly,
+)
+
 from . import (
     cache_manager,
-    calc_debitorka,
-    calc_dengi_fact,
-    calc_otgruzki_fact,
-    calc_plan,
     calc_prod_deputy_output,
     calc_psd_portfolio,
     calc_postavshchiki,
     calc_reclamations,
-    calc_shipment_share_bmi_gazprom,
     calc_svoevremennaya_otgruzka,
     calc_tenders_bmi,
 )
@@ -26,6 +30,7 @@ from .kpi_periods import last_full_month
 from .komdir_dashboard import (
     MONTH_NAMES_RU,
     _build_line_chart,
+    _build_plan_fact_tile,
     _get_monthly_pairs,
     _get_tile_data as _komdir_get_tile_data,
     _series_through_month,
@@ -53,7 +58,7 @@ _T2_PLAN = {1: 27_800_000, 2: 27_800_000, 3: 27_800_000}
 _T2_FACT = {1: 22_150_000, 2: 31_420_000, 3: 26_980_000}
 
 # FND-T3 «Соотношение ДЗ и КЗ» рассчитывается из 1С
-# (calc_debitorka + calc_postavshchiki) в `_build_fnd_t3_dz_kz_rows`.
+# (comdir.get_debitorka_ytd + calc_postavshchiki) в `_build_fnd_t3_dz_kz_rows`.
 
 # FND-T4  Своевременная отгрузка  (среднее по всем месяцам)
 _T4_FACT = {1: 94.2, 2: 96.8, 3: 93.5}
@@ -186,37 +191,23 @@ def _months_fact_only(fact_dict, months):
 
 
 def _build_fnd_t1_revenue_rows(months: list[int], ref_y: int) -> list[dict]:
-    """FND-T1 «Выручка» = деньги ПЛАН (из планов коммерческого блока) + деньги
-    ФАКТ (из calc_dengi_fact). Используем те же источники, что в KD-M3 у
-    коммерческого директора.
-    """
+    """FND-T1 «Выручка» = деньги план/факт из comdir (те же, что KD-M1 у комдира)."""
     if not months:
         return []
     max_m = max(months)
 
-    plans_payload = cache_manager.locked_call(
-        f"plans_{ref_y}_{max_m}",
-        calc_plan.get_plans_monthly,
-        year=ref_y, month=max_m, dept_guid=None,
-    )
     dengi_payload = cache_manager.locked_call(
-        f"dengi_{ref_y}_{max_m}",
-        calc_dengi_fact.get_dengi_monthly,
-        year=ref_y, month=max_m,
+        f"comdir_dengi_{ref_y}_{max_m}",
+        get_dengi_ytd,
+        year=ref_y, month=max_m, dept_guid=None,
     )
 
     plan_by_m: dict[int, float | None] = {}
-    for row in plans_payload.get("months", []) or []:
-        m = int(row.get("month") or 0)
-        if 1 <= m <= 12:
-            # calc_plan.get_plans_monthly возвращает поле 'dengi' (план по ДС).
-            plan_by_m[m] = row.get("dengi")
-
     fact_by_m: dict[int, float | None] = {}
     for row in dengi_payload.get("months", []) or []:
         m = int(row.get("month") or 0)
         if 1 <= m <= 12:
-            # calc_dengi_fact.get_dengi_monthly возвращает поле 'fact'.
+            plan_by_m[m] = row.get("plan")
             fact_by_m[m] = row.get("fact")
 
     rows: list[dict] = []
@@ -329,9 +320,9 @@ def _build_fnd_t3_dz_kz_rows(months: list[int], ref_y: int) -> list[dict]:
 
     max_m = max(months)
     dz_payload = cache_manager.locked_call(
-        f"debitorka_{ref_y}_{max_m}",
-        calc_debitorka.get_komdir_dz_monthly,
-        year=ref_y, month=max_m, dept_name=None,
+        f"comdir_debitorka_{ref_y}_{max_m}",
+        get_debitorka_ytd,
+        year=ref_y, month=max_m,
     )
     supplier_payload = cache_manager.locked_call(
         f"postavshchiki_{ref_y}_{max_m}",
@@ -403,7 +394,7 @@ def _build_fnd_t3_dz_kz_rows(months: list[int], ref_y: int) -> list[dict]:
 
 def _build_fnd_t7_debitorka_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T7 «Дебиторская задолженность» — те же данные, что и у коммерческого
-    директора (KD-M4): агрегат по всей компании из calc_debitorka.
+    директора (KD-M4): SQL-агрегат comdir (COMM + ликвидированные).
     План — фиксированный (100 млн руб.), как у коммерческого директора.
     """
     if not months:
@@ -411,9 +402,9 @@ def _build_fnd_t7_debitorka_rows(months: list[int], ref_y: int) -> list[dict]:
 
     max_m = max(months)
     dz_payload = cache_manager.locked_call(
-        f"debitorka_{ref_y}_{max_m}",
-        calc_debitorka.get_komdir_dz_monthly,
-        year=ref_y, month=max_m, dept_name=None,
+        f"comdir_debitorka_{ref_y}_{max_m}",
+        get_debitorka_ytd,
+        year=ref_y, month=max_m,
     )
     by_m: dict[int, dict] = {}
     for row in dz_payload.get("months", []) or []:
@@ -827,16 +818,25 @@ CHAIRMAN_FOR_BLOCKS: tuple[dict[str, str | tuple[str, ...]], ...] = (
     {
         "id": CHAIRMAN_BLOCK_COMMERCE,
         "label": "Коммерческий блок",
-        "aliases": ("commerce", "коммерция", "commercial"),
+        "aliases": ("commerce", "коммерция", "commercial", "коммерческий_блок", "коммерческий блок"),
     },
 )
 
 _ALIAS_TO_FOR_ID: dict[str, str] = {}
+
+
+def _norm_for_key(raw: str) -> str:
+    return str(raw).strip().lower().replace(" ", "_").replace("-", "_")
+
+
 for _blk in CHAIRMAN_FOR_BLOCKS:
     bid = str(_blk["id"])
-    _ALIAS_TO_FOR_ID[bid.lower()] = bid
+    _ALIAS_TO_FOR_ID[_norm_for_key(bid)] = bid
+    label = str(_blk.get("label") or "").strip()
+    if label:
+        _ALIAS_TO_FOR_ID[_norm_for_key(label)] = bid
     for _al in _blk["aliases"]:
-        _ALIAS_TO_FOR_ID[str(_al).lower()] = bid
+        _ALIAS_TO_FOR_ID[_norm_for_key(str(_al))] = bid
 
 
 # Виртуальный блок ПСД → реальное подразделение, чью «ветку структуры» ПСД видит.
@@ -855,6 +855,46 @@ def chairman_for_target_department(for_raw: str | None) -> str | None:
         return None
     block = normalize_chairman_for_param(for_raw)
     return CHAIRMAN_FOR_TARGET_DEPT.get(block)
+
+
+def is_virtual_chairman_block_label(name: str | None) -> bool:
+    """True, если строка — подпись/алиас виртуального блока (не реальное подразделение)."""
+    if name is None or not str(name).strip():
+        return False
+    s = str(name).strip().lower().replace(" ", "_").replace("-", "_")
+    block = _ALIAS_TO_FOR_ID.get(s)
+    if block and block != CHAIRMAN_BLOCK_MY_DASHBOARD:
+        return True
+    # Подпись из каталога («Коммерческий блок»)
+    for blk in CHAIRMAN_FOR_BLOCKS:
+        label = str(blk.get("label") or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if label and label == s and str(blk["id"]) != CHAIRMAN_BLOCK_MY_DASHBOARD:
+            return True
+    return False
+
+
+def resolve_virtual_block_department(
+    requested_dept: str | None,
+    *,
+    user_department: str,
+    for_raw: str | None,
+) -> tuple[str, str | None]:
+    """
+    Если фронт ошибочно передал label блока как department («Коммерческий блок»),
+    подменяем на подразделение ПСД и выставляем for=commerce.
+    Возвращает (department, for_override_or_None).
+    """
+    dept = (requested_dept or user_department or "").strip()
+    for_override: str | None = None
+    if is_virtual_chairman_block_label(dept):
+        block = normalize_chairman_for_param(dept)
+        if block != CHAIRMAN_BLOCK_MY_DASHBOARD:
+            for_override = block
+        dept = user_department
+    if for_raw and not for_override:
+        # for уже задан явно
+        pass
+    return dept, for_override
 
 
 def get_chairman_for_catalog() -> dict:
@@ -878,7 +918,7 @@ COMMERCE_TILE_IDS = [f"MRK-{i:02d}" for i in range(1, 10)]
 
 # Демо-факт на опорный месяц (значения с макета дашборда).
 # ВАЖНО: MRK-01/02/03 считаются по данным КомДира, MRK-04 — из _mrk04_shipment_growth_yoy,
-# MRK-06 — из calc_shipment_share_bmi_gazprom, MRK-09 — из calc_tenders_bmi.
+# MRK-06 — из comdir SQL-отгрузок (доля БМИ+Газпром), MRK-09 — из calc_tenders_bmi.
 # Числа ниже остаются только для плиток, у которых ещё нет реальных калькуляторов
 # (MRK-10) — fallback-ветка в конце цикла.
 _COMMERCE_FACT: dict[str, float | int] = {
@@ -900,8 +940,7 @@ def normalize_chairman_for_param(raw: str | None) -> str:
     """Нормализация query-параметра for для председателя (алиасы из CHAIRMAN_FOR_BLOCKS)."""
     if raw is None or not str(raw).strip():
         return CHAIRMAN_BLOCK_MY_DASHBOARD
-    s = str(raw).strip().lower().replace(" ", "_").replace("-", "_")
-    return _ALIAS_TO_FOR_ID.get(s, CHAIRMAN_BLOCK_MY_DASHBOARD)
+    return _ALIAS_TO_FOR_ID.get(_norm_for_key(str(raw)), CHAIRMAN_BLOCK_MY_DASHBOARD)
 
 
 def _komdir_commerce_context(
@@ -1150,15 +1189,15 @@ def _mrk04_shipment_growth_yoy(ref_y: int, ref_m: int, series_m: int) -> tuple[f
     m = max(1, min(12, int(series_m) if series_m else int(ref_m) if ref_m else today.month))
 
     prev_payload = cache_manager.locked_call(
-        f"otgruzki_{previous_y}_{m}",
-        calc_otgruzki_fact.get_otgruzki_monthly,
+        f"comdir_otgruzki_{previous_y}_{m}",
+        get_otgruzki_ytd,
         year=previous_y,
         month=m,
         dept_guid=None,
     )
     current_payload = cache_manager.locked_call(
-        f"otgruzki_{current_y}_{m}",
-        calc_otgruzki_fact.get_otgruzki_monthly,
+        f"comdir_otgruzki_{current_y}_{m}",
+        get_otgruzki_ytd,
         year=current_y,
         month=m,
         dept_guid=None,
@@ -1252,20 +1291,11 @@ def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
       [{"month", "year", "month_name", "plan", "fact", "kpi_pct", "has_data"}]
     """
     today = date.today()
+    end_m = max(1, min(12, int(ref_m)))
+    if ref_y == today.year:
+        end_m = min(end_m, today.month)
     points: list[dict] = []
-    for m in range(1, 13):
-        is_future = (ref_y == today.year and m > today.month)
-        if is_future:
-            points.append({
-                "month": m,
-                "year": ref_y,
-                "month_name": MONTH_NAMES_RU[m],
-                "plan": None,
-                "fact": None,
-                "kpi_pct": None,
-                "has_data": False,
-            })
-            continue
+    for m in range(1, end_m + 1):
         data = cache_manager.locked_call(
             f"tenders_commercial_monthly_{ref_y}_{m:02d}",
             calc_tenders_bmi.get_tenders_departments,
@@ -1306,38 +1336,26 @@ def _mrk09_rag(pct: float | None) -> str:
 
 def _mrk06_share_bmi_gazprom(ref_y: int, ref_m: int) -> dict:
     """
-    Данные плитки MRK-06 «Доля Газпром + БМИ в отгрузке».
-    Окно «с 01.01 ref_y по сегодня» для текущего года, «весь год» — для прошлых
-    (плитка не помесячная, поэтому не ограничиваем по ref_m).
+    Данные плитки MRK-06 «Доля Газпром + БМИ в отгрузке» (SQL comdir / KD-M2).
+    Период: январь..ref_m выбранного года.
     """
-    today = date.today()
-    if ref_y == today.year:
-        return cache_manager.locked_call(
-            f"share_bmi_gp_{ref_y}_{today.isoformat()}",
-            calc_shipment_share_bmi_gazprom.get_shipment_share_bmi_gazprom,
-            year=ref_y,
-            month=today.month,
-        )
     return cache_manager.locked_call(
-        f"share_bmi_gp_{ref_y}_12",
-        calc_shipment_share_bmi_gazprom.get_shipment_share_bmi_gazprom,
+        f"comdir_mrk06_share_{ref_y}_{ref_m:02d}",
+        get_shipment_share_bmi_gazprom,
         year=ref_y,
-        month=12,
+        month=ref_m,
     )
 
 
 def _mrk06_share_bmi_gazprom_monthly(ref_y: int, ref_m: int) -> dict:
     """
-    Помесячная разбивка MRK-06 «Доля Газпром + БМИ в отгрузке» за янв..ref_m.
-    Возвращает dict с ключом 'months' (см. calc_shipment_share_bmi_gazprom_monthly).
+    Помесячная разбивка MRK-06 за янв..ref_m (SQL + кэш comdir_mrk06_share_ytd).
     """
-    today = date.today()
-    end_m = today.month if ref_y == today.year else 12
     return cache_manager.locked_call(
-        f"share_bmi_gp_monthly_{ref_y}_{end_m:02d}",
-        calc_shipment_share_bmi_gazprom.get_shipment_share_bmi_gazprom_monthly,
+        f"comdir_mrk06_share_monthly_{ref_y}_{ref_m:02d}",
+        get_shipment_share_bmi_gazprom_monthly,
         year=ref_y,
-        month=end_m,
+        month=ref_m,
     )
 
 
@@ -1388,39 +1406,71 @@ def _get_commerce_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: i
     }
 
 
+def _comdir_kd_plan_fact_tile(
+    *,
+    kpi_id: str,
+    get_ytd_fn,
+    lock_prefix: str,
+    ref_y: int,
+    ref_m: int,
+    series_m: int,
+) -> dict:
+    """
+    План/факт/ожидаемо из того же SQL-кэша comdir, что KD-M1/M2/M3 у комдира.
+    Повторного SQL-расчёта нет: get_*_ytd читает comdir_kd_m*_ytd_*.json.
+    """
+    ytd = cache_manager.locked_call(
+        f"{lock_prefix}_{ref_y}_{series_m}",
+        get_ytd_fn,
+        year=ref_y,
+        month=series_m,
+        dept_guid=None,
+    )
+    raw = ytd.get("months") or []
+    plans_by_month = {r["month"]: (r.get("plan") or 0) for r in raw}
+    expected_by_month = {r["month"]: (r.get("expected") or 0) for r in raw}
+    tile = _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
+    tile["debug"] = {
+        "status": (ytd.get("debug") or {}).get("status") or "ok",
+        "kpi_id": kpi_id,
+        "source": "comdir.sql",
+        "cache": (ytd.get("debug") or {}).get("source") or "comdir.get_*_ytd",
+    }
+    return tile
+
+
 def build_chairman_commerce_payload(
     kpi_list: list[dict],
     month: int | None = None,
     year: int | None = None,
 ) -> dict:
     """
-    Блок «Председатель / коммерция»: MRK-01…03 из тех же данных, что KD-M2/M3/M1 у коммерческого директора;
-    на плитках — план/факт за опорный месяц; в monthly_data — помесячно для графиков.
-    MRK-04 — рост отгрузок текущего года к предыдущему + помесячные отгрузки по обоим годам.
-    MRK-05…10 — заглушки.
+    Блок «Председатель / коммерция»: MRK-01…03 = те же SQL comdir, что KD-M2/M3/M1;
+    на плитках — план/факт/ожидаемо за опорный месяц; в monthly_data — помесячно.
+    MRK-04 — рост отгрузок; MRK-06 — доля БМИ+Газпром (SQL); остальные — свои источники.
     """
     by_id = {k["kpi_id"]: k for k in kpi_list}
 
-    ref_y, ref_m, pairs, series_m = _komdir_commerce_context(month, year)
-    plans_payload = cache_manager.locked_call(
-        f"plans_{ref_y}_{series_m}",
-        calc_plan.get_plans_monthly,
-        year=ref_y,
-        month=series_m,
-        dept_guid=None,
-    )
+    ref_y, ref_m, _pairs, series_m = _komdir_commerce_context(month, year)
 
-    td_m1 = _komdir_get_tile_data(
-        "KD-M1", pairs, ref_y, ref_m, series_m,
-        dz_payload=None, dept_guid=None, plans_payload=plans_payload,
+    # Те же кэши, что у коммерческого директора (без повторного SQL).
+    td_m1 = _comdir_kd_plan_fact_tile(
+        kpi_id="KD-M1",
+        get_ytd_fn=get_dengi_ytd,
+        lock_prefix="comdir_dengi",
+        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
     )
-    td_m2 = _komdir_get_tile_data(
-        "KD-M2", pairs, ref_y, ref_m, series_m,
-        dz_payload=None, dept_guid=None, plans_payload=plans_payload,
+    td_m2 = _comdir_kd_plan_fact_tile(
+        kpi_id="KD-M2",
+        get_ytd_fn=get_otgruzki_ytd,
+        lock_prefix="comdir_otgruzki",
+        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
     )
-    td_m3 = _komdir_get_tile_data(
-        "KD-M3", pairs, ref_y, ref_m, series_m,
-        dz_payload=None, dept_guid=None, plans_payload=plans_payload,
+    td_m3 = _comdir_kd_plan_fact_tile(
+        kpi_id="KD-M3",
+        get_ytd_fn=get_dogovory_ytd,
+        lock_prefix="comdir_dogovory",
+        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
     )
 
     komdir_for_chart = {"KD-M1": td_m1, "KD-M2": td_m2, "KD-M3": td_m3}
@@ -1455,11 +1505,12 @@ def build_chairman_commerce_payload(
                 "thresholds": _thresholds(meta),
                 "formula": meta.get("formula"),
                 "unit": "руб.",
-                "source": meta.get("source"),
+                "source": "comdir.sql / " + kd_id,
                 "description": meta.get("description"),
                 "frequency": meta.get("frequency"),
                 "plan": _to_int_or_none(lm.get("plan")),
                 "fact": _to_int_or_none(lm.get("fact")),
+                "expected_plan": _to_int_or_none(lm.get("expected_plan")),
                 "has_data": bool(lm.get("has_data")),
                 "plan_fact_period_label": month_label,
                 "monthly_data": _td.get("monthly_data"),
@@ -1763,13 +1814,6 @@ def build_chairman_commerce_payload(
     except Exception:
         lawsuits_rows = []
 
-    # KD-T-OVERDUE — та же таблица просроченной ДЗ, что и у коммерческого директора
-    try:
-        from .komdir_dashboard import _build_overdue_table
-        overdue_table = _build_overdue_table(ref_y, ref_m, dept_guid=None)
-    except Exception:
-        overdue_table = None
-
     month_name = MONTH_NAMES.get(ref_m, str(ref_m))
 
     tables: dict = {
@@ -1795,13 +1839,12 @@ def build_chairman_commerce_payload(
             'columns': [
                 'Тип документа', 'Контрагент', 'Предмет спора',
                 'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                'Дата SLA', 'Краткое описание ситуации',
                 'Сумма требований, руб.',
             ],
             'rows': lawsuits_rows,
         },
     }
-    if overdue_table is not None:
-        tables['KD-T-OVERDUE'] = overdue_table
 
     grafiki: dict = {"MRK-C1": chart}
 
@@ -1853,8 +1896,21 @@ def build_chairman_payload_by_for(
     block = normalize_chairman_for_param(for_raw)
     if block == CHAIRMAN_BLOCK_COMMERCE:
         mkpis = [k for k in kpi_list if str(k.get("kpi_id", "")).startswith("MRK-")]
-        return build_chairman_commerce_payload(mkpis, month=month, year=year), block
-    return build_chairman_payload(kpi_list, month=month, year=year), block
+        payload = build_chairman_commerce_payload(mkpis, month=month, year=year)
+    else:
+        payload = build_chairman_payload(kpi_list, month=month, year=year)
+    return strip_chairman_overdue_table(payload), block
+
+
+def strip_chairman_overdue_table(payload: dict) -> dict:
+    """У председателя СД нет таблицы просроченной ДЗ / «ТОП-10 решений»."""
+    tables = payload.get("Таблицы")
+    if not isinstance(tables, dict) or "KD-T-OVERDUE" not in tables:
+        return payload
+    cleaned = {k: v for k, v in tables.items() if k != "KD-T-OVERDUE"}
+    out = dict(payload)
+    out["Таблицы"] = cleaned
+    return out
 
 
 def build_chairman_payload(

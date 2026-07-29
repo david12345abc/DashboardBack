@@ -1,6 +1,6 @@
 {
   "na_datu": "2026-02-28",
-  "cache_date": "2026-07-28",
+  "cache_date": "2026-07-29",
   "dept_alias_source": "debitorka_department_aliases_v3",
   "overdue_detail_version": "overdue_detail_with_liquidated_v1",
   "total_overdue": 224534902.44,

@@ -47,73 +47,79 @@ def _commercial_period(month: int | None = None, year: int | None = None) -> tup
 
 
 def _commercial_source_tasks(ref_y: int, ref_m: int, series_m: int) -> list[tuple[str, Path, object]]:
+    from comdir import (
+        get_cena_ytd,
+        get_debitorka_ytd,
+        get_dengi_ytd,
+        get_dogovory_ytd,
+        get_fot_ytd,
+        get_otgruzki_ytd,
+        get_rashody_ytd,
+        get_shipment_share_bmi_gazprom_monthly,
+        get_tkp_sla_ytd,
+        get_vp_ytd,
+    )
+    from comdir.mrk06_share import cache_stamp_path as mrk06_cache_path
+    from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
+
     from . import (
         calc_debitorka,
-        calc_dengi_fact,
-        calc_dogovory_fact,
         calc_dz_limits,
-        calc_fot,
         calc_komdir_active_dealers,
-        calc_kp_price,
         calc_ks_razvitie,
-        calc_otgruzki_fact,
-        calc_plan,
-        calc_rashody,
         calc_tekuchest,
-        calc_tkp_sla,
-        valovaya_pribyl,
     )
     from .komdir_claims import fetch_claims_for_month
     from .komdir_lawsuits import fetch_lawsuits_for_month
 
     cd = cache_manager.CACHE_DIR
     today = date.today()
+
+    def _comdir_path(kpi_id: str) -> Path:
+        paths = comdir_cache_stamp_paths(kpi_id, ref_y, series_m)
+        return paths[0] if paths else cd / f"comdir_{kpi_id}_{ref_y}_{series_m:02d}.json"
+
     return [
         (
             f"commercial_dengi_{ref_y}_{series_m:02d}",
-            cd / f"dengi_monthly_{ref_y}_{series_m:02d}.json",
-            lambda: calc_dengi_fact.get_dengi_monthly(year=ref_y, month=series_m),
+            _comdir_path("KD-M1"),
+            lambda: get_dengi_ytd(year=ref_y, month=series_m),
         ),
         (
             f"commercial_otgruzki_{ref_y}_{series_m:02d}",
-            cd / f"otgruzki_monthly_{ref_y}_{series_m:02d}.json",
-            lambda: calc_otgruzki_fact.get_otgruzki_monthly(year=ref_y, month=series_m),
+            _comdir_path("KD-M2"),
+            lambda: get_otgruzki_ytd(year=ref_y, month=series_m),
         ),
         (
             f"commercial_dogovory_{ref_y}_{series_m:02d}",
-            cd / f"dogovory_monthly_{ref_y}_{series_m:02d}.json",
-            lambda: calc_dogovory_fact.get_dogovory_monthly(year=ref_y, month=series_m),
-        ),
-        (
-            f"commercial_plans_{ref_y}_{series_m:02d}",
-            cd / f"plans_monthly_{ref_y}_{series_m:02d}.json",
-            lambda: calc_plan.get_plans_monthly(year=ref_y, month=series_m),
+            _comdir_path("KD-M3"),
+            lambda: get_dogovory_ytd(year=ref_y, month=series_m),
         ),
         (
             f"commercial_debitorka_{ref_y}_{series_m:02d}",
-            cd / f"debitorka_monthly_{ref_y}_{series_m:02d}.json",
-            lambda: calc_debitorka.get_komdir_dz_monthly(year=ref_y, month=series_m),
+            _comdir_path("KD-M4"),
+            lambda: get_debitorka_ytd(year=ref_y, month=series_m),
         ),
         ("commercial_dz_limits", cd / "dz_limits_latest.json", calc_dz_limits.get_overdue_limits),
         (
             f"commercial_rashody_{ref_y}_{series_m:02d}",
-            cd / f"rashody_{ref_y}_{series_m:02d}.json",
-            lambda: calc_rashody.get_rashody_monthly(year=ref_y, month=series_m),
+            _comdir_path("KD-M7"),
+            lambda: get_rashody_ytd(year=ref_y, month=series_m),
         ),
         (
             f"commercial_fot_{ref_y}_{series_m:02d}",
-            cd / f"fot_{ref_y}_{series_m:02d}.json",
-            lambda: calc_fot.get_fot_monthly(year=ref_y, month=series_m),
+            _comdir_path("KD-M8"),
+            lambda: get_fot_ytd(year=ref_y, month=series_m),
         ),
         (
             f"commercial_kp_price_{ref_y}_{series_m:02d}",
-            cd / f"kp_price_{ref_y}_{series_m:02d}.json",
-            lambda: calc_kp_price.get_kp_price_monthly(year=ref_y, month=series_m),
+            _comdir_path("KD-M9"),
+            lambda: get_cena_ytd(year=ref_y, month=series_m),
         ),
         (
             f"commercial_tkp_sla_{ref_y}_{series_m:02d}",
-            cd / f"tkp_sla_{ref_y}_{series_m:02d}.json",
-            lambda: calc_tkp_sla.get_tkp_sla_monthly(year=ref_y, month=series_m),
+            _comdir_path("KD-M10"),
+            lambda: get_tkp_sla_ytd(year=ref_y, month=series_m),
         ),
         (
             f"commercial_tekuchest_{ref_y}_{series_m:02d}",
@@ -125,7 +131,16 @@ def _commercial_source_tasks(ref_y: int, ref_m: int, series_m: int) -> list[tupl
             calc_debitorka.overdue_detail_cache_path(ref_y, series_m),
             lambda: calc_debitorka.get_overdue_detail(year=ref_y, month=series_m),
         ),
-        ("commercial_vp", cd / "vp_result_cache.json", valovaya_pribyl.get_vp_ytd),
+        (
+            f"commercial_vp_{ref_y}_{series_m:02d}",
+            _comdir_path("KD-M6"),
+            lambda: get_vp_ytd(year=ref_y, month=series_m),
+        ),
+        (
+            f"commercial_mrk06_share_{ref_y}_{series_m:02d}",
+            mrk06_cache_path(ref_y, series_m),
+            lambda: get_shipment_share_bmi_gazprom_monthly(year=ref_y, month=series_m),
+        ),
         (
             f"commercial_claims_{ref_y}_{series_m:02d}",
             cd / f"claims_all_{ref_y}_{series_m:02d}.json",

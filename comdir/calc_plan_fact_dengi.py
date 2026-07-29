@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-План / факт по деньгам для коммерческой службы.
+План / факт / ожидаемые по деньгам для коммерческой службы.
 
 План  — регистр ТД_ПланированиеДоговоровОтгрузокДС, вид «Деньги», 6 коммерческих отделов.
         Полный месяц и пропорционально (дней прошло / дней в месяце).
@@ -10,6 +10,15 @@
         • СуммаПостоплатыРегл по ОтчетКомиссионера + ПоступлениеБезнал
         • взаимозачёты ДвиженияКонтрагентКонтрагент
         Отделы факта: 6 коммерческих + 2 ликвидированных (как в отчёте).
+
+Ожидаемые (Сумма планируемых платежей / dengi_expected)
+  — РН РасчетыСКлиентами (_AccumRg53885), ресурс КОплате (_Fld53890)
+  — остаток > 0; ОбъектРасчетов типа ЗаказКлиента
+  — этап оплаты с ДатаПлатежа в янв..конец месяца
+  — фильтры заказа: соглашение, не ТД_НеУчитыватьВПланФакте/ДС,
+    перепродажа (ОДП/ликв. дилерские — без Метрогазсервис)
+  — ликвидированные холдинги + дилерские в агрегации
+  — валюта заказа × фиксированные курсы (как в OData calc_plan)
 
 Итог коммерческого директора = сумма по всем отделам факта / плану.
 """
@@ -33,6 +42,33 @@ EMPTY16 = bytes(16)
 # ХозяйственнаяОперация.ВозвратОплатыКлиенту (_Enum1919)
 RET_OP = bytes.fromhex("b4af52c1b39555e54eeac8d5724dc975")
 
+# Валюты (_Reference53) — курсы как в getkpi/calc_plan.EXCHANGE_RATES
+CUR_USD = bytes.fromhex("963e001cc4d0438811dfe1b60a7c6f22")
+CUR_EUR = bytes.fromhex("81cd001583b3d75c11e07405d328a18d")
+CUR_BYN = bytes.fromhex("8756ac1f6b05524d11ec45dc095e2c36")
+CUR_KZT = bytes.fromhex("95fc6cb31113810e11efde2ee2bc7bc0")
+
+# Партнёры перепродажи (как в calc_plan_fact_dogovory)
+RESALE_PARTNERS = [
+    bytes.fromhex("8266ac1f6b05524d11e7a8c56ff45495"),  # АЛМАЗ ООО (рабочий)
+    bytes.fromhex("812e001e6711250911e788a06ac41964"),  # Турбулентность-Дон ООО
+    bytes.fromhex("8266ac1f6b05524d11e7a8c46cdfe9f3"),  # Турбулентность-ДОН ООО НПО
+    bytes.fromhex("8266ac1f6b05524d11e7a8c74babc7a7"),  # СКТБ Турбо-Дон ООО
+    bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44"),  # Метрогазсервис ООО
+]
+METROGAZ = bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44")
+ODP_DEPT = bytes.fromhex("96f96cb31113810e11f092f67587c178")  # Отдел дилерских продаж
+OPBO_DEPT = bytes.fromhex("80da001e6711250911e49f994edcf3a0")  # ликв. бытовое
+OPPO_DEPT = bytes.fromhex("8127001e6711250911e6d71eff740269")  # ликв. пром.
+DEPTS_RESALE_NO_MGS = (ODP_DEPT, OPBO_DEPT, OPPO_DEPT)
+
+# Ликвидированные «холдинги» → ключевые клиенты (как OData aliases)
+HOLDINGS_DEPTS: list[tuple[str, str]] = [
+    ("(ликв.) Отдел по работе с холдингами 1", "95e86cb31113810e11efcf32c6810cc3"),
+    ("(ликв.) Отдел по работе с холдингами 2", "95e86cb31113810e11efcf38ebd2d511"),
+    ("(ликв.) Отдел по работе с холдингами 3", "95e86cb31113810e11efcf39ad83f8bd"),
+]
+
 # 6 коммерческих отделов (план + факт)
 COMMERCIAL_DEPTS: list[tuple[str, str]] = [
     ("Отдел по работе с ПАО Газпром", "80da001e6711250911e49f9cbd7b5184"),
@@ -43,8 +79,12 @@ COMMERCIAL_DEPTS: list[tuple[str, str]] = [
     ("Отдел продаж БМИ", "93d36cb31113810e11ee37a59edaa7d4"),
 ]
 
-# + ликвидированные — только в факте (как в отчёте «Платежи полученные»)
+# + ликвидированные — в факте только бытовое (как в OData/отчёте: пром. не даёт платежей в итоге)
 LIQUIDATED_DEPTS: list[tuple[str, str]] = [
+    ("(ликв.) Отдел дилерских продаж бытового оборудования", "80da001e6711250911e49f994edcf3a0"),
+]
+# пром. ликвидированный — только для отображения строки в CLI (факт = 0)
+LIQUIDATED_DEPTS_DISPLAY: list[tuple[str, str]] = [
     ("(ликв.) Отдел дилерских продаж бытового оборудования", "80da001e6711250911e49f994edcf3a0"),
     ("(ликв.) Отдел дилерских продаж промышленного оборудования", "8127001e6711250911e6d71eff740269"),
 ]
@@ -105,6 +145,19 @@ def load_depts(cur, rows: list[tuple[str, str]], table: str = "#depts") -> None:
     cur.execute(f"CREATE TABLE {table} (id binary(16) PRIMARY KEY, name nvarchar(255))")
     for name, hx in rows:
         cur.execute(f"INSERT INTO {table}(id, name) VALUES (?, ?)", bytes.fromhex(hx), name)
+
+
+def load_resale(cur) -> None:
+    cur.execute("IF OBJECT_ID('tempdb..#resale') IS NOT NULL DROP TABLE #resale")
+    cur.execute("CREATE TABLE #resale (id binary(16) PRIMARY KEY)")
+    for p in RESALE_PARTNERS:
+        cur.execute("INSERT INTO #resale(id) VALUES (?)", p)
+
+    cur.execute("IF OBJECT_ID('tempdb..#resale_nomgs') IS NOT NULL DROP TABLE #resale_nomgs")
+    cur.execute("CREATE TABLE #resale_nomgs (id binary(16) PRIMARY KEY)")
+    for p in RESALE_PARTNERS:
+        if p != METROGAZ:
+            cur.execute("INSERT INTO #resale_nomgs(id) VALUES (?)", p)
 
 
 def calc_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
@@ -202,12 +255,108 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
+def calc_expected(cur, p_year_start: datetime, p_month_end: datetime) -> dict[str, float]:
+    """Ожидаемые деньги (Сумма планируемых платежей) — как OData/отчёт 1С.
+
+    • остаток КОплате > 0 на конец месяца по ОбъектРасчетов;
+    • объект расчётов типа ЗаказКлиента (_Fld138162_RTRef);
+    • заказ с этапом оплаты ДатаПлатежа в [начало года .. конец месяца);
+    • соглашение заполнено; не ТД_НеУчитыватьВПланФакте / …ДС;
+    • перепродажа (для ОДП и ликв. дилерских — без Метрогазсервис);
+    • ликвидированные «холдинги» → ключевые клиенты (через aggregate).
+    """
+    exp_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS_DISPLAY + HOLDINGS_DEPTS
+    load_depts(cur, exp_depts, "#exp_depts")
+    load_resale(cur)
+    cur.execute("IF OBJECT_ID('tempdb..#dept_nomgs') IS NOT NULL DROP TABLE #dept_nomgs")
+    cur.execute("CREATE TABLE #dept_nomgs (id binary(16) PRIMARY KEY)")
+    for d in DEPTS_RESALE_NO_MGS:
+        cur.execute("INSERT INTO #dept_nomgs(id) VALUES (?)", d)
+
+    fx = """
+      CASE
+        WHEN ord._Fld21185RRef = ? THEN 90.0
+        WHEN ord._Fld21185RRef = ? THEN 98.0
+        WHEN ord._Fld21185RRef = ? THEN 28.0
+        WHEN ord._Fld21185RRef = ? THEN 0.19
+        ELSE 1.0
+      END
+    """
+    cur.execute(
+        f"""
+        SELECT d.name, SUM(bal.bal * {fx}) AS ExpSum
+        FROM (
+          SELECT s._Fld140429RRef AS obj,
+                 SUM(
+                   CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END
+                 ) AS bal
+          FROM _AccumRg53885 s WITH (NOLOCK)
+          WHERE s._Period < ?
+            AND s._Active = 0x01
+            AND ISNULL(s._Fld140434, 0x00) = 0x00
+            AND s._Fld53890 <> 0
+          GROUP BY s._Fld140429RRef
+          HAVING SUM(
+            CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END
+          ) > 0
+        ) bal
+        INNER JOIN _Reference134945 co WITH (NOLOCK)
+          ON co._IDRRef = bal.obj
+         AND co._Fld138162_RTRef = ?
+        INNER JOIN (
+          SELECT ord._Fld138973RRef AS obj, MIN(ord._IDRRef) AS ord_id
+          FROM _Document704 ord WITH (NOLOCK)
+          INNER JOIN #exp_depts d0 ON d0.id = ord._Fld21220RRef
+          WHERE ord._Fld138973RRef <> ?
+            AND ord._Fld21183RRef <> ?
+            AND ISNULL(ord._Fld184301, 0x00) = 0x00
+            AND ISNULL(ord._Fld185210, 0x00) = 0x00
+            AND EXISTS (
+              SELECT 1 FROM _Document704_VT21278 st WITH (NOLOCK)
+              WHERE st._Document704_IDRRef = ord._IDRRef
+                AND st._Fld21281 >= ?
+                AND st._Fld21281 < ?
+            )
+            AND (
+                  CASE
+                    WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = ord._Fld21220RRef) THEN
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
+                      ) THEN 0 ELSE 1 END
+                    ELSE
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                      ) THEN 0 ELSE 1 END
+                  END
+                ) = 1
+          GROUP BY ord._Fld138973RRef
+        ) pick ON pick.obj = bal.obj
+        INNER JOIN _Document704 ord WITH (NOLOCK)
+          ON ord._IDRRef = pick.ord_id
+        INNER JOIN #exp_depts d ON d.id = ord._Fld21220RRef
+        GROUP BY d.name
+        """,
+        CUR_USD,
+        CUR_EUR,
+        CUR_BYN,
+        CUR_KZT,
+        p_month_end,
+        ORDER_TREF,
+        EMPTY16,
+        EMPTY16,
+        p_year_start,
+        p_month_end,
+    )
+    return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+
+
 def main(as_of: date | None = None) -> None:
     as_of = as_of or date.today()
     y, m = as_of.year, as_of.month
     days_in_month = monthrange(y, m)[1]
     elapsed = min(as_of.day, days_in_month)
     p0 = to_1c_dt(date(y, m, 1))
+    p_year = to_1c_dt(date(y, 1, 1))
     if m == 12:
         p_next = to_1c_dt(date(y + 1, 1, 1))
     else:
@@ -222,64 +371,76 @@ def main(as_of: date | None = None) -> None:
 
     plan = calc_plan(cur, p0, p_next)
     fact = calc_fact(cur, p0, p_next)
+    expected = calc_expected(cur, p_year, p_next)
 
     # --- по отделам ---
-    print("=" * 78)
-    print(f"{'Отдел':<55} {'План':>12} {'Факт':>14} {'%':>8}")
-    print("-" * 78)
+    print("=" * 110)
+    print(f"{'Отдел':<55} {'План':>12} {'Факт':>14} {'%':>8} {'Ожидаемо':>14}")
+    print("-" * 110)
 
     report_lines = [
         f"Период: {y}-{m:02d}, на дату {as_of.isoformat()} ({elapsed}/{days_in_month})",
         "",
-        f"{'Отдел':<55} {'План':>14} {'План∝':>14} {'Факт':>14} {'% к ∝':>8}",
-        "-" * 110,
+        f"{'Отдел':<55} {'План':>14} {'План∝':>14} {'Факт':>14} {'% к ∝':>8} {'Ожидаемо':>14}",
+        "-" * 125,
     ]
 
     plan_full_total = 0.0
     plan_prorata_total = 0.0
     fact_total = 0.0
+    expected_total = 0.0
+    commercial = dict(COMMERCIAL_DEPTS)
 
     for name in FACT_ORDER:
         plan_full = plan.get(name, 0.0)
         plan_pr = plan_full * elapsed / days_in_month if name in plan else 0.0
         fact_v = fact.get(name, 0.0)
+        exp_v = expected.get(name, 0.0)
 
         # в итог коммерческого директора по плану — только 6 коммерческих
-        if name in dict(COMMERCIAL_DEPTS):
+        if name in commercial:
             plan_full_total += plan_full
             plan_prorata_total += plan_pr
+            expected_total += exp_v
         fact_total += fact_v
 
-        plan_cell = fmt(plan_full) if name in dict(COMMERCIAL_DEPTS) else "—"
-        print(f"{name:<55} {plan_cell:>12} {fmt(fact_v):>14} {pct(fact_v, plan_pr):>8}")
+        plan_cell = fmt(plan_full) if name in commercial else "—"
+        exp_cell = fmt(exp_v) if name in commercial else "—"
+        print(
+            f"{name:<55} {plan_cell:>12} {fmt(fact_v):>14} "
+            f"{pct(fact_v, plan_pr):>8} {exp_cell:>14}"
+        )
         report_lines.append(
             f"{name:<55} {plan_cell:>14} "
-            f"{fmt(plan_pr) if name in dict(COMMERCIAL_DEPTS) else '—':>14} "
-            f"{fmt(fact_v):>14} {pct(fact_v, plan_pr):>8}"
+            f"{fmt(plan_pr) if name in commercial else '—':>14} "
+            f"{fmt(fact_v):>14} {pct(fact_v, plan_pr):>8} {exp_cell:>14}"
         )
 
-    print("-" * 78)
+    print("-" * 110)
     print(
         f"{'ИТОГО коммерческий директор':<55} "
         f"{fmt(plan_full_total):>12} {fmt(fact_total):>14} "
-        f"{pct(fact_total, plan_prorata_total):>8}"
+        f"{pct(fact_total, plan_prorata_total):>8} {fmt(expected_total):>14}"
     )
     print()
     print(f"План (полный месяц):     {fmt(plan_full_total)}")
     print(f"План (пропорц. {elapsed}/{days_in_month}):  {fmt(plan_prorata_total)}")
     print(f"Факт (всего):            {fmt(fact_total)}")
+    print(f"Ожидаемо (всего):        {fmt(expected_total)}")
     print(f"% к пропорц. плану:      {pct(fact_total, plan_prorata_total)}")
     print(f"% к полному плану:       {pct(fact_total, plan_full_total)}")
 
     report_lines += [
-        "-" * 110,
+        "-" * 125,
         f"{'ИТОГО коммерческий директор':<55} "
         f"{fmt(plan_full_total):>14} {fmt(plan_prorata_total):>14} "
-        f"{fmt(fact_total):>14} {pct(fact_total, plan_prorata_total):>8}",
+        f"{fmt(fact_total):>14} {pct(fact_total, plan_prorata_total):>8} "
+        f"{fmt(expected_total):>14}",
         "",
         f"План полный месяц: {plan_full_total}",
         f"План пропорционально: {plan_prorata_total}",
         f"Факт итого: {fact_total}",
+        f"Ожидаемо итого: {expected_total}",
     ]
     out = OUT_DIR / f"plan_fact_{y}_{m:02d}.txt"
     out.write_text("\n".join(report_lines), encoding="utf-8")

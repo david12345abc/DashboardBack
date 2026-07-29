@@ -1436,6 +1436,14 @@ def get_plans_monthly(year: int | None = None,
     # деньги/договоры/отгрузки ожидаемые воспроизводим по OData-объектам из запросов 1С.
     if _apply_expected_values(computed, ref_y, ref_m):
         logger.info("calc_plan: expected values from 1C HTTP service")
+    elif ref_y < today.year:
+        # Прошлый год: OData-fallback «ожидаемо» слишком тяжёлый и не нужен
+        # для YoY (MRK-04). Оставляем expected=0, план уже из регистра.
+        logger.warning(
+            "calc_plan: expected service unavailable for past year %s; "
+            "skipping OData expected fallback (leave zeros)",
+            ref_y,
+        )
     else:
         logger.warning(
             "calc_plan: expected service unavailable; calculating dengi_expected, "

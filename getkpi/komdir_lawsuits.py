@@ -16,6 +16,8 @@ komdir_lawsuits.py — Выгрузка судов (Document_ТД_Претенз
   - ПлощадкаЮрлицоГК               (ПлощадкаЮрлицоГК_Key → Catalog_Организации.Description)
   - Подразделение инициатора       (ИнициаторЗаказчикВнутриГК_Key → Catalog_Пользователи.Подразделение_Key
                                     → Catalog_СтруктураПредприятия.Description)
+  - КрайнийСрокПоSLA               → sla_date («Дата SLA»)
+  - КраткоеОписаниеСитуации        → situation_summary
 
 Фильтр:
   - Date <= конец выбранного месяца (портфель дел «на дату», не только созданные в месяце);
@@ -43,8 +45,9 @@ logger = logging.getLogger(__name__)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
-LAWSUITS_CACHE_VERSION = 2
+LAWSUITS_CACHE_VERSION = 3
 CLOSED_STATUSES = {"закрыта"}
+EMPTY_1C_DATE_PREFIXES = ("0001-01-01", "0001-01-01T")
 
 # Дети «коммерческого директора» (по structure.json + аналогично komdir_claims.ALLOWED_DEPARTMENTS).
 ALLOWED_DEPARTMENTS = {
@@ -168,6 +171,22 @@ def normalize_lawsuits_rows(raw) -> list[dict]:
         if isinstance(rows, list):
             return [r for r in rows if isinstance(r, dict)]
     return []
+
+
+def _odata_date(value) -> str:
+    """OData DateTime → YYYY-MM-DD; пустая дата 1С → ''."""
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if not s or s.startswith(EMPTY_1C_DATE_PREFIXES):
+        return ""
+    return s[:10]
+
+
+def _odata_multiline_text(value) -> str:
+    if value is None:
+        return ""
+    return str(value).replace("\r\n", "\n").strip()
 
 
 def _load_catalog_full(session: requests.Session,
@@ -357,6 +376,10 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
             "gc_entity": org_names.get(org_key, "") if org_key and org_key != EMPTY else "",
             "initiator_dept": dept_names.get(init_dept_key, ""),
             "initiator_dept_key": init_dept_key,
+            # Document_ТД_ПретензииСудебныеСпорыИсковаяРабота.КрайнийСрокПоSLA
+            "sla_date": _odata_date(d.get("КрайнийСрокПоSLA")),
+            # Document_ТД_ПретензииСудебныеСпорыИсковаяРабота.КраткоеОписаниеСитуации
+            "situation_summary": _odata_multiline_text(d.get("КраткоеОписаниеСитуации")),
         })
 
     return result_rows

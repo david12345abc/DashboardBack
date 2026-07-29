@@ -1216,10 +1216,11 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
         cache_files = _prod_deputy_cache_files_for_kpi(kid, ref_y, ref_m)
     elif kid == 'KD-T-OVERDUE':
         from . import calc_debitorka
+        from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
 
         cache_files = [
             calc_debitorka.overdue_detail_cache_path(ref_y, ref_m),
-            cache_manager.CACHE_DIR / f'debitorka_monthly_{ref_y}_{ref_m:02d}.json',
+            *comdir_cache_stamp_paths('KD-M5', ref_y, ref_m),
         ]
     elif kid == 'IT-M3':
         cache_files = (
@@ -1343,6 +1344,10 @@ def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int 
     elif kid == 'KD-M3':
         paths.append(cd / f'dogovory_monthly_{ref_y}_{ref_m:02d}.json')
         paths.append(cd / f'plans_monthly_{ref_y}_{ref_m:02d}.json')
+    elif kid in {'KD-M4', 'KD-M5'}:
+        from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
+
+        paths.extend(comdir_cache_stamp_paths(kid, ref_y, ref_m))
     elif kid == 'KD-M8':
         paths.append(cd / f'fot_{ref_y}_{ref_m:02d}.json')
     elif kid == 'KD-M11':
@@ -1363,9 +1368,10 @@ def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int 
         paths.append(cd / f'metrolog_certification_projects_ytd_{ref_y}_{ref_m:02d}.json')
     elif kid == 'KD-T-OVERDUE':
         from . import calc_debitorka
+        from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
 
         paths.append(calc_debitorka.overdue_detail_cache_path(ref_y, ref_m))
-        paths.append(cd / f'debitorka_monthly_{ref_y}_{ref_m:02d}.json')
+        paths.extend(comdir_cache_stamp_paths('KD-M5', ref_y, ref_m))
     elif kid == 'FND-T6':
         paths.append(cd / f'psd_portfolio_monthly_{ref_y}_{ref_m:02d}.json')
         for m in range(1, ref_m + 1):
@@ -3158,6 +3164,7 @@ def _build_universal_payload(
                 "columns": [
                     "Тип документа", "Контрагент", "Предмет спора",
                     "Роль ГК в споре", "Юр. лицо", "Подразделение",
+                    "Дата SLA", "Краткое описание ситуации",
                     "Сумма требований, руб.",
                 ],
                 "rows": lawsuit_rows,
@@ -4797,6 +4804,17 @@ def get_kpi(request):
         return JsonResponse({'error': 'User has no department assigned'}, status=400)
 
     requested_dept = request.GET.get('department', user_department)
+    for_raw = request.GET.get('for')
+    # Фронт иногда шлёт label блока («Коммерческий блок») как department → 403.
+    requested_dept, for_from_label = chairman_data.resolve_virtual_block_department(
+        requested_dept,
+        user_department=user_department,
+        for_raw=for_raw,
+    )
+    # Label-as-department всегда задаёт блок; явный for= имеет приоритет.
+    if for_from_label and not (for_raw and str(for_raw).strip()):
+        for_raw = for_from_label
+
     allowed = _get_allowed_departments(user_department)
 
     if requested_dept not in allowed:
@@ -4856,12 +4874,26 @@ def get_kpi(request):
         }, status=404)
 
     if is_own_dashboard and not _is_komdir_department(requested_dept):
+        # Глобальный прогрев всех модулей (GSPP/servhead/…) на минуты блокирует API.
+        # Для виртуальных блоков ПСД (commerce) — только коммерческий warm.
+        for_norm = chairman_data.normalize_chairman_for_param(for_raw) if for_raw else None
+        is_commerce_block = (
+            chairman_data.is_chairman_department(requested_dept)
+            and for_norm == chairman_data.CHAIRMAN_BLOCK_COMMERCE
+        )
         try:
-            today = date.today()
-            cache_manager.start_period_warming_if_stale(
-                req_year if req_year is not None else today.year,
-                req_month if req_month is not None else today.month,
-            )
+            if is_commerce_block:
+                commercial_cache_scheduler.start_first_access_refresh_if_stale(
+                    month=req_month,
+                    year=req_year,
+                    payload_departments=["коммерческий директор"],
+                )
+            else:
+                today = date.today()
+                cache_manager.start_period_warming_if_stale(
+                    req_year if req_year is not None else today.year,
+                    req_month if req_month is not None else today.month,
+                )
         except Exception:
             logger.exception("first-access cache warm failed [%s]", requested_dept)
 
@@ -4883,7 +4915,6 @@ def get_kpi(request):
         )
 
     if chairman_data.is_chairman_department(requested_dept):
-        for_raw = request.GET.get('for')
         payload, for_block = chairman_data.build_chairman_payload_by_for(
             kpis, month=req_month, year=req_year, for_raw=for_raw,
         )
@@ -4928,6 +4959,7 @@ def get_kpi(request):
                     'columns': [
                         'Тип документа', 'Контрагент', 'Предмет спора',
                         'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                        'Дата SLA', 'Краткое описание ситуации',
                         'Сумма требований, руб.',
                     ],
                     'rows': lawsuits_rows,
@@ -4935,6 +4967,8 @@ def get_kpi(request):
             })
             payload['Таблицы'] = tables
         dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
+        # У председателя СД нет расшифровки просроченной ДЗ / «ТОП-10 решений».
+        payload = chairman_data.strip_chairman_overdue_table(payload)
         return JsonResponse(
             {
                 'department': requested_dept,
@@ -5116,6 +5150,7 @@ def get_all_departments(request):
                         'columns': [
                             'Тип документа', 'Контрагент', 'Предмет спора',
                             'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                            'Дата SLA', 'Краткое описание ситуации',
                             'Сумма требований, руб.',
                         ],
                         'rows': lawsuits_rows,
@@ -5123,6 +5158,7 @@ def get_all_departments(request):
                 })
                 payload['Таблицы'] = tables
             dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
+            payload = chairman_data.strip_chairman_overdue_table(payload)
             return JsonResponse(
                 {
                     'department': requested_dept,
@@ -5228,6 +5264,7 @@ def get_all_departments(request):
                         'columns': [
                             'Тип документа', 'Контрагент', 'Предмет спора',
                             'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                            'Дата SLA', 'Краткое описание ситуации',
                             'Сумма требований, руб.',
                         ],
                         'rows': lawsuits_rows,
@@ -5235,6 +5272,7 @@ def get_all_departments(request):
                 })
                 payload['Таблицы'] = tables
             dept_protocol_tables.enrich_payload_tables(payload, dept)
+            payload = chairman_data.strip_chairman_overdue_table(payload)
             return {
                 'department': dept,
                 'for': for_block,
@@ -5623,6 +5661,7 @@ def get_lawsuits_table(request):
             'columns': [
                 'Тип документа', 'Контрагент', 'Предмет спора',
                 'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                'Дата SLA', 'Краткое описание ситуации',
                 'Сумма требований, руб.',
             ],
             'count': data['count'],

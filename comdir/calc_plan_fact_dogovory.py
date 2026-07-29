@@ -23,7 +23,8 @@
   • партнёр не из перепродажи; для ОДП (и ликв. ОПБО) — список без Метрогазсервис
   • если ТД_ОсновноеТКПДляБМИ — берём ТД_СуммаТКПБМИ
   • курсы валют КП
-  • ветка счёт-оферта пока не включена (в SQL 0)
+  • плюс ветка счёт-оферта: заказы по соглашению ТД_СчетОферта,
+    без записи в ТД_ДоговорыПодписанные, с этапом оплаты и остатком КОплате > 0
 """
 from __future__ import annotations
 
@@ -71,10 +72,23 @@ RESALE_PARTNERS = [
 ]
 METROGAZ = bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44")
 
-# Отделы с правилом «перепродажа без МГС»: ОДП + ликв. ОПБО
+# Отделы с правилом «перепродажа без МГС»: ОДП + ликв. дилерские
 ODP_DEPT = bytes.fromhex("96f96cb31113810e11f092f67587c178")  # Отдел дилерских продаж
 OPBO_DEPT = bytes.fromhex("80da001e6711250911e49f994edcf3a0")  # ликв. бытовое
-DEPTS_RESALE_NO_MGS = (ODP_DEPT, OPBO_DEPT)
+OPPO_DEPT = bytes.fromhex("8127001e6711250911e6d71eff740269")  # ликв. пром.
+DEPTS_RESALE_NO_MGS = (ODP_DEPT, OPBO_DEPT, OPPO_DEPT)
+
+# Ликвидированные холдинги → ключевые клиенты
+HOLDINGS_DEPTS: list[tuple[str, str]] = [
+    ("(ликв.) Отдел по работе с холдингами 1", "95e86cb31113810e11efcf32c6810cc3"),
+    ("(ликв.) Отдел по работе с холдингами 2", "95e86cb31113810e11efcf38ebd2d511"),
+    ("(ликв.) Отдел по работе с холдингами 3", "95e86cb31113810e11efcf39ad83f8bd"),
+]
+
+# СоглашенияСКлиентами.ТД_СчетОферта (_Reference473)
+AG_OFFER_FLAG = "_Fld13700"
+
+ORDER_TREF = bytes.fromhex("000002c0")  # Документ.ЗаказКлиента
 
 # КП: ТД_ОсновноеТКПДляБМИ / ТД_СуммаТКПБМИ
 KP_BMI_FLAG = "_Fld184256"
@@ -221,7 +235,7 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     Для ОДП/ОПБО: НЕ партнёр В перепродаже без МГС.
     Иначе: НЕ (партнёр В перепродаже И НЕ ТД_СопровождениеПродажи).
     """
-    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS
+    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
     load_depts(cur, all_depts, "#fact_depts")
     load_resale(cur)
 
@@ -267,9 +281,9 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
-def calc_expected(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """Договоры, ожидаемые к заключению (потенциальные), чёрный список статусов КП."""
-    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS
+def calc_expected_potential(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Договоры, ожидаемые к заключению — ветка потенциальных КП."""
+    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
     load_depts(cur, all_depts, "#exp_depts")
     load_resale(cur)
 
@@ -319,6 +333,76 @@ def calc_expected(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
         *KP_STATUS_BLACKLIST,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+
+
+def calc_expected_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Ветка счёт-оферта: СуммаДокумента заказа при остатке КОплате > 0."""
+    del p0  # оферта завязана на остаток/этапы к концу месяца, не на дату КП
+    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
+    load_depts(cur, all_depts, "#offer_depts")
+    load_resale(cur)
+
+    cur.execute(
+        """
+        SELECT d.name, SUM(ord._Fld21186) AS ExpSum
+        FROM _Document704 ord WITH (NOLOCK)
+        INNER JOIN #offer_depts d ON d.id = ord._Fld21220RRef
+        INNER JOIN _Reference473 a WITH (NOLOCK)
+          ON a._IDRRef = ord._Fld21183RRef
+        WHERE a.[{flag}] = 0x01
+          AND ISNULL(ord._Fld184301, 0x00) = 0x00
+          AND ord._Fld138973RRef <> ?
+          AND EXISTS (
+            SELECT 1 FROM _Document704_VT21278 st WITH (NOLOCK)
+            WHERE st._Document704_IDRRef = ord._IDRRef
+              AND st._Fld21281 < ?
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM _InfoRg112278 s WITH (NOLOCK)
+            WHERE s._Fld112481RRef = ord._IDRRef
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM _AccumRg53885 s WITH (NOLOCK)
+            WHERE s._Fld140429RRef = ord._Fld138973RRef
+              AND s._Period < ?
+              AND s._Active = 0x01
+              AND ISNULL(s._Fld140434, 0x00) = 0x00
+              AND s._Fld53890 <> 0
+            GROUP BY s._Fld140429RRef
+            HAVING SUM(
+              CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END
+            ) > 0
+          )
+          AND (
+                CASE
+                  WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = ord._Fld21220RRef) THEN
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                  ELSE
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                END
+              ) = 1
+        GROUP BY d.name
+        """.replace("{flag}", AG_OFFER_FLAG),
+        EMPTY16,
+        p_next,
+        p_next,
+    )
+    return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+
+
+def calc_expected(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Договоры, ожидаемые к заключению (потенциал КП + счёт-оферта)."""
+    pot = calc_expected_potential(cur, p0, p_next)
+    offer = calc_expected_offer(cur, p0, p_next)
+    out: dict[str, float] = dict(pot)
+    for name, val in offer.items():
+        out[name] = out.get(name, 0.0) + float(val or 0)
+    return out
 
 
 def main(as_of: date | None = None) -> None:
@@ -422,7 +506,7 @@ def main(as_of: date | None = None) -> None:
         "- Ожидаемые: чёрный список статусов КП "
         "(Черновик, НеСогласовано, Аннулировано, Отменено);",
         "  КП заполнен, заказ пуст, коммерч. отделы, перепродажа (ОДП — без МГС), БМИ-сумма",
-        "- Ветка счёт-оферта пока не включена",
+        "- Ветка счёт-оферта: _Reference473._Fld13700 + остаток КОплате + этапы оплаты",
         f"- FX rates: {FX_RATES} (в июле почти все суммы в RUB)",
     ]
     out = OUT_DIR / f"plan_fact_dogovory_{y}_{m:02d}.txt"

@@ -114,13 +114,29 @@ def load_payload(
     return None
 
 
+def _source_family(tag: str | None) -> str:
+    """comdir_kd_m2_ytd_sql_v5 → comdir_kd_m2_ytd_sql (для совместимости версий)."""
+    s = str(tag or "").strip()
+    if "_v" in s:
+        head, tail = s.rsplit("_v", 1)
+        if tail.isdigit():
+            return head
+    return s
+
+
 def load_stale_payload(
     path: Path,
     *,
     source_tag: str,
     version: int,
+    allow_prior_version: bool = False,
 ) -> dict[str, Any] | None:
-    """Payload из файла без проверки ``cache_date`` — fallback при ошибке OData."""
+    """Payload из файла без проверки ``cache_date`` — fallback при ошибке OData.
+
+    ``allow_prior_version``: для полностью прошедших периодов принимать старый
+    ``cache_version`` / ``*_vN`` source_tag той же семьи — иначе bump CACHE_VERSION
+    заставляет синхронно пересчитывать прошлый год (MRK-04 YoY) и блокирует UI.
+    """
     if not path.exists():
         return None
     try:
@@ -128,10 +144,17 @@ def load_stale_payload(
             raw = json.load(f)
     except (json.JSONDecodeError, OSError):
         return None
-    if raw.get("cache_source") != source_tag:
-        return None
-    if raw.get("cache_version") != version:
-        return None
+    raw_src = str(raw.get("cache_source") or "")
+    if raw_src != source_tag:
+        if not (
+            allow_prior_version
+            and _source_family(raw_src) == _source_family(source_tag)
+        ):
+            return None
+    raw_ver = raw.get("cache_version")
+    if raw_ver != version:
+        if not (allow_prior_version and isinstance(raw_ver, int) and raw_ver < version):
+            return None
     payload = raw.get("payload")
     if not isinstance(payload, dict):
         return None
@@ -187,6 +210,7 @@ def resolve_payload(
             path,
             source_tag=source_tag,
             version=version,
+            allow_prior_version=bool(perpetual),
         ),
         compute_fn,
     )

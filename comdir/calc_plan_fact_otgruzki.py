@@ -35,6 +35,27 @@ ORDER_TREF = bytes.fromhex("000002c0")  # Документ.ЗаказКлиен�
 KIND_RECEIPT = bytes.fromhex("b4b5c6b0366e5eac4492529af0e7f236")  # Приход
 KIND_EXPENSE = bytes.fromhex("85662942ac5e614b4aca8d30654dd705")  # Расход
 
+# Партнёры перепродажи (как в dogovory / отчёте 1С)
+RESALE_PARTNERS = [
+    bytes.fromhex("8266ac1f6b05524d11e7a8c56ff45495"),
+    bytes.fromhex("812e001e6711250911e788a06ac41964"),
+    bytes.fromhex("8266ac1f6b05524d11e7a8c46cdfe9f3"),
+    bytes.fromhex("8266ac1f6b05524d11e7a8c74babc7a7"),
+    bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44"),  # Метрогазсервис
+]
+METROGAZ = bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44")
+ODP_DEPT = bytes.fromhex("96f96cb31113810e11f092f67587c178")
+OPBO_DEPT = bytes.fromhex("80da001e6711250911e49f994edcf3a0")
+OPPO_DEPT = bytes.fromhex("8127001e6711250911e6d71eff740269")
+DEPTS_RESALE_NO_MGS = (ODP_DEPT, OPBO_DEPT, OPPO_DEPT)
+
+# Ликвидированные холдинги → ключевые клиенты
+HOLDINGS_DEPTS: list[tuple[str, str]] = [
+    ("(ликв.) Отдел по работе с холдингами 1", "95e86cb31113810e11efcf32c6810cc3"),
+    ("(ликв.) Отдел по работе с холдингами 2", "95e86cb31113810e11efcf38ebd2d511"),
+    ("(ликв.) Отдел по работе с холдингами 3", "95e86cb31113810e11efcf39ad83f8bd"),
+]
+
 COMMERCIAL_DEPTS: list[tuple[str, str]] = [
     ("Отдел по работе с ПАО Газпром", "80da001e6711250911e49f9cbd7b5184"),
     ("Отдел дилерских продаж", "96f96cb31113810e11f092f67587c178"),
@@ -106,6 +127,22 @@ def load_depts(cur, rows: list[tuple[str, str]], table: str = "#depts") -> None:
         cur.execute(f"INSERT INTO {table}(id, name) VALUES (?, ?)", bytes.fromhex(hx), name)
 
 
+def load_resale(cur) -> None:
+    cur.execute("IF OBJECT_ID('tempdb..#resale') IS NOT NULL DROP TABLE #resale")
+    cur.execute("CREATE TABLE #resale (id binary(16) PRIMARY KEY)")
+    for p in RESALE_PARTNERS:
+        cur.execute("INSERT INTO #resale(id) VALUES (?)", p)
+    cur.execute("IF OBJECT_ID('tempdb..#resale_nomgs') IS NOT NULL DROP TABLE #resale_nomgs")
+    cur.execute("CREATE TABLE #resale_nomgs (id binary(16) PRIMARY KEY)")
+    for p in RESALE_PARTNERS:
+        if p != METROGAZ:
+            cur.execute("INSERT INTO #resale_nomgs(id) VALUES (?)", p)
+    cur.execute("IF OBJECT_ID('tempdb..#dept_nomgs') IS NOT NULL DROP TABLE #dept_nomgs")
+    cur.execute("CREATE TABLE #dept_nomgs (id binary(16) PRIMARY KEY)")
+    for d in DEPTS_RESALE_NO_MGS:
+        cur.execute("INSERT INTO #dept_nomgs(id) VALUES (?)", d)
+
+
 def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     load_depts(cur, COMMERCIAL_DEPTS, "#plan_depts")
     cur.execute(
@@ -127,8 +164,9 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
 
 def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     """Отгрузки произведённые: расход по РаспоряженияНаОтгрузку."""
-    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS
+    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
     load_depts(cur, all_depts, "#fact_depts")
+    load_resale(cur)
     cur.execute(
         """
         SELECT d.name, SUM(-s._Fld169768) AS FactSum
@@ -138,11 +176,24 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
         INNER JOIN #fact_depts d ON d.id = o._Fld21220RRef
         WHERE s._Period >= ? AND s._Period < ?
           AND s._Active = 0x01
+          AND ISNULL(s._Fld169770, 0x00) = 0x00
           AND s._Fld169758_RTRef = ?
           AND s._Fld169764RRef = ?
           AND o._Fld21183RRef <> ?
           AND ISNULL(o._Fld184301, 0x00) = 0x00
-          AND ISNULL(o._Fld185210, 0x00) = 0x00
+          AND ISNULL(o._Fld185211, 0x00) = 0x00
+          AND (
+                CASE
+                  WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = o._Fld21220RRef) THEN
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale_nomgs r WHERE r.id = o._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                  ELSE
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale r WHERE r.id = o._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                END
+              ) = 1
         GROUP BY d.name
         """,
         p0,
@@ -156,8 +207,9 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
 
 def calc_expected(cur, p_month_end: datetime) -> dict[str, float]:
     """Заказы ожидаемые к отгрузке: остаток > 0, ДатаОтгрузки < конец месяца."""
-    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS
+    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
     load_depts(cur, all_depts, "#exp_depts")
+    load_resale(cur)
     empty_date = datetime(4001, 1, 2)  # «пустая» дата 1С с запасом
     cur.execute(
         """
@@ -171,12 +223,25 @@ def calc_expected(cur, p_month_end: datetime) -> dict[str, float]:
             ON o._IDRRef = s._Fld169758_RRRef
           WHERE s._Period < ?
             AND s._Active = 0x01
+            AND ISNULL(s._Fld169770, 0x00) = 0x00
             AND s._Fld169758_RTRef = ?
             AND o._Fld21183RRef <> ?
             AND o._Fld21205 < ?
             AND o._Fld21205 > ?
             AND ISNULL(o._Fld184301, 0x00) = 0x00
-            AND ISNULL(o._Fld185210, 0x00) = 0x00
+            AND ISNULL(o._Fld185211, 0x00) = 0x00
+            AND (
+                  CASE
+                    WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = o._Fld21220RRef) THEN
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM #resale_nomgs r WHERE r.id = o._Fld21180RRef
+                      ) THEN 0 ELSE 1 END
+                    ELSE
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM #resale r WHERE r.id = o._Fld21180RRef
+                      ) THEN 0 ELSE 1 END
+                  END
+                ) = 1
           GROUP BY o._Fld21220RRef, s._Fld169758_RRRef
           HAVING SUM(s._Fld169768) > 0
         ) x

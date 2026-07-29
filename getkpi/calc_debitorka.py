@@ -764,9 +764,12 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
     na_datu_str = na_datu.isoformat()
     overdue_cutoff = f"{na_datu_str}T00:00:00"
     dept_keys_lower = {d.lower() for d in DEPARTMENTS}
+    liquidated_keys_lower = {k.lower() for k in LIQUIDATED_DEPT_NAMES}
+    allowed_depts = dept_keys_lower | liquidated_keys_lower
 
     per_order: dict[str, dict] = defaultdict(lambda: {
         "dept": "",
+        "source_dept": "",
         "dz_net": 0.0,
         "kz_net": 0.0,
         "overdue_net": 0.0,
@@ -784,12 +787,17 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
         cat = obj_catalog.get(obj_key)
         if not cat:
             continue
-        dept = cat["dept"]
-        if dept not in dept_keys_lower:
+        source_dept = (cat.get("source_dept") or cat["dept"] or "").lower()
+        dept = (cat.get("dept") or "").lower()
+        # Ликвидированные: в итоге комдира учитываем по исходному GUID
+        # (дилерские не алиасятся в ОДП — см. DEBITORKA_DEPT_ALIASES).
+        effective = source_dept if source_dept in liquidated_keys_lower else dept
+        if effective not in allowed_depts:
             continue
 
         entry = per_order[obj_key]
         entry["dept"] = dept
+        entry["source_dept"] = source_dept
         entry["dz_net"] += dolg_val
         entry["kz_net"] += predoplata_val
 
@@ -804,37 +812,42 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
     aging_by_dept: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
     for data in per_order.values():
+        source_dept = data["source_dept"]
         dept = data["dept"]
-        dept_name = DEPARTMENTS.get(dept, dept[:8])
+        if source_dept in liquidated_keys_lower:
+            dept_name = LIQUIDATED_DEPT_NAMES.get(source_dept, source_dept[:8])
+        else:
+            dept_name = DEPARTMENTS.get(dept, dept[:8])
         dz_net = data["dz_net"]
         kz_net = data["kz_net"]
         overdue_net = data["overdue_net"]
 
-        if dz_net > TOLERANCE:
-            dz_by_dept[dept_name] += dz_net
-        if kz_net > TOLERANCE:
-            kz_by_dept[dept_name] += kz_net
-        if overdue_net > TOLERANCE:
-            overdue_by_dept[dept_name] += overdue_net
-            for b, amt in data["aging_buckets"].items():
-                if amt > TOLERANCE:
-                    aging_by_dept[dept_name][b] += amt
+        # Как в SQL comdir: без фильтра «только +заказы» — сверка с 1С ~323.93M.
+        dz_by_dept[dept_name] += dz_net
+        kz_by_dept[dept_name] += kz_net
+        overdue_by_dept[dept_name] += overdue_net
+        for b, amt in data["aging_buckets"].items():
+            aging_by_dept[dept_name][b] += amt
 
     depts_all = sorted(
-        set(list(dz_by_dept.keys()) + list(kz_by_dept.keys()) + list(overdue_by_dept.keys()))
+        d
+        for d in set(list(dz_by_dept.keys()) + list(kz_by_dept.keys()) + list(overdue_by_dept.keys()))
+        if abs(dz_by_dept.get(d, 0)) >= TOLERANCE
+        or abs(kz_by_dept.get(d, 0)) >= TOLERANCE
+        or abs(overdue_by_dept.get(d, 0)) >= TOLERANCE
     )
 
     return {
         "na_datu": na_datu_str,
         "dept_alias_source": DEPT_ALIAS_SOURCE,
         "total_dz": round(sum(dz_by_dept.values()), 2),
-        "total_kz": round(sum(kz_by_dept.values()), 2),
+        "total_kz": round(sum(max(0.0, v) for v in kz_by_dept.values()), 2),
         "total_overdue": round(sum(overdue_by_dept.values()), 2),
         "kz_source": "predoplata_upr",
         "by_dept": {
             d: {
                 "dz": round(dz_by_dept.get(d, 0), 2),
-                "kz": round(kz_by_dept.get(d, 0), 2),
+                "kz": round(max(0.0, kz_by_dept.get(d, 0)), 2),
                 "overdue": round(overdue_by_dept.get(d, 0), 2),
                 "aging": {b: round(aging_by_dept[d].get(b, 0), 2) for b in BUCKETS},
             }

@@ -439,17 +439,31 @@ def try_serve_dashboard_disk_cache(
 
 def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     """Список (key, cache_path, compute_fn) для всех источников данных."""
+    from comdir import (
+        get_cena_ytd,
+        get_debitorka_ytd,
+        get_dengi_ytd,
+        get_dogovory_ytd,
+        get_fot_ytd,
+        get_otgruzki_ytd,
+        get_rashody_ytd,
+        get_shipment_share_bmi_gazprom_monthly,
+        get_tkp_sla_ytd,
+        get_vp_ytd,
+    )
+    from comdir.mrk06_share import cache_stamp_path as mrk06_cache_path
+    from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
     from . import (
-        calc_debitorka, calc_dengi_fact, calc_dogovory_fact,
+        calc_debitorka,
         calc_logistics_price_deviation, calc_logistics_supplier_share, calc_logistics_tmc_on_time,
-        calc_dz_limits, calc_fot, calc_komdir_active_dealers, calc_kp_price, calc_ks_razvitie,
-        calc_otgruzki_fact, calc_otif_vypusk_zam_proizvodstva,         calc_plan,
+        calc_dz_limits, calc_komdir_active_dealers, calc_ks_razvitie,
+        calc_otif_vypusk_zam_proizvodstva,
         calc_psd_vipusk_plan,
         calc_prod_deputy_output, calc_prod_deputy_pc, calc_prod_deputy_projects,
-        calc_prod_deputy_turnover, calc_rashody,
+        calc_prod_deputy_turnover,
         calc_reclamations,
         calc_svoevremennaya_otgruzka,
-        calc_tekuchest, calc_tkp_sla, valovaya_pribyl,
+        calc_tekuchest,
         calc_metrolog_budget, calc_metrolog_fot, calc_metrolog_production_plan,
         calc_metrolog_projects, calc_metrolog_turnover,
         techdir_m3, techdir_m4, techdir_m5, techdir_m6_bdds, techdir_projects, techdir_tekuchet,
@@ -516,50 +530,50 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     y, m = ref_y, ref_m
     cd = CACHE_DIR
 
+    def _comdir_path(kpi_id: str) -> Path:
+        paths = comdir_cache_stamp_paths(kpi_id, y, m)
+        return paths[0] if paths else cd / f"comdir_{kpi_id}_{y}_{m:02d}.json"
+
     tasks: list[tuple[str, Path, object]] = [
-        (f'dengi_{y}_{m}',
-         cd / f'dengi_monthly_{y}_{m:02d}.json',
-         lambda: calc_dengi_fact.get_dengi_monthly(year=y, month=m)),
+        (f'comdir_dengi_{y}_{m}',
+         _comdir_path('KD-M1'),
+         lambda: get_dengi_ytd(year=y, month=m)),
 
-        (f'otgruzki_{y}_{m}',
-         cd / f'otgruzki_monthly_{y}_{m:02d}.json',
-         lambda: calc_otgruzki_fact.get_otgruzki_monthly(year=y, month=m)),
+        (f'comdir_otgruzki_{y}_{m}',
+         _comdir_path('KD-M2'),
+         lambda: get_otgruzki_ytd(year=y, month=m)),
 
-        (f'dogovory_{y}_{m}',
-         cd / f'dogovory_monthly_{y}_{m:02d}.json',
-         lambda: calc_dogovory_fact.get_dogovory_monthly(year=y, month=m)),
-
-        (f'plans_{y}_{m}',
-         cd / f'plans_monthly_{y}_{m:02d}.json',
-         lambda: calc_plan.get_plans_monthly(year=y, month=m)),
+        (f'comdir_dogovory_{y}_{m}',
+         _comdir_path('KD-M3'),
+         lambda: get_dogovory_ytd(year=y, month=m)),
 
         (f'psd_vipusk_{y}_{m}',
          calc_psd_vipusk_plan._cache_path_monthly(y, m),
          lambda: calc_psd_vipusk_plan.get_psd_vipusk_plan_monthly(year=y, ref_month=m)),
 
-        (f'debitorka_{y}_{m}',
-         cd / f'debitorka_monthly_{y}_{m:02d}.json',
-         lambda: calc_debitorka.get_komdir_dz_monthly(year=y, month=m)),
+        (f'comdir_debitorka_{y}_{m}',
+         _comdir_path('KD-M4'),
+         lambda: get_debitorka_ytd(year=y, month=m)),
 
         ('dz_limits',
          cd / 'dz_limits_latest.json',
          calc_dz_limits.get_overdue_limits),
 
-        (f'rashody_{y}_{m}',
-         cd / f'rashody_{y}_{m:02d}.json',
-         lambda: calc_rashody.get_rashody_monthly(year=y, month=m)),
+        (f'comdir_rashody_{y}_{m}',
+         _comdir_path('KD-M7'),
+         lambda: get_rashody_ytd(year=y, month=m)),
 
-        (f'fot_{y}_{m}',
-         cd / f'fot_{y}_{m:02d}.json',
-         lambda: calc_fot.get_fot_monthly(year=y, month=m)),
+        (f'comdir_fot_{y}_{m}',
+         _comdir_path('KD-M8'),
+         lambda: get_fot_ytd(year=y, month=m)),
 
-        (f'kp_price_{y}_{m}',
-         cd / f'kp_price_{y}_{m:02d}.json',
-         lambda: calc_kp_price.get_kp_price_monthly(year=y, month=m)),
+        (f'comdir_cena_{y}_{m}',
+         _comdir_path('KD-M9'),
+         lambda: get_cena_ytd(year=y, month=m)),
 
-        (f'tkp_sla_{y}_{m}',
-         cd / f'tkp_sla_{y}_{m:02d}.json',
-         lambda: calc_tkp_sla.get_tkp_sla_monthly(year=y, month=m)),
+        (f'comdir_tkp_sla_{y}_{m}',
+         _comdir_path('KD-M10'),
+         lambda: get_tkp_sla_ytd(year=y, month=m)),
 
         (f'tekuchest_{y}_{m}',
          cd / f'tekuchest_{y}_{m:02d}.json',
@@ -577,9 +591,13 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          calc_debitorka.overdue_detail_cache_path(y, m),
          lambda: calc_debitorka.get_overdue_detail(year=y, month=m)),
 
-        ('vp',
-         cd / 'vp_result_cache.json',
-         valovaya_pribyl.get_vp_ytd),
+        (f'comdir_vp_{y}_{m}',
+         _comdir_path('KD-M6'),
+         lambda: get_vp_ytd(year=y, month=m)),
+
+        (f'comdir_mrk06_share_{y}_{m}',
+         mrk06_cache_path(y, m),
+         lambda: get_shipment_share_bmi_gazprom_monthly(year=y, month=m)),
 
         (f'claims_{y}_{m}',
          cd / f'claims_{y}_{m:02d}.json',
