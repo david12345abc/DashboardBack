@@ -1,6 +1,6 @@
 """HRD-M1 — критические вакансии типа A, закрытые в срок.
 
-Источник: ``HC_сводный_{year}_{Месяц}.xls`` из каталога HR-отчётов, лист ``Вакансии``.
+Источник: ``HC_сводный_{year}_{Месяц}.xls[x]`` из каталога HR-отчётов, лист ``Вакансии``.
 Для месяца *m* читается файл этого месяца; в расчёт попадают строки, у которых
 «Месяц закрытия план» совпадает с месяцем файла.
 План месяца — число таких вакансий типа A (дата закрытия факт может быть пустой).
@@ -20,14 +20,14 @@ import xlrd
 from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
+from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, open_hc_workbook, reports_mtime_ns
 
 logger = logging.getLogger(__name__)
 
 SHEET_NAME = "Вакансии"
 CACHE_PREFIX = "sup_hrd_m1_vacancies"
-CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v6_hc_plan_month"
-CACHE_VERSION = 8
+CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v9_table_by_month"
+CACHE_VERSION = 11
 
 MONTH_NAME_TO_NUM: dict[str, int] = {
     "январь": 1,
@@ -79,7 +79,7 @@ def _normalize_type(value: Any) -> str:
     return str(value or "").strip().upper().replace("А", "A")
 
 
-def _parse_date(value: Any, *, book: xlrd.Book | None = None) -> date | None:
+def _parse_date(value: Any, *, book: Any = None) -> date | None:
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
@@ -112,7 +112,7 @@ def _format_date(value: date | None) -> str:
     return value.strftime("%d.%m.%Y") if value is not None else ""
 
 
-def _open_vacancies_sheet(book: xlrd.Book):
+def _open_vacancies_sheet(book: Any):
     target = SHEET_NAME.strip().lower().replace("ё", "е")
     for name in book.sheet_names():
         if name.strip().lower().replace("ё", "е") == target:
@@ -120,7 +120,7 @@ def _open_vacancies_sheet(book: xlrd.Book):
     raise KeyError(f"Лист {SHEET_NAME!r} не найден")
 
 
-def _find_header_row(sheet: xlrd.sheet.Sheet) -> tuple[int, dict[str, int]]:
+def _find_header_row(sheet: Any) -> tuple[int, dict[str, int]]:
     required = {"авс", "месяцзакрытияплан", "месяцзакрытияфакт"}
     for row_idx in range(sheet.nrows):
         row = sheet.row_values(row_idx)
@@ -198,14 +198,17 @@ def _load_vacancies_for_report_month(
         debug["status"] = "missing_file"
         return [], debug
 
+    book = None
     try:
-        book = xlrd.open_workbook(str(path))
+        book = open_hc_workbook(path)
         sheet = _open_vacancies_sheet(book)
         header_row, headers = _find_header_row(sheet)
     except Exception as exc:
         logger.warning("HRD-M1: не удалось прочитать %s: %s", path, exc)
         debug["status"] = "read_error"
         debug["error"] = str(exc)
+        if book is not None and hasattr(book, "close"):
+            book.close()
         return [], debug
 
     included: list[dict[str, Any]] = []
@@ -253,6 +256,8 @@ def _load_vacancies_for_report_month(
         "skipped_plan_month": skipped_plan_month,
         "excluded_total": excluded_count,
     })
+    if hasattr(book, "close"):
+        book.close()
     return included, debug
 
 
@@ -348,10 +353,13 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
     vacancies_by_month, debug = _load_monthly_vacancies(ref_y, ref_m)
 
     monthly_rows: list[dict[str, Any]] = []
+    tables_by_month: dict[str, Any] = {}
     for m in range(1, ref_m + 1):
         month_items = vacancies_by_month.get(m, [])
         plan = len(month_items)
         fact = sum(1 for item in month_items if item["on_time"])
+        late_table = _late_vacancies_table(month_items, ref_y, m)
+        tables_by_month[str(m)] = late_table
         monthly_rows.append({
             "month": m,
             "year": ref_y,
@@ -361,43 +369,35 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
             "kpi_pct": round(fact / plan * 100, 2) if plan > 0 else None,
             "has_data": plan > 0,
             "values_unit": "шт.",
+            # чтобы фронт при смене месяца без ?month= мог взять строки отсюда
+            "late_vacancies_table": late_table,
         })
 
-    # Незакрытый/пустой месяц (июль plan=0) не берём опорой — иначе плитка 0/0,
-    # а таблица «не в срок» пустая, хотя во фронте видны цифры прошлого месяца.
-    display_row = next(
-        (row for row in reversed(monthly_rows) if row.get("has_data")),
+    # Плитка и таблица — строго за выбранный месяц дашборда (ref_m).
+    ref_row = next(
+        (row for row in monthly_rows if int(row["month"]) == ref_m),
         monthly_rows[-1] if monthly_rows else None,
     )
-    display_m = int(display_row["month"]) if display_row else ref_m
-    display_vacancies = vacancies_by_month.get(display_m, [])
-
-    # В таблицу — не в срок за опорный месяц; если там пусто, добираем из
-    # более ранних месяцев периода (типичный кейс: май 14/13 при дашборде «июль»).
-    table_m = display_m
-    table_vacancies = display_vacancies
-    if not any(not item.get("on_time") for item in table_vacancies):
-        for m in range(display_m, 0, -1):
-            month_items = vacancies_by_month.get(m, [])
-            if any(not item.get("on_time") for item in month_items):
-                table_m = m
-                table_vacancies = month_items
-                break
+    # last_full_month_row без late_vacancies_table (тяжёлый вложенный блок)
+    tile_row = None
+    if ref_row is not None:
+        tile_row = {k: v for k, v in ref_row.items() if k != "late_vacancies_table"}
+    table_vacancies = vacancies_by_month.get(ref_m, [])
 
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
-        "last_full_month_row": dict(display_row) if display_row else None,
+        "last_full_month_row": tile_row,
         "kpi_period": {
             "type": "last_full_month",
             "year": ref_y,
-            "month": display_m,
-            "month_name": MONTH_NAMES[display_m],
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
         },
         "ytd": {
-            "total_plan": display_row.get("plan") if display_row else None,
-            "total_fact": display_row.get("fact") if display_row else None,
-            "kpi_pct": display_row.get("kpi_pct") if display_row else None,
+            "total_plan": (tile_row or {}).get("plan"),
+            "total_fact": (tile_row or {}).get("fact"),
+            "kpi_pct": (tile_row or {}).get("kpi_pct"),
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
             "values_unit": "шт.",
@@ -413,14 +413,15 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
         },
         "tables": {
             "HRD-T-M1-LATE-VACANCIES": _late_vacancies_table(
-                table_vacancies, ref_y, table_m,
+                table_vacancies, ref_y, ref_m,
             ),
+            "HRD-T-M1-LATE-VACANCIES-BY-MONTH": tables_by_month,
         },
         "debug": {
             "kpi_id": "HRD-M1",
             "status": "ok",
-            "display_month": display_m,
-            "late_table_month": table_m,
+            "display_month": ref_m,
+            "late_table_month": ref_m,
             "rule": (
                 "HC_сводный_{year}_{Month}.xls / sheet Вакансии; "
                 "plan close month = report file month; type A; "

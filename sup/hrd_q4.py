@@ -18,7 +18,7 @@ import xlrd
 from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
+from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, open_hc_workbook, reports_mtime_ns
 from sup.hrd_m4 import _kpi_pct_from_plan_fact, _safe_percent
 
 logger = logging.getLogger(__name__)
@@ -27,8 +27,8 @@ HC_SHEET_NAME = "Текучесть"
 HC_FACT_COLUMN = 3  # D
 
 CACHE_PREFIX = "sup_hrd_q4_adaptation"
-CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v6"
-CACHE_VERSION = 6
+CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v7_hc_xlsx"
+CACHE_VERSION = 7
 
 # Накопительный план с января: месяц × 1,5 п.п.
 PLAN_PCT_PER_MONTH = 1.5
@@ -63,32 +63,34 @@ def _read_fact_from_hc_report(path: Path) -> tuple[float, dict[str, Any]]:
         debug["status"] = "missing_file"
         return 0.0, debug
 
+    book = None
     try:
-        book = xlrd.open_workbook(str(path))
+        book = open_hc_workbook(path)
         sheet = _open_tekuchest_sheet(book)
+        raw_value: Any = None
+        row_idx: int | None = None
+        for row in range(sheet.nrows - 1, -1, -1):
+            value = sheet.cell_value(row, HC_FACT_COLUMN)
+            if value not in (None, ""):
+                raw_value = value
+                row_idx = row
+                break
+        fact = _fact_from_cell(raw_value)
+        debug.update({
+            "status": "ok",
+            "row": (row_idx + 1) if row_idx is not None else None,
+            "raw_fact": raw_value,
+            "fact": fact,
+        })
+        return fact, debug
     except Exception as exc:
         logger.warning("HRD-Q4: не удалось прочитать %s: %s", path, exc)
         debug["status"] = "read_error"
         debug["error"] = str(exc)
         return 0.0, debug
-
-    raw_value: Any = None
-    row_idx: int | None = None
-    for row in range(sheet.nrows - 1, -1, -1):
-        value = sheet.cell_value(row, HC_FACT_COLUMN)
-        if value not in (None, ""):
-            raw_value = value
-            row_idx = row
-            break
-
-    fact = _fact_from_cell(raw_value)
-    debug.update({
-        "status": "ok",
-        "row": (row_idx + 1) if row_idx is not None else None,
-        "raw_fact": raw_value,
-        "fact": fact,
-    })
-    return fact, debug
+    finally:
+        if book is not None and hasattr(book, "close"):
+            book.close()
 
 
 def _read_monthly_rows(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:

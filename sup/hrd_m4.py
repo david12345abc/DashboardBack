@@ -17,14 +17,14 @@ import xlrd
 from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, reports_mtime_ns
+from sup.hc_reports import HC_REPORTS_DIR, hc_report_path, open_hc_workbook, reports_mtime_ns
 
 logger = logging.getLogger(__name__)
 
 SHEET_NAME = "Текучесть"
 CACHE_PREFIX = "sup_hrd_m4_turnover"
-CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v4_hc"
-CACHE_VERSION = 4
+CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v5_hc_xlsx"
+CACHE_VERSION = 5
 
 FACT_ROW = 10
 PLAN_ROW = 11
@@ -111,17 +111,21 @@ def _read_turnover_for_month(
         debug["status"] = "missing_file"
         return None, None, debug
 
+    book = None
     try:
-        book = xlrd.open_workbook(str(path))
+        book = open_hc_workbook(path)
         sheet = _open_tekuchest_sheet(book)
+        raw_fact = sheet.cell_value(FACT_ROW - 1, column - 1)
+        raw_plan = sheet.cell_value(PLAN_ROW - 1, column - 1)
     except Exception as exc:
         logger.warning("HRD-M4: не удалось прочитать %s: %s", path, exc)
         debug["status"] = "read_error"
         debug["error"] = str(exc)
         return None, None, debug
+    finally:
+        if book is not None and hasattr(book, "close"):
+            book.close()
 
-    raw_fact = sheet.cell_value(FACT_ROW - 1, column - 1)
-    raw_plan = sheet.cell_value(PLAN_ROW - 1, column - 1)
     fact = _safe_percent(raw_fact)
     plan = _safe_percent(raw_plan)
     debug.update({

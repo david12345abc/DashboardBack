@@ -15,6 +15,7 @@ SUP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = SUP_KPI_IDS
 SUP_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({"HRD-M2"})
 SUP_BUDGET_LIMIT_KPI_IDS: frozenset[str] = frozenset({"HRD-M3"})
 SUP_TURNOVER_FACT_RAG_IDS: frozenset[str] = frozenset({"HRD-M4", "HRD-Q4"})
+SUP_HIGHER_BETTER_90_80_IDS: frozenset[str] = frozenset({"HRD-M1"})
 
 
 def _normalize_sup_kpi_id(kpi_id: str) -> str:
@@ -33,7 +34,6 @@ def is_sup_tile_kpi_id(kpi_id: str) -> bool:
 
 def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     """Файлы кэша, по mtime которых на плитке показывается ``cache_updated_at``."""
-    from sup.hc_reports import hc_report_path
     from sup.hrd_m1 import cache_file_path_for_period as hrd_m1_cache
     from sup.hrd_m2 import cache_file_path_for_period as hrd_m2_cache, monthly_cache_path as hrd_m2_monthly
     from sup.hrd_m3 import cache_file_path_for_period as hrd_m3_cache, monthly_cache_path as hrd_m3_monthly
@@ -44,9 +44,10 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     paths: list[Path] = []
 
     if kid == "HRD-M1":
+        # Только JSON-кэш расчёта. HC_сводный_*.xls не включаем: иначе
+        # «Обновлено» залипает на дате файла HR (напр. 02.07), хотя плитку
+        # пересчитали сегодня. Инвалидация по xls — через source_mtime_ns в hrd_m1.
         paths.append(hrd_m1_cache(ref_y, ref_m))
-        for m in range(1, ref_m + 1):
-            paths.append(hc_report_path(ref_y, m))
     elif kid == "HRD-M2":
         paths.extend([
             hrd_m2_cache(ref_y, ref_m),
@@ -59,14 +60,21 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
         ])
     elif kid == "HRD-M4":
         paths.append(hrd_m4_cache(ref_y, ref_m))
-        for m in range(1, ref_m + 1):
-            paths.append(hc_report_path(ref_y, m))
     elif kid == "HRD-Q4":
         paths.append(hrd_q4_cache(ref_y, ref_m))
-        for m in range(1, ref_m + 1):
-            paths.append(hc_report_path(ref_y, m))
 
     return paths
+
+
+def rag_hrd_m1_pct(pct: float | None) -> str:
+    """HRD-M1: ≥90 % — зелёный, 80–89,9 % — жёлтый, <80 % — красный (пороги из БД)."""
+    if pct is None:
+        return "unknown"
+    if pct >= 90:
+        return "green"
+    if pct >= 80:
+        return "yellow"
+    return "red"
 
 
 def rag_hrd_turnover_fact_pct(fact_pct: float | None, *, kpi_id: str) -> str:
@@ -135,3 +143,11 @@ def merge_sup_tables_into_universal_payload(
     for key, table in tables.items():
         if isinstance(table, dict):
             tablitsy[key] = table
+
+    # Если фронт меняет месяц без ?month=, подменяем основную таблицу
+    # из BY-MONTH по запрошенному ref_m (уже лежит в payload).
+    by_month = tables.get("HRD-T-M1-LATE-VACANCIES-BY-MONTH")
+    if isinstance(by_month, dict):
+        chosen = by_month.get(str(ref_m)) or by_month.get(ref_m)
+        if isinstance(chosen, dict):
+            tablitsy["HRD-T-M1-LATE-VACANCIES"] = chosen
