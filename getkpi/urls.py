@@ -21,4 +21,9 @@ urlpatterns = [
     path('cache-refresh/', views.refresh_kpi_tile_cache, name='refresh-kpi-tile-cache'),
     path('cache-status/', views.get_cache_status, name='cache-status'),
     path('lawsuits-table/', views.get_lawsuits_table, name='lawsuits-table'),
+    path(
+        'logistics/tmc-deliveries/',
+        views.get_logistics_tmc_deliveries,
+        name='logistics-tmc-deliveries',
+    ),
 ]

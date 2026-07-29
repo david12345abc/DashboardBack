@@ -351,9 +351,13 @@ def apply_tile_overrides(kpi: dict, tile: dict) -> None:
 def apply_tile_value_overrides(kpi: dict, tile: dict, entry: dict) -> None:
     if kpi.get("kpi_id") == "LOG-M2":
         row = entry.get("last_full_month_row") or {}
-        tile["plan"] = row.get("display_plan")
-        tile["fact"] = row.get("display_fact")
-        tile["unit"] = row.get("display_unit") or "%"
+        tile["plan"] = row.get("plan")
+        tile["fact"] = row.get("fact")
+        tile["kpi_pct"] = row.get("kpi_pct")
+        tile["percent"] = row.get("kpi_pct")
+        tile["kpi_pct_is_deviation"] = True
+        tile["unit"] = "руб."
+        tile["units"] = "руб."
         tile["has_data"] = bool(row.get("has_data"))
         return
 

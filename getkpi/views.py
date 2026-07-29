@@ -5778,6 +5778,45 @@ def get_users_departments(request):
     )
 
 
+@require_GET
+@login_required
+def get_logistics_tmc_deliveries(request):
+    """Полная детализация LOG-M1 из MSSQL: факт, план и статус каждой строки."""
+    from .calc_logistics_tmc_on_time import get_logistics_tmc_deliveries
+
+    today = date.today()
+    try:
+        year = int(request.GET.get('year') or today.year)
+        month = int(request.GET.get('month') or today.month)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'month/year must be integers'}, status=400)
+    if not 1 <= month <= 12:
+        return JsonResponse({'error': 'month must be between 1 and 12'}, status=400)
+
+    status_filter = str(request.GET.get('status') or 'all').strip().lower()
+    allowed_statuses = {'all', 'on_time', 'overdue', 'without_order'}
+    if status_filter not in allowed_statuses:
+        return JsonResponse(
+            {'error': f"status must be one of: {', '.join(sorted(allowed_statuses))}"},
+            status=400,
+        )
+
+    try:
+        payload = get_logistics_tmc_deliveries(year=year, month=month)
+    except Exception:
+        logger.exception("Не удалось выгрузить поставки LOG-M1 из MSSQL")
+        return JsonResponse({'error': 'Failed to load logistics deliveries'}, status=500)
+
+    if status_filter != 'all':
+        payload['rows'] = [
+            row for row in payload.get('rows', [])
+            if row.get('status') == status_filter
+        ]
+    payload['status_filter'] = status_filter
+    payload['returned_rows'] = len(payload.get('rows', []))
+    return JsonResponse(payload, json_dumps_params={'ensure_ascii': False})
+
+
 @require_http_methods(["GET", "POST"])
 @login_required
 def refresh_kpi_tile_cache(request):

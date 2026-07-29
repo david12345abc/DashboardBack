@@ -10,8 +10,10 @@ import requests
 from .calc_budget_limit import AUTH, BASE
 from .cache_manager import CACHE_DIR
 from .calc_fot_management import MONTH_RU, _normalize_period
+from .logistics_tmc_on_time_sql import calculate_month, load_delivery_rows
+from sql_connection import SqlConnection
 
-SOURCE_TAG = "logistics_tmc_on_time_v1"
+SOURCE_TAG = "logistics_tmc_on_time_v4_mssql_fields"
 RECEIPT_ENTITY = "Document_ПриобретениеТоваровУслуг"
 ORDER_ENTITY = "Document_ЗаказПоставщику"
 TABULAR_FIELD = "Товары"
@@ -153,58 +155,12 @@ def _planned_date_from_order(order: dict | None, receipt_row: dict) -> datetime 
     return fallback or _parse_dt(order.get("ЖелаемаяДатаПоступления")) or _parse_dt(order.get("ДатаПоступления"))
 
 
-def _build_month(session: requests.Session, year: int, month: int) -> dict:
-    receipts = _load_receipts(session, year, month)
-    order_keys: set[str] = set()
-    for doc in receipts:
-        for row in doc.get(TABULAR_FIELD) or []:
-            if isinstance(row, dict):
-                order_key = _receipt_order_key(doc, row)
-                if order_key:
-                    order_keys.add(order_key)
-    order_cache = _load_orders_batch(session, order_keys)
-
-    total = 0
-    on_time = 0
-    overdue = 0
-    without_order = 0
-    debug_rows = []
-
-    for doc in receipts:
-        fact_dt = _parse_dt(doc.get("Date"))
-        if not fact_dt:
-            continue
-        for row in doc.get(TABULAR_FIELD) or []:
-            if not isinstance(row, dict):
-                continue
-            if _is_empty_guid(row.get("Номенклатура_Key")):
-                continue
-            if _to_float(row.get("Количество")) <= 0:
-                continue
-
-            order_key = _receipt_order_key(doc, row)
-            order = order_cache.get(order_key) if order_key else None
-            plan_dt = _planned_date_from_order(order, row)
-            if not order or not plan_dt:
-                without_order += 1
-                continue
-
-            total += 1
-            if fact_dt.date() <= plan_dt.date():
-                on_time += 1
-            else:
-                overdue += 1
-            if len(debug_rows) < 50:
-                debug_rows.append({
-                    "receipt": doc.get("Number"),
-                    "receipt_date": doc.get("Date"),
-                    "order_key": order_key,
-                    "plan_date": plan_dt.isoformat(),
-                    "nomenclature_key": row.get("Номенклатура_Key"),
-                    "qty": row.get("Количество"),
-                    "on_time": fact_dt.date() <= plan_dt.date(),
-                })
-
+def _build_month(sql: SqlConnection, year: int, month: int) -> dict:
+    calculated = calculate_month(year, month, sql=sql)
+    total = int(calculated["total_deliveries"])
+    on_time = int(calculated["on_time"])
+    overdue = int(calculated["overdue"])
+    without_order = int(calculated["without_order"])
     pct = _kpi_pct(total, on_time)
     return {
         "year": year,
@@ -222,11 +178,17 @@ def _build_month(session: requests.Session, year: int, month: int) -> dict:
         "overdue_pct": _kpi_pct(total, overdue),
         "without_order_count": without_order,
         "debug": {
-            "receipts_count": len(receipts),
-            "orders_linked": len(order_keys),
-            "orders_loaded": sum(1 for value in order_cache.values() if value),
-            "metric_variant": "B: строки поступления ТМЦ",
-            "sample_rows": debug_rows,
+            "source": "MSSQL erp_pm",
+            "source_rows": calculated["source_rows"],
+            "data_through": calculated["data_through"],
+            "metric_variant": "B: строки поступления ТМЦ из MSSQL",
+            "sql_tables": [
+                "_Document907",
+                "_Document907_VT33228",
+                "_Document713X1",
+                "_Document713_VT22136X1",
+                "_Reference269",
+            ],
         },
     }
 
@@ -279,9 +241,8 @@ def get_logistics_tmc_on_time_monthly(year: int | None = None, month: int | None
     if cached and cached.get("source") == SOURCE_TAG and cached.get("cache_date") == today.isoformat():
         return cached
 
-    session = requests.Session()
-    session.auth = AUTH
-    months = [_build_month(session, ref_year, mm) for mm in range(1, ref_month + 1)]
+    sql = SqlConnection()
+    months = [_build_month(sql, ref_year, mm) for mm in range(1, ref_month + 1)]
     quarterly_data, yearly_data = _aggregate(months)
     total_plan = sum(int(row.get("plan") or 0) for row in months)
     total_fact = sum(int(row.get("fact") or 0) for row in months)
@@ -319,4 +280,43 @@ def get_logistics_tmc_on_time_monthly(year: int | None = None, month: int | None
     return payload
 
 
-__all__ = ["cache_path", "get_logistics_tmc_on_time_monthly"]
+def get_logistics_tmc_deliveries(
+    year: int | None = None,
+    month: int | None = None,
+) -> dict:
+    """Полная выгрузка фактических строк поставок с плановыми датами."""
+    ref_year, ref_month = _normalize_period(year, month)
+    rows = load_delivery_rows(ref_year, ref_month)
+    totals = {
+        "source_rows": len(rows),
+        "eligible": sum(1 for row in rows if row["status"] != "without_order"),
+        "on_time": sum(1 for row in rows if row["status"] == "on_time"),
+        "overdue": sum(1 for row in rows if row["status"] == "overdue"),
+        "without_order": sum(1 for row in rows if row["status"] == "without_order"),
+    }
+    receipt_dates = [row["receipt_date"] for row in rows if row.get("receipt_date")]
+    return {
+        "source": SOURCE_TAG,
+        "year": ref_year,
+        "month": ref_month,
+        "month_name": MONTH_RU[ref_month].lower(),
+        "data_through": max(receipt_dates) if receipt_dates else None,
+        "columns": [
+            "Номер поступления",
+            "Дата факта",
+            "Номер заказа",
+            "Дата план",
+            "Номенклатура",
+            "Количество",
+            "Статус",
+        ],
+        "totals": totals,
+        "rows": rows,
+    }
+
+
+__all__ = [
+    "cache_path",
+    "get_logistics_tmc_deliveries",
+    "get_logistics_tmc_on_time_monthly",
+]

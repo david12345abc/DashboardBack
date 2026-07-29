@@ -11,8 +11,10 @@ import requests
 from .calc_budget_limit import AUTH, BASE
 from .calc_fot_management import MONTH_RU, _normalize_period
 from .cache_manager import CACHE_DIR
+from .logistics_price_deviation_sql import calculate_month
+from sql_connection import SqlConnection
 
-SOURCE_TAG = "logistics_price_deviation_v3_weighted_period_colors"
+SOURCE_TAG = "logistics_price_deviation_v4_mssql_plan_fact_rub"
 RECEIPT_ENTITY = "Document_ПриобретениеТоваровУслуг"
 PRICE_ENTITY = "InformationRegister_ЦеныНоменклатуры_RecordType"
 TABULAR_FIELD = "Товары"
@@ -267,114 +269,21 @@ def _lookup_project_price(
     return None
 
 
-def _build_month(session: requests.Session, year: int, month: int) -> dict:
-    receipts = _load_receipts(session, year, month)
-    _, p_end = _period_bounds(year, month)
-    nomenclature_keys: set[str] = set()
-    for doc in receipts:
-        for row in doc.get(TABULAR_FIELD) or []:
-            if isinstance(row, dict):
-                key = _guid(row.get("Номенклатура_Key"))
-                if key and _row_quantity(row) > 0:
-                    nomenclature_keys.add(key)
-
-    nomenclature_types = _load_nomenclature_types(session, nomenclature_keys)
-    purchasable_keys = {
-        key for key in nomenclature_keys
-        if not _is_excluded_nomenclature_type(nomenclature_types.get(key))
-    }
-    prices = _load_project_prices(session, purchasable_keys, p_end)
-    total_rows = 0
-    excluded_service_work_rows = 0
-    compared_rows = 0
-    missing_project_price = 0
-    zero_project_price = 0
-    currency_converted_rows = 0
-    total_project_amount_rub = 0.0
-    total_delta_amount_rub = 0.0
-    absolute_deviation_sum = 0.0
-    relative_deviation_sum = 0.0
-    debug_rows = []
-
-    for doc in receipts:
-        fact_dt = _parse_dt(doc.get("Date"))
-        if not fact_dt:
-            continue
-        doc_currency = _guid(doc.get("Валюта_Key")) or RUB_KEY
-        for row in doc.get(TABULAR_FIELD) or []:
-            if not isinstance(row, dict):
-                continue
-            qty = _row_quantity(row)
-            actual_price = _actual_unit_price(row)
-            n_key = _guid(row.get("Номенклатура_Key"))
-            if not n_key or qty <= 0 or actual_price <= 0:
-                continue
-            if n_key not in purchasable_keys:
-                excluded_service_work_rows += 1
-                continue
-
-            total_rows += 1
-            project_rec = _lookup_project_price(prices, row, fact_dt)
-            if not project_rec:
-                missing_project_price += 1
-                continue
-
-            project_price = _to_float(project_rec.get("Цена"))
-            if project_price <= 0:
-                zero_project_price += 1
-                continue
-
-            actual_currency = _guid(row.get("Валюта_Key")) or doc_currency
-            project_currency = _guid(project_rec.get("Валюта_Key")) or RUB_KEY
-            actual_price_rub = _to_rub(actual_price, actual_currency)
-            project_price_rub = _to_rub(project_price, project_currency)
-            if actual_currency != project_currency:
-                currency_converted_rows += 1
-
-            delta = actual_price_rub - project_price_rub
-            delta_pct = (actual_price_rub / project_price_rub - 1) * 100
-            project_amount_rub = project_price_rub * qty
-            total_project_amount_rub += project_amount_rub
-            total_delta_amount_rub += delta * qty
-            absolute_deviation_sum += delta
-            relative_deviation_sum += delta_pct
-            compared_rows += 1
-
-            if len(debug_rows) < 50:
-                debug_rows.append({
-                    "date": doc.get("Date"),
-                    "document": doc.get("Number"),
-                    "line": row.get("LineNumber"),
-                    "nomenclature_key": n_key,
-                    "characteristic_key": _guid(row.get("Характеристика_Key")),
-                    "quantity": qty,
-                    "actual_price": round(actual_price_rub, 4),
-                    "project_price": round(project_price_rub, 4),
-                    "delta": round(delta, 4),
-                    "delta_pct": round(delta_pct, 2),
-                    "currency": "RUB",
-                    "project_price_period": project_rec.get("Period"),
-                    "project_price_missing": False,
-                })
-
-    fact_pct = None
-    if total_project_amount_rub > 0:
-        fact_pct = round(total_delta_amount_rub / total_project_amount_rub * 100, 2)
-
-    project_amount = round(total_project_amount_rub, 2) if total_project_amount_rub > 0 else None
-    delta_amount = round(total_delta_amount_rub, 2) if total_project_amount_rub > 0 else None
-
+def _build_month(sql: SqlConnection, year: int, month: int) -> dict:
+    calculated = calculate_month(year, month, sql=sql)
+    project_amount = calculated["plan"]
+    actual_amount = calculated["fact"]
+    fact_pct = calculated["kpi_pct"]
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_RU[month].lower(),
-        # Для агрегации нельзя складывать проценты. Поэтому plan/fact — это
-        # знаменатель и числитель формулы отклонения, а отображаемый процент
-        # лежит отдельно в display_* и kpi_pct.
+        # План и факт — полные сопоставимые суммы в рублях.
+        # KPI — взвешенное отклонение: (факт / план - 1) × 100.
         "plan": project_amount,
-        "fact": delta_amount,
+        "fact": actual_amount,
         "kpi_pct": fact_pct,
-        "has_data": total_rows > 0,
+        "has_data": bool(calculated["compared_rows"]),
         "values_unit": "руб.",
         "display_plan": TARGET_DEVIATION_PCT,
         "display_fact": fact_pct,
@@ -383,27 +292,23 @@ def _build_month(session: requests.Session, year: int, month: int) -> dict:
         "aggregation": "weighted_delta_amount_div_project_amount",
         "period_start": _period_start_date(year, month, "month"),
         "period_end": _period_end_date(year, month),
-        "total_rows": total_rows,
-        "compared_rows": compared_rows,
-        "missing_project_price": missing_project_price,
-        "zero_project_price": zero_project_price,
-        "excluded_service_work_rows": excluded_service_work_rows,
-        "currency_converted_rows": currency_converted_rows,
-        "avg_absolute_deviation": round(absolute_deviation_sum / compared_rows, 2) if compared_rows else None,
-        "avg_relative_deviation": round(relative_deviation_sum / compared_rows, 2) if compared_rows else None,
-        "weighted_delta_amount": round(total_delta_amount_rub, 2),
-        "project_amount": round(total_project_amount_rub, 2),
+        "total_rows": calculated["total_rows"],
+        "compared_rows": calculated["compared_rows"],
+        "missing_project_price": calculated["missing_project_price"],
+        "zero_project_price": calculated["zero_project_price"],
+        "missing_currency_rate": calculated["missing_currency_rate"],
+        "excluded_service_work_rows": 0,
+        "weighted_delta_amount": calculated["weighted_delta_amount"],
+        "project_amount": calculated["project_amount"],
+        "actual_amount": calculated["actual_amount"],
         "debug": {
-            "receipts_count": len(receipts),
-            "nomenclature_count": len(nomenclature_keys),
-            "purchasable_nomenclature_count": len(purchasable_keys),
-            "price_keys_loaded": len(prices),
+            "source": "MSSQL erp_pm",
             "price_type": "Проектная",
             "price_type_key": PROJECT_PRICE_TYPE_KEY,
-            "actual_price_mode": "без НДС: сумма строки / количество",
-            "currency_mode": "сравнение в RUB; известные валюты пересчитываются фиксированными курсами",
+            "actual_amount_mode": "Сумма - СуммаНДС",
+            "currency_mode": "курсы регистра _InfoRg45367 на дату поступления",
             "excluded_nomenclature_types": sorted(EXCLUDED_NOMENCLATURE_TYPES),
-            "sample_rows": debug_rows,
+            "sample_rows": calculated["sample_rows"],
         },
     }
 
@@ -438,6 +343,7 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
                 "excluded_service_work_rows": 0,
                 "weighted_delta_amount": 0.0,
                 "project_amount": 0.0,
+                "actual_amount": 0.0,
                 "max_month": 0,
             })
             target["total_rows"] += int(row.get("total_rows") or 0)
@@ -447,6 +353,7 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             target["excluded_service_work_rows"] += int(row.get("excluded_service_work_rows") or 0)
             target["weighted_delta_amount"] += float(row.get("weighted_delta_amount") or 0)
             target["project_amount"] += float(row.get("project_amount") or 0)
+            target["actual_amount"] += float(row.get("actual_amount") or 0)
             target["max_month"] = max(int(target.get("max_month") or 0), m)
             target["has_data"] = target["has_data"] or bool(row.get("has_data"))
 
@@ -455,8 +362,9 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         for item in items:
             project_amount = round(item["project_amount"], 2)
             delta_amount = round(item["weighted_delta_amount"], 2)
+            actual_amount = round(item["actual_amount"], 2)
             item["plan"] = project_amount if item["project_amount"] > 0 else None
-            item["fact"] = delta_amount if item["project_amount"] > 0 else None
+            item["fact"] = actual_amount if item["project_amount"] > 0 else None
             if item["project_amount"] > 0:
                 item["kpi_pct"] = round(item["weighted_delta_amount"] / item["project_amount"] * 100, 2)
                 item["display_fact"] = item["kpi_pct"]
@@ -469,6 +377,7 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             item["period_end"] = _period_end_date(int(item["year"]), int(item.get("max_month") or 12))
             item["weighted_delta_amount"] = delta_amount
             item["project_amount"] = project_amount
+            item["actual_amount"] = actual_amount
             item.pop("max_month", None)
             out.append(item)
         return out
@@ -487,9 +396,8 @@ def get_logistics_price_deviation_monthly(year: int | None = None, month: int | 
     if cached and cached.get("source") == SOURCE_TAG and cached.get("cache_date") == today.isoformat():
         return cached
 
-    session = requests.Session()
-    session.auth = AUTH
-    months = [_build_month(session, ref_year, mm) for mm in range(1, ref_month + 1)]
+    sql = SqlConnection()
+    months = [_build_month(sql, ref_year, mm) for mm in range(1, ref_month + 1)]
     quarterly_data, yearly_data = _aggregate(months)
     ytd_row = yearly_data[-1] if yearly_data else {}
 
