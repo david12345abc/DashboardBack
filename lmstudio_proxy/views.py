@@ -12,6 +12,7 @@ from .services import (
     LmStudioModelLoadError,
     LmStudioTimeoutError,
     create_chat_completion,
+    create_embeddings,
     list_models,
 )
 
@@ -50,6 +51,26 @@ def chat_completions(request):
     return _json_response(response_payload, status=status)
 
 
+@require_POST
+def embeddings(request):
+    try:
+        payload = json.loads(request.body or b"{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return _json_response({"error": "Invalid JSON"}, status=400)
+    if not isinstance(payload, dict):
+        return _json_response({"error": "JSON body must be an object"}, status=400)
+
+    try:
+        response_payload, status = create_embeddings(payload)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, status=400)
+    except LmStudioModelLoadError as exc:
+        return _json_response({"error": str(exc)}, status=503)
+    except (LmStudioConnectionError, LmStudioTimeoutError) as exc:
+        return _upstream_error(exc)
+    return _json_response(response_payload, status=status)
+
+
 @require_GET
 def models(request):
     try:
@@ -71,6 +92,7 @@ def health(request):
         {
             "ok": ok,
             "model": settings.LM_STUDIO_MODEL,
+            "embedding_model": settings.LM_STUDIO_EMBEDDING_MODEL,
             "lm_studio_status": upstream_status,
             "models": response_payload,
         },

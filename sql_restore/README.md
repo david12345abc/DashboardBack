@@ -1,129 +1,99 @@
-# Ежедневный разворот SQL-бэкапа 1С
+# Ежедневный native restore SQL-бэкапа 1С (erp_pm)
 
-Контур берёт последний `.bak` из `\\srv2\copy1cbase` (SMB, смонтирован в
-контейнер) и восстанавливает базу `erp_pm` в SQL Server 2022 в Docker.
+Контур берёт последний `.bak` с `Z:\`, при необходимости копирует его на `D:\`
+и восстанавливает базу `erp_pm` в **локальный** SQL Server (без Docker).
+
+> Docker-контур (`docker-compose.yml`, `restore_latest_bak.py`) устарел и не
+> используется. Актуальный скрипт: `restore_native.py`.
 
 ## Размещение данных
 
+- `Z:\` — источник `.bak` (`erp_pm_backup_*.bak`);
+- `D:\` — локальная копия `.bak` (`erp_pm*.bak`);
 - `D:\mssql\data` — файлы данных SQL Server (`.mdf`, `.ndf`);
-- `C:\mssql\log` — файлы журнала транзакций SQL Server (`.ldf`), **постоянно**;
-- `D:\mssql\logs` — текстовые журналы скрипта восстановления (не `.ldf`);
-- `D:\mssql\incoming` — опциональная локальная копия `.bak` (сейчас не нужна:
-  restore идёт напрямую с SMB-тома);
+- `C:\mssql\logdata` — файлы журнала транзакций SQL Server (`.ldf`);
+- `D:\mssql\logs` — текстовые журналы скрипта восстановления;
 - `D:\mssql\state.json` — отпечаток последнего успешно восстановленного файла.
 
-Источник `.bak`: `SMB_SHARE` (по умолчанию `\\srv2\copy1cbase`), в контейнере
-как `/var/opt/mssql/backup` (внешний Docker volume `dashboard-erp-smb-backup`).
+## Поведение
 
-Один и тот же файл повторно не восстанавливается. Сравниваются имя, размер и
-точное время изменения файла. Состояние обновляется только после успешного
-`RESTORE DATABASE` и проверки состояния `ONLINE`.
+Каждый день в **21:00** (планировщик Django в `getkpi/restore_scheduler.py`):
 
-После restore журналы транзакций **не** переносятся на `D:` — они остаются на
-`C:\mssql\log`.
+1. Берёт последний `*.bak` на `Z:\`.
+2. Сравнивает с `D:\erp_pm*.bak` (имя + размер + mtime).
+3. Если совпадает и база `ONLINE` — ничего не делает.
+4. Если на `Z:\` новее:
+   - удаляет старый `D:\erp_pm*.bak`;
+   - `DROP DATABASE erp_pm` (+ purge orphan `.mdf/.ndf/.ldf`);
+   - копирует дамп `Z:\ → D:\` (~100 ГиБ, resumable);
+   - `RESTORE DATABASE … WITH MOVE` (data → `D:\mssql\data`, log → `C:\mssql\logdata`);
+   - ждёт `ONLINE`;
+   - запускает `run_commercial_cache_refresh_once(force=True)`.
+
+Одновременно второй запуск блокируется (`D:\mssql\restore.lock`).
 
 ## Настройка
 
-Скопируйте параметры из `../.env.example` в `../.env`. Обязательные значения:
+Скопируйте параметры из `../.env.example` в `../.env`. Ключевые значения:
 
 ```dotenv
-LOGIN=DOMAIN\username
-PASSWORD=...
-SMB_SHARE=\\srv2\copy1cbase
-MSSQL_SA_PASSWORD=...
+MSSQL_BAK_SOURCE=Z:\
+MSSQL_BAK_DEST=D:\
 MSSQL_DATA_DIR=D:/mssql/data
-MSSQL_LOG_DATA_DIR=C:/mssql/log
+MSSQL_LOG_DATA_DIR=C:/mssql/logdata
 MSSQL_LOG_DIR=D:/mssql/logs
+MSSQL_RESTORE_DISABLED=0
+MSSQL_RESTORE_SCHEDULER_ENABLED=1
+MSSQL_RESTORE_HOUR=21
+MSSQL_RESTORE_MINUTE=0
+SQL_SERVER=.
 ```
 
-Различие путей:
+Kill-switch:
 
-- `MSSQL_LOG_DATA_DIR` — каталог SQL `.ldf` на `C:` (bind → `/var/opt/mssql/log`);
-- `MSSQL_LOG_DIR` — текстовые логи Python-скрипта на `D:`.
+- `MSSQL_RESTORE_DISABLED=1` в `.env`, или
+- файл-маркер `D:\mssql\RESTORE_DISABLED`.
 
-`.env` исключён из Git. Пароль SQL Server должен содержать буквы в разных
-регистрах, цифры и спецсимволы.
-
-Docker Desktop должен быть запущен. В Docker Desktop должен быть разрешён
-доступ к дискам `C:\` и `D:\` (в актуальных версиях WSL2 обычно доступны
-автоматически).
-
-Compose-проект: `dashboard-erp-sql`, контейнер: `dashboard-erp-mssql`.
+Нужны: локальный SQL Server, `sqlcmd`, права Windows-учётки процесса на `Z:`,
+`D:`, `C:\mssql\logdata` и на DROP/RESTORE.
 
 ## Ручной запуск
 
-Из PowerShell:
+Из каталога DashboardBack:
 
 ```powershell
-cd C:\Users\testii\Downloads\dash\DashboardBack
+py -m sql_restore.restore_native
+# или
+py manage.py restore_erp_pm
+# только restore без прогрева комдира:
+py manage.py restore_erp_pm --no-commercial
+# принудительный полный цикл:
+py manage.py restore_erp_pm --force
+```
+
+PowerShell-обёртка:
+
+```powershell
 .\sql_restore\run_restore.ps1
 ```
 
-Первый запуск скачивает образ SQL Server и выполняет полное восстановление.
-Это может занять много часов. Прогресс SQL `STATS=5` и опрос до `ONLINE`
-записываются в `D:\mssql\logs\restore_YYYYMMDD.log`.
-
-Проверка контейнера:
-
-```powershell
-docker ps --filter name=dashboard-erp-mssql
-docker logs dashboard-erp-mssql
-```
+Прогресс и ошибки пишутся в `D:\mssql\logs\restore_YYYYMMDD.log`.
 
 Проверка базы:
 
 ```powershell
-$env:SQLCMDPASSWORD = (Get-Content .env |
-  Where-Object { $_ -like 'MSSQL_SA_PASSWORD=*' }).Split('=', 2)[1]
-docker exec -e SQLCMDPASSWORD dashboard-erp-mssql `
-  /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C `
-  -Q "SELECT name, state_desc FROM sys.databases WHERE name = N'erp_pm'"
-Remove-Item Env:\SQLCMDPASSWORD
+sqlcmd -S . -E -C -Q "SELECT name, state_desc FROM sys.databases WHERE name = N'erp_pm'"
 ```
 
-Если restore уже завершился в `ONLINE`, но `state.json` ещё не обновлён:
+## Планировщик
 
-```powershell
-py .\sql_restore\finish_restore.py
+Стартует вместе с Django (`getkpi.apps.GetkpiConfig.ready`), только в процессе
+с `RUN_MAIN=true` (реальный `runserver`, не reloader).
+
+Отключить планировщик, оставив ручной запуск:
+
+```dotenv
+MSSQL_RESTORE_SCHEDULER_ENABLED=0
 ```
 
-Опрос до `ONLINE` без повторного `RESTORE`:
-
-```powershell
-py .\sql_restore\poll_restore.py
-```
-
-## Ежедневная задача
-
-Регистрация запуска каждый день в 07:00:
-
-```powershell
-.\sql_restore\register_task.ps1
-```
-
-Другое время:
-
-```powershell
-.\sql_restore\register_task.ps1 -DailyAt "08:30"
-```
-
-Задача запускается под учётной записью `LOGIN` из `.env`, чтобы одновременно
-иметь доступ к сетевой папке, Docker Desktop и дискам `C:\` / `D:\`. Если пароль
-доменной учётной записи изменится, запустите `register_task.ps1` повторно.
-
-Проверка задачи:
-
-```powershell
-Get-ScheduledTask -TaskName "Dashboard - Daily 1C SQL Restore"
-Get-ScheduledTaskInfo -TaskName "Dashboard - Daily 1C SQL Restore"
-```
-
-## Поведение при ошибках
-
-- файл моложе `BACKUP_MIN_AGE_MINUTES` не берётся — он может ещё загружаться;
-- перед restore проверяется свободное место: `D:` под data, `C:` под `.ldf`
-  (~174 GiB+ для этой базы);
-- при обрыве клиента restore не перезапускается: скрипт опрашивает до `ONLINE`
-  и не выдаёт повторный `WITH REPLACE`, пока база в `RESTORING`;
-- при ошибке восстановления `state.json` не обновляется;
-- одновременный второй запуск завершается, не вмешиваясь в текущий.
+Старый Windows Task Scheduler / Docker compose больше не нужны.

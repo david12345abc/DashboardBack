@@ -1,9 +1,11 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$Force
+)
 
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$restoreScript = Join-Path $scriptDir "restore_latest_bak.py"
+$projectDir = Split-Path -Parent $scriptDir
 $disableMarkers = @(
     "D:\mssql\RESTORE_DISABLED",
     (Join-Path $scriptDir "RESTORE_DISABLED")
@@ -15,10 +17,17 @@ foreach ($marker in $disableMarkers) {
     }
 }
 
+Set-Location $projectDir
+$pyArgs = @("-m", "sql_restore.restore_native")
+if ($Force) {
+    # Force is exposed via Python API / Django command; CLI module uses env override.
+    $env:MSSQL_RESTORE_FORCE = "1"
+}
+
 if (Get-Command py -ErrorAction SilentlyContinue) {
-    & py $restoreScript
+    & py @pyArgs
 } elseif (Get-Command python -ErrorAction SilentlyContinue) {
-    & python $restoreScript
+    & python @pyArgs
 } else {
     throw "Python launcher (py or python) was not found in PATH."
 }

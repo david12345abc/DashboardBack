@@ -11,4 +11,9 @@ urlpatterns = [
         views.chat_completions,
         name="lmstudio-chat-completions",
     ),
+    path(
+        "v1/embeddings/",
+        views.embeddings,
+        name="lmstudio-embeddings",
+    ),
 ]

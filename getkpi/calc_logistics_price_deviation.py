@@ -14,7 +14,7 @@ from .cache_manager import CACHE_DIR
 from .logistics_price_deviation_sql import calculate_month
 from sql_connection import SqlConnection
 
-SOURCE_TAG = "logistics_price_deviation_v4_mssql_plan_fact_rub"
+SOURCE_TAG = "logistics_price_deviation_v5_mssql_plan_fact_rub_kpi_pct"
 RECEIPT_ENTITY = "Document_ПриобретениеТоваровУслуг"
 PRICE_ENTITY = "InformationRegister_ЦеныНоменклатуры_RecordType"
 TABULAR_FIELD = "Товары"
@@ -285,11 +285,11 @@ def _build_month(sql: SqlConnection, year: int, month: int) -> dict:
         "kpi_pct": fact_pct,
         "has_data": bool(calculated["compared_rows"]),
         "values_unit": "руб.",
-        "display_plan": TARGET_DEVIATION_PCT,
-        "display_fact": fact_pct,
-        "display_unit": "%",
+        # План/факт на плитке — суммы в рублях; KPI% = (факт − план) / план × 100.
+        # Порог ≤5% используется только для RAG (color), не как display_plan.
         "color": _deviation_color(fact_pct),
         "aggregation": "weighted_delta_amount_div_project_amount",
+        "target_deviation_pct": TARGET_DEVIATION_PCT,
         "period_start": _period_start_date(year, month, "month"),
         "period_end": _period_end_date(year, month),
         "total_rows": calculated["total_rows"],
@@ -331,11 +331,9 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
                 "kpi_pct": None,
                 "has_data": False,
                 "values_unit": "руб.",
-                "display_plan": TARGET_DEVIATION_PCT,
-                "display_fact": None,
-                "display_unit": "%",
                 "color": "unknown",
                 "aggregation": "weighted_delta_amount_div_project_amount",
+                "target_deviation_pct": TARGET_DEVIATION_PCT,
                 "total_rows": 0,
                 "compared_rows": 0,
                 "missing_project_price": 0,
@@ -367,8 +365,7 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             item["fact"] = actual_amount if item["project_amount"] > 0 else None
             if item["project_amount"] > 0:
                 item["kpi_pct"] = round(item["weighted_delta_amount"] / item["project_amount"] * 100, 2)
-                item["display_fact"] = item["kpi_pct"]
-            item["color"] = _deviation_color(item.get("display_fact"))
+            item["color"] = _deviation_color(item.get("kpi_pct"))
             item["period_start"] = _period_start_date(
                 int(item["year"]),
                 int(item.get("quarter", 1)) * 3 if "quarter" in item else 1,
@@ -388,13 +385,62 @@ def _aggregate(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     )
 
 
+def _strip_legacy_percent_display(row: dict | None) -> dict | None:
+    """Убрать старые display_* (%), чтобы плитка показывала суммы в рублях."""
+    if not isinstance(row, dict):
+        return row
+    out = dict(row)
+    out.pop("display_plan", None)
+    out.pop("display_fact", None)
+    out.pop("display_unit", None)
+    out.setdefault("values_unit", "руб.")
+    out.setdefault("target_deviation_pct", TARGET_DEVIATION_PCT)
+    return out
+
+
+def _upgrade_cached_payload(cached: dict) -> dict:
+    payload = dict(cached)
+    payload["source"] = SOURCE_TAG
+    payload["months"] = [_strip_legacy_percent_display(row) for row in (payload.get("months") or [])]
+    payload["quarterly_data"] = [
+        _strip_legacy_percent_display(row) for row in (payload.get("quarterly_data") or [])
+    ]
+    payload["yearly_data"] = [
+        _strip_legacy_percent_display(row) for row in (payload.get("yearly_data") or [])
+    ]
+    payload["last_full_month_row"] = _strip_legacy_percent_display(payload.get("last_full_month_row"))
+    ytd = dict(payload.get("ytd") or {})
+    ytd.pop("display_plan", None)
+    ytd.pop("display_fact", None)
+    ytd.pop("display_unit", None)
+    ytd.setdefault("values_unit", "руб.")
+    ytd.setdefault("target_deviation_pct", TARGET_DEVIATION_PCT)
+    payload["ytd"] = ytd
+    return payload
+
+
+_LEGACY_SOURCE_TAGS = {
+    "logistics_price_deviation_v4_mssql_plan_fact_rub",
+    SOURCE_TAG,
+}
+
+
 def get_logistics_price_deviation_monthly(year: int | None = None, month: int | None = None) -> dict:
     today = date.today()
     ref_year, ref_month = _normalize_period(year, month)
     path = cache_path(ref_year, ref_month)
     cached = _load_json(path)
-    if cached and cached.get("source") == SOURCE_TAG and cached.get("cache_date") == today.isoformat():
-        return cached
+    if (
+        cached
+        and cached.get("source") in _LEGACY_SOURCE_TAGS
+        and cached.get("cache_date") == today.isoformat()
+    ):
+        upgraded = _upgrade_cached_payload(cached)
+        if upgraded.get("source") != cached.get("source") or "display_unit" in (
+            (cached.get("last_full_month_row") or {})
+        ):
+            _save_json(path, upgraded)
+        return upgraded
 
     sql = SqlConnection()
     months = [_build_month(sql, ref_year, mm) for mm in range(1, ref_month + 1)]
@@ -414,9 +460,7 @@ def get_logistics_price_deviation_monthly(year: int | None = None, month: int | 
             "total_plan": ytd_row.get("plan"),
             "total_fact": ytd_row.get("fact"),
             "kpi_pct": ytd_row.get("kpi_pct"),
-            "display_plan": TARGET_DEVIATION_PCT,
-            "display_fact": ytd_row.get("kpi_pct"),
-            "display_unit": "%",
+            "target_deviation_pct": TARGET_DEVIATION_PCT,
             "color": _deviation_color(ytd_row.get("kpi_pct")),
             "total_rows": ytd_row.get("total_rows", 0),
             "compared_rows": ytd_row.get("compared_rows", 0),

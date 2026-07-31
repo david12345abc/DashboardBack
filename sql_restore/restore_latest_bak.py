@@ -1,4 +1,6 @@
-r"""Restore the newest 1C SQL Server backup into a Docker SQL Server.
+r"""DEPRECATED: Docker-based restore. Use restore_native.py instead.
+
+Restore the newest 1C SQL Server backup into a Docker SQL Server.
 
 The source is an SMB share. Data files (.mdf/.ndf) are restored to D:;
 transaction logs (.ldf) stay permanently on C:. The script is idempotent: a

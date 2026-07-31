@@ -1,9 +1,11 @@
+# Optional Windows Task Scheduler registration.
+# Preferred: Django getkpi.restore_scheduler (daily 21:00 while runserver is up).
+# run_restore.ps1 now calls native restore_native.py (not Docker).
 [CmdletBinding()]
 param(
     [string]$TaskName = "Dashboard - Daily 1C SQL Restore",
-    [string]$DailyAt = "00:00",
-    # First scheduled run: Tuesday 2026-07-28 00:00 (local time).
-    [string]$FirstRunDate = "2026-07-28"
+    [string]$DailyAt = "21:00",
+    [string]$FirstRunDate = (Get-Date -Format "yyyy-MM-dd")
 )
 
 $ErrorActionPreference = "Stop"

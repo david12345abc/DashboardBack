@@ -133,9 +133,7 @@ def _plan_fact_color(entry: dict) -> tuple[float | None, str] | None:
 def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
     if kpi_id == "LOG-M2":
         ref_row = entry.get("last_full_month_row") or {}
-        pct = ref_row.get("display_fact")
-        if pct is None:
-            pct = ref_row.get("kpi_pct")
+        pct = ref_row.get("kpi_pct")
         if pct is not None:
             pct = float(pct)
         return pct, str(ref_row.get("color") or rag_price_deviation(pct))
@@ -339,6 +337,8 @@ def apply_tile_overrides(kpi: dict, tile: dict) -> None:
     kpi_id = kpi.get("kpi_id")
     if kpi_id == "LOG-M2":
         tile["pct_lower_is_better"] = True
+        tile["unit"] = "руб."
+        tile["units"] = "руб."
     elif kpi_id in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
         tile["pct_lower_is_better"] = True
         tile["unit"] = "руб."

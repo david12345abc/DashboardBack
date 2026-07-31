@@ -43,7 +43,7 @@ print = functools.partial(print, flush=True)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
-CACHE_VERSION = 12
+CACHE_VERSION = 14
 
 DEPARTMENTS = {
     "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел ВЭД",
@@ -76,6 +76,20 @@ EXCHANGE_RATES = {
     "KZT": 0.19,
     "RUB": 1.0,
 }
+
+
+def _load_fx_rates_from_constants(session: requests.Session) -> None:
+    """Курсы из Константы.ТД_ВалютаПланФакта_УЕ_* (как в запросе 1С)."""
+    for code in ("USD", "EUR", "BYN", "KZT"):
+        try:
+            url = f"{BASE}/Constant_ТД_ВалютаПланФакта_УЕ_{code}?$format=json"
+            r = session.get(url, timeout=20)
+            if r.ok:
+                val = float((r.json().get("value") or [{}])[0].get("Value") or 0)
+                if val:
+                    EXCHANGE_RATES[code] = val
+        except Exception:
+            logger.exception("Не удалось загрузить курс %s", code)
 
 F_PARTNERS = "partners_exclude_cache.json"
 
@@ -269,6 +283,7 @@ def _effective_dept(row: dict, order_data: dict[str, dict] | None = None) -> str
 def _calc_month_total(session: requests.Session, all_rows: list[dict],
                       year: int, month: int) -> tuple[float, dict[str, float]]:
     """Посчитать итого договоров за конкретный месяц. Возвращает (total, by_dept)."""
+    _load_fx_rates_from_constants(session)
     last_day = calendar.monthrange(year, month)[1]
     d_from = f"{year}-{month:02d}-01"
     d_to = f"{year}-{month:02d}-{last_day}"
@@ -366,12 +381,9 @@ def _calc_month_total(session: requests.Session, all_rows: list[dict],
             if od:
                 if od["ne_uchit"]:
                     continue
-                excluded_for_dept = (
-                    excluded_order_partners_without_mgs
-                    if _effective_dept(x, order_data) == OPBO_DEPT
-                    else excluded_order_partners
-                )
-                if od["partner"] in excluded_for_dept:
+                # Как в запросе 1С (+ доп. условие): партнёр заказа ∈ перепродажи
+                # или ТД_СопровождениеПродажи — исключаем заказ целиком.
+                if od["partner"] in excluded_order_partners:
                     continue
                 if od["soprovozhd"]:
                     continue

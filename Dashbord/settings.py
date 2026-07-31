@@ -165,10 +165,20 @@ LM_STUDIO_BASE_URL = os.environ.get(
     'http://192.168.1.157:1234/v1',
 ).rstrip('/')
 LM_STUDIO_MODEL = os.environ.get('LM_STUDIO_MODEL', 'qwen3-vl-8b-thinking')
+# GGUF embedder (OpenAI-compatible /v1/embeddings). Use LM Studio model key/id
+# (HF: Content-AI/USER-bge-m3-Q8_0-GGUF → usually text-embedding-user-bge-m3).
+LM_STUDIO_EMBEDDING_MODEL = os.environ.get(
+    'LM_STUDIO_EMBEDDING_MODEL',
+    'text-embedding-user-bge-m3',
+)
 LM_STUDIO_API_KEY = os.environ.get('LM_STUDIO_API_KEY', 'lm-studio')
 LM_STUDIO_TIMEOUT_SECONDS = _env_positive_int('LM_STUDIO_TIMEOUT_SECONDS', 180)
 LM_STUDIO_AUTO_LOAD_MODEL = _env_bool('LM_STUDIO_AUTO_LOAD_MODEL', True)
 LM_STUDIO_CONTEXT_LENGTH = _env_positive_int('LM_STUDIO_CONTEXT_LENGTH', 32768)
+LM_STUDIO_EMBEDDING_CONTEXT_LENGTH = _env_positive_int(
+    'LM_STUDIO_EMBEDDING_CONTEXT_LENGTH',
+    8192,
+)
 
 # CORS: любой origin (с credentials несовместимо — см. django-cors-headers)
 CORS_ALLOW_ALL_ORIGINS = True

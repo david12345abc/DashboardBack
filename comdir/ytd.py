@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 # v5: ожидаемо KD-M1/M2/M3 из HTTP-сервиса 1С (виртуальные Остатки/Обороты),
 # план/факт по-прежнему SQL comdir.
-CACHE_VERSION = 5
+CACHE_VERSION = 9
 
 
 def _kpi_pct(fact, plan) -> float | None:
@@ -264,7 +264,7 @@ def get_dengi_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m1_ytd",
-        source_tag="comdir_kd_m1_ytd_sql_v5",
+        source_tag="comdir_kd_m1_ytd_sql_v7",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m1",
         compute_fn=_compute,
@@ -327,7 +327,7 @@ def get_otgruzki_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m2_ytd",
-        source_tag="comdir_kd_m2_ytd_sql_v5",
+        source_tag="comdir_kd_m2_ytd_sql_v7",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m2",
         compute_fn=build_otgruzki_payload,
@@ -375,7 +375,7 @@ def build_dogovory_payload(year: int, month: int) -> dict[str, Any]:
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M3")
     payload["debug"] = {
         **(payload.get("debug") or {}),
-        "source": "comdir.sql+1c_expected",
+        "source": "comdir.odata+1c_expected",
     }
     return payload
 
@@ -389,7 +389,7 @@ def get_dogovory_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m3_ytd",
-        source_tag="comdir_kd_m3_ytd_sql_v5",
+        source_tag="comdir_kd_m3_ytd_odata_offer_v9",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m3",
         compute_fn=build_dogovory_payload,

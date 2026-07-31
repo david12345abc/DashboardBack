@@ -3274,6 +3274,7 @@ def _build_universal_payload(
             'PD-M1.1', 'PD-M1.1.M', 'PD-M1.1.W', 'PD-M1.1.T',
             'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
             'PD-M3.1', 'PD-M3.2', 'METD-M3.B', 'METD-M3.F',
+            'LOG-M2',
         }:
             tile['unit'] = 'руб.'
         elif (

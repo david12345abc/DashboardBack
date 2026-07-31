@@ -48,15 +48,6 @@ CUR_EUR = bytes.fromhex("81cd001583b3d75c11e07405d328a18d")
 CUR_BYN = bytes.fromhex("8756ac1f6b05524d11ec45dc095e2c36")
 CUR_KZT = bytes.fromhex("95fc6cb31113810e11efde2ee2bc7bc0")
 
-# Партнёры перепродажи (как в calc_plan_fact_dogovory)
-RESALE_PARTNERS = [
-    bytes.fromhex("8266ac1f6b05524d11e7a8c56ff45495"),  # АЛМАЗ ООО (рабочий)
-    bytes.fromhex("812e001e6711250911e788a06ac41964"),  # Турбулентность-Дон ООО
-    bytes.fromhex("8266ac1f6b05524d11e7a8c46cdfe9f3"),  # Турбулентность-ДОН ООО НПО
-    bytes.fromhex("8266ac1f6b05524d11e7a8c74babc7a7"),  # СКТБ Турбо-Дон ООО
-    bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44"),  # Метрогазсервис ООО
-]
-METROGAZ = bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44")
 ODP_DEPT = bytes.fromhex("96f96cb31113810e11f092f67587c178")  # Отдел дилерских продаж
 OPBO_DEPT = bytes.fromhex("80da001e6711250911e49f994edcf3a0")  # ликв. бытовое
 OPPO_DEPT = bytes.fromhex("8127001e6711250911e6d71eff740269")  # ликв. пром.
@@ -105,25 +96,9 @@ OUT_DIR = Path(__file__).resolve().parent
 
 
 def connect() -> pyodbc.Connection:
-    for driver in (
-        "ODBC Driver 18 for SQL Server",
-        "ODBC Driver 17 for SQL Server",
-        "SQL Server",
-    ):
-        try:
-            cn = pyodbc.connect(
-                f"Driver={{{driver}}};Server=localhost;Database=erp_pm;"
-                "Trusted_Connection=yes;TrustServerCertificate=yes;",
-                autocommit=True,
-            )
-            cn.timeout = 0
-            cur = cn.cursor()
-            cur.execute("SET LOCK_TIMEOUT 600000")
-            cur.close()
-            return cn
-        except Exception:
-            continue
-    raise RuntimeError("Не найден ODBC-драйвер SQL Server")
+    from comdir.common import connect as _connect
+
+    return _connect()
 
 
 def to_1c_dt(d: date) -> datetime:
@@ -148,16 +123,9 @@ def load_depts(cur, rows: list[tuple[str, str]], table: str = "#depts") -> None:
 
 
 def load_resale(cur) -> None:
-    cur.execute("IF OBJECT_ID('tempdb..#resale') IS NOT NULL DROP TABLE #resale")
-    cur.execute("CREATE TABLE #resale (id binary(16) PRIMARY KEY)")
-    for p in RESALE_PARTNERS:
-        cur.execute("INSERT INTO #resale(id) VALUES (?)", p)
+    from comdir.resale import load_resale_temp
 
-    cur.execute("IF OBJECT_ID('tempdb..#resale_nomgs') IS NOT NULL DROP TABLE #resale_nomgs")
-    cur.execute("CREATE TABLE #resale_nomgs (id binary(16) PRIMARY KEY)")
-    for p in RESALE_PARTNERS:
-        if p != METROGAZ:
-            cur.execute("INSERT INTO #resale_nomgs(id) VALUES (?)", p)
+    load_resale_temp(cur)
 
 
 def calc_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
@@ -181,34 +149,57 @@ def calc_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
 
 
 def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """Факт платежей по отделам отчёта (6 коммерческих + 2 ликв.)."""
-    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS
+    """Факт «Платежи полученные» как в отчёте 1С «План-фактный анализ продаж».
+
+    Ветка 1: СуммаОплатыРегл, отдел = Подразделение объекта расчётов
+      (как ОбъектРасчетов.Подразделение в запросе 1С).
+      • есть заказ → фильтры: соглашение объекта, не ТД_НеУчитывать*, не сопровождение;
+        при провале строку не берём;
+      • нет заказа (договор и др.) → берём, если отдел объекта в списке отчёта.
+    Ветка 2: комиссия (СуммаПостоплатыРегл), отдел регистра.
+    Ветка 3: взаимозачёты по объекту→заказу.
+    Перепродажа: ТД_ПредопределенныеЗначения через comdir.resale (без хардкода списка).
+    """
+    from comdir.resale import ORDER_SOPR_FIELD
+
+    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS_DISPLAY
     load_depts(cur, all_depts, "#fact_depts")
+    load_resale(cur)
     cur.execute(
-        """
+        f"""
         SELECT d.name, SUM(x.amt) AS FactSum
         FROM (
-          -- оплаты по заказам (возврат → минус)
+          -- оплаты: отдел объекта расчётов
           SELECT o._Fld138169RRef AS dept,
-                 CASE WHEN c._Fld51417RRef = ? THEN -c._Fld51434 ELSE c._Fld51434 END AS amt
+                 CASE WHEN c._Fld51417RRef = ? THEN -c._Fld51434 ELSE c._Fld51434 END AS amt,
+                 COALESCE(ord._Fld21180RRef, c._Fld51418RRef) AS partner
           FROM _AccumRg51416 c WITH (NOLOCK)
           INNER JOIN _Reference134945 o WITH (NOLOCK)
             ON o._IDRRef = c._Fld140225_RRRef
-          INNER JOIN _Document704 ord WITH (NOLOCK)
+          LEFT JOIN _Document704 ord WITH (NOLOCK)
             ON ord._IDRRef = o._Fld138162_RRRef AND o._Fld138162_RTRef = ?
           WHERE c._Period >= ? AND c._Period < ?
             AND c._Active = 0x01
             AND ISNULL(c._Fld140228, 0x00) = 0x00
+            AND c._Fld51434 <> 0
             AND o._Fld138169RRef IN (SELECT id FROM #fact_depts)
-            AND o._Fld138193_RRRef <> ?
-            AND ISNULL(ord._Fld184301, 0x00) = 0x00
-            AND ISNULL(ord._Fld185210, 0x00) = 0x00
+            AND o._Fld138169RRef <> ?
+            AND (
+                  ord._IDRRef IS NULL
+                  OR (
+                       o._Fld138193_RRRef <> ?
+                       AND ISNULL(ord._Fld184301, 0x00) = 0x00
+                       AND ISNULL(ord._Fld185210, 0x00) = 0x00
+                       AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
+                     )
+                )
 
           UNION ALL
 
           -- комиссия: постоплата, отдел = измерение регистра
           SELECT c._Fld51419RRef,
-                 c._Fld51437
+                 c._Fld51437,
+                 c._Fld51418RRef
           FROM _AccumRg51416 c WITH (NOLOCK)
           WHERE c._Period >= ? AND c._Period < ?
             AND c._Active = 0x01
@@ -222,7 +213,8 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
 
           -- взаимозачёты
           SELECT o._Fld138169RRef,
-                 c._Fld51626
+                 c._Fld51626,
+                 ord._Fld21180RRef
           FROM _AccumRg51608 c WITH (NOLOCK)
           INNER JOIN _Reference134945 o WITH (NOLOCK)
             ON o._IDRRef = c._Fld140249_RRRef
@@ -234,14 +226,26 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
             AND o._Fld138193_RRRef <> ?
             AND ISNULL(ord._Fld184301, 0x00) = 0x00
             AND ISNULL(ord._Fld185210, 0x00) = 0x00
+            AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
         ) x
         INNER JOIN #fact_depts d ON d.id = x.dept
+        WHERE (
+          CASE
+            WHEN EXISTS (SELECT 1 FROM #dept_nomgs n WHERE n.id = x.dept) THEN
+              CASE WHEN EXISTS (SELECT 1 FROM #resale_nomgs r WHERE r.id = x.partner)
+                   THEN 0 ELSE 1 END
+            ELSE
+              CASE WHEN EXISTS (SELECT 1 FROM #resale r WHERE r.id = x.partner)
+                   THEN 0 ELSE 1 END
+          END
+        ) = 1
         GROUP BY d.name
         """,
         RET_OP,
         ORDER_TREF,
         p0,
         p_next,
+        EMPTY16,
         EMPTY16,
         p0,
         p_next,
@@ -268,10 +272,6 @@ def calc_expected(cur, p_year_start: datetime, p_month_end: datetime) -> dict[st
     exp_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS_DISPLAY + HOLDINGS_DEPTS
     load_depts(cur, exp_depts, "#exp_depts")
     load_resale(cur)
-    cur.execute("IF OBJECT_ID('tempdb..#dept_nomgs') IS NOT NULL DROP TABLE #dept_nomgs")
-    cur.execute("CREATE TABLE #dept_nomgs (id binary(16) PRIMARY KEY)")
-    for d in DEPTS_RESALE_NO_MGS:
-        cur.execute("INSERT INTO #dept_nomgs(id) VALUES (?)", d)
 
     fx = """
       CASE

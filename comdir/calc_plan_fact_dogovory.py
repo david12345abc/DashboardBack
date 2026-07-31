@@ -5,12 +5,17 @@
 Маркетинговый план (МП) — без изменений:
   _AccumRg96963, вид «Договоры», 6 коммерческих отделов.
 
-Факт (ТД_ДоговорыПодписанные / _InfoRg112278) — по запросу 1С:
-  • ДатаПодписания в периоде
-  • Спецификация.Статус = Действует
-  • исключение партнёров перепродажи (с особым правилом ТД_СопровождениеПродажи)
-  • НЕ ТД_НеУчитыватьВПланФакте (если заказ заполнен)
-  • курсы валют (если заказ в USD/EUR/BYN/KZT)
+Факт договоров = регистр + ветка счёт-оферта (как в отчёте «План-факт»):
+
+  A) ТД_ДоговорыПодписанные (live OData; SQL — fallback):
+  • ДатаПодписания в периоде, Спецификация.Статус = Действует
+  • перепродажа / ТД_СопровождениеПродажи / ТД_НеУчитыватьВПланФакте
+  • доп.: партнёр заказа ∈ перепродажи или сопровождение на заказе
+  • курсы валют заказа
+
+  B) Счёт-оферта (из расшифровки Excel): заказы с ТД_СчетОферта,
+     без строки в ТД_ДоговорыПодписанные, проведённые, с оплатой в периоде;
+     сумма = СуммаОплатыРегл за период (ОПБО/ОДП — перепродажа без МГС).
 
 Ожидаемые (ТД_ДоговорыПотенциальные / _InfoRg112240):
   • ДатаПодписанияПлан в периоде
@@ -28,11 +33,15 @@
 """
 from __future__ import annotations
 
+import logging
 from calendar import monthrange
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import pyodbc
+
+logger = logging.getLogger(__name__)
 
 YEAR_OFFSET = 2000
 PLAN_DEALS = bytes.fromhex("9370c9cb1d3024c84863b32957436199")
@@ -60,24 +69,6 @@ CUR_BYN = bytes.fromhex("8756ac1f6b05524d11ec45dc095e2c36")
 CUR_KZT = bytes.fromhex("95fc6cb31113810e11efde2ee2bc7bc0")
 CUR_RUB = bytes.fromhex("812d001e6711250911e762523fdf75b4")
 
-# Партнёры перепродажи (Справочники_Партнеры_СписокПартнеровПерепродажи_НашиОрганизации)
-# АЛМАЗ ООО (рабочий), Турбулентность-Дон ООО, Турбулентность-ДОН ООО НПО,
-# СКТБ Турбо-Дон ООО, Метрогазсервис ООО
-RESALE_PARTNERS = [
-    bytes.fromhex("8266ac1f6b05524d11e7a8c56ff45495"),  # АЛМАЗ ООО (рабочий)
-    bytes.fromhex("812e001e6711250911e788a06ac41964"),  # Турбулентность-Дон ООО
-    bytes.fromhex("8266ac1f6b05524d11e7a8c46cdfe9f3"),  # Турбулентность-ДОН ООО НПО
-    bytes.fromhex("8266ac1f6b05524d11e7a8c74babc7a7"),  # СКТБ Турбо-Дон ООО
-    bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44"),  # Метрогазсервис ООО
-]
-METROGAZ = bytes.fromhex("8266ac1f6b05524d11e7a8c6d7f5ff44")
-
-# Отделы с правилом «перепродажа без МГС»: ОДП + ликв. дилерские
-ODP_DEPT = bytes.fromhex("96f96cb31113810e11f092f67587c178")  # Отдел дилерских продаж
-OPBO_DEPT = bytes.fromhex("80da001e6711250911e49f994edcf3a0")  # ликв. бытовое
-OPPO_DEPT = bytes.fromhex("8127001e6711250911e6d71eff740269")  # ликв. пром.
-DEPTS_RESALE_NO_MGS = (ODP_DEPT, OPBO_DEPT, OPPO_DEPT)
-
 # Ликвидированные холдинги → ключевые клиенты
 HOLDINGS_DEPTS: list[tuple[str, str]] = [
     ("(ликв.) Отдел по работе с холдингами 1", "95e86cb31113810e11efcf32c6810cc3"),
@@ -89,15 +80,19 @@ HOLDINGS_DEPTS: list[tuple[str, str]] = [
 AG_OFFER_FLAG = "_Fld13700"
 
 ORDER_TREF = bytes.fromhex("000002c0")  # Документ.ЗаказКлиента
+# ХозяйственнаяОперация.ВозвратОплатыКлиенту — для знака оплаты
+RET_OP = bytes.fromhex("b4af52c1b39555e54eeac8d5724dc975")
+# Документ.ЗаказКлиента.Статус
+ORDER_STATUS_FIELD = "_Fld21195RRef"
+ORDER_STATUS_NOT_AGREED = bytes.fromhex("a1675473ecec326649b4b85516d451ca")  # НеСогласован
 
 # КП: ТД_ОсновноеТКПДляБМИ / ТД_СуммаТКПБМИ
 KP_BMI_FLAG = "_Fld184256"
 KP_BMI_SUM = "_Fld86876"
 KP_CURRENCY = "_Fld25034RRef"
 
-# Курсы констант ТД_ВалютаПланФакта_УЕ_* (в июле 2026 почти всё в RUB → 1)
-# Подставляются если найдены; иначе 1.
-FX_RATES = {"USD": 1.0, "EUR": 1.0, "BYN": 1.0, "KZT": 1.0}
+# Курсы Константы.ТД_ВалютаПланФакта_УЕ_* — подгружаются из OData при расчёте.
+FX_RATES: dict[str, float] = {"USD": 1.0, "EUR": 1.0, "BYN": 1.0, "KZT": 1.0}
 
 COMMERCIAL_DEPTS: list[tuple[str, str]] = [
     ("Отдел по работе с ПАО Газпром", "80da001e6711250911e49f9cbd7b5184"),
@@ -128,25 +123,9 @@ OUT_DIR = Path(__file__).resolve().parent
 
 
 def connect() -> pyodbc.Connection:
-    for driver in (
-        "ODBC Driver 18 for SQL Server",
-        "ODBC Driver 17 for SQL Server",
-        "SQL Server",
-    ):
-        try:
-            cn = pyodbc.connect(
-                f"Driver={{{driver}}};Server=localhost;Database=erp_pm;"
-                "Trusted_Connection=yes;TrustServerCertificate=yes;",
-                autocommit=True,
-            )
-            cn.timeout = 0
-            cur = cn.cursor()
-            cur.execute("SET LOCK_TIMEOUT 600000")
-            cur.close()
-            return cn
-        except Exception:
-            continue
-    raise RuntimeError("Не найден ODBC-драйвер SQL Server")
+    from comdir.common import connect as _connect
+
+    return _connect()
 
 
 def to_1c_dt(d: date) -> datetime:
@@ -171,21 +150,9 @@ def load_depts(cur, rows: list[tuple[str, str]], table: str = "#depts") -> None:
 
 
 def load_resale(cur) -> None:
-    cur.execute("IF OBJECT_ID('tempdb..#resale') IS NOT NULL DROP TABLE #resale")
-    cur.execute("CREATE TABLE #resale (id binary(16) PRIMARY KEY)")
-    for p in RESALE_PARTNERS:
-        cur.execute("INSERT INTO #resale(id) VALUES (?)", p)
+    from comdir.resale import load_resale_temp
 
-    cur.execute("IF OBJECT_ID('tempdb..#resale_nomgs') IS NOT NULL DROP TABLE #resale_nomgs")
-    cur.execute("CREATE TABLE #resale_nomgs (id binary(16) PRIMARY KEY)")
-    for p in RESALE_PARTNERS:
-        if p != METROGAZ:
-            cur.execute("INSERT INTO #resale_nomgs(id) VALUES (?)", p)
-
-    cur.execute("IF OBJECT_ID('tempdb..#dept_nomgs') IS NOT NULL DROP TABLE #dept_nomgs")
-    cur.execute("CREATE TABLE #dept_nomgs (id binary(16) PRIMARY KEY)")
-    for d in DEPTS_RESALE_NO_MGS:
-        cur.execute("INSERT INTO #dept_nomgs(id) VALUES (?)", d)
+    load_resale_temp(cur)
 
 
 def fx_sql(amount_expr: str, currency_expr: str) -> str:
@@ -201,12 +168,25 @@ def fx_sql(amount_expr: str, currency_expr: str) -> str:
     """
 
 
+def refresh_fx_rates() -> dict[str, float]:
+    """Загрузить курсы из констант 1С; при ошибке оставить текущие FX_RATES."""
+    global FX_RATES
+    try:
+        from comdir.resale import fetch_fx_rates
+
+        FX_RATES = fetch_fx_rates()
+    except Exception:
+        pass
+    return FX_RATES
+
+
 def fx_params() -> list:
+    rates = refresh_fx_rates()
     return [
-        CUR_USD, FX_RATES["USD"],
-        CUR_EUR, FX_RATES["EUR"],
-        CUR_BYN, FX_RATES["BYN"],
-        CUR_KZT, FX_RATES["KZT"],
+        CUR_USD, rates["USD"],
+        CUR_EUR, rates["EUR"],
+        CUR_BYN, rates["BYN"],
+        CUR_KZT, rates["KZT"],
     ]
 
 
@@ -229,12 +209,174 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
-def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+def _dept_name_by_bin() -> dict[bytes, str]:
+    return {
+        bytes.fromhex(hx): name
+        for name, hx in (COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS)
+    }
+
+
+def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Факт договоров из live OData — тот же запрос 1С, актуальные строки регистра.
+
+    SQL-копия `_InfoRg112278` в erp_pm часто отстаёт (нет строк за последние дни),
+    поэтому для факта берём живой регистр через OData.
     """
-    Договоры факт.
-    Для ОДП/ОПБО: НЕ партнёр В перепродаже без МГС.
-    Иначе: НЕ (партнёр В перепродаже И НЕ ТД_СопровождениеПродажи).
-    """
+    from comdir.resale import (
+        PREDEFINED_MGS_REF,
+        PREDEFINED_OPBO_REF,
+        PREDEFINED_RESALE_REF,
+        _base,
+        _session,
+        fetch_fx_rates,
+        guid_to_1c_bytes,
+    )
+
+    session = _session()
+    base = _base()
+    empty = "00000000-0000-0000-0000-000000000000"
+    d0 = f"{p0.year - YEAR_OFFSET:04d}-{p0.month:02d}-{p0.day:02d}"
+    d1 = f"{p_next.year - YEAR_OFFSET:04d}-{p_next.month:02d}-{p_next.day:02d}"
+
+    # партнёры перепродажи / МГС / ОПБО
+    flt = quote(f"Ref_Key eq guid'{PREDEFINED_RESALE_REF}'", safe="")
+    url = (
+        f"{base}/Catalog_ТД_ПредопределенныеЗначения_ДополнительныеЗначения"
+        f"?$format=json&$filter={flt}&$select=Значение,Значение_Type&$top=5000"
+    )
+    resale: set[str] = set()
+    for row in session.get(url, timeout=45).json().get("value") or []:
+        val = row.get("Значение")
+        if val and "Catalog_Партнеры" in str(row.get("Значение_Type") or ""):
+            resale.add(val)
+    flt_m = quote(f"Ref_Key eq guid'{PREDEFINED_MGS_REF}'", safe="")
+    mgs = (
+        (session.get(
+            f"{base}/Catalog_ТД_ПредопределенныеЗначения?$format=json"
+            f"&$filter={flt_m}&$select=Значение,Значение_Type&$top=1",
+            timeout=30,
+        ).json().get("value") or [{}])[0].get("Значение")
+    )
+    if mgs:
+        resale.add(mgs)
+    resale_nomgs = set(resale) - ({mgs} if mgs else set())
+
+    flt_o = quote(f"Ref_Key eq guid'{PREDEFINED_OPBO_REF}'", safe="")
+    opbo = (
+        (session.get(
+            f"{base}/Catalog_ТД_ПредопределенныеЗначения?$format=json"
+            f"&$filter={flt_o}&$select=Значение,Значение_Type&$top=1",
+            timeout=30,
+        ).json().get("value") or [{}])[0].get("Значение")
+    )
+
+    rates = fetch_fx_rates()
+    cur_map = {
+        "0a7c6f22-e1b6-11df-963e-001cc4d04388": rates["USD"],
+        "d328a18d-7405-11e0-81cd-001583b3d75c": rates["EUR"],
+        "095e2c36-45dc-11ec-8756-ac1f6b05524d": rates["BYN"],
+        "e2bc7bc0-de2e-11ef-95fc-6cb31113810e": rates["KZT"],
+    }
+
+    entity = quote("InformationRegister_ТД_ДоговорыПодписанные")
+    flt = quote(
+        f"ДатаПодписания ge datetime'{d0}T00:00:00' and "
+        f"ДатаПодписания lt datetime'{d1}T00:00:00'"
+    )
+    select = quote(
+        "Спецификация_Key,Подразделение_Key,Партнер_Key,ЗаказКлиента_Key,"
+        "СуммаДоговора,ТД_СопровождениеПродажи",
+        safe=",",
+    )
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        url = (
+            f"{base}/{entity}?$format=json&$top=1000&$skip={skip}"
+            f"&$select={select}&$filter={flt}"
+        )
+        batch = session.get(url, timeout=120).json().get("value") or []
+        rows.extend(batch)
+        if len(batch) < 1000:
+            break
+        skip += 1000
+
+    status: dict[str, str] = {}
+    for sk in {r.get("Спецификация_Key") for r in rows if r.get("Спецификация_Key")}:
+        rr = session.get(
+            f"{base}/{quote('Catalog_СоглашенияСКлиентами')}(guid'{sk}')"
+            f"?$format=json&$select=Статус",
+            timeout=30,
+        )
+        if rr.ok:
+            status[sk] = rr.json().get("Статус") or ""
+
+    order_keys = sorted({
+        r.get("ЗаказКлиента_Key")
+        for r in rows
+        if r.get("ЗаказКлиента_Key") and r.get("ЗаказКлиента_Key") != empty
+    })
+    orders: dict[str, dict] = {}
+    for i in range(0, len(order_keys), 15):
+        batch = order_keys[i : i + 15]
+        oflt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
+        url = (
+            f"{base}/{quote('Document_ЗаказКлиента')}?$format=json&$filter={oflt}"
+            f"&$select={quote('Ref_Key,Партнер_Key,Валюта_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи', safe=',')}"
+            f"&$top=50"
+        )
+        rr = session.get(url, timeout=60)
+        if not rr.ok:
+            continue
+        for it in rr.json().get("value") or []:
+            orders[it["Ref_Key"]] = it
+
+    name_by_bin = _dept_name_by_bin()
+    out: dict[str, float] = {}
+    for r in rows:
+        if status.get(r.get("Спецификация_Key") or "") != "Действует":
+            continue
+        dept_key = r.get("Подразделение_Key") or empty
+        if dept_key == empty:
+            continue
+        try:
+            dept_name = name_by_bin.get(guid_to_1c_bytes(dept_key))
+        except Exception:
+            dept_name = None
+        if not dept_name:
+            continue
+
+        partner = r.get("Партнер_Key") or empty
+        sopr_reg = bool(r.get("ТД_СопровождениеПродажи"))
+        if opbo and dept_key == opbo:
+            if partner in resale_nomgs:
+                continue
+        else:
+            if partner in resale and not sopr_reg:
+                continue
+
+        ok = r.get("ЗаказКлиента_Key") or empty
+        rate = 1.0
+        if ok != empty:
+            od = orders.get(ok) or {}
+            if od.get("ТД_НеУчитыватьВПланФакте"):
+                continue
+            if od.get("ТД_СопровождениеПродажи"):
+                continue
+            if (od.get("Партнер_Key") or empty) in resale:
+                continue
+            rate = float(cur_map.get(od.get("Валюта_Key") or "", 1.0) or 1.0)
+
+        amt = float(r.get("СуммаДоговора") or 0) * rate
+        out[dept_name] = out.get(dept_name, 0.0) + amt
+
+    return {k: round(v, 2) for k, v in out.items()}
+
+
+def calc_fact_sql(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Факт договоров из SQL erp_pm (fallback, если OData недоступна)."""
+    from comdir.resale import ORDER_SOPR_FIELD
+
     all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
     load_depts(cur, all_depts, "#fact_depts")
     load_resale(cur)
@@ -254,7 +396,13 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
           AND a._Fld13714RRef = ?
           AND (
                 s._Fld112481RRef = ?
-                OR ISNULL(ord._Fld184301, 0x00) = 0x00
+                OR (
+                     ISNULL(ord._Fld184301, 0x00) = 0x00
+                     AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
+                     AND NOT EXISTS (
+                       SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                     )
+                   )
               )
           AND (
                 CASE
@@ -279,6 +427,98 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
         EMPTY16,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+
+
+def calc_fact_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Ветка счёт-оферта факта договоров (расшифровка отчёта 1С / Excel).
+
+    Заказы с соглашением ТД_СчетОферта, которых нет в ТД_ДоговорыПодписанные:
+    проведённые, не «НеСогласован», с оплатой в периоде → сумма оплат регл.
+    """
+    from comdir.resale import ORDER_SOPR_FIELD
+
+    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
+    load_depts(cur, all_depts, "#offer_fact_depts")
+    load_resale(cur)
+    cur.execute(
+        f"""
+        SELECT d.name, SUM(pay.pay_amt) AS FactSum
+        FROM _Document704 ord WITH (NOLOCK)
+        INNER JOIN #offer_fact_depts d ON d.id = ord._Fld21220RRef
+        INNER JOIN _Reference473 a WITH (NOLOCK)
+          ON a._IDRRef = ord._Fld21183RRef
+        INNER JOIN (
+          SELECT obj._Fld138162_RRRef AS ord_id,
+                 SUM(
+                   CASE WHEN c._Fld51417RRef = ? THEN -c._Fld51434 ELSE c._Fld51434 END
+                 ) AS pay_amt
+          FROM _AccumRg51416 c WITH (NOLOCK)
+          INNER JOIN _Reference134945 obj WITH (NOLOCK)
+            ON obj._IDRRef = c._Fld140225_RRRef
+           AND obj._Fld138162_RTRef = ?
+          WHERE c._Period >= ? AND c._Period < ?
+            AND c._Active = 0x01
+            AND ISNULL(c._Fld140228, 0x00) = 0x00
+          GROUP BY obj._Fld138162_RRRef
+          HAVING SUM(
+            CASE WHEN c._Fld51417RRef = ? THEN -c._Fld51434 ELSE c._Fld51434 END
+          ) > 0
+        ) pay ON pay.ord_id = ord._IDRRef
+        WHERE a.[{AG_OFFER_FLAG}] = 0x01
+          AND a._Fld13714RRef = ?
+          AND ord._Posted = 0x01
+          AND ISNULL(ord._Fld184301, 0x00) = 0x00
+          AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
+          AND ord.[{ORDER_STATUS_FIELD}] <> ?
+          AND NOT EXISTS (
+            SELECT 1 FROM _InfoRg112278 s WITH (NOLOCK)
+            WHERE s._Fld112481RRef = ord._IDRRef
+          )
+          AND (
+                CASE
+                  WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = ord._Fld21220RRef) THEN
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                  ELSE
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                END
+              ) = 1
+        GROUP BY d.name
+        """,
+        RET_OP,
+        ORDER_TREF,
+        p0,
+        p_next,
+        RET_OP,
+        AG_STATUS_ACTIVE,
+        ORDER_STATUS_NOT_AGREED,
+    )
+    return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+
+
+def _merge_fact(a: dict[str, float], b: dict[str, float]) -> dict[str, float]:
+    out = dict(a)
+    for name, val in b.items():
+        out[name] = round(out.get(name, 0.0) + float(val or 0), 2)
+    return out
+
+
+def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Договоры заключённые (факт) = регистр + счёт-оферта (как в отчёте 1С)."""
+    try:
+        reg = calc_fact_odata(p0, p_next)
+    except Exception:
+        logger.exception("OData факт договоров недоступен — fallback SQL erp_pm")
+        reg = calc_fact_sql(cur, p0, p_next)
+    try:
+        offer = calc_fact_offer(cur, p0, p_next)
+    except Exception:
+        logger.exception("Ветка счёт-оферта факта договоров недоступна")
+        offer = {}
+    return _merge_fact(reg, offer)
 
 
 def calc_expected_potential(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
@@ -424,7 +664,7 @@ def main(as_of: date | None = None) -> None:
     print(f"БД: erp_pm @ localhost")
     print("Метрика: договоры (МП / факт / ожидаемые)")
     print(f"FX rates: {FX_RATES}")
-    print(f"Партнёры перепродажи: {len(RESALE_PARTNERS)}\n")
+    print("Партнёры перепродажи: из ТД_ПредопределенныеЗначения (OData/SQL)\n")
 
     mp = calc_mp_plan(cur, p0, p_next)
     fact = calc_fact(cur, p0, p_next)

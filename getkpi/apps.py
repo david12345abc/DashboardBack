@@ -9,12 +9,14 @@ class GetkpiConfig(AppConfig):
 
         from . import cache_manager
         from . import commercial_cache_scheduler
+        from . import restore_scheduler
         from .kpi_definitions_cache import bump_kpi_definitions_cache_version
         from .models import KpiDefinition
 
         cache_manager.start_warming()
         cache_manager.start_midnight_cache_scheduler()
         commercial_cache_scheduler.start_commercial_cache_scheduler()
+        restore_scheduler.start_restore_scheduler()
 
         def _invalidate_kpi_definitions_cache(**_kwargs):
             bump_kpi_definitions_cache_version()
