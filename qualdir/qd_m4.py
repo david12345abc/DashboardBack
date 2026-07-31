@@ -534,12 +534,16 @@ def save_report(period_slug: str, rows: list[dict[str, Any]]) -> Path:
 
 
 def build_qd_m4_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
+    from getkpi.autoit.it_monthly_period import pick_fot_display_row, trim_monthly_rows_to_display
+
     now = date.today()
     ref_y = year or now.year
     ref_m = month or (now.month - 1 if now.month > 1 else 12)
     if month is None and now.month == 1 and year is None:
         ref_y = now.year - 1
         ref_m = 12
+    if ref_y == now.year:
+        ref_m = min(ref_m, now.month)
 
     rows = build_monthly_report((ref_y, 1), (ref_y, ref_m))
     monthly_rows: list[dict[str, Any]] = []
@@ -561,27 +565,29 @@ def build_qd_m4_payload(year: int | None = None, month: int | None = None) -> di
             item["values_unit"] = "руб."
         monthly_rows.append(item)
 
-    ref_row = next(
-        (item for item in monthly_rows if item["month"] == ref_m),
-        monthly_rows[-1] if monthly_rows else None,
-    )
+    with_data = [item for item in monthly_rows if item.get("has_data")]
+    display_row = pick_fot_display_row(monthly_rows, ref_m, ref_year=ref_y)
+    monthly_rows = trim_monthly_rows_to_display(monthly_rows, display_row)
+    display_m = int(display_row["month"]) if display_row and display_row.get("month") else ref_m
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
-        "last_full_month_row": dict(ref_row) if ref_row and ref_row.get("plan") is not None else None,
+        "last_full_month_row": (
+            dict(display_row) if display_row and display_row.get("plan") is not None else None
+        ),
         "kpi_period": {
             "type": "last_full_month",
             "year": ref_y,
-            "month": ref_m,
-            "month_name": MONTH_NAMES[ref_m],
+            "month": display_m,
+            "month_name": MONTH_NAMES[display_m],
         },
         "ytd": {
-            "total_plan": ref_row.get("plan") if ref_row else None,
-            "total_fact": ref_row.get("fact") if ref_row else None,
-            "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
-            "months_with_data": sum(1 for item in monthly_rows if item.get("has_data")),
+            "total_plan": display_row.get("plan") if display_row else None,
+            "total_fact": display_row.get("fact") if display_row else None,
+            "kpi_pct": display_row.get("kpi_pct") if display_row else None,
+            "months_with_data": len(with_data),
             "months_total": len(monthly_rows),
-            **({"values_unit": "руб."} if ref_row and ref_row.get("has_data") else {}),
+            **({"values_unit": "руб."} if display_row and display_row.get("has_data") else {}),
         },
         "debug": {
             "status": "ok" if any(item.get("has_data") for item in monthly_rows) else "no_data",
@@ -659,8 +665,8 @@ from pathlib import Path as _Path
 from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 QD_M4_YTD_CACHE_PREFIX = "qualdir_qd_m4_ytd"
-QD_M4_YTD_DISK_TAG = "qualdir_qd_m4_ytd_payload_sql_v2"
-QD_M4_YTD_DISK_VERSION = 11
+QD_M4_YTD_DISK_TAG = "qualdir_qd_m4_ytd_payload_sql_v4"
+QD_M4_YTD_DISK_VERSION = 13
 
 
 def qd_m4_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

@@ -971,7 +971,10 @@ def _build_tile_item(
         tile['rag_direction'] = 'lower_better'
     if entry.get('kpi_period'):
         tile['kpi_period'] = entry.get('kpi_period')
-    if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
+    period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
+    if period_label:
+        tile['plan_fact_period_label'] = period_label
+    elif ref_y and ref_m and tile.get('data_granularity') == 'monthly':
         tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
     tile['cache_updated_at'] = _tile_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
     if entry.get('last_full_month_row'):
@@ -1932,7 +1935,7 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        gspp_memo_key = f"gspp_dashboard:v5:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        gspp_memo_key = f"gspp_dashboard:v6:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -1942,7 +1945,7 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        qualdir_memo_key = f"qualdir_dashboard:v2:{ref_y}:{ref_m:02d}"
+        qualdir_memo_key = f"qualdir_dashboard:v3:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -1969,7 +1972,7 @@ def _build_universal_payload(
             return cached_payload
     if _is_devdir_department(dept) and not include_debug:
         # v2: сброс memo после ручной инвалидации RD-M3-1 / SQL-планов текучести
-        devdir_memo_key = f"devdir_dashboard:v2:{ref_y}:{ref_m:02d}"
+        devdir_memo_key = f"devdir_dashboard:v3:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
         if cached_payload is not None:
             logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
@@ -2248,6 +2251,8 @@ def _build_universal_payload(
             tile['unit'] = '%'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
+        if not period_label and tile_lm_y and tile_lm_m:
+            period_label = f"{MONTH_NAMES[tile_lm_m].capitalize()} {tile_lm_y}"
         if period_label:
             tile['plan_fact_period_label'] = period_label
 

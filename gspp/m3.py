@@ -305,12 +305,15 @@ def get_gspp_m3(year: int | None = None, month: int | None = None) -> dict[str, 
 
 # --- YTD-плитка для дашборда (gspp.views / getkpi.cache_manager) ---
 GSPP_M3_CACHE_PREFIX = "gspp_m3_ytd"
-GSPP_M3_DISK_TAG = "gspp_m3_fot_payload_sql_v1"
-GSPP_M3_DISK_VERSION = 1
+GSPP_M3_DISK_TAG = "gspp_m3_fot_payload_sql_v2"
+GSPP_M3_DISK_VERSION = 2
 
 
 def _build_gspp_m3_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
-    from getkpi.autoit.it_monthly_period import pick_fot_display_row
+    from getkpi.autoit.it_monthly_period import (
+        pick_fot_display_row,
+        trim_monthly_rows_to_display,
+    )
     from getkpi.kpi_periods import last_full_month as lfm
 
     today = date.today()
@@ -340,16 +343,18 @@ def _build_gspp_m3_payload(year: int | None = None, month: int | None = None) ->
             }
         )
 
-    display_row = pick_fot_display_row(monthly_rows, ref_m, ref_year=ref_y)
-    display_m = int(display_row["month"]) if display_row and display_row.get("month") else ref_m
     with_data = [row for row in monthly_rows if row.get("has_data")]
+    display_row = pick_fot_display_row(monthly_rows, ref_m, ref_year=ref_y)
+    monthly_rows = trim_monthly_rows_to_display(monthly_rows, display_row)
+    display_m = int(display_row["month"]) if display_row and display_row.get("month") else ref_m
+    display_y = int(display_row["year"]) if display_row and display_row.get("year") else ref_y
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
         "last_full_month_row": dict(display_row) if display_row else None,
         "kpi_period": {
             "type": "last_full_month",
-            "year": ref_y,
+            "year": display_y,
             "month": display_m,
             "month_name": MONTH_RU[display_m].lower(),
         },

@@ -57,18 +57,16 @@ def pick_fot_display_row(
             return False
         return fv is not None and fv > 0
 
-    # Незакрытый текущий месяц → последний полный месяц с ненулевым фактом.
+    # Незакрытый текущий месяц → всегда предыдущий календарный месяц из ряда (не текущий).
     if year == today.year and ref_m == today.month:
         closed_m = today.month - 1 if today.month > 1 else 12
-        closed = next(
-            (r for r in reversed(rows) if r.get("month") == closed_m and _nonzero_fact(r)),
-            None,
-        )
+        closed = next((r for r in rows if r.get("month") == closed_m), None)
         if closed is not None:
             return closed
         for row in reversed(rows):
-            if row.get("month") != ref_m and _nonzero_fact(row):
+            if row.get("month") != ref_m:
                 return row
+        return None
 
     ref_row = next((r for r in rows if r.get("month") == ref_m), None)
     if ref_row and _nonzero_fact(ref_row):
