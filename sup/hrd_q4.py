@@ -63,32 +63,34 @@ def _read_fact_from_hc_report(path: Path) -> tuple[float, dict[str, Any]]:
         debug["status"] = "missing_file"
         return 0.0, debug
 
+    book = None
     try:
         book = open_hc_workbook(path)
         sheet = _open_tekuchest_sheet(book)
+        raw_value: Any = None
+        row_idx: int | None = None
+        for row in range(sheet.nrows - 1, -1, -1):
+            value = sheet.cell_value(row, HC_FACT_COLUMN)
+            if value not in (None, ""):
+                raw_value = value
+                row_idx = row
+                break
+        fact = _fact_from_cell(raw_value)
+        debug.update({
+            "status": "ok",
+            "row": (row_idx + 1) if row_idx is not None else None,
+            "raw_fact": raw_value,
+            "fact": fact,
+        })
+        return fact, debug
     except Exception as exc:
         logger.warning("HRD-Q4: не удалось прочитать %s: %s", path, exc)
         debug["status"] = "read_error"
         debug["error"] = str(exc)
         return 0.0, debug
-
-    raw_value: Any = None
-    row_idx: int | None = None
-    for row in range(sheet.nrows - 1, -1, -1):
-        value = sheet.cell_value(row, HC_FACT_COLUMN)
-        if value not in (None, ""):
-            raw_value = value
-            row_idx = row
-            break
-
-    fact = _fact_from_cell(raw_value)
-    debug.update({
-        "status": "ok",
-        "row": (row_idx + 1) if row_idx is not None else None,
-        "raw_fact": raw_value,
-        "fact": fact,
-    })
-    return fact, debug
+    finally:
+        if book is not None and hasattr(book, "close"):
+            book.close()
 
 
 def _read_monthly_rows(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:

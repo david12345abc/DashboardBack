@@ -1088,6 +1088,8 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
             float(fact) if fact is not None else None,
             kpi_id=kid,
         )
+    elif kid in _sup_kpi_views.SUP_HIGHER_BETTER_90_80_IDS:
+        color = _sup_kpi_views.rag_hrd_m1_pct(pct)
     elif kid in {'PD-M1.1', 'PD-M1.2'} or kid in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID:
         ref_row = entry.get('last_full_month_row') or {}
         pct = ref_row.get('kpi_pct')
@@ -1678,6 +1680,9 @@ def _build_tile_item(
     if _kid_gspp in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
         tile['pct_higher_is_better'] = True
         tile['rag_direction'] = 'higher_better'
+    elif _kid_gspp in _sup_kpi_views.SUP_HIGHER_BETTER_90_80_IDS:
+        tile['pct_higher_is_better'] = True
+        tile['rag_direction'] = 'higher_better'
     elif _kid_gspp in _devdir_kpi_views.DEVDIR_RUB_UNIT_KPI_IDS:
         tile['pct_lower_is_better'] = True
         tile['rag_direction'] = 'lower_better'
@@ -1701,7 +1706,10 @@ def _build_tile_item(
         tile['kpi_period'] = entry.get('kpi_period')
     if entry.get('generated_data'):
         tile['generated_data'] = True
-    if ref_y and ref_m and tile.get('data_granularity') == 'monthly':
+    period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
+    if period_label:
+        tile['plan_fact_period_label'] = period_label
+    elif ref_y and ref_m and tile.get('data_granularity') == 'monthly':
         tile['plan_fact_period_label'] = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
     tile['cache_updated_at'] = _tile_cache_updated_at(kpi.get('kpi_id'), ref_y, ref_m)
     if entry.get('cache_refresh_status'):
@@ -1745,6 +1753,12 @@ def _build_tile_item(
                             float(lfr['fact']),
                             kpi_id=_kid_gspp,
                         ),
+                    }
+            elif _kid_gspp in _sup_kpi_views.SUP_HIGHER_BETTER_90_80_IDS:
+                if lfr.get('kpi_pct') is not None:
+                    lfr = {
+                        **lfr,
+                        'color': _sup_kpi_views.rag_hrd_m1_pct(float(lfr['kpi_pct'])),
                     }
             elif _kid_gspp in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
                 pct_lfr = _devdir_kpi_views.kpi_pct_from_plan_fact(lfr.get('plan'), lfr.get('fact'))
@@ -1828,6 +1842,18 @@ def _build_tile_item(
                     'color': _sup_kpi_views.rag_hrd_turnover_fact_pct(
                         float(row['fact']) if row.get('fact') is not None else None,
                         kpi_id=_kid_gspp,
+                    ),
+                }
+                if isinstance(row, dict)
+                else row
+                for row in raw_rows
+            ]
+        elif _kid_gspp in _sup_kpi_views.SUP_HIGHER_BETTER_90_80_IDS:
+            raw_rows = [
+                {
+                    **row,
+                    'color': _sup_kpi_views.rag_hrd_m1_pct(
+                        float(row['kpi_pct']) if row.get('kpi_pct') is not None else None
                     ),
                 }
                 if isinstance(row, dict)
@@ -2959,7 +2985,6 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        # v6: ГСП-M5 без ложного плана от завершённых проектов
         gspp_memo_key = f"gspp_dashboard:v6:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
@@ -2970,13 +2995,13 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        qualdir_memo_key = f"qualdir_dashboard:v2:{ref_y}:{ref_m:02d}"
+        qualdir_memo_key = f"qualdir_dashboard:v3:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v9: HRD-M3 показывает выбранный месяц без отката на последний полный.
-        sup_memo_key = f"sup_dashboard:v9:{ref_y}:{ref_m:02d}"
+        # v11: trim monthly_data до опорного месяца (HRD-M3: не смешивать июль с цветом июня).
+        sup_memo_key = f"sup_dashboard:v11:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2997,7 +3022,7 @@ def _build_universal_payload(
             return cached_payload
     if _is_devdir_department(dept) and not include_debug:
         # v2: сброс memo после ручной инвалидации RD-M3-1 / SQL-планов текучести
-        devdir_memo_key = f"devdir_dashboard:v2:{ref_y}:{ref_m:02d}"
+        devdir_memo_key = f"devdir_dashboard:v3:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
         if cached_payload is not None:
             logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
@@ -3016,7 +3041,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"qualdir_v2_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v9_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v11_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
             dashboard_disk_key = f"autoit_v7_{ref_y}_{ref_m:02d}"
@@ -3075,8 +3100,11 @@ def _build_universal_payload(
             ):
                 tile_lm_y = int(kper['year'])
                 tile_lm_m = max(1, min(12, int(kper['month'])))
+        # stamp/cache_updated_at — по файлу YTD за опорный месяц дашборда (ref_*),
+        # не по display-месяцу из kpi_period: иначе для HRD-M1 при показе июня
+        # ищут ..._2026_06.json (его нет) и «Обновлено» падает на mtime HC_*.xls.
         tile = _build_tile_item(
-            kpi, pct, color, entry, ref_y=tile_lm_y, ref_m=tile_lm_m,
+            kpi, pct, color, entry, ref_y=ref_y, ref_m=ref_m,
         )
 
         monthly_data = entry.get('monthly_data')
@@ -3145,6 +3173,12 @@ def _build_universal_payload(
                 if lm.get('kpi_pct') is not None:
                     tile['kpi_pct'] = lm.get('kpi_pct')
                     tile['color'] = _gspp_kpi_views.rag_gspp_m1_m2_pct(float(lm['kpi_pct']))
+            elif _kid_tile in _sup_kpi_views.SUP_HIGHER_BETTER_90_80_IDS:
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                    tile['color'] = _sup_kpi_views.rag_hrd_m1_pct(float(lm['kpi_pct']))
+                elif lm.get('color') is not None:
+                    tile['color'] = lm.get('color')
             elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
                 if lm.get('kpi_pct') is not None:
                     tile['kpi_pct'] = lm.get('kpi_pct')
@@ -3334,6 +3368,8 @@ def _build_universal_payload(
             tile['unit'] = '%'
 
         period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
+        if not period_label and tile_lm_y and tile_lm_m:
+            period_label = f"{MONTH_NAMES[tile_lm_m].capitalize()} {tile_lm_y}"
         if period_label:
             tile['plan_fact_period_label'] = period_label
 

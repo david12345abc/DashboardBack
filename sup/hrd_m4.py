@@ -111,17 +111,21 @@ def _read_turnover_for_month(
         debug["status"] = "missing_file"
         return None, None, debug
 
+    book = None
     try:
         book = open_hc_workbook(path)
         sheet = _open_tekuchest_sheet(book)
+        raw_fact = sheet.cell_value(FACT_ROW - 1, column - 1)
+        raw_plan = sheet.cell_value(PLAN_ROW - 1, column - 1)
     except Exception as exc:
         logger.warning("HRD-M4: не удалось прочитать %s: %s", path, exc)
         debug["status"] = "read_error"
         debug["error"] = str(exc)
         return None, None, debug
+    finally:
+        if book is not None and hasattr(book, "close"):
+            book.close()
 
-    raw_fact = sheet.cell_value(FACT_ROW - 1, column - 1)
-    raw_plan = sheet.cell_value(PLAN_ROW - 1, column - 1)
     fact = _safe_percent(raw_fact)
     plan = _safe_percent(raw_plan)
     debug.update({
