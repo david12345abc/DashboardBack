@@ -1,4 +1,9 @@
-"""Таблицы внешнего (QD-M1), внутреннего (QD-M5) брака и формы 03-17 (QD-M8) для qualdir."""
+"""Таблицы внешнего (QD-M1), внутреннего (QD-M5) брака и формы 03-17 (QD-M8) для qualdir.
+
+Источник данных — SQL-бэкенд 1С (erp_pm) через ``qualdir.brak_tables_sql``
+(эталон-справочники, как в плитках qualdir.qd_m1 / qd_m5 / qd_m8). Ранее строки
+таблиц загружались через OData (qualdir.brak_report); теперь OData не используется.
+"""
 
 from __future__ import annotations
 
@@ -8,22 +13,14 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-import requests
-
 from getkpi.cache_manager import stale_while_revalidate
 from devdir import ytd_json_cache
 from getkpi.techdir_tekuchet import MONTH_RU
 
-from qualdir.brak_report import (
-    AUTH,
+from sql_connection import SqlConnection
+from qualdir.brak_tables_sql import (
     BRAK_TABLE_COLUMNS,
-    EXTERNAL_BRAK_CONFIG,
-    EXTERNAL_BRAK_ENTITY,
-    FORM_0317_CONFIG,
-    FORM_0317_ENTITY,
-    INTERNAL_BRAK_CONFIG,
-    INTERNAL_BRAK_ENTITY,
-    load_brak_table_rows,
+    load_brak_table_rows_sql,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,10 +29,16 @@ TABLE_ID_EXTERNAL = "QD-T-M1"
 TABLE_ID_INTERNAL = "QD-T-M5"
 TABLE_ID_FORMA0317 = "QD-T-M8"
 
+# Логические источники (документы 1С) — для полей source/description в payload.
+EXTERNAL_BRAK_ENTITY = "Document_ТД_Форма0319"
+INTERNAL_BRAK_ENTITY = "Document_ТД_Форма0318"
+FORM_0317_ENTITY = "Document_ТД_Форма0317"
+
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-TABLE_MONTH_CACHE_VERSION = 7
-TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v7"
-TABLE_YTD_DISK_VERSION = 7
+# v8 — переход с OData на SQL-источник строк.
+TABLE_MONTH_CACHE_VERSION = 8
+TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v8"
+TABLE_YTD_DISK_VERSION = 8
 
 
 def _month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:
@@ -113,20 +116,14 @@ def _load_rows_cached(
     year: int,
     month: int,
     *,
-    config,
-    session: requests.Session | None = None,
+    connection: Any | None = None,
 ) -> list[dict[str, str]]:
     cached = _load_month_table_cache(table_kind, year, month)
     if cached is not None:
         return cached
 
-    own_session = session is None
-    if session is None:
-        session = requests.Session()
-        session.auth = AUTH
-
     try:
-        rows = load_brak_table_rows(year, month, config=config, session=session)
+        rows = load_brak_table_rows_sql(table_kind, year, month, connection=connection)
     except Exception as exc:
         logger.warning(
             "qualdir brak table %s %d-%02d: %s",
@@ -139,8 +136,6 @@ def _load_rows_cached(
     else:
         _save_month_table_cache(table_kind, year, month, rows)
 
-    if own_session:
-        session.close()
     return rows
 
 
@@ -149,10 +144,9 @@ def _month_block(
     year: int,
     month: int,
     *,
-    config,
-    session: requests.Session,
+    connection: Any | None = None,
 ) -> dict[str, Any]:
-    rows = _load_rows_cached(table_kind, year, month, config=config, session=session)
+    rows = _load_rows_cached(table_kind, year, month, connection=connection)
     return {
         "year": year,
         "month": month,
@@ -172,15 +166,14 @@ def _assemble_brak_table(
     description: str,
     source_entity: str,
     table_kind: str,
-    config,
     ref_y: int,
     ref_m: int,
-    session: requests.Session,
+    connection: Any | None = None,
 ) -> dict[str, Any]:
     monthly_data: list[dict[str, Any]] = []
     for y, m in _month_pairs(ref_y, ref_m):
         monthly_data.append(
-            _month_block(table_kind, y, m, config=config, session=session),
+            _month_block(table_kind, y, m, connection=connection),
         )
 
     ref_block = next(
@@ -230,85 +223,91 @@ def _save_ytd_table_cache(table_kind: str, ref_y: int, ref_m: int, payload: dict
     )
 
 
-def build_external_brak_table(ref_y: int, ref_m: int) -> dict[str, Any]:
-    cached = _load_ytd_table_cache("external", ref_y, ref_m)
+def _all_months_cached(table_kind: str, ref_y: int, ref_m: int) -> bool:
+    return all(
+        _load_month_table_cache(table_kind, y, m) is not None
+        for y, m in _month_pairs(ref_y, ref_m)
+    )
+
+
+def _build_table(
+    *,
+    table_kind: str,
+    table_id: str,
+    kpi_id: str,
+    title: str,
+    description: str,
+    source_entity: str,
+    ref_y: int,
+    ref_m: int,
+) -> dict[str, Any]:
+    cached = _load_ytd_table_cache(table_kind, ref_y, ref_m)
     if cached is not None:
         return cached
 
-    session = requests.Session()
-    session.auth = AUTH
-    try:
-        payload = _assemble_brak_table(
-            table_id=TABLE_ID_EXTERNAL,
-            kpi_id="QD-M1",
-            title="Внешний брак",
-            description="Документы Document_ТД_Форма0319 помесячно с января",
-            source_entity=EXTERNAL_BRAK_ENTITY,
-            table_kind="external",
-            config=EXTERNAL_BRAK_CONFIG,
+    def _assemble(connection: Any | None) -> dict[str, Any]:
+        return _assemble_brak_table(
+            table_id=table_id,
+            kpi_id=kpi_id,
+            title=title,
+            description=description,
+            source_entity=source_entity,
+            table_kind=table_kind,
             ref_y=ref_y,
             ref_m=ref_m,
-            session=session,
+            connection=connection,
         )
-    finally:
-        session.close()
 
-    _save_ytd_table_cache("external", ref_y, ref_m, payload)
+    # Одно SQL-подключение на все месяцы; если все месяцы уже в кэше — без подключения.
+    if _all_months_cached(table_kind, ref_y, ref_m):
+        payload = _assemble(None)
+    else:
+        sql = SqlConnection()
+        with sql.connect_ctx() as conn:
+            conn.timeout = 0
+            payload = _assemble(conn)
+
+    _save_ytd_table_cache(table_kind, ref_y, ref_m, payload)
     return payload
+
+
+def build_external_brak_table(ref_y: int, ref_m: int) -> dict[str, Any]:
+    return _build_table(
+        table_kind="external",
+        table_id=TABLE_ID_EXTERNAL,
+        kpi_id="QD-M1",
+        title="Внешний брак",
+        description="Документы Document_ТД_Форма0319 помесячно с января",
+        source_entity=EXTERNAL_BRAK_ENTITY,
+        ref_y=ref_y,
+        ref_m=ref_m,
+    )
 
 
 def build_internal_brak_table(ref_y: int, ref_m: int) -> dict[str, Any]:
-    cached = _load_ytd_table_cache("internal", ref_y, ref_m)
-    if cached is not None:
-        return cached
-
-    session = requests.Session()
-    session.auth = AUTH
-    try:
-        payload = _assemble_brak_table(
-            table_id=TABLE_ID_INTERNAL,
-            kpi_id="QD-M5",
-            title="Внутренний брак",
-            description="Документы Document_ТД_Форма0318 помесячно с января",
-            source_entity=INTERNAL_BRAK_ENTITY,
-            table_kind="internal",
-            config=INTERNAL_BRAK_CONFIG,
-            ref_y=ref_y,
-            ref_m=ref_m,
-            session=session,
-        )
-    finally:
-        session.close()
-
-    _save_ytd_table_cache("internal", ref_y, ref_m, payload)
-    return payload
+    return _build_table(
+        table_kind="internal",
+        table_id=TABLE_ID_INTERNAL,
+        kpi_id="QD-M5",
+        title="Внутренний брак",
+        description="Документы Document_ТД_Форма0318 помесячно с января",
+        source_entity=INTERNAL_BRAK_ENTITY,
+        ref_y=ref_y,
+        ref_m=ref_m,
+    )
 
 
 def build_forma0317_table(ref_y: int, ref_m: int) -> dict[str, Any]:
-    cached = _load_ytd_table_cache("forma0317", ref_y, ref_m)
-    if cached is not None:
-        return cached
-
-    session = requests.Session()
-    session.auth = AUTH
-    try:
-        payload = _assemble_brak_table(
-            table_id=TABLE_ID_FORMA0317,
-            kpi_id="QD-M8",
-            title="Форма 03-17",
-            description="Документы Document_ТД_Форма0317 помесячно с января",
-            source_entity=FORM_0317_ENTITY,
-            table_kind="forma0317",
-            config=FORM_0317_CONFIG,
-            ref_y=ref_y,
-            ref_m=ref_m,
-            session=session,
-        )
-    finally:
-        session.close()
-
-    _save_ytd_table_cache("forma0317", ref_y, ref_m, payload)
-    return payload
+    return _build_table(
+        table_kind="forma0317",
+        table_id=TABLE_ID_FORMA0317,
+        kpi_id="QD-M8",
+        title="Форма 03-17",
+        description="Документы Document_ТД_Форма0317 помесячно с января",
+        source_entity=FORM_0317_ENTITY,
+        ref_y=ref_y,
+        ref_m=ref_m,
+    )
 
 
 def merge_qualdir_brak_tables(
