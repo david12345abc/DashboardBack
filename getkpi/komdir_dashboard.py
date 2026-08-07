@@ -60,6 +60,7 @@ from . import (
 )
 from .commercial_department_aliases import DEALER_SALES_DEPT, KEY_CLIENTS_DEPT, normalize_commercial_dept_guid
 from .commercial_tiles import DEPT_GUID_TO_DZ_NAME
+from .kpi_periods import last_full_month
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 4
+KOMDIR_PAYLOAD_CACHE_VERSION = 5
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -186,6 +187,18 @@ def _get_monthly_pairs() -> tuple[list[tuple[int, int]], int, int]:
     ref_y, ref_m = today.year, today.month
     pairs = [(ref_y, mm) for mm in range(1, ref_m + 1)]
     return pairs, ref_y, ref_m
+
+
+def _fot_tile_period(ref_y: int, ref_m: int) -> tuple[int, int]:
+    """KD-M8: в незакрытом текущем месяце показываем ФОТ за предыдущий."""
+    today = date.today()
+    if ref_y == today.year and ref_m == today.month:
+        return last_full_month(today)
+    return ref_y, ref_m
+
+
+def _plan_fact_period_label(ref_y: int, ref_m: int) -> str:
+    return f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}"
 
 
 def _series_through_month(today: date, ref_y: int, ref_m: int) -> int:
@@ -433,6 +446,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         }
 
     if kpi_id == 'KD-M8':
+        fot_y, fot_m = _fot_tile_period(ref_y, ref_m)
         fot = cache_manager.locked_call(
             f'comdir_fot_{ref_y}_{series_m}{dept_lock_suffix}',
             get_fot_ytd,
@@ -458,7 +472,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
                 'has_data': fact is not None and fact != 0,
             }
             months.append(mrow)
-            if row.get('year') == ref_y and m == ref_m:
+            if row.get('year') == fot_y and m == fot_m:
                 ref_row = mrow
 
         with_data = [r for r in months if r.get('kpi_pct') is not None]
@@ -474,9 +488,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             },
             'kpi_period': {
                 'type': 'last_full_month',
-                'year': ref_y,
-                'month': ref_m,
-                'month_name': MONTH_NAMES_RU[ref_m],
+                'year': fot_y,
+                'month': fot_m,
+                'month_name': MONTH_NAMES_RU[fot_m],
             },
         }
 
@@ -1572,7 +1586,10 @@ def _patch_payload_tile(payload: dict, kpi_id: str, tile_data: dict, ref_y: int,
             for key in ("plan", "fact", "expected_plan", "has_data"):
                 if key in lm:
                     tile[key] = lm.get(key)
-            tile["plan_fact_period_label"] = f"{MONTH_NAMES_RU.get(ref_m, '')} {ref_y}".strip()
+            kpi_period = tile_data.get("kpi_period") or {}
+            period_y = kpi_period.get("year", ref_y)
+            period_m = kpi_period.get("month", ref_m)
+            tile["plan_fact_period_label"] = _plan_fact_period_label(period_y, period_m)
         tile["cache_updated_at"] = datetime.now().isoformat(timespec="seconds")
         tile.pop("cache_refresh_status", None)
         break
@@ -1684,6 +1701,9 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
         if pct is not None:
             pct = float(pct)
         lm = td.get('last_full_month_row')
+        kpi_period = td.get('kpi_period') or {}
+        period_y = kpi_period.get('year', ref_y)
+        period_m = kpi_period.get('month', ref_m)
         if kid in {'KD-M1', 'KD-M2', 'KD-M3'} and lm:
             color = _plan_fact_higher_better_rag(lm.get('plan'), lm.get('fact'), pct)
         else:
@@ -1720,7 +1740,7 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
                 if kid in {"KD-M1", "KD-M2", "KD-M3"}
                 else (lm.get("has_data", True) if lm else False)
             ),
-            "plan_fact_period_label": f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}",
+            "plan_fact_period_label": _plan_fact_period_label(period_y, period_m),
             "cache_updated_at": _tile_cache_updated_at(kid, ref_y, series_m),
             "monthly_data": monthly_data,
         }

@@ -71,7 +71,7 @@ _T7_PLAN = {1: 120_000_000, 2: 120_000_000, 3: 120_000_000}
 _T7_FACT = {1: 98_500_000, 2: 115_200_000, 3: 132_400_000}
 
 # FND-T9  Выпуск / план-факт: НПО в рублях, АЛМАЗ в штуках.
-# Источник — Document_ТД_ПроизводственныйПлан, колонки «Текущий месяц»
+# Источник — MSSQL Document_ТД_ПроизводственныйПлан (_Document185292), колонки «Текущий месяц»
 # (см. calc_prod_deputy_output: План/Факт *Месяц по подразделению).
 _T9_THRESHOLDS = {
     "green": "≥100%",
@@ -484,7 +484,7 @@ def _build_fnd_t6_portfolio_rows(months: list[int], ref_y: int) -> list[dict]:
 def _build_fnd_t9_vipusk_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T9 «Выпуск — план/факт».
 
-    Источник — `Document_ТД_ПроизводственныйПлан` через calc_prod_deputy_output:
+    Источник — MSSQL `Document_ТД_ПроизводственныйПлан` (_Document185292) через calc_prod_deputy_output:
     для каждого месяца берём последний документ подразделения и колонки
     «Текущий месяц» (ПланРубМесяц/ФактРубМесяц для НПО, ПланШтМесяц/ФактШтМесяц
     для АЛМАЗ). KPI плитки = среднее выполнение двух строк.
@@ -1218,6 +1218,7 @@ def _mrk04_shipment_growth_yoy(ref_y: int, ref_m: int, series_m: int) -> tuple[f
     for mm in range(1, m + 1):
         prev_value = prev_by_month.get(mm, 0.0)
         current_value = current_by_month.get(mm, 0.0)
+        month_pct = round(current_value / prev_value * 100, 1) if prev_value > 0 else None
         monthly_rows.append({
             "month": mm,
             "year": current_y,
@@ -1228,7 +1229,9 @@ def _mrk04_shipment_growth_yoy(ref_y: int, ref_m: int, series_m: int) -> tuple[f
             "fact": _to_int_or_none(current_value),
             "previous_year_value": _to_int_or_none(prev_value),
             "current_year_value": _to_int_or_none(current_value),
-            "kpi_pct": round(current_value / prev_value * 100, 1) if prev_value > 0 else None,
+            "kpi_pct": month_pct,
+            # Цвет по месячному отношению — иначе фронт подставляет YTD RAG к цифре месяца.
+            "color": _mrk04_rag(month_pct),
             "has_data": abs(prev_value) > 0 or abs(current_value) > 0,
         })
 

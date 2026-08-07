@@ -12,10 +12,18 @@ from . import (
     calc_logistics_tmc_on_time,
 )
 
+from .kpi_periods import last_full_month
+
 LOGISTICS_KPI_IDS = {"LOG-M1", "LOG-M2", "LOG-M3.B", "LOG-M3.F", "LOG-Q1", "LOG-Q2"}
 LOGISTICS_BUDGET_FOT_SPLIT_IDS = {"LOG-M3.B", "LOG-M3.F"}
 LOG_Q1_NAME = "Доля квалифицированных поставщиков"
 LOG_Q1_FORMULA = "Поставщики с суммой баллов оценки > 45 / Все поставщики из оценки периода × 100%"
+
+MONTH_NAMES_RU = {
+    1: "январь", 2: "февраль", 3: "март", 4: "апрель",
+    5: "май", 6: "июнь", 7: "июль", 8: "август",
+    9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
+}
 
 
 def is_logistics_head_department(dept: str | None) -> bool:
@@ -170,6 +178,29 @@ def _ref_period(year: int | None, month: int | None) -> tuple[int, int]:
     return today.year, today.month
 
 
+def _fot_tile_period(ref_y: int, ref_m: int) -> tuple[int, int]:
+    """LOG-M3.F: в незакрытом текущем месяце показываем ФОТ за предыдущий."""
+    today = date.today()
+    if ref_y == today.year and ref_m == today.month:
+        return last_full_month(today)
+    return ref_y, ref_m
+
+
+def _month_row_from_months(months: list[dict], ref_y: int, ref_m: int) -> dict | None:
+    return next(
+        (
+            row for row in months
+            if int(row.get("year") or 0) == int(ref_y)
+            and int(row.get("month") or 0) == int(ref_m)
+        ),
+        None,
+    )
+
+
+def _plan_fact_period_label(ref_y: int, ref_m: int) -> str:
+    return f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}"
+
+
 def build_kpi_entry(kpi_id: str, entry: dict, *, year: int | None = None, month: int | None = None) -> dict | None:
     if kpi_id == "LOG-M3.B":
         ref_y, ref_m = _ref_period(year, month)
@@ -196,13 +227,28 @@ def build_kpi_entry(kpi_id: str, entry: dict, *, year: int | None = None, month:
             year=ref_y,
             month=ref_m,
         )
+        months = data.get("months") or []
+        fot_y, fot_m = _fot_tile_period(ref_y, ref_m)
+        display_row = _month_row_from_months(months, fot_y, fot_m)
         entry["data_granularity"] = "monthly"
-        entry["monthly_data"] = data.get("months") or []
+        entry["monthly_data"] = months
         entry["quarterly_data"] = data.get("quarterly_data") or []
         entry["yearly_data"] = data.get("yearly_data") or []
-        entry["last_full_month_row"] = data.get("last_full_month_row")
-        entry["ytd"] = data.get("ytd") or {}
-        entry["kpi_period"] = data.get("kpi_period")
+        entry["last_full_month_row"] = display_row
+        entry["ytd"] = {
+            "total_plan": display_row.get("plan") if display_row else None,
+            "total_fact": display_row.get("fact") if display_row else None,
+            "kpi_pct": display_row.get("kpi_pct") if display_row else None,
+            "months_with_data": 1 if display_row and display_row.get("has_data") else 0,
+            "months_total": len(months),
+            "values_unit": "руб.",
+        }
+        entry["kpi_period"] = {
+            "type": "last_full_month",
+            "year": fot_y,
+            "month": fot_m,
+            "month_name": MONTH_NAMES_RU[fot_m],
+        }
         return entry
 
     if kpi_id == "LOG-M1":
@@ -363,6 +409,20 @@ def apply_tile_value_overrides(kpi: dict, tile: dict, entry: dict) -> None:
 
     if kpi.get("kpi_id") not in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
         return
+
+    if kpi.get("kpi_id") == "LOG-M3.F":
+        row = entry.get("last_full_month_row") or {}
+        tile["plan"] = row.get("plan")
+        tile["fact"] = row.get("fact")
+        tile["kpi_pct"] = row.get("kpi_pct")
+        tile["has_data"] = bool(row.get("has_data") or row.get("plan") is not None)
+        kpi_period = entry.get("kpi_period") or {}
+        period_y = kpi_period.get("year")
+        period_m = kpi_period.get("month")
+        if period_y and period_m:
+            tile["plan_fact_period_label"] = _plan_fact_period_label(int(period_y), int(period_m))
+        return
+
     ytd = entry.get("ytd") or {}
     tile["plan"] = ytd.get("total_plan")
     tile["fact"] = ytd.get("total_fact")
