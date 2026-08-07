@@ -36,7 +36,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "psd_portfolio_1c_milestones_v4"
+SOURCE_TAG = "psd_portfolio_1c_milestones_v5"
 
 
 # ═══════════════════════════════════════════════════════
@@ -328,19 +328,32 @@ def get_psd_portfolio_monthly(year: int, ref_month: int) -> dict:
 
     rows_out: list[dict[str, Any]] = []
     for mm, month_arg in months:
-        month_payload = _calc_month_payload(month_arg, projects, include_details=False)
+        month_end = _month_end(year, mm)
+        # Закрытый месяц: не пересчитываем live-состоянием проектов «из будущего»,
+        # иначе июль в августовском YTD разъезжается с июльским снимком.
+        month_is_closed = month_end < today
+        snapshot_cached = _load_json(_cache_path_snapshot(month_arg))
+        if (
+            month_is_closed
+            and isinstance(snapshot_cached, dict)
+            and snapshot_cached.get("source") == SOURCE_TAG
+            and snapshot_cached.get("portfolio_count") is not None
+        ):
+            month_payload = snapshot_cached
+        else:
+            month_payload = _calc_month_payload(month_arg, projects, include_details=False)
+            snapshot = _calc_month_payload(month_arg, projects, include_details=True)
+            _save_json(_cache_path_snapshot(month_arg), snapshot)
         rows_out.append({
             "year": year,
             "month": mm,
-            "period_from": month_payload["period_from"],
-            "period_to": month_payload["period_to"],
-            "portfolio_count": month_payload["portfolio_count"],
-            "deviation_count": month_payload["deviation_count"],
-            "without_deviation_count": month_payload["without_deviation_count"],
+            "period_from": month_payload.get("period_from"),
+            "period_to": month_payload.get("period_to"),
+            "portfolio_count": month_payload.get("portfolio_count"),
+            "deviation_count": month_payload.get("deviation_count"),
+            "without_deviation_count": month_payload.get("without_deviation_count"),
             "project_deviation_rows": month_payload.get("project_deviation_rows") or [],
         })
-        snapshot = _calc_month_payload(month_arg, projects, include_details=True)
-        _save_json(_cache_path_snapshot(month_arg), snapshot)
 
     payload = {
         "year": year,
