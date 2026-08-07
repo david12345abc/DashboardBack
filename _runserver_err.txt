@@ -7366,3 +7366,458 @@ cache_manager: [reclamations_monthly_2026_7] fresh, skip
 cache_manager: [overdue_detail_2026_7] computing...
 Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 7095.81it/s]
+C:\Users\testii\Downloads\dash\DashboardBack\comdir\ytd.py changed, reloading.
+cache_manager: warming thread started
+cache_manager: next midnight warm in 56307 s (15.6 h)
+cache_manager: midnight cache scheduler started
+Watching for file changes with StatReloader
+cache_manager: warming 221 cache tasks (2026-07, startup)
+cache_manager: prefetched GSPP TurboProject projects
+cache_manager: [comdir_dengi_2026_7] fresh, skip
+cache_manager: [comdir_otgruzki_2026_7] fresh, skip
+cache_manager: [comdir_dogovory_2026_7] fresh, skip
+cache_manager: [psd_vipusk_2026_7] fresh, skip
+cache_manager: [comdir_debitorka_2026_7] fresh, skip
+cache_manager: [dz_limits] fresh, skip
+cache_manager: [comdir_rashody_2026_7] fresh, skip
+cache_manager: [comdir_fot_2026_7] fresh, skip
+cache_manager: [comdir_cena_2026_7] fresh, skip
+cache_manager: [comdir_tkp_sla_2026_7] fresh, skip
+cache_manager: [tekuchest_2026_7] fresh, skip
+cache_manager: [svoevremennaya_monthly_2026_7] fresh, skip
+cache_manager: [reclamations_monthly_2026_7] fresh, skip
+cache_manager: [overdue_detail_2026_7] computing...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 9057.79it/s]
+cache_manager: [overdue_detail_2026_7] done
+cache_manager: [comdir_vp_2026_7] fresh, skip
+cache_manager: [comdir_mrk06_share_2026_7] fresh, skip
+cache_manager: [claims_2026_7] fresh, skip
+cache_manager: [techdir_projects] computing...
+cache_manager: [techdir_projects] serving stale cache, scheduling background refresh
+cache_manager: [techdir_projects] already computing, skip background schedule
+cache_manager: [techdir_projects] done
+cache_manager: [techdir_m3] computing...
+cache_manager: [techdir_m3_month_2026_07] serving stale cache, scheduling background refresh
+cache_manager: [techdir_m3_month_2026_07] background refresh scheduled
+cache_manager: [techdir_m3_month_2026_07] background refresh started
+cache_manager: [techdir_m3] done
+cache_manager: [techdir_m4] computing...
+cache_manager: [techdir_m4_month_2026_07] serving stale cache, scheduling background refresh
+cache_manager: [techdir_m4_month_2026_07] background refresh scheduled
+cache_manager: [techdir_m4_month_2026_07] background refresh started
+cache_manager: [techdir_m4] done
+cache_manager: [techdir_m5_2026_7] fresh, skip
+cache_manager: [techdir_tekuchet] fresh, skip
+cache_manager: [techdir_m6_2026_7] fresh, skip
+cache_manager: [qualdir_qd_q2_ytd] computing...
+cache_manager: [qualdir_qd_q2_2026_07] serving stale cache, scheduling background refresh
+cache_manager: [qualdir_qd_q2_2026_07] background refresh scheduled
+cache_manager: [qualdir_qd_q2_2026_07] background refresh started
+cache_manager: [qualdir_qd_q2_ytd] done
+cache_manager: [qualdir_qd_m3_ytd_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m4_ytd_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m1_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m5_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m6_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m6_month_2026_7] computing...
+cache_manager: [qualdir_qd_m6_month_2026_7] done
+cache_manager: [qualdir_qd_m9_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m9_month_2026_7] computing...
+cache_manager: [qualdir_qd_m9_month_2026_7] done
+cache_manager: [qualdir_qd_m10_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m10_month_2026_7] computing...
+cache_manager: [qualdir_qd_m10_month_2026_7] done
+cache_manager: [qualdir_qd_m7_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m8_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_q1_tile_2026_7] computing...
+cache_manager: [qualdir_qd_q1_2026_07] serving stale cache, scheduling background refresh
+cache_manager: [qualdir_qd_q1_2026_07] background refresh scheduled
+cache_manager: [qualdir_qd_q1_2026_07] background refresh started
+cache_manager: [qualdir_qd_q1_tile_2026_7] done
+cache_manager: [pd_m2_otif_2026_7] computing...
+cache_manager: [techdir_m4_month_2026_07] background refresh done in 9.2s
+cache_manager: [qualdir_qd_q2_2026_07] background refresh done in 14.4s
+cache_manager: [pd_m2_otif_2026_7] done
+cache_manager: [pd_m1_output_pc1_2026_7] fresh, skip
+cache_manager: [pd_m1_output_pc2_2026_7] fresh, skip
+cache_manager: [pd_pc_budget_pc1_2026_7] computing...
+cache_manager: [qualdir_qd_q1_2026_07] background refresh done in 689.0s
+cache_manager: [techdir_m3_month_2026_07] background refresh done in 1781.4s
+C:\Users\testii\Downloads\dash\DashboardBack\servhead\sh_m4.py changed, reloading.
+Watching for file changes with StatReloader
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\commands\runserver.py", line 124, in inner_run
+    autoreload.raise_last_exception()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 86, in raise_last_exception
+    raise _exception[1]
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\__init__.py", line 395, in execute
+    autoreload.check_errors(django.setup)()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\apps\registry.py", line 124, in populate
+    app_config.ready()
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\apps.py", line 10, in ready
+    from . import cache_manager
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\cache_manager.py", line 28
+    <<<<<<< HEAD
+    ^^
+SyntaxError: invalid syntax
+C:\Users\testii\Downloads\dash\DashboardBack\getkpi\cache_manager.py changed, reloading.
+Watching for file changes with StatReloader
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\commands\runserver.py", line 124, in inner_run
+    autoreload.raise_last_exception()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 86, in raise_last_exception
+    raise _exception[1]
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\__init__.py", line 395, in execute
+    autoreload.check_errors(django.setup)()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\apps\registry.py", line 124, in populate
+    app_config.ready()
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\apps.py", line 10, in ready
+    from . import cache_manager
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\cache_manager.py", line 327
+    <<<<<<< HEAD
+    ^^
+SyntaxError: invalid syntax
+C:\Users\testii\Downloads\dash\DashboardBack\getkpi\cache_manager.py changed, reloading.
+cache_manager: warming thread started
+cache_manager: next midnight warm in 52384 s (14.6 h)
+cache_manager: midnight cache scheduler started
+Watching for file changes with StatReloader
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\base.py", line 496, in check
+    all_issues = checks.run_checks(
+                 ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\urls.py", line 44, in check_url_namespaces_unique
+    all_namespaces = _load_all_namespaces(resolver)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\urls.py", line 63, in _load_all_namespaces
+    url_patterns = getattr(resolver, "url_patterns", [])
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\resolvers.py", line 729, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\resolvers.py", line 722, in urlconf_module
+    return import_module(self.urlconf_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\testii\Downloads\dash\DashboardBack\Dashbord\urls.py", line 25, in <module>
+    path('api/kpi/', include('getkpi.urls')),
+                     ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\urls.py", line 3, in <module>
+    from . import views
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\views.py", line 746
+    <<<<<<< HEAD
+    ^^
+SyntaxError: invalid syntax
+cache_manager: warming 221 cache tasks (2026-07, startup)
+cache_manager: prefetched GSPP TurboProject projects
+cache_manager: [comdir_dengi_2026_7] fresh, skip
+cache_manager: [comdir_otgruzki_2026_7] fresh, skip
+cache_manager: [comdir_dogovory_2026_7] fresh, skip
+cache_manager: [psd_vipusk_2026_7] fresh, skip
+cache_manager: [comdir_debitorka_2026_7] fresh, skip
+cache_manager: [dz_limits] fresh, skip
+cache_manager: [comdir_rashody_2026_7] fresh, skip
+cache_manager: [comdir_fot_2026_7] fresh, skip
+cache_manager: [comdir_cena_2026_7] fresh, skip
+cache_manager: [comdir_tkp_sla_2026_7] fresh, skip
+cache_manager: [tekuchest_2026_7] fresh, skip
+cache_manager: [svoevremennaya_monthly_2026_7] fresh, skip
+cache_manager: [reclamations_monthly_2026_7] fresh, skip
+cache_manager: [overdue_detail_2026_7] fresh, skip
+cache_manager: [comdir_vp_2026_7] fresh, skip
+cache_manager: [comdir_mrk06_share_2026_7] fresh, skip
+cache_manager: [claims_2026_7] fresh, skip
+cache_manager: [techdir_projects] fresh, skip
+cache_manager: [techdir_m3] fresh, skip
+cache_manager: [techdir_m4] computing...
+cache_manager: [techdir_m4_sql_2026_07] no cache file, synchronous compute
+C:\Users\testii\Downloads\dash\DashboardBack\getkpi\views.py changed, reloading.
+cache_manager: warming thread started
+cache_manager: next midnight warm in 52378 s (14.5 h)
+cache_manager: midnight cache scheduler started
+Watching for file changes with StatReloader
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\base.py", line 496, in check
+    all_issues = checks.run_checks(
+                 ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\urls.py", line 44, in check_url_namespaces_unique
+    all_namespaces = _load_all_namespaces(resolver)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\urls.py", line 63, in _load_all_namespaces
+    url_patterns = getattr(resolver, "url_patterns", [])
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\resolvers.py", line 729, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\resolvers.py", line 722, in urlconf_module
+    return import_module(self.urlconf_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\testii\Downloads\dash\DashboardBack\Dashbord\urls.py", line 25, in <module>
+    path('api/kpi/', include('getkpi.urls')),
+                     ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\urls.py", line 3, in <module>
+    from . import views
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\views.py", line 1100
+    <<<<<<< HEAD
+IndentationError: expected an indented block after 'elif' statement on line 1099
+cache_manager: warming 221 cache tasks (2026-07, startup)
+cache_manager: prefetched GSPP TurboProject projects
+cache_manager: [comdir_dengi_2026_7] fresh, skip
+cache_manager: [comdir_otgruzki_2026_7] fresh, skip
+cache_manager: [comdir_dogovory_2026_7] fresh, skip
+cache_manager: [psd_vipusk_2026_7] fresh, skip
+cache_manager: [comdir_debitorka_2026_7] fresh, skip
+cache_manager: [dz_limits] fresh, skip
+cache_manager: [comdir_rashody_2026_7] fresh, skip
+cache_manager: [comdir_fot_2026_7] fresh, skip
+cache_manager: [comdir_cena_2026_7] fresh, skip
+cache_manager: [comdir_tkp_sla_2026_7] fresh, skip
+cache_manager: [tekuchest_2026_7] fresh, skip
+cache_manager: [svoevremennaya_monthly_2026_7] fresh, skip
+cache_manager: [reclamations_monthly_2026_7] fresh, skip
+cache_manager: [overdue_detail_2026_7] fresh, skip
+cache_manager: [comdir_vp_2026_7] fresh, skip
+cache_manager: [comdir_mrk06_share_2026_7] fresh, skip
+cache_manager: [claims_2026_7] fresh, skip
+cache_manager: [techdir_projects] fresh, skip
+cache_manager: [techdir_m3] fresh, skip
+cache_manager: [techdir_m4] fresh, skip
+cache_manager: [techdir_m5_2026_7] fresh, skip
+cache_manager: [techdir_tekuchet] fresh, skip
+cache_manager: [techdir_m6_2026_7] fresh, skip
+cache_manager: [qualdir_qd_q2_ytd] fresh, skip
+cache_manager: [qualdir_qd_m3_ytd_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m4_ytd_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m1_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m5_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m6_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m6_month_2026_7] computing...
+cache_manager: [qualdir_qd_m6_month_2026_7] done
+cache_manager: [qualdir_qd_m9_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m9_month_2026_7] computing...
+cache_manager: [qualdir_qd_m9_month_2026_7] done
+cache_manager: [qualdir_qd_m10_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m10_month_2026_7] computing...
+cache_manager: [qualdir_qd_m10_month_2026_7] done
+cache_manager: [qualdir_qd_m7_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m8_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_q1_tile_2026_7] fresh, skip
+cache_manager: [pd_m2_otif_2026_7] fresh, skip
+cache_manager: [pd_m1_output_pc1_2026_7] fresh, skip
+cache_manager: [pd_m1_output_pc2_2026_7] fresh, skip
+cache_manager: [pd_pc_budget_pc1_2026_7] computing...
+C:\Users\testii\Downloads\dash\DashboardBack\getkpi\views.py changed, reloading.
+cache_manager: warming thread started
+cache_manager: next midnight warm in 52371 s (14.5 h)
+cache_manager: midnight cache scheduler started
+Watching for file changes with StatReloader
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\management\base.py", line 496, in check
+    all_issues = checks.run_checks(
+                 ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\urls.py", line 44, in check_url_namespaces_unique
+    all_namespaces = _load_all_namespaces(resolver)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\core\checks\urls.py", line 63, in _load_all_namespaces
+    url_patterns = getattr(resolver, "url_patterns", [])
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\resolvers.py", line 729, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\resolvers.py", line 722, in urlconf_module
+    return import_module(self.urlconf_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\testii\Downloads\dash\DashboardBack\Dashbord\urls.py", line 25, in <module>
+    path('api/kpi/', include('getkpi.urls')),
+                     ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\testii\AppData\Local\Programs\Python\Python312\Lib\importlib\__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\urls.py", line 3, in <module>
+    from . import views
+  File "C:\Users\testii\Downloads\dash\DashboardBack\getkpi\views.py", line 3397
+    <<<<<<< HEAD
+    ^^
+SyntaxError: invalid syntax
+cache_manager: warming 221 cache tasks (2026-07, startup)
+cache_manager: prefetched GSPP TurboProject projects
+cache_manager: [comdir_dengi_2026_7] fresh, skip
+cache_manager: [comdir_otgruzki_2026_7] fresh, skip
+cache_manager: [comdir_dogovory_2026_7] fresh, skip
+cache_manager: [psd_vipusk_2026_7] fresh, skip
+cache_manager: [comdir_debitorka_2026_7] fresh, skip
+cache_manager: [dz_limits] fresh, skip
+cache_manager: [comdir_rashody_2026_7] fresh, skip
+cache_manager: [comdir_fot_2026_7] fresh, skip
+cache_manager: [comdir_cena_2026_7] fresh, skip
+cache_manager: [comdir_tkp_sla_2026_7] fresh, skip
+cache_manager: [tekuchest_2026_7] fresh, skip
+cache_manager: [svoevremennaya_monthly_2026_7] fresh, skip
+cache_manager: [reclamations_monthly_2026_7] fresh, skip
+cache_manager: [overdue_detail_2026_7] fresh, skip
+cache_manager: [comdir_vp_2026_7] fresh, skip
+cache_manager: [comdir_mrk06_share_2026_7] fresh, skip
+cache_manager: [claims_2026_7] fresh, skip
+cache_manager: [techdir_projects] fresh, skip
+cache_manager: [techdir_m3] fresh, skip
+cache_manager: [techdir_m4] fresh, skip
+cache_manager: [techdir_m5_2026_7] fresh, skip
+cache_manager: [techdir_tekuchet] fresh, skip
+cache_manager: [techdir_m6_2026_7] fresh, skip
+cache_manager: [qualdir_qd_q2_ytd] fresh, skip
+cache_manager: [qualdir_qd_m3_ytd_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m4_ytd_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m1_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m5_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m6_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m6_month_2026_7] computing...
+cache_manager: [qualdir_qd_m6_month_2026_7] done
+cache_manager: [qualdir_qd_m9_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m9_month_2026_7] computing...
+cache_manager: [qualdir_qd_m9_month_2026_7] done
+cache_manager: [qualdir_qd_m10_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m10_month_2026_7] computing...
+cache_manager: [qualdir_qd_m10_month_2026_7] done
+cache_manager: [qualdir_qd_m7_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_m8_tile_2026_7] fresh, skip
+cache_manager: [qualdir_qd_q1_tile_2026_7] fresh, skip
+cache_manager: [pd_m2_otif_2026_7] fresh, skip
+cache_manager: [pd_m1_output_pc1_2026_7] fresh, skip
+cache_manager: [pd_m1_output_pc2_2026_7] fresh, skip
+cache_manager: [pd_pc_budget_pc1_2026_7] computing...
