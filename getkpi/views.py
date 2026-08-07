@@ -1967,7 +1967,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
-        servhead_memo_key = f"servhead_dashboard:v5:{ref_y}:{ref_m:02d}"
+        # v8: SH-T1 на SQL (_Reference389 + _Reference328).
+        servhead_memo_key = f"servhead_dashboard:v8:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2001,7 +2002,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"c1auto_v4_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
-            dashboard_disk_key = f"servhead_v5_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"servhead_v8_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
             dashboard_disk_key = f"devdir_v2_{ref_y}_{ref_m:02d}"

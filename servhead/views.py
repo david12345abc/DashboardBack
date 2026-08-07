@@ -210,22 +210,51 @@ def merge_servhead_tables_into_universal_payload(
     ref_y: int,
     ref_m: int,
 ) -> None:
-    try:
-        table = get_sh_t1_table(year=ref_y, month=ref_m)
-    except Exception as exc:
-        logger.exception("SH-T1: ошибка сборки таблицы для дашборда servhead")
-        table = {
-            "kpi_id": SH_T1_TABLE_ID,
-            "name": f"Обращения по клиентам — {MONTH_NAMES[ref_m].capitalize()} {ref_y}",
-            "periodicity": "ежемесячно",
-            "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES[ref_m]},
-            "columns": ["Клиент", "Всего обращений", "В срок", "Не в срок"],
-            "rows": [],
-            "totals": {"total": 0, "on_time": 0, "late": 0},
-            "debug": {"kpi_id": SH_T1_TABLE_ID, "status": "error", "error": str(exc)[:500]},
-        }
+    empty_columns = ["Клиент", "Всего обращений", "В срок", "Не в срок"]
+    by_month: dict[str, Any] = {}
+    for month in range(1, int(ref_m) + 1):
+        try:
+            month_table = get_sh_t1_table(year=ref_y, month=month)
+        except Exception as exc:
+            logger.exception("SH-T1: ошибка сборки таблицы за %s-%02d", ref_y, month)
+            month_table = {
+                "kpi_id": SH_T1_TABLE_ID,
+                "name": f"Обращения по клиентам — {MONTH_NAMES[month].capitalize()} {ref_y}",
+                "periodicity": "ежемесячно",
+                "period": {"year": ref_y, "month": month, "month_name": MONTH_NAMES[month]},
+                "columns": list(empty_columns),
+                "rows": [],
+                "totals": {"total": 0, "on_time": 0, "late": 0},
+                "debug": {
+                    "kpi_id": SH_T1_TABLE_ID,
+                    "status": "error",
+                    "error": str(exc)[:500],
+                },
+            }
+        if isinstance(month_table, dict):
+            by_month[str(month)] = month_table
+
+    table = by_month.get(str(int(ref_m)))
+    if not isinstance(table, dict):
+        try:
+            table = get_sh_t1_table(year=ref_y, month=ref_m)
+        except Exception as exc:
+            logger.exception("SH-T1: ошибка сборки таблицы для дашборда servhead")
+            table = {
+                "kpi_id": SH_T1_TABLE_ID,
+                "name": f"Обращения по клиентам — {MONTH_NAMES[ref_m].capitalize()} {ref_y}",
+                "periodicity": "ежемесячно",
+                "period": {"year": ref_y, "month": ref_m, "month_name": MONTH_NAMES[ref_m]},
+                "columns": list(empty_columns),
+                "rows": [],
+                "totals": {"total": 0, "on_time": 0, "late": 0},
+                "debug": {"kpi_id": SH_T1_TABLE_ID, "status": "error", "error": str(exc)[:500]},
+            }
     if isinstance(table, dict):
         tablitsy[SH_T1_TABLE_ID] = table
+    # Companion для фронта: при смене месяца без нового запроса подставляется срез.
+    if by_month:
+        tablitsy[f"{SH_T1_TABLE_ID}-BY-MONTH"] = by_month
 
     try:
         satisfaction_table = get_sh_t2_table(year=ref_y, month=ref_m)
