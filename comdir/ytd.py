@@ -375,7 +375,7 @@ def build_dogovory_payload(year: int, month: int) -> dict[str, Any]:
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M3")
     payload["debug"] = {
         **(payload.get("debug") or {}),
-        "source": "comdir.odata+1c_expected",
+        "source": "comdir.sql+1c_expected",
     }
     return payload
 
@@ -389,7 +389,7 @@ def get_dogovory_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m3_ytd",
-        source_tag="comdir_kd_m3_ytd_odata_offer_v9",
+        source_tag="comdir_kd_m3_ytd_sql_offer_v10",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m3",
         compute_fn=build_dogovory_payload,

@@ -1522,12 +1522,31 @@ def build_chairman_commerce_payload(
 
         if kid == "MRK-04":
             growth_pct, growth_detail = _mrk04_shipment_growth_yoy(ref_y, ref_m, series_m)
+            monthly_cmp = growth_detail.get("monthly_comparison") or []
+            # Как на десктопе в режиме current: на плитке — отношение выбранного месяца,
+            # а не YTD (иначе мобилка расходится с фронтом).
+            month_row = next(
+                (r for r in monthly_cmp if int(r.get("month") or 0) == int(ref_m)),
+                None,
+            )
+            display_pct = month_row.get("kpi_pct") if month_row else growth_pct
+            display_plan = (
+                month_row.get("plan") if month_row else growth_detail.get("sum_shipments_rub_previous_year")
+            )
+            display_fact = (
+                month_row.get("fact") if month_row else growth_detail.get("sum_shipments_rub_current_year")
+            )
+            period_label = (
+                f"{MONTH_NAMES_RU[ref_m].capitalize()} {ref_y}"
+                if month_row
+                else growth_detail.get("label", "")
+            )
             plitki_items.append({
                 "kpi_id": kid,
                 "name": MRK04_DISPLAY_NAME,
                 "goal": meta.get("goal"),
-                "kpi_pct": growth_pct,
-                "color": _mrk04_rag(growth_pct),
+                "kpi_pct": display_pct,
+                "color": _mrk04_rag(display_pct if isinstance(display_pct, (int, float)) else growth_pct),
                 "period": _period_label(meta),
                 "thresholds": _thresholds(meta),
                 "formula": meta.get("formula"),
@@ -1535,16 +1554,17 @@ def build_chairman_commerce_payload(
                 "source": meta.get("source"),
                 "description": meta.get("description"),
                 "frequency": meta.get("frequency"),
-                "plan": _to_int_or_none(growth_detail.get("sum_shipments_rub_previous_year")),
-                "fact": _to_int_or_none(growth_detail.get("sum_shipments_rub_current_year")),
+                "plan": _to_int_or_none(display_plan),
+                "fact": _to_int_or_none(display_fact),
                 "has_data": bool(
-                    growth_pct is not None
-                    or growth_detail.get("sum_shipments_rub_previous_year")
-                    or growth_detail.get("sum_shipments_rub_current_year")
+                    display_pct is not None
+                    or display_plan
+                    or display_fact
                 ),
-                "plan_fact_period_label": growth_detail.get("label", ""),
-                "monthly_data": growth_detail.get("monthly_comparison") or [],
+                "plan_fact_period_label": period_label,
+                "monthly_data": monthly_cmp,
                 "yoy_detail": growth_detail,
+                "yoy_kpi_pct": growth_pct,
             })
             continue
 

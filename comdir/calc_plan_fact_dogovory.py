@@ -507,12 +507,19 @@ def _merge_fact(a: dict[str, float], b: dict[str, float]) -> dict[str, float]:
 
 
 def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """Договоры заключённые (факт) = регистр + счёт-оферта (как в отчёте 1С)."""
+    """Договоры заключённые (факт) = регистр + счёт-оферта (как в отчёте 1С).
+
+    Источник регистра — MSSQL erp_pm; OData только как аварийный fallback.
+    """
     try:
-        reg = calc_fact_odata(p0, p_next)
-    except Exception:
-        logger.exception("OData факт договоров недоступен — fallback SQL erp_pm")
         reg = calc_fact_sql(cur, p0, p_next)
+    except Exception:
+        logger.exception("SQL факт договоров недоступен — fallback OData")
+        try:
+            reg = calc_fact_odata(p0, p_next)
+        except Exception:
+            logger.exception("OData факт договоров тоже недоступен")
+            reg = {}
     try:
         offer = calc_fact_offer(cur, p0, p_next)
     except Exception:
