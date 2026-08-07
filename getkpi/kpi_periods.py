@@ -76,11 +76,22 @@ def pick_monthly_row_for_period(
     if not rows:
         return {}
     if year is not None and month is not None:
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            if row.get('year') == year and row.get('month') == month:
-                return row
-        return {}
+        try:
+            y = int(year)
+            m = int(month)
+        except (TypeError, ValueError):
+            y = m = None
+        if y is not None and m is not None:
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    ry = int(row["year"]) if row.get("year") is not None else None
+                    rm = int(row["month"]) if row.get("month") is not None else None
+                except (TypeError, ValueError):
+                    continue
+                if ry == y and rm == m:
+                    return row
+            return {}
     last_row = rows[-1]
     return last_row if isinstance(last_row, dict) else {}

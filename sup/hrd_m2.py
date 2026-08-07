@@ -502,7 +502,12 @@ def build_hrd_m2_payload(year: int | None = None, month: int | None = None) -> d
     for row in rows:
         plan = row.get("plan")
         fact = row.get("fact")
-        has_data = plan is not None and fact is not None
+        try:
+            fact_n = float(fact) if fact is not None else None
+        except (TypeError, ValueError):
+            fact_n = None
+        # fact=0 (нет проводок за месяц) — не «есть данные», иначе фронт берёт пустой июль.
+        has_data = plan is not None and fact_n is not None and fact_n > 0
         monthly_rows.append(
             {
                 "month": row["month"],
@@ -517,12 +522,23 @@ def build_hrd_m2_payload(year: int | None = None, month: int | None = None) -> d
             }
         )
 
-    from getkpi.autoit.it_monthly_period import (
-        pick_fot_display_row,
-        trim_monthly_rows_to_display,
-    )
+    from getkpi.autoit.it_monthly_period import trim_monthly_rows_to_display
 
-    display_row = pick_fot_display_row(monthly_rows, ref_m, ref_year=ref_y)
+    # HRD-M2 в отчете живет с лагом в месяц:
+    # август показывает июль, июль показывает июнь, июнь показывает май.
+    display_m_target = ref_m - 1 if ref_m > 1 else 12
+    display_y_target = ref_y if ref_m > 1 else ref_y - 1
+    display_row = next(
+        (
+            row
+            for row in monthly_rows
+            if int(row.get("year") or ref_y) == display_y_target
+            and int(row.get("month") or 0) == display_m_target
+        ),
+        None,
+    )
+    if display_row is None and monthly_rows:
+        display_row = monthly_rows[-1]
     monthly_rows = trim_monthly_rows_to_display(monthly_rows, display_row)
     display_m = int(display_row["month"]) if display_row and display_row.get("month") else ref_m
     return {
@@ -601,7 +617,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 HRD_M2_YTD_CACHE_PREFIX = "sup_hrd_m2_fot"
 HRD_M2_YTD_DISK_TAG = "sup_hrd_m2_fot_sql_payload_v1"
-HRD_M2_YTD_DISK_VERSION = 3
+HRD_M2_YTD_DISK_VERSION = 6
 HRD_M2_MONTHLY_CACHE_PREFIX = "sup_hrd_m2_fot_fact_sql_monthly"
 HRD_M2_MONTHLY_SOURCE_TAG = "sup_hrd_m2_fot_fact_sql_monthly_v1"
 HRD_M2_MONTHLY_CACHE_VERSION = 1

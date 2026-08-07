@@ -6,8 +6,11 @@ QD-M6 — предъявления продукции на входной кон
   Document_ТД_ПредъявлениеТМЦнаОТК
 
 Логика за месяц (по Date документа):
-  plan     — DeletionMark = false, Posted = true;
-  fact     — из plan с заполненной ДатаПроверкиОТК;
+  plan     — DeletionMark = false, Posted = true (все документы);
+  fact     — plan минус срывы срока (в факт входят проверенные в срок И
+             непроверенные; исключаются только проверенные не в срок);
+  overdue  — проверено не в срок: заполнена ДатаПроверкиОТК И
+             date(ДатаПроверкиОТК) > date(СрокИсполнения);
   rejected — строки ТЧ ТоварыДляОТК с НеПринятоОТК > 0
              или заполненным АктОТКоНесоответствии;
   in_work  — документы со СрокИсполнения = сегодня (на дату запуска).
@@ -176,7 +179,8 @@ def calc_month(
     empty_dt = datetime(EMPTY_SQL_YEAR, 1, 1)
 
     org_clause = ""
-    params: list[Any] = [empty_dt, start, end]
+    # params: overdue checked>empty, deadline>empty, start, end
+    params: list[Any] = [empty_dt, empty_dt, start, end]
     if organization_bin is not None:
         org_clause = f" AND doc.[{COL_ORG}] = ?"
         params.append(organization_bin)
@@ -188,7 +192,11 @@ def calc_month(
             f"""
             SELECT
               COUNT(*) AS plan_cnt,
-              SUM(CASE WHEN doc.[{COL_CHECKED}] > ? THEN 1 ELSE 0 END) AS fact_cnt
+              SUM(CASE
+                    WHEN doc.[{COL_CHECKED}] > ?
+                     AND doc.[{COL_DEADLINE}] > ?
+                     AND CAST(doc.[{COL_CHECKED}] AS date) > CAST(doc.[{COL_DEADLINE}] AS date)
+                    THEN 1 ELSE 0 END) AS overdue_cnt
             FROM [{DOC_TABLE}] doc WITH (NOLOCK)
             WHERE doc.[{COL_MARKED}] = 0x00
               AND doc.[{COL_POSTED}] = 0x01
@@ -198,9 +206,11 @@ def calc_month(
             """,
             params,
         )
-        plan_cnt, fact_cnt = cur.fetchone()
+        plan_cnt, overdue_cnt = cur.fetchone()
         plan = int(plan_cnt or 0)
-        fact = int(fact_cnt or 0)
+        overdue = int(overdue_cnt or 0)
+        # В факт входит всё, кроме проверенных не в срок (срывов).
+        fact = plan - overdue
 
         rej_params: list[Any] = [start, end, EMPTY_BIN]
         if organization_bin is not None:
@@ -234,6 +244,7 @@ def calc_month(
         "docs_count": plan,
         "executed_count": fact,
         "rejected_items_count": rejected,
+        "overdue_count": overdue,
         "kpi_pct": kpi_pct(plan, fact),
         "has_data": True,
         "values_unit": "шт.",
@@ -302,8 +313,8 @@ def format_report(
         f"Предъявления продукции на входной контроль ({kpi_id} / SQL)",
         f"Источник: {DOC_TABLE} + {VT_TABLE}, {org_label}",
         "",
-        f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'Брак':>8} {'KPI %':>8}",
-        f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8}",
+        f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'Срыв':>8} {'Брак':>8} {'KPI %':>8}",
+        f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8}",
     ]
     for row in rows:
         pct = row["kpi_pct"]
@@ -312,15 +323,17 @@ def format_report(
             f"{row['year']:04d}-{row['month']:02d} "
             f"{row['plan']:>8} "
             f"{row['fact']:>8} "
+            f"{row.get('overdue_count', 0):>8} "
             f"{row['rejected_items_count']:>8} "
             f"{pct_s:>8}"
         )
     lines.extend(
         [
-            f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8}",
+            f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8}",
             f"{'ИТОГО':<10} "
             f"{sum(row['plan'] for row in rows):>8} "
             f"{sum(row['fact'] for row in rows):>8} "
+            f"{sum(row.get('overdue_count', 0) for row in rows):>8} "
             f"{sum(row['rejected_items_count'] for row in rows):>8} "
             f"{'':>8}",
             "",
@@ -386,6 +399,7 @@ def build_otk_payload(
             "docs_count": row["docs_count"],
             "executed_count": row["executed_count"],
             "rejected_items_count": row["rejected_items_count"],
+            "overdue_count": row.get("overdue_count", 0),
             "kpi_pct": row["kpi_pct"],
             "has_data": True,
             "values_unit": "шт.",
@@ -418,6 +432,7 @@ def build_otk_payload(
             "total_fact": ref_row.get("fact") if ref_row else None,
             "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
             "rejected_items_count": ref_row.get("rejected_items_count") if ref_row else None,
+            "overdue_count": ref_row.get("overdue_count") if ref_row else None,
             "in_work_today": in_work,
             "months_with_data": sum(1 for item in monthly_rows if item.get("has_data")),
             "months_total": len(monthly_rows),
@@ -443,7 +458,8 @@ def build_otk_payload(
             "rule": (
                 "plan = Posted docs by Date"
                 + (f", Организация = {organization_name}" if organization_name else ", все организации")
-                + "; fact = plan with ДатаПроверкиОТК filled; "
+                + "; fact = plan minus overdue "
+                "(overdue = checked late: date(ДатаПроверкиОТК) > date(СрокИсполнения)); "
                 "rejected = VT lines with НеПринятоОТК>0 or act filled"
             ),
             "in_work_today": in_work,
@@ -506,7 +522,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M6_YTD_CACHE_PREFIX = "qualdir_qd_m6_ytd"
 QD_M6_YTD_DISK_TAG = "qualdir_qd_m6_ytd_payload_sql_v1"
-QD_M6_YTD_DISK_VERSION = 10
+QD_M6_YTD_DISK_VERSION = 13
 
 
 def otk_predyavlenie_month_cache_path(year: int, month: int) -> _Path:

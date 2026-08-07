@@ -3,6 +3,9 @@
 План — накопительно с начала года: ``номер_месяца × 1,5`` (январь = 1,5 %, июнь = 9 %).
 Факт — лист «Текучесть», столбец D, последняя непустая ячейка в файле
 ``HC_сводный_{year}_{Месяц}.xls`` из каталога отчётов HR.
+
+В незакрытом календарном месяце факт из файла ещё «живой» (меняется при каждом
+сохранении HC) — на плитке показываем план и факт за предыдущий месяц.
 KPI плитки — ``факт / план × 100`` (%).
 """
 from __future__ import annotations
@@ -27,8 +30,8 @@ HC_SHEET_NAME = "Текучесть"
 HC_FACT_COLUMN = 3  # D
 
 CACHE_PREFIX = "sup_hrd_q4_adaptation"
-CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v7_hc_xls_xlsx"
-CACHE_VERSION = 7
+CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v8_prev_month"
+CACHE_VERSION = 9
 
 # Накопительный план с января: месяц × 1,5 п.п.
 PLAN_PCT_PER_MONTH = 1.5
@@ -39,10 +42,14 @@ def _cumulative_plan_for_month(month: int) -> float:
     return round(month * PLAN_PCT_PER_MONTH, 2)
 
 
-def _fact_from_cell(raw: Any) -> float:
-    """Последняя ячейка столбца D; не число → 0."""
-    pct = _safe_percent(raw)
-    return pct if pct is not None else 0.0
+def _fact_from_cell(raw: Any) -> float | None:
+    """Ячейка столбца D; не число / ошибка Excel → None (месяц ещё без факта)."""
+    return _safe_percent(raw)
+
+
+def _is_unclosed_calendar_month(year: int, month: int) -> bool:
+    today = date.today()
+    return int(year) == today.year and int(month) == today.month
 
 
 def _open_tekuchest_sheet(book: xlrd.Book):
@@ -53,15 +60,20 @@ def _open_tekuchest_sheet(book: xlrd.Book):
     raise KeyError(f"Лист {HC_SHEET_NAME!r} не найден")
 
 
-def _read_fact_from_hc_report(path: Path) -> tuple[float, dict[str, Any]]:
+def _read_fact_from_hc_report(path: Path) -> tuple[float | None, dict[str, Any]]:
     debug: dict[str, Any] = {
         "source_file": str(path),
         "sheet": HC_SHEET_NAME,
         "column": "D",
     }
-    if not path.exists():
+    try:
+        if not path.exists():
+            debug["status"] = "missing_file"
+            return None, debug
+    except OSError as exc:
         debug["status"] = "missing_file"
-        return 0.0, debug
+        debug["error"] = str(exc)
+        return None, debug
 
     book = None
     try:
@@ -71,13 +83,16 @@ def _read_fact_from_hc_report(path: Path) -> tuple[float, dict[str, Any]]:
         row_idx: int | None = None
         for row in range(sheet.nrows - 1, -1, -1):
             value = sheet.cell_value(row, HC_FACT_COLUMN)
-            if value not in (None, ""):
-                raw_value = value
-                row_idx = row
-                break
+            if value in (None, ""):
+                continue
+            if isinstance(value, str) and value.strip().startswith("#"):
+                continue
+            raw_value = value
+            row_idx = row
+            break
         fact = _fact_from_cell(raw_value)
         debug.update({
-            "status": "ok",
+            "status": "ok" if fact is not None else "no_numeric_fact",
             "row": (row_idx + 1) if row_idx is not None else None,
             "raw_fact": raw_value,
             "fact": fact,
@@ -87,7 +102,7 @@ def _read_fact_from_hc_report(path: Path) -> tuple[float, dict[str, Any]]:
         logger.warning("HRD-Q4: не удалось прочитать %s: %s", path, exc)
         debug["status"] = "read_error"
         debug["error"] = str(exc)
-        return 0.0, debug
+        return None, debug
     finally:
         if book is not None and hasattr(book, "close"):
             book.close()
@@ -101,6 +116,14 @@ def _read_monthly_rows(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], di
         plan = _cumulative_plan_for_month(month)
         report_path = hc_report_path(ref_y, month)
         fact, source_debug = _read_fact_from_hc_report(report_path)
+        # Незакрытый месяц: не берём «живой» черновик из HC — иначе плитка скачет.
+        if _is_unclosed_calendar_month(ref_y, month):
+            source_debug = {
+                **source_debug,
+                "display_fact_suppressed": True,
+                "raw_file_fact": fact,
+            }
+            fact = None
         monthly_rows.append({
             "month": month,
             "year": ref_y,
@@ -108,37 +131,56 @@ def _read_monthly_rows(ref_y: int, ref_m: int) -> tuple[list[dict[str, Any]], di
             "plan": plan,
             "fact": fact,
             "kpi_pct": _kpi_pct_from_plan_fact(plan, fact),
-            "has_data": True,
+            # План без факта (незакрытый месяц) — не «есть данные» для плитки.
+            "has_data": fact is not None,
             "values_unit": "%",
         })
         fact_sources.append({"month": month, **source_debug})
 
     return monthly_rows, {
-        "fact_source": "HC_сводный_{year}_{month}.xls / Текучесть / column D last row",
+        "fact_source": "HC_сводный_{year}_{month}.xls / Текучесть / column D last numeric row",
         "reports_dir": str(HC_REPORTS_DIR),
         "fact_sources": fact_sources,
     }
 
 
+def _pick_display_row(monthly_rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Если у опорного месяца нет факта — план и факт за прошлый месяц."""
+    if not monthly_rows:
+        return None
+    ref_row = monthly_rows[-1]
+    if ref_row.get("fact") is not None:
+        return ref_row
+    if len(monthly_rows) >= 2:
+        return monthly_rows[-2]
+    return ref_row
+
+
 def _build_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
+    from getkpi.autoit.it_monthly_period import trim_monthly_rows_to_display
+
     ref_y, ref_m = normalize_rd_tile_period(year, month)
     monthly_rows, debug = _read_monthly_rows(ref_y, ref_m)
-    ref_row = monthly_rows[-1] if monthly_rows else None
+    display_row = _pick_display_row(monthly_rows)
+    # Не отдаём незакрытый месяц без факта — фронт иначе рисует «Нет данных».
+    monthly_rows = trim_monthly_rows_to_display(monthly_rows, display_row)
+    display_y = int(display_row["year"]) if display_row else ref_y
+    display_m = int(display_row["month"]) if display_row else ref_m
 
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
-        "last_full_month_row": dict(ref_row) if ref_row else None,
+        "last_full_month_row": dict(display_row) if display_row else None,
         "kpi_period": {
             "type": "last_full_month",
-            "year": ref_y,
-            "month": ref_m,
-            "month_name": MONTH_NAMES[ref_m],
+            "year": display_y,
+            "month": display_m,
+            "month_name": MONTH_NAMES[display_m],
         },
         "ytd": {
-            "total_plan": ref_row.get("plan") if ref_row else None,
-            "total_fact": ref_row.get("fact") if ref_row else None,
-            "kpi_pct": ref_row.get("kpi_pct") if ref_row else None,
+            "total_plan": display_row.get("plan") if display_row else None,
+            "total_fact": display_row.get("fact") if display_row else None,
+            "kpi_pct": display_row.get("kpi_pct") if display_row else None,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
             "values_unit": "%",
@@ -146,10 +188,16 @@ def _build_payload(year: int | None = None, month: int | None = None) -> dict[st
         "debug": {
             "kpi_id": "HRD-Q4",
             "status": "ok",
+            "requested_year": ref_y,
+            "requested_month": ref_m,
+            "display_year": display_y,
+            "display_month": display_m,
             "rule": (
                 "plan = month * 1.5 (cumulative from year start); "
-                "fact = last value in column D on sheet Текучесть "
-                "from HC_сводный_{year}_{Month}.xls (non-numeric → 0); "
+                "fact = last numeric value in column D on sheet Текучесть "
+                "from HC_сводный_{year}_{Month}.xls; "
+                "unclosed calendar month → fact suppressed; "
+                "tile plan/fact = previous month if requested month has no fact; "
                 "kpi_pct = fact / plan * 100"
             ),
             "plan_pct_per_month": PLAN_PCT_PER_MONTH,

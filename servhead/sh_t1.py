@@ -1,27 +1,32 @@
-"""SH-T1 — таблица обращений по клиентам (в срок / не в срок)."""
+"""SH-T1 — таблица обращений по клиентам (в срок / не в срок).
+
+SQL: ``servhead/claims_common.py``
+(``_Reference389`` + ``_Reference328`` / Catalog_Партнеры).
+"""
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 from typing import Any
 
-import requests
-
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from servhead.claims_odata import (
-    AUTH,
-    aggregate_client_sla_rows,
-    fetch_claims_for_registration_month,
-    load_partner_names,
+from servhead.claims_common import (
+    CLAIMS_TABLE,
+    COL_DATE_FACT,
+    COL_DATE_PLAN,
+    COL_DATE_REG,
+    COL_PARTNER,
+    PARTNERS_TABLE,
+    load_client_sla_rows,
 )
 
 logger = logging.getLogger(__name__)
 
 TABLE_ID = "SH-T1"
 CACHE_PREFIX = "servhead_sh_t1_clients"
-CACHE_SOURCE_TAG = "servhead_sh_t1_clients_payload_v1"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "servhead_sh_t1_clients_payload_v2_sql"
+CACHE_VERSION = 2
 
 TABLE_COLUMNS = [
     "Клиент",
@@ -33,16 +38,7 @@ TABLE_COLUMNS = [
 
 def _build_table_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
-    session = requests.Session()
-    session.auth = AUTH
-    claims = fetch_claims_for_registration_month(
-        session,
-        year=ref_y,
-        month=ref_m,
-        log_label="SH-T1/Claims",
-    )
-    partners = load_partner_names(session)
-    rows = aggregate_client_sla_rows(claims, partners)
+    rows = load_client_sla_rows(ref_y, ref_m)
     totals = {
         "total": sum(int(row["Всего обращений"]) for row in rows),
         "on_time": sum(int(row["В срок"]) for row in rows),
@@ -55,7 +51,8 @@ def _build_table_payload(year: int | None = None, month: int | None = None) -> d
         "periodicity": "ежемесячно",
         "description": (
             "Агрегация обращений за месяц по клиенту: всего, в срок "
-            "(ДатаОкончания ≤ ТД_ДатаОкончанияПлан), не в срок (факт > план)."
+            "(ДатаОкончания ≤ ТД_ДатаОкончанияПлан), не в срок (факт > план). "
+            f"SQL: {CLAIMS_TABLE} + {PARTNERS_TABLE}."
         ),
         "period": {
             "year": ref_y,
@@ -68,8 +65,16 @@ def _build_table_payload(year: int | None = None, month: int | None = None) -> d
         "debug": {
             "kpi_id": TABLE_ID,
             "status": "ok",
-            "source": "servhead.sh_t1",
-            "claims_count": len(claims),
+            "source": "servhead.claims_common.load_client_sla_rows",
+            "tables": {
+                "claims": CLAIMS_TABLE,
+                "partners": PARTNERS_TABLE,
+                "partner_col": COL_PARTNER,
+                "date_reg_col": COL_DATE_REG,
+                "date_fact_col": COL_DATE_FACT,
+                "date_plan_col": COL_DATE_PLAN,
+            },
+            "claims_count": totals["total"],
             "clients_count": len(rows),
         },
     }
@@ -88,7 +93,7 @@ def get_sh_t1_table(year: int | None = None, month: int | None = None) -> dict[s
         try:
             payload = _build_table_payload(year=ref_y, month=ref_m)
         except Exception as exc:
-            logger.exception("SH-T1: ошибка сборки таблицы по клиентам")
+            logger.exception("SH-T1: ошибка сборки таблицы по клиентам (SQL)")
             stale = ytd_json_cache.load_stale_payload(
                 cache_path,
                 source_tag=CACHE_SOURCE_TAG,
@@ -98,7 +103,7 @@ def get_sh_t1_table(year: int | None = None, month: int | None = None) -> dict[s
                 debug = dict(stale.get("debug") or {})
                 debug.update({
                     "status": "stale_cache",
-                    "odata_error": str(exc)[:500],
+                    "sql_error": str(exc)[:500],
                     "cache_date_fallback": True,
                 })
                 stale["debug"] = debug
@@ -139,7 +144,7 @@ def main() -> None:
     import argparse
     import json
 
-    parser = argparse.ArgumentParser(description="SH-T1: таблица обращений по клиентам.")
+    parser = argparse.ArgumentParser(description="SH-T1: таблица обращений по клиентам (SQL).")
     parser.add_argument("--year", type=int, default=None)
     parser.add_argument("--month", type=int, default=None)
     args = parser.parse_args()

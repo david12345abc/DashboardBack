@@ -165,7 +165,7 @@ def is_cache_fresh(path: Path | str) -> bool:
                 return False
             if p.name.startswith('psd_vipusk_plan_') and data.get('cache_version') != 5:
                 return False
-            if p.name.startswith('chief_metrolog_payload_') and data.get('cache_version') != 2:
+            if p.name.startswith('chief_metrolog_payload_') and data.get('cache_version') != 3:
                 return False
             cache_date = data.get('cache_date') or data.get('cached_at')
             if cache_date:

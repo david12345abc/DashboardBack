@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import functools
+import logging
 import sys
+import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -11,20 +13,27 @@ from typing import Any
 
 from sql_connection import SqlConnection
 
+logger = logging.getLogger(__name__)
+
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
 CLAIMS_TABLE = "_Reference389"
 ENUM_TABLE = "_Enum1688"
+PARTNERS_TABLE = "_Reference328"  # Catalog_Партнеры
 
 COL_MARKED = "_Marked"
 COL_DATE_REG = "_Fld11617"          # ДатаРегистрации
 COL_DATE_FACT = "_Fld11618"         # ДатаОкончания
 COL_DATE_PLAN = "_Fld132055"        # ТД_ДатаОкончанияПлан
 COL_STATUS = "_Fld11625RRef"
+COL_PARTNER = "_Fld11624RRef"       # Партнер
 
 FIELD_DATE_FACT = "ДатаОкончания"
 FIELD_DATE_PLAN = "ТД_ДатаОкончанияПлан"
+
+EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
+_EMPTY_PARTNER_BIN = bytes(16)
 
 # _Enum1688._EnumOrder → имя статуса (OData Статус / PredefinedDataName)
 STATUS_BY_ORDER: dict[int, str] = {
@@ -183,6 +192,89 @@ def is_completed_late(fact_d: date | None, plan_d: date | None) -> bool:
     if fact_d is None or plan_d is None:
         return False
     return fact_d > plan_d
+
+
+def bin_to_guid(blob: bytes | None) -> str:
+    """Binary _IDRRef / *RRef → GUID-строка как в OData."""
+    if blob is None:
+        return EMPTY_GUID
+    b = bytes(blob)
+    if len(b) != 16 or b == _EMPTY_PARTNER_BIN:
+        return EMPTY_GUID
+    # Обратно к guid_to_1c: out = uuid[8:16]+[6:8]+[4:6]+[0:4]
+    orig = b[12:16] + b[10:12] + b[8:10] + b[0:8]
+    return str(uuid.UUID(bytes=orig))
+
+
+def load_client_sla_rows(year: int, month: int) -> list[dict[str, Any]]:
+    """SH-T1: агрегация обращений за месяц по клиенту (всего / в срок / не в срок)."""
+    start_dt = month_start(year, month)
+    end_dt = month_end(year, month)
+    sql_start = to_sql_dt(start_dt)
+    sql_end_exclusive = to_sql_dt(end_dt + timedelta(days=1))
+
+    buckets: dict[bytes, dict[str, int]] = defaultdict(lambda: {
+        "total": 0,
+        "on_time": 0,
+        "late": 0,
+    })
+    labels: dict[bytes, str] = {}
+
+    sql = SqlConnection()
+    with sql.connect_ctx() as conn:
+        conn.timeout = 0
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT
+                c.[{COL_PARTNER}],
+                c.[{COL_DATE_FACT}],
+                c.[{COL_DATE_PLAN}],
+                p.[_Description]
+            FROM [{CLAIMS_TABLE}] AS c WITH (NOLOCK)
+            LEFT JOIN [{PARTNERS_TABLE}] AS p WITH (NOLOCK)
+                ON p.[_IDRRef] = c.[{COL_PARTNER}]
+            WHERE c.[{COL_MARKED}] = 0x00
+              AND c.[{COL_DATE_REG}] >= ?
+              AND c.[{COL_DATE_REG}] < ?
+            """,
+            sql_start,
+            sql_end_exclusive,
+        )
+        for partner_bin, fact_raw, plan_raw, partner_name in cur.fetchall():
+            key = bytes(partner_bin) if partner_bin is not None else _EMPTY_PARTNER_BIN
+            if key == _EMPTY_PARTNER_BIN:
+                labels[key] = "—"
+            else:
+                name = (partner_name or "").strip()
+                labels[key] = name or bin_to_guid(key)
+            buckets[key]["total"] += 1
+            fact_d = sql_to_date(fact_raw)
+            plan_d = sql_to_date(plan_raw)
+            if is_completed_on_time(fact_d, plan_d):
+                buckets[key]["on_time"] += 1
+            elif is_completed_late(fact_d, plan_d):
+                buckets[key]["late"] += 1
+
+    rows: list[dict[str, Any]] = []
+    for key, counts in buckets.items():
+        guid = bin_to_guid(key)
+        rows.append({
+            "Клиент": labels[key],
+            "Всего обращений": counts["total"],
+            "В срок": counts["on_time"],
+            "Не в срок": counts["late"],
+            "client_key": None if guid == EMPTY_GUID else guid,
+        })
+    rows.sort(key=lambda item: (-int(item["Всего обращений"]), str(item["Клиент"])))
+    logger.info(
+        "SH-T1 SQL: %s-%02d → %s clients, %s claims",
+        year,
+        month,
+        len(rows),
+        sum(int(r["Всего обращений"]) for r in rows),
+    )
+    return rows
 
 
 def load_monthly_counts(

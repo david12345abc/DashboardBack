@@ -1776,6 +1776,8 @@ def _build_tile_item(
         if isinstance(lfr, dict):
             if 'project_deviation_rows' in lfr:
                 tile['project_deviation_rows'] = lfr.get('project_deviation_rows')
+            if 'stage_rows' in lfr:
+                tile['stage_rows'] = lfr.get('stage_rows')
             if 'max_allowed_delay_workdays' in lfr:
                 tile['max_allowed_delay_workdays'] = lfr.get('max_allowed_delay_workdays')
     if entry.get('monthly_data') is not None:
@@ -2995,13 +2997,15 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        qualdir_memo_key = f"qualdir_dashboard:v3:{ref_y}:{ref_m:02d}"
+        # v6: полный сброс кэша qualdir.
+        qualdir_memo_key = f"qualdir_dashboard:v6:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v11: trim monthly_data до опорного месяца (HRD-M3: не смешивать июль с цветом июня).
-        sup_memo_key = f"sup_dashboard:v11:{ref_y}:{ref_m:02d}"
+        # v18: HRD-Q4 — в незакрытом месяце план/факт за прошлый (без «живого» факта HC).
+        # v22: HRD-M2 — строгий лаг 1 месяц (август -> июль).
+        sup_memo_key = f"sup_dashboard:v22:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -3016,7 +3020,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
-        servhead_memo_key = f"servhead_dashboard:v5:{ref_y}:{ref_m:02d}"
+        # v8: SH-T1 на SQL (_Reference389 + _Reference328).
+        servhead_memo_key = f"servhead_dashboard:v8:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -3038,10 +3043,10 @@ def _build_universal_payload(
             dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v2_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v5_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v11_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v22_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
             dashboard_disk_key = f"autoit_v7_{ref_y}_{ref_m:02d}"
@@ -3050,7 +3055,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"c1auto_v4_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
-            dashboard_disk_key = f"servhead_v5_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"servhead_v8_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
             dashboard_disk_key = f"devdir_v2_{ref_y}_{ref_m:02d}"
@@ -3118,6 +3123,27 @@ def _build_universal_payload(
                 if monthly_data
                 else {}
             )
+            # Опорная строка builder'а (kpi_period / last_full_month_row): если в
+            # monthly_data нет выбранного месяца (обрезали незакрытый / fact=0) —
+            # не подставлять пустой has_data=false («Нет данных из источника»).
+            if not lm:
+                lfr_fallback = entry.get('last_full_month_row')
+                if isinstance(lfr_fallback, dict) and (
+                    lfr_fallback.get('plan') is not None or lfr_fallback.get('fact') is not None
+                ):
+                    lm = dict(lfr_fallback)
+            if not lm:
+                ytd_fallback = entry.get('ytd') or {}
+                if ytd_fallback.get('total_plan') is not None or ytd_fallback.get('total_fact') is not None:
+                    lm = {
+                        'year': tile_lm_y,
+                        'month': tile_lm_m,
+                        'month_name': MONTH_NAMES.get(tile_lm_m, str(tile_lm_m)),
+                        'plan': ytd_fallback.get('total_plan'),
+                        'fact': ytd_fallback.get('total_fact'),
+                        'kpi_pct': ytd_fallback.get('kpi_pct'),
+                        'has_data': True,
+                    }
             if not lm:
                 lm = {
                     'year': tile_lm_y,
@@ -3144,6 +3170,9 @@ def _build_universal_payload(
                         'kpi_pct': ytd_vals.get('kpi_pct'),
                     }
         if lm:
+            if _kid_tile in {'METD-M1', 'МЕТ-M1'}:
+                from . import calc_metrolog_production_plan
+                lm = calc_metrolog_production_plan.hydrate_stage_rows_in_month_row(lm) or lm
             tile['plan'] = lm.get('plan')
             tile['fact'] = lm.get('fact')
             if 'has_data' in lm:
@@ -3156,6 +3185,8 @@ def _build_universal_payload(
                 tile['production_plan_rows'] = lm.get('production_plan_rows')
             if 'project_deviation_rows' in lm:
                 tile['project_deviation_rows'] = lm.get('project_deviation_rows')
+            if lm.get('stage_rows'):
+                tile['stage_rows'] = lm.get('stage_rows')
             if 'max_allowed_delay_workdays' in lm:
                 tile['max_allowed_delay_workdays'] = lm.get('max_allowed_delay_workdays')
             if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M8'}:
@@ -3817,7 +3848,7 @@ def _build_universal_payload(
     return result
 
 
-CHIEF_METROLOG_PAYLOAD_CACHE_VERSION = 2
+CHIEF_METROLOG_PAYLOAD_CACHE_VERSION = 3
 PROD_DEPUTY_PAYLOAD_CACHE_VERSION = 1
 
 
@@ -3884,6 +3915,62 @@ def _payload_without_cache_refresh_status(payload: dict) -> dict:
     return clean
 
 
+def _hydrate_chief_metrolog_stage_rows(payload: dict) -> dict:
+    """В старых snapshot'ах METD-M1 нет stage_rows — достраиваем из details_sample."""
+    if not isinstance(payload, dict):
+        return payload
+    from . import calc_metrolog_production_plan
+
+    tiles_block = payload.get('Плитки')
+    if not isinstance(tiles_block, dict):
+        return payload
+    items = tiles_block.get('items')
+    if not isinstance(items, list):
+        return payload
+    changed = False
+    next_items = []
+    for tile in items:
+        if not isinstance(tile, dict):
+            next_items.append(tile)
+            continue
+        kid = str(tile.get('kpi_id') or '').strip()
+        if kid not in {'METD-M1', 'МЕТ-M1'}:
+            next_items.append(tile)
+            continue
+        next_tile = dict(tile)
+        months = []
+        for row in next_tile.get('monthly_data') or []:
+            hydrated = calc_metrolog_production_plan.hydrate_stage_rows_in_month_row(row)
+            months.append(hydrated if hydrated is not None else row)
+        if months:
+            next_tile['monthly_data'] = months
+            changed = True
+        if next_tile.get('last_full_month_row') is not None:
+            next_tile['last_full_month_row'] = (
+                calc_metrolog_production_plan.hydrate_stage_rows_in_month_row(
+                    next_tile.get('last_full_month_row')
+                )
+            )
+            changed = True
+        if not next_tile.get('stage_rows'):
+            source = None
+            if isinstance(next_tile.get('last_full_month_row'), dict):
+                source = next_tile.get('last_full_month_row')
+            elif months:
+                source = months[-1]
+            if isinstance(source, dict) and source.get('stage_rows'):
+                next_tile['stage_rows'] = source.get('stage_rows')
+                changed = True
+        next_items.append(next_tile)
+    if not changed:
+        return payload
+    out = dict(payload)
+    out_tiles = dict(tiles_block)
+    out_tiles['items'] = next_items
+    out['Плитки'] = out_tiles
+    return out
+
+
 def _unwrap_chief_metrolog_payload_cache(raw: dict) -> dict:
     if (
         isinstance(raw, dict)
@@ -3892,7 +3979,11 @@ def _unwrap_chief_metrolog_payload_cache(raw: dict) -> dict:
         # locked_call может вернуть stale snapshot старой версии, пока новый payload
         # пересчитывается в фоне. Для ответа разворачиваем его, но fresh-loader
         # всё равно принимает только актуальную CHIEF_METROLOG_PAYLOAD_CACHE_VERSION.
-        return _mark_payload_cache_refreshing(raw['payload'])
+        return _mark_payload_cache_refreshing(
+            _hydrate_chief_metrolog_stage_rows(raw['payload'])
+        )
+    if isinstance(raw, dict):
+        return _hydrate_chief_metrolog_stage_rows(raw)
     return raw
 
 
@@ -4577,6 +4668,7 @@ def _build_kpi_entry(
             month=ref_m,
         )
         if data is not None:
+            data = calc_metrolog_production_plan.ensure_stage_rows_in_payload(data) or data
             entry['data_granularity'] = data.get('data_granularity', 'monthly')
             entry['monthly_data'] = data.get('monthly_data') or []
             entry['last_full_month_row'] = data.get('last_full_month_row')
