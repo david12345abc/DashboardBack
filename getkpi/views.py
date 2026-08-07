@@ -1945,13 +1945,14 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        qualdir_memo_key = f"qualdir_dashboard:v3:{ref_y}:{ref_m:02d}"
+        # v6: полный сброс кэша qualdir.
+        qualdir_memo_key = f"qualdir_dashboard:v6:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v5: trim monthly_data до опорного месяца (HRD-M3: не смешивать июль с цветом июня).
-        sup_memo_key = f"sup_dashboard:v11:{ref_y}:{ref_m:02d}"
+        # v18: HRD-Q4 — в незакрытом месяце план/факт за прошлый (без «живого» факта HC).
+        sup_memo_key = f"sup_dashboard:v18:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -1988,10 +1989,10 @@ def _build_universal_payload(
             dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v2_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v5_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v11_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v18_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
             dashboard_disk_key = f"autoit_v7_{ref_y}_{ref_m:02d}"

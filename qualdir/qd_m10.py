@@ -63,7 +63,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M10_YTD_CACHE_PREFIX = "qualdir_qd_m10_ytd"
 QD_M10_YTD_DISK_TAG = "qualdir_qd_m10_ytd_payload_sql_v1"
-QD_M10_YTD_DISK_VERSION = 10
+QD_M10_YTD_DISK_VERSION = 13
 
 
 def otk_predyavlenie_almaz_month_cache_path(year: int, month: int) -> _Path:

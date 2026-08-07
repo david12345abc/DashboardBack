@@ -7,7 +7,8 @@ QD-M8 — процессные несоответствия (директор п
 
 Логика за месяц (по Date документа, без помеченных на удаление):
   plan        — заявки, статус не из excluded
-                (НеСогласовано / Отменена / НаСогласовании / Подготовлен[/о]);
+                (НеСогласовано / Отменена / Подготовлен[/о]);
+                статус «НаСогласовании» входит в план;
   fact        — из plan со статусом «Выполнено»;
   significant — из plan с ФормаЯвляетсяЗначимой = Истина;
   departments — разбивка plan по ПодразделениеПоставщика;
@@ -78,7 +79,6 @@ PLAN_EXCLUDED_STATUSES = frozenset(
     {
         "НеСогласовано",
         "Отменена",
-        "НаСогласовании",
         "Подготовлен",
         "Подготовлено",
     }
@@ -501,7 +501,7 @@ def build_qd_m8_payload(year: int | None = None, month: int | None = None) -> di
             },
             "rule": (
                 "plan = documents in month, DeletionMark=false, status not in "
-                "НеСогласовано/Отменена/НаСогласовании/Подготовлен; "
+                "НеСогласовано/Отменена/Подготовлен; "
                 "fact = plan with status Выполнено; "
                 "significant = plan with ФормаЯвляетсяЗначимой; "
                 "kinds = VT Несоответствия rows by ВидНесоответствия"
@@ -535,7 +535,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M8_YTD_CACHE_PREFIX = "qualdir_qd_m8_ytd"
 QD_M8_YTD_DISK_TAG = "qualdir_qd_m8_ytd_payload_sql_v1"
-QD_M8_YTD_DISK_VERSION = 20
+QD_M8_YTD_DISK_VERSION = 21
 
 
 def forma0317_month_cache_path(year: int, month: int) -> _Path:

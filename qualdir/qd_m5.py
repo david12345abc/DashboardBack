@@ -7,7 +7,8 @@ QD-M5 — уровень внутреннего брака (директор п�
 
 Логика за месяц (по Date документа, без помеченных на удаление):
   plan        — заявки, статус не из excluded
-                (НеСогласовано / Отменена / НаСогласовании / Подготовлен[/о]);
+                (НеСогласовано / Отменена / Подготовлен[/о]);
+                статус «НаСогласовании» входит в план;
   fact        — из plan со статусом «Выполнено»;
   significant — из plan с ФормаЯвляетсяЗначимой = Истина;
   departments — ОТК-1 / ОТК-2 / Прочие по ПодразделениеПоставщика.
@@ -70,7 +71,6 @@ PLAN_EXCLUDED_STATUSES = frozenset(
     {
         "НеСогласовано",
         "Отменена",
-        "НаСогласовании",
         "Подготовлен",
         "Подготовлено",
     }
@@ -466,7 +466,7 @@ def build_qd_m5_payload(year: int | None = None, month: int | None = None) -> di
             },
             "rule": (
                 "plan = documents in month, DeletionMark=false, status not in "
-                "НеСогласовано/Отменена/НаСогласовании/Подготовлен; "
+                "НеСогласовано/Отменена/Подготовлен; "
                 "fact = plan with status Выполнено; "
                 "significant = plan with ФормаЯвляетсяЗначимой; "
                 "departments = ОТК-1 / ОТК-2 / Прочие"
@@ -500,7 +500,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
 QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_sql_v1"
-QD_M5_YTD_DISK_VERSION = 20
+QD_M5_YTD_DISK_VERSION = 21
 
 
 def internal_brak_month_cache_path(year: int, month: int) -> _Path:
