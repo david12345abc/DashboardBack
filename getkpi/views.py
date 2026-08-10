@@ -1985,8 +1985,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v20: HRD-M6 — просроченные задачи СУП (факт без плана).
-        sup_memo_key = f"sup_dashboard:v20:{ref_y}:{ref_m:02d}"
+        # v23: HRD-M9 — укомплектованность штата НПО.
+        sup_memo_key = f"sup_dashboard:v23:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2255,6 +2255,10 @@ def _build_universal_payload(
             tile['unit'] = 'руб.'
         elif _kid_tile == 'HRD-M3':
             tile['unit'] = 'руб.'
+        elif _kid_tile == 'HRD-M7':
+            tile['unit'] = 'руб./чел.'
+        elif _kid_tile == 'HRD-M9':
+            tile['unit'] = '%'
         elif _kid_tile in {'HRD-M4', 'HRD-Q4'}:
             tile['unit'] = '%'
         elif kpi.get('kpi_id') == 'KD-M11':
