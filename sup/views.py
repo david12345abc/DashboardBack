@@ -8,14 +8,19 @@ from sup.hrd_m1 import get_hrd_m1_ytd
 from sup.hrd_m2 import get_hrd_m2_ytd
 from sup.hrd_m3 import get_hrd_m3_ytd
 from sup.hrd_m4 import get_hrd_m4_ytd
+from sup.hrd_m5 import get_hrd_m5_ytd
+from sup.hrd_m6 import get_hrd_m6_ytd
 from sup.hrd_q4 import get_hrd_q4_ytd
 
-SUP_KPI_IDS: frozenset[str] = frozenset({"HRD-M1", "HRD-M2", "HRD-M3", "HRD-M4", "HRD-Q4"})
+SUP_KPI_IDS: frozenset[str] = frozenset(
+    {"HRD-M1", "HRD-M2", "HRD-M3", "HRD-M4", "HRD-M5", "HRD-M6", "HRD-Q4"}
+)
 SUP_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = SUP_KPI_IDS
 SUP_FOT_LIMIT_KPI_IDS: frozenset[str] = frozenset({"HRD-M2"})
 SUP_BUDGET_LIMIT_KPI_IDS: frozenset[str] = frozenset({"HRD-M3"})
 SUP_TURNOVER_FACT_RAG_IDS: frozenset[str] = frozenset({"HRD-M4", "HRD-Q4"})
-SUP_HIGHER_BETTER_90_80_IDS: frozenset[str] = frozenset({"HRD-M1"})
+SUP_HIGHER_BETTER_90_80_IDS: frozenset[str] = frozenset({"HRD-M1", "HRD-M5"})
+SUP_OVERDUE_FACT_RAG_IDS: frozenset[str] = frozenset({"HRD-M6"})
 
 
 def _normalize_sup_kpi_id(kpi_id: str) -> str:
@@ -38,6 +43,8 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     from sup.hrd_m2 import cache_file_path_for_period as hrd_m2_cache, monthly_cache_path as hrd_m2_monthly
     from sup.hrd_m3 import cache_file_path_for_period as hrd_m3_cache, monthly_cache_path as hrd_m3_monthly
     from sup.hrd_m4 import cache_file_path_for_period as hrd_m4_cache
+    from sup.hrd_m5 import cache_file_path_for_period as hrd_m5_cache
+    from sup.hrd_m6 import cache_file_path_for_period as hrd_m6_cache
     from sup.hrd_q4 import cache_file_path_for_period as hrd_q4_cache
 
     kid = _normalize_sup_kpi_id(kpi_id)
@@ -60,6 +67,10 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
         ])
     elif kid == "HRD-M4":
         paths.append(hrd_m4_cache(ref_y, ref_m))
+    elif kid == "HRD-M5":
+        paths.append(hrd_m5_cache(ref_y, ref_m))
+    elif kid == "HRD-M6":
+        paths.append(hrd_m6_cache(ref_y, ref_m))
     elif kid == "HRD-Q4":
         paths.append(hrd_q4_cache(ref_y, ref_m))
 
@@ -94,11 +105,23 @@ def rag_hrd_turnover_fact_pct(fact_pct: float | None, *, kpi_id: str) -> str:
         return "red"
     return "yellow"
 
+
+def rag_hrd_m6_overdue_fact(fact: float | None) -> str:
+    """HRD-M6: 0 просроченных — зелёный, ≥1 — красный (пороги из БД)."""
+    if fact is None:
+        return "unknown"
+    if float(fact) <= 0:
+        return "green"
+    return "red"
+
+
 _PAYLOAD_BUILDERS = {
     "HRD-M1": get_hrd_m1_ytd,
     "HRD-M2": get_hrd_m2_ytd,
     "HRD-M3": get_hrd_m3_ytd,
     "HRD-M4": get_hrd_m4_ytd,
+    "HRD-M5": get_hrd_m5_ytd,
+    "HRD-M6": get_hrd_m6_ytd,
     "HRD-Q4": get_hrd_q4_ytd,
 }
 

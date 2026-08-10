@@ -164,7 +164,11 @@ def _flatten_tasks_tree(nodes: list[dict[str, Any]] | None) -> list[dict[str, An
 
 
 def _gspp_q4_counts_as_milestone(task: dict[str, Any]) -> bool:
-    """Веха: календарные даты (в т.ч. дд.мм.гггг) или ``_is_zero_duration_milestone`` для ISO из API."""
+    """Веха: ``is_milestone`` (если поле есть) и нулевая длительность по календарным датам.
+
+    Флаг ``is_milestone`` в API TurboProject часто стоит и у обычных многодневных задач;
+    в UI вехой считается только zero-duration — поэтому одной галочки недостаточно.
+    """
     if task.get("is_summary"):
         return False
     if "is_milestone" in task and not _bool_is_true(task.get("is_milestone")):
@@ -172,8 +176,6 @@ def _gspp_q4_counts_as_milestone(task: dict[str, Any]) -> bool:
     sd = _calendar_date_from_field(task.get("start_date"))
     fd = _calendar_date_from_field(task.get("finish_date"))
     if sd is not None and fd is not None and sd == fd:
-        return True
-    if _bool_is_true(task.get("is_milestone")) and fd is not None:
         return True
     return _is_zero_duration_milestone(task)
 
@@ -263,23 +265,40 @@ def _collect_gspp_q4_deviated_milestones(
     return out
 
 
+def _display_dates_for_month(
+    task: dict[str, Any], ref_y: int, ref_m: int,
+) -> tuple[Any, Any, Any]:
+    """Даты для колонок таблицы за опорный месяц (baseline, если веха в месяце по плану)."""
+    base_raw = _task_baseline_finish(task)
+    base_d = _calendar_date_from_field(base_raw)
+    if base_d is not None and base_d.year == ref_y and base_d.month == ref_m:
+        return base_raw, base_raw, base_raw
+    return task.get("start_date"), task.get("finish_date"), base_raw
+
+
 def _gspp_milestone_deviation_details(
     deviated_tasks: list[dict[str, Any]],
     ref_y: int,
     ref_m: int,
     as_of_date: date,
 ) -> list[dict[str, Any]]:
-    """Структура элементов как у ``_build_milestone_deviation_details`` в ``techdir_projects``."""
+    """Структура элементов как у ``_build_milestone_deviation_details`` в ``techdir_projects``.
+
+    В список попадают только zero-duration вехи (см. ``_gspp_q4_counts_as_milestone``).
+    """
     details: list[dict[str, Any]] = []
     for index, task in enumerate(deviated_tasks, start=1):
         delay_days = _gspp_delay_days_for_deviated(task, ref_y, ref_m, as_of_date)
+        start_d, finish_d, baseline_d = _display_dates_for_month(task, ref_y, ref_m)
         details.append({
             "number": index,
             "id": task.get("id"),
             "uid": task.get("uid"),
             "name": str(task.get("name") or ""),
-            "start_date": task.get("start_date"),
-            "finish_date": task.get("finish_date"),
+            "start_date": start_d,
+            "finish_date": finish_d,
+            "baseline_finish": baseline_d,
+            "schedule_finish": task.get("finish_date"),
             "delay_days": delay_days,
             "percent_complete": task.get("percent_complete"),
         })
@@ -612,7 +631,8 @@ def _build_gspp_q4_deviation_table_payload(
         "periodicity": "ежемесячно",
         "description": (
             "Проект TurboProject «номенклатур*», руководитель из оргструктуры ГСПП — все вехи с отклонением "
-            f"за {MONTH_NAMES[ref_m]} {ref_y} (логика как у плитки ГСП-Q4). Структура вложенности вех — как у "
+            f"за {MONTH_NAMES[ref_m]} {ref_y} (та же логика, что у плитки ГСП-Q4; "
+            "только zero-duration вехи). Структура вложенности вех — как у "
             "технического директора (TD-T-M1-DEVIATIONS / TD-T-Q1-DEVIATIONS)."
         ),
         "period": {

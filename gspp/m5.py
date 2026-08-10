@@ -22,8 +22,8 @@ from getkpi.gspp_q4 import get_manager_project_pairs, _project_display_name, _pr
 logger = logging.getLogger(__name__)
 
 GSPP_M5_CACHE_PREFIX = "gspp_m5_ytd"
-GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v5"
-GSPP_M5_DISK_VERSION = 5
+GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v6"
+GSPP_M5_DISK_VERSION = 6
 
 
 def _safe_float(value: Any) -> float | None:
