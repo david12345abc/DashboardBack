@@ -78,7 +78,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 7
+KOMDIR_PAYLOAD_CACHE_VERSION = 8
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",

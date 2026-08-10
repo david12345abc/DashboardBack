@@ -42,8 +42,8 @@ from getkpi.valovaya_pribyl import vp_plan_for_month  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# v12: KD-M1 fact для текущего месяца включает весь текущий день.
-CACHE_VERSION = 12
+# v13: KD-M3 договоры — план без закрытых объектов, ожидаемо SQL (не HTTP).
+CACHE_VERSION = 13
 
 
 def _kpi_pct(fact, plan) -> float | None:
@@ -355,34 +355,43 @@ def get_otgruzki_ytd(
 
 def compute_dogovory_month(year: int, month: int) -> dict[str, Any]:
     p0, p_next = period_bounds(year, month)
+    today = date.today()
+    # В текущем месяце факт и даты «ожидаемо» — по сегодня (как период Excel).
+    asof_next = p_next
+    if year == today.year and month == today.month:
+        asof_next = dog_mod.to_1c_dt(today + timedelta(days=1))
     with connect_ctx() as cn:
         cur = cn.cursor()
         cur.execute("SET NOCOUNT ON")
         plan_by_name = dog_mod.calc_mp_plan(cur, p0, p_next)
-        fact_by_name = dog_mod.calc_fact(cur, p0, p_next)
+        fact_by_name = dog_mod.calc_fact(cur, p0, asof_next)
+        expected_by_name = dog_mod.calc_expected(cur, p0, p_next, p_asof=asof_next)
     plan_map = aggregate_by_odata_name(plan_by_name)
     fact_map = aggregate_by_odata_name(fact_by_name)
-    guids = set(plan_map) | set(fact_map)
+    expected_map = aggregate_by_odata_name(expected_by_name)
+    guids = set(plan_map) | set(fact_map) | set(expected_map)
     by_dept = _merge_by_dept_maps(
-        guids, fact_map=fact_map, plan_map=plan_map, expected_map={g: 0.0 for g in guids},
+        guids,
+        fact_map=fact_map,
+        plan_map=plan_map,
+        expected_map=expected_map,
     )
     return {
         "year": year,
         "month": month,
         "fact": round(sum(fact_map.values()), 2),
         "plan": round(sum(plan_map.values()), 2),
-        "expected": 0.0,
+        "expected": round(sum(expected_map.values()), 2),
         "by_dept": by_dept,
     }
 
 
 def build_dogovory_payload(year: int, month: int) -> dict[str, Any]:
     months = [compute_dogovory_month(year, m) for m in range(1, month + 1)]
-    months = _overlay_expected_from_1c(months, year, month, "dogovory")
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M3")
     payload["debug"] = {
         **(payload.get("debug") or {}),
-        "source": "comdir.sql+1c_expected",
+        "source": "comdir.sql",
     }
     return payload
 
@@ -396,7 +405,7 @@ def get_dogovory_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m3_ytd",
-        source_tag="comdir_kd_m3_ytd_sql_offer_v10",
+        source_tag="comdir_kd_m3_ytd_sql_v13",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m3",
         compute_fn=build_dogovory_payload,

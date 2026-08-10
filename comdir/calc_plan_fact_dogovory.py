@@ -17,19 +17,21 @@
      без строки в ТД_ДоговорыПодписанные, проведённые, с оплатой в периоде;
      сумма = СуммаОплатыРегл за период (ОПБО/ОДП — перепродажа без МГС).
 
-Ожидаемые (ТД_ДоговорыПотенциальные / _InfoRg112240):
-  • ДатаПодписанияПлан в периоде
-  • КП по ссылке заполнен
-  • подразделение из коммерческого списка (не пустое)
-  • ЗаказКлиента пуст (иначе это уже не «ожидаемый»)
-  • статус КП — чёрный список (Enum1651):
-      НеСогласовано, Аннулировано (+ Черновик, Отменено);
-      проходят: Согласовано, Действует, Исполнено
-  • партнёр не из перепродажи; для ОДП (и ликв. ОПБО) — список без Метрогазсервис
-  • если ТД_ОсновноеТКПДляБМИ — берём ТД_СуммаТКПБМИ
-  • курсы валют КП
-  • плюс ветка счёт-оферта: заказы по соглашению ТД_СчетОферта,
-    без записи в ТД_ДоговорыПодписанные, с этапом оплаты и остатком КОплате > 0
+Ожидаемые = UNION как в отчёте 1С «План-факт»:
+
+  A) ТД_ДоговорыПотенциальные (_InfoRg112240):
+  • ДатаПодписанияПлан в выбранном периоде (для текущего месяца — по сегодня)
+  • КП заполнен; ЗаказКлиента пуст
+  • статус КП не НеСогласовано / Аннулировано (+ Черновик, Отменено)
+  • 6 коммерческих отделов; перепродажа (ОДП — без МГС)
+  • сумма: ТД_СуммаТКПБМИ при ТД_ОсновноеТКПДляБМИ, иначе СуммаДоговора × курс КП
+
+  B) Счёт-оферта (РасчетыСКлиентами.Остатки на конец месяца):
+  • соглашение ТД_СчетОферта; не в ТД_ДоговорыПодписанные
+  • этап оплаты ДатаПлатежа < конец месяца; КОплатеОстаток > 0
+  • ТД_ПредполагаемаяДатаАванса в выбранном периоде (поле отчёта)
+  • не ТД_НеУчитыватьВПланФакте / не ТД_СопровождениеПродажи; не перепродажа
+  • СуммаДоговораПлан = СуммаДокумента (при полном долге ≈ остаток КОплате)
 """
 from __future__ import annotations
 
@@ -90,6 +92,9 @@ ORDER_STATUS_NOT_AGREED = bytes.fromhex("a1675473ecec326649b4b85516d451ca")  # �
 KP_BMI_FLAG = "_Fld184256"
 KP_BMI_SUM = "_Fld86876"
 KP_CURRENCY = "_Fld25034RRef"
+
+# ЗаказКлиента.ТД_ПредполагаемаяДатаАванса — дата ветки счёт-оферта в отчёте
+ORDER_ADVANCE_DT = "_Fld21197"
 
 # Курсы Константы.ТД_ВалютаПланФакта_УЕ_* — подгружаются из OData при расчёте.
 FX_RATES: dict[str, float] = {"USD": 1.0, "EUR": 1.0, "BYN": 1.0, "KZT": 1.0}
@@ -191,6 +196,7 @@ def fx_params() -> list:
 
 
 def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """МП по договорам: вид «Договоры», без закрытых объектов планирования."""
     load_depts(cur, COMMERCIAL_DEPTS, "#plan_depts")
     cur.execute(
         """
@@ -198,12 +204,21 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
                SUM(CASE WHEN p._Active = 0x01 THEN p._Fld96971 ELSE 0 END) AS PlanSum
         FROM _AccumRg96963 p WITH (NOLOCK)
         INNER JOIN #plan_depts d ON d.id = p._Fld96965RRef
+        LEFT JOIN _Reference112236 plan_obj WITH (NOLOCK)
+          ON plan_obj._IDRRef = p._Fld96964_RRRef
         WHERE p._Fld122525RRef = ?
           AND p._Period >= ? AND p._Period < ?
+          AND (
+                plan_obj._IDRRef IS NULL
+                OR plan_obj._Fld122423 <= ?
+                OR plan_obj._Fld122423 >= ?
+              )
         GROUP BY d.name
         """,
         PLAN_DEALS,
         p0,
+        p_next,
+        datetime(2001, 1, 1),
         p_next,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
@@ -429,12 +444,69 @@ def calc_fact_sql(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
-def calc_fact_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """Ветка счёт-оферта факта договоров (расшифровка отчёта 1С / Excel).
+def _odata_period_str(p: datetime) -> str:
+    return f"{p.year - YEAR_OFFSET:04d}-{p.month:02d}-{p.day:02d}"
 
-    Заказы с соглашением ТД_СчетОферта, которых нет в ТД_ДоговорыПодписанные:
-    проведённые, не «НеСогласован», с оплатой в периоде → сумма оплат регл.
+
+_PAYMENT_RECORDER_MARKERS = (
+    "Document_ПоступлениеБезналичныхДенежныхСредств",
+    "Document_ПоступлениеНаличныхДенежныхСредств",
+    "Document_ОперацияПоПлатежнойКарте",
+    "Document_ПриходныйКассовыйОрдер",
+)
+
+
+_PAY_ODATA_CACHE: dict[tuple[str, str], dict[str, float]] = {}
+
+
+def _fetch_settlement_payments_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
+    """ОбъектРасчетов_Key → сумма оплат (СуммаРегл) из live OData за период.
+
+    SQL-копия ``_AccumRg51416`` часто отстаёт на последние дни; для ветки
+    счёт-оферта берём поступления из живого регистра РасчетыСКлиентами.
     """
+    from comdir.resale import _base, _session
+
+    d0 = _odata_period_str(p0)
+    d1 = _odata_period_str(p_next)
+    cache_key = (d0, d1)
+    if cache_key in _PAY_ODATA_CACHE:
+        return _PAY_ODATA_CACHE[cache_key]
+
+    session = _session()
+    base = _base()
+    entity = quote("AccumulationRegister_РасчетыСКлиентами_RecordType")
+    # startswith(Recorder_Type, ...) в этой 1С OData даёт 500 — фильтруем в Python.
+    flt = quote(
+        f"Period ge datetime'{d0}T00:00:00' and Period lt datetime'{d1}T00:00:00' and "
+        f"СуммаРегл gt 0"
+    )
+    select = quote("ОбъектРасчетов_Key,СуммаРегл,Recorder_Type", safe=",")
+    by_obj: dict[str, float] = {}
+    skip = 0
+    while True:
+        url = (
+            f"{base}/{entity}?$format=json&$top=1000&$skip={skip}"
+            f"&$select={select}&$filter={flt}"
+        )
+        batch = session.get(url, timeout=120).json().get("value") or []
+        for row in batch:
+            rtype = str(row.get("Recorder_Type") or "")
+            if not any(m in rtype for m in _PAYMENT_RECORDER_MARKERS):
+                continue
+            obj = row.get("ОбъектРасчетов_Key") or ""
+            if not obj or obj.startswith("00000000"):
+                continue
+            by_obj[obj] = by_obj.get(obj, 0.0) + float(row.get("СуммаРегл") or 0)
+        if len(batch) < 1000:
+            break
+        skip += 1000
+    _PAY_ODATA_CACHE[cache_key] = by_obj
+    return by_obj
+
+
+def calc_fact_offer_sql(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Счёт-оферта факт из SQL erp_pm (может отставать по оплатам)."""
     from comdir.resale import ORDER_SOPR_FIELD
 
     all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
@@ -499,6 +571,84 @@ def calc_fact_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
+def calc_fact_offer_odata(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Счёт-оферта факт по live-оплатам OData, отфильтрованным SQL-условиями заказа."""
+    from comdir.resale import ORDER_SOPR_FIELD, guid_to_1c_bytes
+
+    pay_by_obj = _fetch_settlement_payments_odata(p0, p_next)
+    if not pay_by_obj:
+        return {}
+
+    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
+    load_depts(cur, all_depts, "#offer_fact_depts")
+    load_resale(cur)
+
+    cur.execute("IF OBJECT_ID('tempdb..#pay_obj') IS NOT NULL DROP TABLE #pay_obj")
+    cur.execute("CREATE TABLE #pay_obj (id binary(16) PRIMARY KEY, amt float)")
+    for obj_guid, amt in pay_by_obj.items():
+        try:
+            cur.execute(
+                "INSERT INTO #pay_obj(id, amt) VALUES (?, ?)",
+                guid_to_1c_bytes(obj_guid),
+                float(amt),
+            )
+        except Exception:
+            continue
+
+    cur.execute(
+        f"""
+        SELECT d.name, SUM(p.amt) AS FactSum
+        FROM #pay_obj p
+        INNER JOIN _Reference134945 obj WITH (NOLOCK)
+          ON obj._IDRRef = p.id
+         AND obj._Fld138162_RTRef = ?
+        INNER JOIN _Document704 ord WITH (NOLOCK)
+          ON ord._IDRRef = obj._Fld138162_RRRef
+        INNER JOIN #offer_fact_depts d ON d.id = ord._Fld21220RRef
+        INNER JOIN _Reference473 a WITH (NOLOCK)
+          ON a._IDRRef = ord._Fld21183RRef
+        WHERE a.[{AG_OFFER_FLAG}] = 0x01
+          AND a._Fld13714RRef = ?
+          AND ord._Posted = 0x01
+          AND ISNULL(ord._Fld184301, 0x00) = 0x00
+          AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
+          AND ord.[{ORDER_STATUS_FIELD}] <> ?
+          AND NOT EXISTS (
+            SELECT 1 FROM _InfoRg112278 s WITH (NOLOCK)
+            WHERE s._Fld112481RRef = ord._IDRRef
+          )
+          AND (
+                CASE
+                  WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = ord._Fld21220RRef) THEN
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                  ELSE
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                END
+              ) = 1
+        GROUP BY d.name
+        """,
+        ORDER_TREF,
+        AG_STATUS_ACTIVE,
+        ORDER_STATUS_NOT_AGREED,
+    )
+    return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+
+
+def calc_fact_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Ветка счёт-оферта факта: предпочтительно live OData, иначе SQL."""
+    try:
+        odata = calc_fact_offer_odata(cur, p0, p_next)
+        if odata:
+            return odata
+    except Exception:
+        logger.exception("OData оплаты счёт-оферта недоступны — SQL fallback")
+    return calc_fact_offer_sql(cur, p0, p_next)
+
+
 def _merge_fact(a: dict[str, float], b: dict[str, float]) -> dict[str, float]:
     out = dict(a)
     for name, val in b.items():
@@ -509,7 +659,7 @@ def _merge_fact(a: dict[str, float], b: dict[str, float]) -> dict[str, float]:
 def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     """Договоры заключённые (факт) = регистр + счёт-оферта (как в отчёте 1С).
 
-    Источник регистра — MSSQL erp_pm; OData только как аварийный fallback.
+    Регистр — MSSQL; оплаты счёт-оферта — live OData (SQL часто отстаёт).
     """
     try:
         reg = calc_fact_sql(cur, p0, p_next)
@@ -528,10 +678,15 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return _merge_fact(reg, offer)
 
 
-def calc_expected_potential(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """Договоры, ожидаемые к заключению — ветка потенциальных КП."""
-    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
-    load_depts(cur, all_depts, "#exp_depts")
+def calc_expected_potential(
+    cur,
+    p0: datetime,
+    p_next: datetime,
+    p_asof: datetime | None = None,
+) -> dict[str, float]:
+    """Ветка потенциальных КП (ТД_ДоговорыПотенциальные)."""
+    p_asof = p_asof or p_next
+    load_depts(cur, COMMERCIAL_DEPTS, "#exp_depts")
     load_resale(cur)
 
     amt_raw = f"""
@@ -573,7 +728,7 @@ def calc_expected_potential(cur, p0: datetime, p_next: datetime) -> dict[str, fl
         *fx_params(),
         KP_TREF,
         p0,
-        p_next,
+        p_asof,
         EMPTY16,
         EMPTY16,
         EMPTY16,
@@ -582,23 +737,64 @@ def calc_expected_potential(cur, p0: datetime, p_next: datetime) -> dict[str, fl
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
-def calc_expected_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """Ветка счёт-оферта: СуммаДокумента заказа при остатке КОплате > 0."""
-    del p0  # оферта завязана на остаток/этапы к концу месяца, не на дату КП
-    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
-    load_depts(cur, all_depts, "#offer_depts")
+def calc_expected_offer(
+    cur,
+    p0: datetime,
+    p_next: datetime,
+    p_asof: datetime | None = None,
+) -> dict[str, float]:
+    """Ветка счёт-оферта: СуммаДокумента при остатке КОплате > 0 и дате аванса в периоде."""
+    from comdir.resale import ORDER_SOPR_FIELD, guid_to_1c_bytes
+
+    p_asof = p_asof or p_next
+    load_depts(cur, COMMERCIAL_DEPTS, "#offer_depts")
     load_resale(cur)
 
+    # Исключить заказы, уже оплаченные в live 1С (SQL-остаток может ещё висеть).
+    cur.execute("IF OBJECT_ID('tempdb..#paid_offer') IS NOT NULL DROP TABLE #paid_offer")
+    cur.execute("CREATE TABLE #paid_offer (id binary(16) PRIMARY KEY)")
+    try:
+        pay_by_obj = _fetch_settlement_payments_odata(p0, p_asof)
+        if pay_by_obj:
+            cur.execute("IF OBJECT_ID('tempdb..#pay_obj2') IS NOT NULL DROP TABLE #pay_obj2")
+            cur.execute("CREATE TABLE #pay_obj2 (id binary(16) PRIMARY KEY)")
+            for obj_guid in pay_by_obj:
+                try:
+                    cur.execute(
+                        "INSERT INTO #pay_obj2(id) VALUES (?)",
+                        guid_to_1c_bytes(obj_guid),
+                    )
+                except Exception:
+                    continue
+            cur.execute(
+                """
+                INSERT INTO #paid_offer(id)
+                SELECT DISTINCT obj._Fld138162_RRRef
+                FROM #pay_obj2 p
+                INNER JOIN _Reference134945 obj WITH (NOLOCK)
+                  ON obj._IDRRef = p.id
+                 AND obj._Fld138162_RTRef = ?
+                """,
+                ORDER_TREF,
+            )
+    except Exception:
+        logger.exception("Не удалось исключить live-оплаты из ожидаемых счёт-оферта")
+
+    amt = fx_sql("ord._Fld21186", "ord._Fld21185RRef")
     cur.execute(
-        """
-        SELECT d.name, SUM(ord._Fld21186) AS ExpSum
+        f"""
+        SELECT d.name, SUM({amt}) AS ExpSum
         FROM _Document704 ord WITH (NOLOCK)
         INNER JOIN #offer_depts d ON d.id = ord._Fld21220RRef
         INNER JOIN _Reference473 a WITH (NOLOCK)
           ON a._IDRRef = ord._Fld21183RRef
-        WHERE a.[{flag}] = 0x01
+        WHERE a.[{AG_OFFER_FLAG}] = 0x01
           AND ISNULL(ord._Fld184301, 0x00) = 0x00
+          AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
           AND ord._Fld138973RRef <> ?
+          AND ord.[{ORDER_ADVANCE_DT}] >= ?
+          AND ord.[{ORDER_ADVANCE_DT}] < ?
+          AND NOT EXISTS (SELECT 1 FROM #paid_offer x WHERE x.id = ord._IDRRef)
           AND EXISTS (
             SELECT 1 FROM _Document704_VT21278 st WITH (NOLOCK)
             WHERE st._Document704_IDRRef = ord._IDRRef
@@ -634,18 +830,27 @@ def calc_expected_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]
                 END
               ) = 1
         GROUP BY d.name
-        """.replace("{flag}", AG_OFFER_FLAG),
+        """,
+        *fx_params(),
         EMPTY16,
+        p0,
+        p_asof,
         p_next,
         p_next,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
-def calc_expected(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+def calc_expected(
+    cur,
+    p0: datetime,
+    p_next: datetime,
+    p_asof: datetime | None = None,
+) -> dict[str, float]:
     """Договоры, ожидаемые к заключению (потенциал КП + счёт-оферта)."""
-    pot = calc_expected_potential(cur, p0, p_next)
-    offer = calc_expected_offer(cur, p0, p_next)
+    p_asof = p_asof or p_next
+    pot = calc_expected_potential(cur, p0, p_next, p_asof=p_asof)
+    offer = calc_expected_offer(cur, p0, p_next, p_asof=p_asof)
     out: dict[str, float] = dict(pot)
     for name, val in offer.items():
         out[name] = out.get(name, 0.0) + float(val or 0)
