@@ -14,11 +14,10 @@
 Ожидаемые (Сумма планируемых платежей / dengi_expected)
   — РН РасчетыСКлиентами (_AccumRg53885), ресурс КОплате (_Fld53890)
   — остаток > 0; ОбъектРасчетов типа ЗаказКлиента
-  — этап оплаты с ДатаПлатежа в янв..конец месяца
+  — этап оплаты с ДатаПлатежа в выбранном месяце
   — фильтры заказа: соглашение, не ТД_НеУчитыватьВПланФакте/ДС,
-    перепродажа (ОДП/ликв. дилерские — без Метрогазсервис)
-  — ликвидированные холдинги + дилерские в агрегации
-  — валюта заказа × фиксированные курсы (как в OData calc_plan)
+    не ТД_СопровождениеПродажи, партнёр не из списка перепродажи
+  — валюта заказа × фиксированные курсы (как в отчёте 1С)
 
 Итог коммерческого директора = сумма по всем отделам факта / плану.
 """
@@ -137,12 +136,21 @@ def calc_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
                SUM(CASE WHEN p._Active = 0x01 THEN p._Fld96971 ELSE 0 END) AS PlanSum
         FROM _AccumRg96963 p WITH (NOLOCK)
         INNER JOIN #plan_depts d ON d.id = p._Fld96965RRef
+        LEFT JOIN _Reference112236 plan_obj WITH (NOLOCK)
+          ON plan_obj._IDRRef = p._Fld96964_RRRef
         WHERE p._Fld122525RRef = ?
           AND p._Period >= ? AND p._Period < ?
+          AND (
+                plan_obj._IDRRef IS NULL
+                OR plan_obj._Fld122423 <= ?
+                OR plan_obj._Fld122423 >= ?
+              )
         GROUP BY d.name
         """,
         PLAN_MONEY,
         p0,
+        p_next,
+        datetime(2001, 1, 1),
         p_next,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
@@ -162,7 +170,7 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     """
     from comdir.resale import ORDER_SOPR_FIELD
 
-    all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS_DISPLAY
+    all_depts = COMMERCIAL_DEPTS
     load_depts(cur, all_depts, "#fact_depts")
     load_resale(cur)
     cur.execute(
@@ -231,12 +239,8 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
         INNER JOIN #fact_depts d ON d.id = x.dept
         WHERE (
           CASE
-            WHEN EXISTS (SELECT 1 FROM #dept_nomgs n WHERE n.id = x.dept) THEN
-              CASE WHEN EXISTS (SELECT 1 FROM #resale_nomgs r WHERE r.id = x.partner)
-                   THEN 0 ELSE 1 END
-            ELSE
-              CASE WHEN EXISTS (SELECT 1 FROM #resale r WHERE r.id = x.partner)
-                   THEN 0 ELSE 1 END
+            WHEN EXISTS (SELECT 1 FROM #resale r WHERE r.id = x.partner)
+            THEN 0 ELSE 1
           END
         ) = 1
         GROUP BY d.name
@@ -259,17 +263,18 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
-def calc_expected(cur, p_year_start: datetime, p_month_end: datetime) -> dict[str, float]:
+def calc_expected(cur, p_period_start: datetime, p_month_end: datetime) -> dict[str, float]:
     """Ожидаемые деньги (Сумма планируемых платежей) — как OData/отчёт 1С.
 
     • остаток КОплате > 0 на конец месяца по ОбъектРасчетов;
     • объект расчётов типа ЗаказКлиента (_Fld138162_RTRef);
-    • заказ с этапом оплаты ДатаПлатежа в [начало года .. конец месяца);
+    • заказ с этапом оплаты ДатаПлатежа в [начало выбранного месяца .. конец месяца);
     • соглашение заполнено; не ТД_НеУчитыватьВПланФакте / …ДС;
-    • перепродажа (для ОДП и ликв. дилерских — без Метрогазсервис);
-    • ликвидированные «холдинги» → ключевые клиенты (через aggregate).
+    • партнёр заказа не из списка перепродажи.
     """
-    exp_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS_DISPLAY + HOLDINGS_DEPTS
+    from comdir.resale import ORDER_SOPR_FIELD
+
+    exp_depts = COMMERCIAL_DEPTS
     load_depts(cur, exp_depts, "#exp_depts")
     load_resale(cur)
 
@@ -311,24 +316,14 @@ def calc_expected(cur, p_year_start: datetime, p_month_end: datetime) -> dict[st
             AND ord._Fld21183RRef <> ?
             AND ISNULL(ord._Fld184301, 0x00) = 0x00
             AND ISNULL(ord._Fld185210, 0x00) = 0x00
+            AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
             AND EXISTS (
               SELECT 1 FROM _Document704_VT21278 st WITH (NOLOCK)
               WHERE st._Document704_IDRRef = ord._IDRRef
                 AND st._Fld21281 >= ?
                 AND st._Fld21281 < ?
             )
-            AND (
-                  CASE
-                    WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = ord._Fld21220RRef) THEN
-                      CASE WHEN EXISTS (
-                        SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
-                      ) THEN 0 ELSE 1 END
-                    ELSE
-                      CASE WHEN EXISTS (
-                        SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
-                      ) THEN 0 ELSE 1 END
-                  END
-                ) = 1
+            AND NOT EXISTS (SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef)
           GROUP BY ord._Fld138973RRef
         ) pick ON pick.obj = bal.obj
         INNER JOIN _Document704 ord WITH (NOLOCK)
@@ -344,7 +339,7 @@ def calc_expected(cur, p_year_start: datetime, p_month_end: datetime) -> dict[st
         ORDER_TREF,
         EMPTY16,
         EMPTY16,
-        p_year_start,
+        p_period_start,
         p_month_end,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}

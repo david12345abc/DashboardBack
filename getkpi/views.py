@@ -21,6 +21,7 @@ from . import (
     calc_budget_limit,
     calc_dengi_fact,
     calc_fot_management,
+    calc_logistics_client_dz,
     calc_otif_vypusk_zam_proizvodstva,
     calc_plan,
     calc_postavshchiki,
@@ -3398,11 +3399,13 @@ def _build_universal_payload(
         if _kid_tile == 'TD-Q2' or _is_gspp_q5_tile(kpi):
             tile['unit'] = '%'
 
-        period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
-        if not period_label and tile_lm_y and tile_lm_m:
-            period_label = f"{MONTH_NAMES[tile_lm_m].capitalize()} {tile_lm_y}"
-        if period_label:
-            tile['plan_fact_period_label'] = period_label
+        # LOG-M5 (снимок ДЗ): дату среза из apply_tile_value_overrides не затирать месячной подписью.
+        if _kid_tile not in logistics_views.LOGISTICS_CLIENT_DZ_IDS:
+            period_label = _plan_fact_period_label_from_kpi_period(entry.get('kpi_period'))
+            if not period_label and tile_lm_y and tile_lm_m:
+                period_label = f"{MONTH_NAMES[tile_lm_m].capitalize()} {tile_lm_y}"
+            if period_label:
+                tile['plan_fact_period_label'] = period_label
 
         if include_debug and entry.get('debug') is not None:
             tile['debug'] = entry['debug']
@@ -3578,35 +3581,57 @@ def _build_universal_payload(
 
         if logistics_views.is_logistics_head_department(dept):
             try:
-                supplier_dz_date = _snapshot_date_for_selected_period()
-                supplier_dz_detail = cache_manager.locked_call(
-                    f"log_supplier_dz_detail_{supplier_dz_date.isoformat()}",
-                    calc_postavshchiki.get_supplier_dz_detail,
-                    supplier_dz_date,
+                client_dz_date = date.today()
+                client_dz_detail = cache_manager.locked_call(
+                    f"log_client_dz_detail_{client_dz_date.isoformat()}",
+                    calc_logistics_client_dz.calculate,
+                    client_dz_date,
                 )
             except Exception:
-                supplier_dz_detail = {"rows": [], "total_dolg_regl": 0, "na_datu": ""}
-                supplier_dz_date = _snapshot_date_for_selected_period()
-            tablitsy["LOG-T-SUPPLIER-DZ"] = {
-                "name": f"Дебиторская задолженность на {supplier_dz_detail.get('na_datu') or supplier_dz_date.isoformat()}",
+                client_dz_detail = {
+                    "rows": [],
+                    "total_dz": 0,
+                    "total_overdue": 0,
+                    "overdue_pct": None,
+                    "na_datu": "",
+                    "window": {},
+                }
+                client_dz_date = date.today()
+            tablitsy["LOG-T-CLIENT-DZ"] = {
+                "name": (
+                    "Дебиторская задолженность (НПО+АЛМАЗ) "
+                    f"на {client_dz_detail.get('na_datu') or client_dz_date.isoformat()}"
+                ),
                 "periodicity": "ежемесячно",
                 "description": (
-                    "Поставщики с нашим долгом > 0 (ДолгРеглBalance) на дату среза; "
-                    "предоплата не включается; за два полных календарных месяца до даты среза "
-                    "оборот по ДолгРегл = 0 и остаток не менялся"
+                    "Клиентская ДЗ по организациям НПО и АЛМАЗ; просрочка = остаток "
+                    "на начало 60-дневного окна равен остатку на дату среза, "
+                    "а движений ДолгРегл за окно нет"
                 ),
                 "period": {
                     "year": ref_y,
-                    "month": supplier_dz_date.month,
-                    "month_name": month_names.get(supplier_dz_date.month, str(supplier_dz_date.month)),
-                    "as_of_date": supplier_dz_detail.get("na_datu") or supplier_dz_date.isoformat(),
+                    "month": client_dz_date.month,
+                    "month_name": month_names.get(client_dz_date.month, str(client_dz_date.month)),
+                    "as_of_date": client_dz_detail.get("na_datu") or client_dz_date.isoformat(),
                     "aggregation_mode": aggregation_mode or "current",
+                    "window": client_dz_detail.get("window") or {},
                 },
-                "total": supplier_dz_detail.get("total_dolg_regl", 0),
-                "columns": ["№ объекта расчетов", "Дата", "Объект расчетов", "Поставщик", "Сумма"],
-                "verification": supplier_dz_detail.get("verification") or {},
-                "query_protocol": supplier_dz_detail.get("query_protocol") or {},
-                "rows": supplier_dz_detail.get("rows") or [],
+                "total": client_dz_detail.get("total_dz", 0),
+                "total_dz": client_dz_detail.get("total_dz", 0),
+                "total_overdue": client_dz_detail.get("total_overdue", 0),
+                "overdue_pct": client_dz_detail.get("overdue_pct"),
+                "columns": [
+                    "№ объекта расчетов",
+                    "Дата",
+                    "Организация",
+                    "Контрагент",
+                    "Объект расчетов",
+                    "Сумма",
+                    "Просрочена",
+                ],
+                "verification": client_dz_detail.get("verification") or {},
+                "query_protocol": client_dz_detail.get("debug") or {},
+                "rows": client_dz_detail.get("rows") or [],
             }
 
     if _is_qualdir_dashboard(dept, all_kpis):

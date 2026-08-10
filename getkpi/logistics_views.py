@@ -6,6 +6,7 @@ from datetime import date
 from . import (
     cache_manager,
     calc_logistics_budget,
+    calc_logistics_client_dz,
     calc_logistics_fot,
     calc_logistics_price_deviation,
     calc_logistics_supplier_share,
@@ -14,8 +15,17 @@ from . import (
 
 from .kpi_periods import last_full_month
 
-LOGISTICS_KPI_IDS = {"LOG-M1", "LOG-M2", "LOG-M3.B", "LOG-M3.F", "LOG-Q1", "LOG-Q2"}
+LOGISTICS_KPI_IDS = {
+    "LOG-M1",
+    "LOG-M2",
+    "LOG-M3.B",
+    "LOG-M3.F",
+    "LOG-M5",
+    "LOG-Q1",
+    "LOG-Q2",
+}
 LOGISTICS_BUDGET_FOT_SPLIT_IDS = {"LOG-M3.B", "LOG-M3.F"}
+LOGISTICS_CLIENT_DZ_IDS = {"LOG-M5"}
 LOG_Q1_NAME = "Доля квалифицированных поставщиков"
 LOG_Q1_FORMULA = "Поставщики с суммой баллов оценки > 45 / Все поставщики из оценки периода × 100%"
 
@@ -50,7 +60,7 @@ def normalize_kpi_definitions(department: str, rows: list[dict]) -> list[dict]:
         return rows
 
     ids = {str(row.get("kpi_id") or "") for row in rows}
-    if "LOG-M3" in ids or not LOGISTICS_BUDGET_FOT_SPLIT_IDS.issubset(ids):
+    if "LOG-M3" in ids or not LOGISTICS_KPI_IDS.issubset(ids):
         fallback = kpi_definition_fallback(department)
         if fallback:
             return fallback
@@ -117,6 +127,16 @@ def _rag_fot_limit_pct(pct: float | None) -> str:
     return "green"
 
 
+def _rag_dz_overdue_pct(pct: float | None) -> str:
+    if pct is None:
+        return "unknown"
+    if pct < 5:
+        return "green"
+    if pct <= 15:
+        return "yellow"
+    return "red"
+
+
 def _plan_fact_color(entry: dict) -> tuple[float | None, str] | None:
     row = entry.get("last_full_month_row") or {}
     plan = row.get("plan")
@@ -155,6 +175,13 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
         if pct is not None:
             pct = float(pct)
         return pct, _rag_limit_pct(pct)
+
+    if kpi_id in LOGISTICS_CLIENT_DZ_IDS:
+        ref_row = entry.get("last_full_month_row") or {}
+        pct = ref_row.get("kpi_pct")
+        if pct is not None:
+            pct = float(pct)
+        return pct, _rag_dz_overdue_pct(pct)
 
     if kpi_id == "LOG-Q2":
         color = _plan_fact_color(entry)
@@ -315,6 +342,47 @@ def build_kpi_entry(kpi_id: str, entry: dict, *, year: int | None = None, month:
         }
         return entry
 
+    if kpi_id in LOGISTICS_CLIENT_DZ_IDS:
+        data = cache_manager.locked_call(
+            f"log_client_dz_{date.today().isoformat()}",
+            calc_logistics_client_dz.calculate,
+        )
+        plan_value = data.get("total_dz")
+        fact_value = data.get("total_overdue")
+        row = {
+            "year": date.today().year,
+            "month": date.today().month,
+            "month_name": MONTH_NAMES_RU[date.today().month],
+            "fact": fact_value,
+            "plan": plan_value,
+            "kpi_pct": data.get("overdue_pct"),
+            "has_data": True,
+            "values_unit": "руб.",
+            "total_dz": data.get("total_dz"),
+            "total_overdue": data.get("total_overdue"),
+            "na_datu": data.get("na_datu"),
+            "window": data.get("window") or {},
+        }
+        entry["data_granularity"] = "snapshot"
+        entry["monthly_data"] = [row]
+        entry["quarterly_data"] = []
+        entry["yearly_data"] = []
+        entry["last_full_month_row"] = row
+        entry["ytd"] = {
+            "total_fact": fact_value,
+            "total_plan": plan_value,
+            "kpi_pct": data.get("overdue_pct"),
+            "values_unit": "руб.",
+            "total_dz": data.get("total_dz"),
+            "total_overdue": data.get("total_overdue"),
+        }
+        entry["kpi_period"] = {
+            "type": "snapshot",
+            "as_of_date": data.get("na_datu"),
+            "window": data.get("window") or {},
+        }
+        return entry
+
     return None
 
 
@@ -388,6 +456,10 @@ def apply_tile_overrides(kpi: dict, tile: dict) -> None:
     elif kpi_id in LOGISTICS_BUDGET_FOT_SPLIT_IDS:
         tile["pct_lower_is_better"] = True
         tile["unit"] = "руб."
+    elif kpi_id in LOGISTICS_CLIENT_DZ_IDS:
+        tile["pct_lower_is_better"] = True
+        tile["unit"] = "руб."
+        tile["units"] = "руб."
     elif kpi_id == "LOG-Q1":
         tile["name"] = LOG_Q1_NAME
         tile["unit"] = "поставщиков"
@@ -405,6 +477,28 @@ def apply_tile_value_overrides(kpi: dict, tile: dict, entry: dict) -> None:
         tile["unit"] = "руб."
         tile["units"] = "руб."
         tile["has_data"] = bool(row.get("has_data"))
+        return
+
+    if kpi.get("kpi_id") in LOGISTICS_CLIENT_DZ_IDS:
+        row = entry.get("last_full_month_row") or {}
+        pct = row.get("kpi_pct")
+        if pct is not None:
+            pct = float(pct)
+        color = _rag_dz_overdue_pct(pct)
+        tile["plan"] = row.get("plan")
+        tile["fact"] = row.get("fact")
+        tile["kpi_pct"] = pct
+        tile["percent"] = pct
+        tile["color"] = color
+        tile["status_color"] = color
+        tile["pct_lower_is_better"] = True
+        tile["rag_direction"] = "lower_better"
+        tile["unit"] = "руб."
+        tile["units"] = "руб."
+        tile["has_data"] = bool(row.get("has_data"))
+        tile["total_dz"] = row.get("total_dz")
+        tile["total_overdue"] = row.get("total_overdue")
+        tile["plan_fact_period_label"] = row.get("na_datu") or ""
         return
 
     if kpi.get("kpi_id") not in LOGISTICS_BUDGET_FOT_SPLIT_IDS:

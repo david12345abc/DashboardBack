@@ -93,6 +93,25 @@ LOGISTICS_KPI_DEFINITIONS: list[dict] = [
         "position": 3,
     },
     {
+        "kpi_id": "LOG-M5",
+        "name": "Дебиторская Задолженность (НПО + АЛМАЗ)",
+        "block": "плитка",
+        "frequency": "ежедневно",
+        "perspective": "Финансы",
+        "goal": "Контролировать долю просроченной клиентской дебиторской задолженности по НПО и АЛМАЗ",
+        "formula": "Просроченная ДЗ / Общая ДЗ × 100%",
+        "unit": "руб.",
+        "source": "1С ERP / erp_pm / РасчетыСКлиентамиПоСрокам",
+        "monthly_target": "<5%",
+        "quarterly_target": None,
+        "yearly_target": "<5%",
+        "green_threshold": "<5%",
+        "yellow_threshold": "5–15%",
+        "red_threshold": ">15%",
+        "weight_pct": 0.0,
+        "position": 4,
+    },
+    {
         "kpi_id": "LOG-Q1",
         "name": "Доля квалифицированных поставщиков",
         "block": "плитка",
@@ -109,7 +128,7 @@ LOGISTICS_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "70–79,9%",
         "red_threshold": "<70%",
         "weight_pct": 15.0,
-        "position": 4,
+        "position": 5,
     },
     {
         "kpi_id": "LOG-Q2",
@@ -128,7 +147,7 @@ LOGISTICS_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "5,1–7%",
         "red_threshold": ">7%",
         "weight_pct": 15.0,
-        "position": 5,
+        "position": 6,
     },
     {
         "kpi_id": "LOG-M4",
@@ -147,7 +166,7 @@ LOGISTICS_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "80–94,9%",
         "red_threshold": "<80%",
         "weight_pct": 20.0,
-        "position": 6,
+        "position": 7,
     },
 ]
 
