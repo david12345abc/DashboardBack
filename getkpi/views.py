@@ -2001,8 +2001,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v28: HRD-M7 — в kpi_pct производительность (выручка/ССЧ).
-        sup_memo_key = f"sup_dashboard:v28:{ref_y}:{ref_m:02d}"
+        # v30: HRD-M9 — employees/vacancies для дроби на обороте.
+        sup_memo_key = f"sup_dashboard:v30:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2043,7 +2043,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"qualdir_v5_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v28_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v30_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
             dashboard_disk_key = f"autoit_v7_{ref_y}_{ref_m:02d}"
@@ -2160,14 +2160,24 @@ def _build_universal_payload(
                     tile['color'] = _sup_kpi_views.rag_hrd_m1_pct(float(lm['kpi_pct']))
                 elif lm.get('color') is not None:
                     tile['color'] = lm.get('color')
+                # HRD-M9: на обороте — дробь сотрудники / (сотрудники + вакансии).
+                if _kid_tile == 'HRD-M9':
+                    if lm.get('employees') is not None:
+                        tile['employees'] = lm.get('employees')
+                    if lm.get('vacancies') is not None:
+                        tile['vacancies'] = lm.get('vacancies')
             elif _kid_tile in _sup_kpi_views.SUP_FACT_AS_KPI_IDS:
-                # Производительность: в KPI — fact (выручка/ССЧ), без RAG %.
+                # Производительность: fact = выручка/ССЧ; на UI — дробь revenue / ssc.
                 prod = lm.get('kpi_pct')
                 if prod is None:
                     prod = lm.get('fact')
                 if prod is not None:
                     tile['kpi_pct'] = prod
                     tile['fact'] = lm.get('fact') if lm.get('fact') is not None else prod
+                if lm.get('revenue') is not None:
+                    tile['revenue'] = lm.get('revenue')
+                if lm.get('ssc') is not None:
+                    tile['ssc'] = lm.get('ssc')
                 tile['color'] = None
             elif _kid_tile in _sup_kpi_views.SUP_OVERDUE_FACT_RAG_IDS:
                 tile['plan'] = None
