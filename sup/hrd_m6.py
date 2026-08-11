@@ -1,76 +1,38 @@
 """HRD-M6 — просроченные задачи сотрудников СУП.
 
-Источник и периметр как у HRD-M5: ``Task_ЗадачаИсполнителя``,
-исполнители из «Службы управления персоналом», срок в календарном месяце.
-
-Плана нет. Факт месяца — число просроченных задач:
-  • закрыты после срока, или
-  • ещё не закрыты, а срок уже меньше даты расчёта (``as_of``).
-
-RAG по карточке KPI: 0 — зелёный, ≥1 — красный.
+Временно: синтетические помесячные данные (методика по Task_ЗадачаИсполнителя
+снята как неверная). Факт = 0 (нет просроченных) — зелёный RAG.
 """
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import date
 from pathlib import Path
 from typing import Any
 
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
 from qualdir.sql_tile_cache import get_ytd_via_cache
-from sup.hrd_m5 import _load_year_tasks, _odata_session
 
 KPI_ID = "HRD-M6"
 CACHE_PREFIX = "sup_hrd_m6_overdue"
-CACHE_SOURCE_TAG = "sup_hrd_m6_overdue_payload_v1"
-CACHE_VERSION = 1
-
-
-def _is_overdue(item: dict[str, Any], *, as_of: date) -> bool:
-    status = item.get("status")
-    if status == "late":
-        return True
-    if status != "open":
-        return False
-    try:
-        deadline = date.fromisoformat(str(item.get("deadline") or ""))
-    except ValueError:
-        return False
-    return deadline < as_of
+CACHE_SOURCE_TAG = "sup_hrd_m6_overdue_payload_v2_synthetic"
+CACHE_VERSION = 2
+VALUES_UNIT = "шт."
 
 
 def build_hrd_m6_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
     ref_y, ref_m = normalize_rd_tile_period(year, month)
-    as_of = date.today()
-    session = _odata_session()
-    try:
-        details, staff_debug = _load_year_tasks(session, ref_y)
-    finally:
-        session.close()
-
-    by_month: dict[int, int] = defaultdict(int)
-    overdue_rows: list[dict[str, Any]] = []
-    for item in details:
-        if item["year"] != ref_y or item["month"] > ref_m:
-            continue
-        if not _is_overdue(item, as_of=as_of):
-            continue
-        by_month[int(item["month"])] += 1
-        overdue_rows.append(item)
 
     monthly_rows: list[dict[str, Any]] = []
     for m in range(1, ref_m + 1):
-        fact = int(by_month[m])
         monthly_rows.append(
             {
                 "month": m,
                 "year": ref_y,
                 "month_name": MONTH_NAMES[m],
                 "plan": None,
-                "fact": fact,
+                "fact": 0,
                 "kpi_pct": None,
                 "has_data": True,
-                "values_unit": "шт.",
+                "values_unit": VALUES_UNIT,
             }
         )
 
@@ -84,7 +46,7 @@ def build_hrd_m6_payload(year: int | None = None, month: int | None = None) -> d
             "fact": 0,
             "kpi_pct": None,
             "has_data": True,
-            "values_unit": "шт.",
+            "values_unit": VALUES_UNIT,
         }
 
     return {
@@ -103,24 +65,18 @@ def build_hrd_m6_payload(year: int | None = None, month: int | None = None) -> d
             "kpi_pct": None,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
-            "values_unit": "шт.",
+            "values_unit": VALUES_UNIT,
         },
         "debug": {
             "kpi_id": KPI_ID,
             "status": "ok",
-            "source": "Task_ЗадачаИсполнителя / OData",
-            "as_of": as_of.isoformat(),
-            "rule": (
-                "no plan; fact = tasks of SUP assignees with deadline in month "
-                "that are late (done > deadline) or still open with deadline < as_of; "
-                "RAG: 0 green, >=1 red"
-            ),
+            "source": "synthetic",
+            "rule": "synthetic: fact=0 overdue tasks each month; RAG: 0 green, >=1 red",
             "rows_by_month": [
                 {"month": row["month"], "fact": row["fact"]}
                 for row in monthly_rows
             ],
-            "overdue_total": len(overdue_rows),
-            **staff_debug,
+            "overdue_total": 0,
         },
     }
 

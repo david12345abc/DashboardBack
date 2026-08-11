@@ -1985,8 +1985,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v23: HRD-M9 — укомплектованность штата НПО.
-        sup_memo_key = f"sup_dashboard:v23:{ref_y}:{ref_m:02d}"
+        # v24: HRD-M5/M6 — синтетика вместо Task OData.
+        sup_memo_key = f"sup_dashboard:v24:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
