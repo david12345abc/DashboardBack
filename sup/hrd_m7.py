@@ -4,7 +4,7 @@
   факт = выручка FND-T1 (факт) / (ССЧ НПО + ССЧ Алмаз)
 
 Выручка — тот же билдер, что у плитки FND-T1 председателя:
-  ``chairman_data._build_fnd_t1_revenue_rows`` (факт из calc_dengi_fact).
+  ``chairman_data._build_fnd_t1_revenue_rows`` → ``comdir.get_dengi_ytd``.
 
 ССЧ — сумма среднесписочных НПО и Алмаз (выручка считается по обоим).
 
@@ -26,8 +26,8 @@ from sup.npo_ssc import (
 
 KPI_ID = "HRD-M7"
 CACHE_PREFIX = "sup_hrd_m7_productivity"
-CACHE_SOURCE_TAG = "sup_hrd_m7_productivity_payload_v3_npo_almaz"
-CACHE_VERSION = 3
+CACHE_SOURCE_TAG = "sup_hrd_m7_productivity_payload_v5_kpi_pct_fact"
+CACHE_VERSION = 5
 VALUES_UNIT = "руб./чел."
 
 
@@ -77,7 +77,9 @@ def build_hrd_m7_payload(year: int | None = None, month: int | None = None) -> d
                 "ssc": ssc,
                 "ssc_npo": ssc_npo,
                 "ssc_almaz": ssc_almaz,
-                "kpi_pct": None,
+                # Плана нет: в kpi_pct отдаём саму производительность (выручка/ССЧ),
+                # чтобы карточка «KPI» на деталке не показывала «—%».
+                "kpi_pct": fact,
                 "has_data": has_data,
                 "values_unit": VALUES_UNIT,
             }
@@ -100,6 +102,7 @@ def build_hrd_m7_payload(year: int | None = None, month: int | None = None) -> d
             "values_unit": VALUES_UNIT,
         }
 
+    ref_fact = ref_row.get("fact")
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
@@ -112,8 +115,8 @@ def build_hrd_m7_payload(year: int | None = None, month: int | None = None) -> d
         },
         "ytd": {
             "total_plan": None,
-            "total_fact": ref_row.get("fact"),
-            "kpi_pct": None,
+            "total_fact": ref_fact,
+            "kpi_pct": ref_fact,
             "months_with_data": sum(1 for row in monthly_rows if row.get("has_data")),
             "months_total": len(monthly_rows),
             "values_unit": VALUES_UNIT,
@@ -126,11 +129,11 @@ def build_hrd_m7_payload(year: int | None = None, month: int | None = None) -> d
             "kpi_id": KPI_ID,
             "status": "ok",
             "source": {
-                "revenue": "FND-T1 via chairman_data._build_fnd_t1_revenue_rows",
+                "revenue": "FND-T1 via chairman_data._build_fnd_t1_revenue_rows / comdir.get_dengi_ytd",
                 "ssc": "ССЧ НПО + ССЧ Алмаз (erp_pm HR history)",
             },
             "rule": (
-                "fact = FND-T1 revenue fact / (SSC NPO + SSC Almaz); no plan"
+                "fact = kpi_pct = FND-T1 revenue fact / (SSC NPO + SSC Almaz); no plan"
             ),
             "npo_ssc": {
                 "departments_count": npo_ssc.get("departments_count"),

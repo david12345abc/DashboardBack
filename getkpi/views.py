@@ -690,6 +690,21 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     if kid in _qualdir_kpi_views.TILE_FACT_ONLY_IDS:
         return None, None
 
+    # HRD-M7: плана нет, в kpi_pct — производительность (выручка/ССЧ), не %.
+    # Цвет не считаем по порогам % (иначе 12k → ложный green).
+    if kid == 'HRD-M7':
+        ref = entry.get('last_full_month_row') or {}
+        fact = ref.get('fact')
+        if fact is None:
+            fact = ytd.get('total_fact')
+        if fact is None and ytd.get('kpi_pct') is not None:
+            fact = ytd.get('kpi_pct')
+        try:
+            pct_val = float(fact) if fact is not None else None
+        except (TypeError, ValueError):
+            pct_val = None
+        return pct_val, None
+
     if kid in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:
         pct = ytd.get('kpi_pct')
         if pct is not None:
@@ -1969,7 +1984,8 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        gspp_memo_key = f"gspp_dashboard:v9:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v10: ГСП-Q4 — просрочка по finish_date (график Turbo), не по baseline.
+        gspp_memo_key = f"gspp_dashboard:v10:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -1985,8 +2001,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v24: HRD-M5/M6 — синтетика вместо Task OData.
-        sup_memo_key = f"sup_dashboard:v24:{ref_y}:{ref_m:02d}"
+        # v28: HRD-M7 — в kpi_pct производительность (выручка/ССЧ).
+        sup_memo_key = f"sup_dashboard:v28:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2018,7 +2034,7 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v5_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v10_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
             dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
@@ -2027,7 +2043,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"qualdir_v5_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v20_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v28_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
             dashboard_disk_key = f"autoit_v7_{ref_y}_{ref_m:02d}"
@@ -2144,6 +2160,15 @@ def _build_universal_payload(
                     tile['color'] = _sup_kpi_views.rag_hrd_m1_pct(float(lm['kpi_pct']))
                 elif lm.get('color') is not None:
                     tile['color'] = lm.get('color')
+            elif _kid_tile in _sup_kpi_views.SUP_FACT_AS_KPI_IDS:
+                # Производительность: в KPI — fact (выручка/ССЧ), без RAG %.
+                prod = lm.get('kpi_pct')
+                if prod is None:
+                    prod = lm.get('fact')
+                if prod is not None:
+                    tile['kpi_pct'] = prod
+                    tile['fact'] = lm.get('fact') if lm.get('fact') is not None else prod
+                tile['color'] = None
             elif _kid_tile in _sup_kpi_views.SUP_OVERDUE_FACT_RAG_IDS:
                 tile['plan'] = None
                 tile['kpi_pct'] = None
@@ -2249,7 +2274,7 @@ def _build_universal_payload(
 
         if kpi.get('kpi_id') in {'OD-M1', 'OD-M3.1', 'OD-M3.2', 'PD-M3.1', 'PD-M3.2'}:
             tile['unit'] = 'руб.'
-        elif _kid_tile in {'HRD-M1', 'HRD-M5', 'HRD-M6'}:
+        elif _kid_tile == 'HRD-M1':
             tile['unit'] = 'шт.'
         elif _kid_tile == 'HRD-M2':
             tile['unit'] = 'руб.'
