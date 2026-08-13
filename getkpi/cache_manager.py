@@ -502,7 +502,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from servhead import sh_t2 as servhead_sh_t2
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8, qd_m9, qd_m10
     from qualdir.qd_q2 import get_qd_q2_ytd, qd_q2_ytd_cache_path
-    from sup import hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_q4
+    from sup import hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_m7, hrd_m9, hrd_q4
     from getkpi.autoit.it_m1_sla import (
         cache_file_path_for_period as autoit_it_m1_cache_path,
         get_it_m1_sla_monthly,
@@ -874,7 +874,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     )
     _append_sup_warm_tasks(
         tasks, y, m,
-        hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_q4,
+        hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_m7, hrd_m9, hrd_q4,
     )
 
     tasks.append((
@@ -1095,9 +1095,11 @@ def _append_sup_warm_tasks(
     hrd_m2_mod: object,
     hrd_m3_mod: object,
     hrd_m4_mod: object,
+    hrd_m7_mod: object,
+    hrd_m9_mod: object,
     hrd_q4_mod: object,
 ) -> None:
-    """Прогреть файловые кэши SUP (HRD-M1…M4, HRD-Q4) за все месяцы 1..ref_m."""
+    """Прогреть файловые кэши SUP (HRD-M1…M4, M7, M9, HRD-Q4) за все месяцы 1..ref_m."""
     for warm_m in range(1, ref_m + 1):
         tasks.append((
             f"sup_hrd_m1_{ref_y}_{warm_m:02d}",
@@ -1128,6 +1130,16 @@ def _append_sup_warm_tasks(
             f"sup_hrd_m4_{ref_y}_{warm_m:02d}",
             hrd_m4_mod.cache_file_path_for_period(ref_y, warm_m),
             lambda yy=ref_y, mm=warm_m: hrd_m4_mod.get_hrd_m4_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"sup_hrd_m7_{ref_y}_{warm_m:02d}",
+            hrd_m7_mod.cache_file_path_for_period(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_m7_mod.get_hrd_m7_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"sup_hrd_m9_{ref_y}_{warm_m:02d}",
+            hrd_m9_mod.cache_file_path_for_period(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: hrd_m9_mod.get_hrd_m9_ytd(year=yy, month=mm),
         ))
         tasks.append((
             f"sup_hrd_q4_{ref_y}_{warm_m:02d}",

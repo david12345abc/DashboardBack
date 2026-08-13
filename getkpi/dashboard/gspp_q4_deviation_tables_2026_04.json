@@ -1,12 +1,12 @@
 {
-  "cache_source": "gspp_q4_deviation_tables_v4",
-  "cache_version": 4,
-  "cache_date": "2026-06-25",
+  "cache_source": "gspp_q4_deviation_tables_v7",
+  "cache_version": 7,
+  "cache_date": "2026-08-11",
   "payload": {
     "GSPP-T-Q4-DEVIATIONS": {
       "name": "Отклонения по вехам: ГСП-Q4",
       "periodicity": "ежемесячно",
-      "description": "Проекты TurboProject (has_1c, РП ГСПП; «в работе» или завершённые до даты закрытия) — вехи с отклонением за апрель 2026 (логика как у плитки ГСП-Q4). Структура вложенности вех — как у технического директора (TD-T-M1-DEVIATIONS / TD-T-Q1-DEVIATIONS).",
+      "description": "Проекты TurboProject (has_1c, РП ГСПП; «в работе» или завершённые до даты закрытия) — только вехи с нулевой календарной длительностью и отклонением за апрель 2026 (та же логика, что у плитки ГСП-Q4; флага is_milestone без zero-duration недостаточно). Структура вложенности — как у технического директора (TD-T-M1-DEVIATIONS / TD-T-Q1-DEVIATIONS).",
       "period": {
         "year": 2026,
         "month": 4,

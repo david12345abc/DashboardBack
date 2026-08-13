@@ -1,7 +1,7 @@
 {
-  "cache_source": "gspp_q4_ytd_payload_v11",
-  "cache_version": 11,
-  "cache_date": "2026-06-25",
+  "cache_source": "gspp_q4_ytd_payload_v12",
+  "cache_version": 12,
+  "cache_date": "2026-08-11",
   "payload": {
     "data_granularity": "monthly",
     "monthly_data": [
@@ -64,7 +64,7 @@
       ],
       "project_filter": "has_1c + rukovoditel matches org structure; per month: in work, or completed through completion date; planning excluded",
       "status": "ok",
-      "projects_count": 6,
+      "projects_count": 10,
       "projects_in_ref_month": 1,
       "projects": [
         {
@@ -76,11 +76,35 @@
           "in_ref_month": false
         },
         {
+          "file_id": 387,
+          "project_name": "Мини-проекты ССП ГСПП (Нохаева В.А.) ИЮНЬ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-06-30",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 396,
+          "project_name": "Мини-проекты СППиНП ГСПП (Емельяненко Д.С.) ИЮНЬ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-06-30",
+          "in_ref_month": false
+        },
+        {
           "file_id": 338,
           "project_name": "Мини-проекты СПП ГСПП (Тимофеев М.Ю) МАЙ",
           "project_code": "НП/ГК/2026/110",
           "status_proekta": "Планирование",
           "data_okonchaniya": "2026-05-31",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 394,
+          "project_name": "Мини-проекты СПП ГСПП (Тимофеев М.Ю) ИЮНЬ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-06-30",
           "in_ref_month": false
         },
         {
@@ -92,7 +116,15 @@
           "in_ref_month": false
         },
         {
-          "file_id": 350,
+          "file_id": 397,
+          "project_name": "Мини-проекты СДУСП ГСПП(Асланян А.К.) ИЮНЬ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-06-30",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 395,
           "project_name": "Мини-проекты  СППСП ГСПП (Емельяненко Д.С.) МАЙ",
           "project_code": "НП/ГК/2026/110",
           "status_proekta": "Планирование",
@@ -111,19 +143,16 @@
           "file_id": 275,
           "project_name": "Справочник Номенклатура второй этап",
           "project_code": "НПО/ГСПП/2026/105",
-          "status_proekta": "Планирование",
-          "data_okonchaniya": null,
+          "status_proekta": "ВРаботе",
+          "data_okonchaniya": "2026-12-24",
           "in_ref_month": false
         }
       ],
-      "milestones_zero_duration_in_projects": 607,
+      "milestones_zero_duration_in_projects": 656,
       "milestones_in_month_plan": 2,
       "milestones_in_month_deviated": 0,
       "milestones_in_month_without_deviation": 2,
-      "milestones_without_baseline": [
-        "Выпустить распоряжение на планирование",
-        "Планирование проекта в феврале выполнено"
-      ],
+      "milestones_without_baseline": [],
       "milestones_without_baseline_truncated": false
     }
   }

@@ -17,18 +17,14 @@ from typing import Any
 
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import MONTH_NAMES, normalize_rd_tile_period
-from getkpi.gspp_q4 import (
-    get_manager_project_pairs,
-    _name_matches_nomenclature,
-    _project_display_name,
-    _project_in_work_in_month,
-)
+from getkpi.gspp_q4 import get_manager_project_pairs, _project_display_name, _project_in_work_in_month
 
 logger = logging.getLogger(__name__)
 
 GSPP_M5_CACHE_PREFIX = "gspp_m5_ytd"
-GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v7_no_fallback_plan"
-GSPP_M5_DISK_VERSION = 7
+# v8: как origin/new_kukuagu — сумма по всей Q4-когорте, без среза [:1] по номенклатуре.
+GSPP_M5_DISK_TAG = "gspp_m5_budget_payload_v8_all_cohort"
+GSPP_M5_DISK_VERSION = 8
 
 
 def _safe_float(value: Any) -> float | None:
@@ -129,11 +125,7 @@ def _budget_totals_for_month(
     year: int,
     month: int,
 ) -> tuple[float | None, float | None]:
-    """Сумма plan/fact по проектам Q4-когорты, активным в месяце.
-
-    Если в месяце нет активных проектов — (0, 0), без подстановки бюджета
-    завершённого/чужого проекта (раньше fallback давал ложный план).
-    """
+    """Сумма plan/fact по проектам Q4-когорты, активным в месяце."""
     plan_sum = 0.0
     fact_sum = 0.0
     has_plan = False
@@ -155,10 +147,10 @@ def _budget_totals_for_month(
             fact_sum += fact
             has_fact = True
     if not any_alive:
-        return 0.0, 0.0
+        return None, None
     return (
-        round(plan_sum, 2) if has_plan else 0.0,
-        round(fact_sum, 2) if has_fact else 0.0,
+        round(plan_sum, 2) if has_plan else None,
+        round(fact_sum, 2) if has_fact else None,
     )
 
 
@@ -180,10 +172,6 @@ def _build_gspp_m5_payload(year: int | None = None, month: int | None = None) ->
         if not project_pairs:
             debug["hint"] = err
         else:
-            project_pairs = [
-                pair for pair in project_pairs
-                if _name_matches_nomenclature(_project_display_name(pair[1], pair[0]))
-            ][:1]
             debug.update({
                 "status": "ok",
                 "projects_count": len(project_pairs),

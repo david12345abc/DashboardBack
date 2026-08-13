@@ -1,12 +1,12 @@
 {
-  "cache_source": "gspp_q4_deviation_tables_v4",
-  "cache_version": 4,
-  "cache_date": "2026-06-25",
+  "cache_source": "gspp_q4_deviation_tables_v7",
+  "cache_version": 7,
+  "cache_date": "2026-08-11",
   "payload": {
     "GSPP-T-Q4-DEVIATIONS": {
       "name": "Отклонения по вехам: ГСП-Q4",
       "periodicity": "ежемесячно",
-      "description": "Проекты TurboProject (has_1c, РП ГСПП; «в работе» или завершённые до даты закрытия) — вехи с отклонением за май 2026 (логика как у плитки ГСП-Q4). Структура вложенности вех — как у технического директора (TD-T-M1-DEVIATIONS / TD-T-Q1-DEVIATIONS).",
+      "description": "Проекты TurboProject (has_1c, РП ГСПП; «в работе» или завершённые до даты закрытия) — только вехи с нулевой календарной длительностью и отклонением за май 2026 (та же логика, что у плитки ГСП-Q4; флага is_milestone без zero-duration недостаточно). Структура вложенности — как у технического директора (TD-T-M1-DEVIATIONS / TD-T-Q1-DEVIATIONS).",
       "period": {
         "year": 2026,
         "month": 5,
@@ -21,162 +21,7 @@
         "Статус",
         "Прогресс"
       ],
-      "rows": [
-        {
-          "project_code": "НПО/ГСПП/2026/46",
-          "project_name": "Справочник номенклатуры первый этап",
-          "project_manager": "Ермаков Илья Николаевич",
-          "timeline": "26.03.2026 - 20.05.2026",
-          "deviation": "14 вех., 19 дн.",
-          "delay_days": 19,
-          "status": "Завершен",
-          "progress_pct": 68.2,
-          "overdue_milestones_count": 14,
-          "milestone_deviations": [
-            {
-              "number": 1,
-              "id": 266791237,
-              "uid": "338",
-              "name": "Запросить заключение ЭО по итогам проекта",
-              "start_date": "2026-05-12T13:00:00",
-              "finish_date": "2026-05-12T14:00:00",
-              "delay_days": 19,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 2,
-              "id": 266791235,
-              "uid": "336",
-              "name": "Запросить план-фактный анализ затрат по статьям бюджета",
-              "start_date": "2026-05-12T08:00:00",
-              "finish_date": "2026-05-12T10:00:00",
-              "delay_days": 19,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 3,
-              "id": 266791236,
-              "uid": "337",
-              "name": "Сделать план-факт по итогам проекта",
-              "start_date": "2026-05-12T10:00:00",
-              "finish_date": "2026-05-12T12:00:00",
-              "delay_days": 19,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 4,
-              "id": 266791238,
-              "uid": "407",
-              "name": "Сделать заключение ЭО по итогам проекта",
-              "start_date": "2026-05-12T14:00:00",
-              "finish_date": "2026-05-13T14:00:00",
-              "delay_days": 18,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 5,
-              "id": 266791239,
-              "uid": "340",
-              "name": "Формирование отчета, с анализом рисков",
-              "start_date": "2026-05-13T14:00:00",
-              "finish_date": "2026-05-15T14:00:00",
-              "delay_days": 16,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 6,
-              "id": 266791243,
-              "uid": "344",
-              "name": "Организовать совещание по закрытию проекта",
-              "start_date": "2026-05-18T15:00:00",
-              "finish_date": "2026-05-18T16:00:00",
-              "delay_days": 13,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 7,
-              "id": 266791240,
-              "uid": "341",
-              "name": "Подготовить презентацию по закрытию проекта, подготовить папку с документами по проекту",
-              "start_date": "2026-05-15T14:00:00",
-              "finish_date": "2026-05-18T09:00:00",
-              "delay_days": 13,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 8,
-              "id": 266791241,
-              "uid": "342",
-              "name": "Провести предзащиту у куратора и проектного офиса",
-              "start_date": "2026-05-18T09:00:00",
-              "finish_date": "2026-05-18T10:00:00",
-              "delay_days": 13,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 9,
-              "id": 266791244,
-              "uid": "345",
-              "name": "Провести совещание по сдаче проекта заказчику",
-              "start_date": "2026-05-18T16:00:00",
-              "finish_date": "2026-05-18T17:00:00",
-              "delay_days": 13,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 10,
-              "id": 266791245,
-              "uid": "346",
-              "name": "Совещание проведено",
-              "start_date": "2026-05-18T17:00:00",
-              "finish_date": "2026-05-18T17:00:00",
-              "delay_days": 13,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 11,
-              "id": 266791242,
-              "uid": "343",
-              "name": "Устранить замечания по предзащите, подговить акт ВР по закрытию проекта",
-              "start_date": "2026-05-18T10:00:00",
-              "finish_date": "2026-05-18T15:00:00",
-              "delay_days": 13,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 12,
-              "id": 266791246,
-              "uid": "347",
-              "name": "Подписать акт ВР, сдать папку с документами на проект в архив",
-              "start_date": "2026-05-20T15:00:00",
-              "finish_date": "2026-05-20T17:00:00",
-              "delay_days": 11,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 13,
-              "id": 266791248,
-              "uid": "349",
-              "name": "Проект завершен",
-              "start_date": "2026-05-20T17:00:00",
-              "finish_date": "2026-05-20T17:00:00",
-              "delay_days": 11,
-              "percent_complete": 0.0
-            },
-            {
-              "number": 14,
-              "id": 266791247,
-              "uid": "348",
-              "name": "Проект сдан в архив",
-              "start_date": "2026-05-20T17:00:00",
-              "finish_date": "2026-05-20T17:00:00",
-              "delay_days": 11,
-              "percent_complete": 0.0
-            }
-          ],
-          "number": 1
-        }
-      ]
+      "rows": []
     }
   }
 }

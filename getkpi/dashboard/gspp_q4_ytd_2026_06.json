@@ -1,7 +1,7 @@
 {
-  "cache_source": "gspp_q4_ytd_payload_v11",
-  "cache_version": 11,
-  "cache_date": "2026-06-30",
+  "cache_source": "gspp_q4_ytd_payload_v12",
+  "cache_version": 12,
+  "cache_date": "2026-08-11",
   "payload": {
     "data_granularity": "monthly",
     "monthly_data": [
@@ -29,8 +29,8 @@
         "month": 3,
         "year": 2026,
         "month_name": "март",
-        "plan": 16.0,
-        "fact": 16.0,
+        "plan": 13.0,
+        "fact": 13.0,
         "kpi_pct": 100.0,
         "has_data": true,
         "values_unit": "шт."
@@ -39,8 +39,8 @@
         "month": 4,
         "year": 2026,
         "month_name": "апрель",
-        "plan": 12.0,
-        "fact": 12.0,
+        "plan": 6.0,
+        "fact": 6.0,
         "kpi_pct": 100.0,
         "has_data": true,
         "values_unit": "шт."
@@ -49,8 +49,8 @@
         "month": 5,
         "year": 2026,
         "month_name": "май",
-        "plan": 14.0,
-        "fact": 14.0,
+        "plan": 11.0,
+        "fact": 11.0,
         "kpi_pct": 100.0,
         "has_data": true,
         "values_unit": "шт."
@@ -59,9 +59,9 @@
         "month": 6,
         "year": 2026,
         "month_name": "июнь",
-        "plan": 0.0,
-        "fact": 0.0,
-        "kpi_pct": null,
+        "plan": 7.0,
+        "fact": 7.0,
+        "kpi_pct": 100.0,
         "has_data": true,
         "values_unit": "шт."
       }
@@ -70,9 +70,9 @@
       "month": 6,
       "year": 2026,
       "month_name": "июнь",
-      "plan": 0.0,
-      "fact": 0.0,
-      "kpi_pct": null,
+      "plan": 7.0,
+      "fact": 7.0,
+      "kpi_pct": 100.0,
       "has_data": true,
       "values_unit": "шт."
     },
@@ -83,9 +83,9 @@
       "month_name": "июнь"
     },
     "ytd": {
-      "total_plan": 0.0,
-      "total_fact": 0.0,
-      "kpi_pct": null,
+      "total_plan": 7.0,
+      "total_fact": 7.0,
+      "kpi_pct": 100.0,
       "months_with_data": 5,
       "months_total": 6,
       "values_unit": "шт."
@@ -104,8 +104,8 @@
       ],
       "project_filter": "has_1c + rukovoditel matches org structure; per month: in work, or completed through completion date; planning excluded",
       "status": "ok",
-      "projects_count": 6,
-      "projects_in_ref_month": 0,
+      "projects_count": 10,
+      "projects_in_ref_month": 1,
       "projects": [
         {
           "file_id": 352,
@@ -113,6 +113,22 @@
           "project_code": "НП/ГК/2026/110",
           "status_proekta": "Планирование",
           "data_okonchaniya": "2026-05-31",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 387,
+          "project_name": "Мини-проекты ССП ГСПП (Нохаева В.А.) ИЮНЬ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-06-30",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 396,
+          "project_name": "Мини-проекты СППиНП ГСПП (Емельяненко Д.С.) ИЮНЬ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-06-30",
           "in_ref_month": false
         },
         {
@@ -124,6 +140,14 @@
           "in_ref_month": false
         },
         {
+          "file_id": 394,
+          "project_name": "Мини-проекты СПП ГСПП (Тимофеев М.Ю) ИЮНЬ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-06-30",
+          "in_ref_month": false
+        },
+        {
           "file_id": 351,
           "project_name": "Мини-проекты СДУСП ГСПП(Асланян А.К.) МАЙ",
           "project_code": "НП/ГК/2026/110",
@@ -132,7 +156,15 @@
           "in_ref_month": false
         },
         {
-          "file_id": 350,
+          "file_id": 397,
+          "project_name": "Мини-проекты СДУСП ГСПП(Асланян А.К.) ИЮНЬ",
+          "project_code": "НП/ГК/2026/110",
+          "status_proekta": "Планирование",
+          "data_okonchaniya": "2026-06-30",
+          "in_ref_month": false
+        },
+        {
+          "file_id": 395,
           "project_name": "Мини-проекты  СППСП ГСПП (Емельяненко Д.С.) МАЙ",
           "project_code": "НП/ГК/2026/110",
           "status_proekta": "Планирование",
@@ -151,15 +183,15 @@
           "file_id": 275,
           "project_name": "Справочник Номенклатура второй этап",
           "project_code": "НПО/ГСПП/2026/105",
-          "status_proekta": "Планирование",
+          "status_proekta": "ВРаботе",
           "data_okonchaniya": "2026-12-24",
-          "in_ref_month": false
+          "in_ref_month": true
         }
       ],
-      "milestones_zero_duration_in_projects": 609,
-      "milestones_in_month_plan": 0,
+      "milestones_zero_duration_in_projects": 656,
+      "milestones_in_month_plan": 7,
       "milestones_in_month_deviated": 0,
-      "milestones_in_month_without_deviation": 0,
+      "milestones_in_month_without_deviation": 7,
       "milestones_without_baseline": [],
       "milestones_without_baseline_truncated": false
     }
