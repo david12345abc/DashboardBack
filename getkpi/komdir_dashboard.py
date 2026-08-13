@@ -78,7 +78,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 8
+KOMDIR_PAYLOAD_CACHE_VERSION = 9
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -1366,6 +1366,41 @@ def _normalize_komdir_payload_tables(payload: dict | None) -> dict | None:
     return payload
 
 
+def _load_latest_nonempty_overdue_detail(ref_y: int, ref_m: int) -> dict | None:
+    today = date.today()
+    if ref_y == today.year and ref_m == today.month:
+        target = today
+    else:
+        target = date(ref_y, ref_m, calendar.monthrange(ref_y, ref_m)[1])
+
+    best_date = None
+    best_data = None
+    for path in _CACHE_DIR.glob("overdue_detail_*.json"):
+        stem = path.stem.replace("overdue_detail_", "", 1)
+        try:
+            snapshot_date = date.fromisoformat(stem)
+        except ValueError:
+            continue
+        if snapshot_date > target:
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError):
+            continue
+        rows = data.get("rows") if isinstance(data, dict) else None
+        total = data.get("total_overdue") if isinstance(data, dict) else None
+        if not rows and not total:
+            continue
+        if best_date is None or snapshot_date > best_date:
+            best_date = snapshot_date
+            best_data = data
+
+    if best_data is not None:
+        best_data = dict(best_data)
+        best_data["cache_refresh_status"] = "stale_fallback"
+    return best_data
+
+
 def _build_overdue_table(ref_y: int, ref_m: int,
                          dept_guid: str | None = None) -> dict:
     """Таблица детализации просроченной ДЗ по контрагентам.
@@ -1378,6 +1413,10 @@ def _build_overdue_table(ref_y: int, ref_m: int,
         calc_debitorka.get_overdue_detail,
         year=ref_y, month=ref_m, dept_guid=dept_guid,
     )
+    if not (detail.get("rows") or detail.get("total_overdue")):
+        fallback_detail = _load_latest_nonempty_overdue_detail(ref_y, ref_m)
+        if fallback_detail:
+            detail = fallback_detail
 
     rows = []
     for r in detail.get("rows", []):

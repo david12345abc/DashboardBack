@@ -190,6 +190,21 @@ def _months_fact_only(fact_dict, months):
     return rows
 
 
+def _months_pct_as_plan_fact(pct_dict, months):
+    rows = []
+    for m in months:
+        pct = pct_dict.get(m)
+        has = pct is not None
+        rows.append({
+            "month": m, "year": 2026, "month_name": MONTH_NAMES[m],
+            "plan": 100.0 if has else None,
+            "fact": pct,
+            "kpi_pct": pct if has else None,
+            "has_data": has,
+        })
+    return rows
+
+
 def _build_fnd_t1_revenue_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T1 «Выручка» = деньги план/факт из comdir (те же, что KD-M1 у комдира)."""
     if not months:
@@ -582,6 +597,8 @@ def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> di
         rows = _build_fnd_t3_dz_kz_rows(months, ref_y)
     elif kpi_id == "FND-T4":
         rows = _build_fnd_t4_svoevremennaya_rows(months, ref_y, ref_m)
+        if not any(row.get("has_data") for row in rows):
+            rows = _months_pct_as_plan_fact(_T4_FACT, months)
     elif kpi_id == "FND-T5":
         rows = _build_fnd_t5_reclamations_rows(months, ref_y)
     elif kpi_id == "FND-T6":
@@ -622,6 +639,45 @@ def _get_tile_data(kpi_id: str, months: list[int], ref_y: int, ref_m: int) -> di
             "month_name": MONTH_NAMES[ref_m],
         },
     }
+
+
+def _chairman_ytd_fallback_row(td: dict, ref_y: int, ref_m: int) -> tuple[dict | None, str | None]:
+    """Use accumulated data when the selected month has no own row yet."""
+    ytd = td.get("ytd") or {}
+    if int(ytd.get("months_with_data") or 0) <= 0:
+        return None, None
+
+    plan = ytd.get("total_plan")
+    fact = ytd.get("total_fact")
+    pct = ytd.get("kpi_pct")
+    if plan is None and fact is None and pct is None:
+        return None, None
+
+    rows = [
+        row for row in td.get("monthly_data") or []
+        if row.get("has_data")
+    ]
+    if rows:
+        first_month = int(rows[0].get("month") or ref_m)
+        last_month = int(rows[-1].get("month") or ref_m)
+        if first_month == last_month:
+            label = f"{MONTH_NAMES[last_month].capitalize()} {ref_y}"
+        else:
+            label = f"{MONTH_NAMES[first_month].capitalize()}-{MONTH_NAMES[last_month]} {ref_y}"
+        label = f"{label} (накоп.)"
+    else:
+        label = f"Январь-{MONTH_NAMES[ref_m]} {ref_y} (накоп.)"
+
+    return {
+        "year": ref_y,
+        "month": ref_m,
+        "month_name": MONTH_NAMES[ref_m],
+        "plan": plan,
+        "fact": fact,
+        "kpi_pct": pct,
+        "has_data": True,
+        "is_ytd_fallback": True,
+    }, label
 
 
 def _fnd_t9_row_value(row: dict, label: str, key: str):
@@ -1456,25 +1512,28 @@ def build_chairman_commerce_payload(
 
     ref_y, ref_m, _pairs, series_m = _komdir_commerce_context(month, year)
 
-    # Те же кэши, что у коммерческого директора (без повторного SQL).
-    td_m1 = _comdir_kd_plan_fact_tile(
-        kpi_id="KD-M1",
-        get_ytd_fn=get_dengi_ytd,
-        lock_prefix="comdir_dengi",
-        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
-    )
-    td_m2 = _comdir_kd_plan_fact_tile(
-        kpi_id="KD-M2",
-        get_ytd_fn=get_otgruzki_ytd,
-        lock_prefix="comdir_otgruzki",
-        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
-    )
-    td_m3 = _comdir_kd_plan_fact_tile(
-        kpi_id="KD-M3",
-        get_ytd_fn=get_dogovory_ytd,
-        lock_prefix="comdir_dogovory",
-        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
-    )
+    # Те же данные, что у коммерческого директора. Для ПСД не отдаём устаревший
+    # файловый кэш: иначе первый ответ за месяц показывает "Нет данных", а
+    # пересчёт нужных comdir-кэшей начинается уже после ответа.
+    with cache_manager.force_compute():
+        td_m1 = _comdir_kd_plan_fact_tile(
+            kpi_id="KD-M1",
+            get_ytd_fn=get_dengi_ytd,
+            lock_prefix="comdir_dengi",
+            ref_y=ref_y, ref_m=ref_m, series_m=series_m,
+        )
+        td_m2 = _comdir_kd_plan_fact_tile(
+            kpi_id="KD-M2",
+            get_ytd_fn=get_otgruzki_ytd,
+            lock_prefix="comdir_otgruzki",
+            ref_y=ref_y, ref_m=ref_m, series_m=series_m,
+        )
+        td_m3 = _comdir_kd_plan_fact_tile(
+            kpi_id="KD-M3",
+            get_ytd_fn=get_dogovory_ytd,
+            lock_prefix="comdir_dogovory",
+            ref_y=ref_y, ref_m=ref_m, series_m=series_m,
+        )
 
     komdir_for_chart = {"KD-M1": td_m1, "KD-M2": td_m2, "KD-M3": td_m3}
     mrk_from_komdir: dict[str, tuple[str, dict]] = {
@@ -1964,9 +2023,15 @@ def build_chairman_payload(
             continue
         td = tiles_data[kid]
         lm = td.get("last_full_month_row")
+        display_row = lm
+        display_period_label = f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}"
+        if display_row is None:
+            display_row, fallback_label = _chairman_ytd_fallback_row(td, ref_y, ref_m)
+            if fallback_label:
+                display_period_label = fallback_label
 
         # Процент за ТЕКУЩИЙ месяц (для пилюли на лицевой стороне).
-        month_pct = lm.get("kpi_pct") if lm else None
+        month_pct = display_row.get("kpi_pct") if display_row else None
         if month_pct is not None:
             month_pct = float(month_pct)
 
@@ -1991,10 +2056,11 @@ def build_chairman_payload(
             "source": meta.get("source"),
             "description": meta.get("description"),
             "frequency": meta.get("frequency"),
-            "plan": lm.get("plan") if lm else None,
-            "fact": lm.get("fact") if lm else None,
-            "has_data": lm.get("has_data", True) if lm else False,
-            "plan_fact_period_label": f"{MONTH_NAMES[ref_m].capitalize()} {ref_y}",
+            "plan": display_row.get("plan") if display_row else None,
+            "fact": display_row.get("fact") if display_row else None,
+            "has_data": display_row.get("has_data", True) if display_row else False,
+            "is_ytd_fallback": bool(display_row and display_row.get("is_ytd_fallback")),
+            "plan_fact_period_label": display_period_label,
             "monthly_data": td.get("monthly_data"),
         }
 

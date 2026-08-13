@@ -70,11 +70,29 @@ def _load_cache(year: int, month: int, include_all: bool = False) -> list[dict] 
     try:
         with open(p, 'r', encoding='utf-8') as f:
             data = json.load(f)
+        rows = data.get('rows')
         if (
             data.get('date') == date.today().isoformat()
             and data.get('cache_version') == CACHE_VERSION
+            and isinstance(rows, list)
+            and rows
         ):
-            return data.get('rows')
+            return rows
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def _load_stale_nonempty_cache(year: int, month: int, include_all: bool = False) -> list[dict] | None:
+    p = _cache_path(year, month, include_all=include_all)
+    if not p.exists():
+        return None
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        rows = data.get('rows')
+        if data.get('cache_version') == CACHE_VERSION and isinstance(rows, list) and rows:
+            return rows
     except (json.JSONDecodeError, OSError):
         pass
     return None
@@ -178,10 +196,10 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
         r = request_with_retry(session, url, timeout=120, retries=4, label="Claims")
         if r is None:
             logger.error("Claims: request dropped after retries")
-            break
+            raise RuntimeError("Claims request dropped after retries")
         if not r.ok:
             logger.error("Claims HTTP %d: %s", r.status_code, r.text[:300])
-            break
+            raise RuntimeError(f"Claims HTTP {r.status_code}")
         rows = r.json().get("value", [])
         claims.extend(rows)
         if len(rows) < 5000:
@@ -345,7 +363,9 @@ def fetch_claims_for_month(year: int, month: int, include_all: bool = False) -> 
         rows = _fetch_from_odata(year, month, include_all=include_all)
     except Exception as e:
         logger.error("Failed to fetch claims: %s", e)
-        rows = []
+        stale = _load_stale_nonempty_cache(year, month, include_all=include_all)
+        return stale or []
 
-    _save_cache(year, month, rows, include_all=include_all)
+    if rows:
+        _save_cache(year, month, rows, include_all=include_all)
     return rows
