@@ -31,7 +31,7 @@ from __future__ import annotations
 import calendar
 import json
 import logging
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
-LAWSUITS_CACHE_VERSION = 3
+LAWSUITS_CACHE_VERSION = 7
 CLOSED_STATUSES = {"закрыта"}
 EMPTY_1C_DATE_PREFIXES = ("0001-01-01", "0001-01-01T")
 
@@ -63,6 +63,29 @@ CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
 
 DOC_ENTITY = "Document_ТД_ПретензииСудебныеСпорыИсковаяРабота"
 _DISCOVERED_ENTITY: str | None = None
+
+LAWSUITS_SQL_TABLE = "_Document185083"
+LAWSUITS_SQL_CONTRACTOR_TABLE = "_Reference233"
+LAWSUITS_SQL_DEPT_TABLE = "_Reference513"
+LAWSUITS_SQL_USER_TABLE = "_Reference366"
+LAWSUITS_SQL_ORG_TABLE = "_Reference288"
+LAWSUITS_SQL_YEAR_OFFSET = 2000
+LAWSUITS_SQL_EMPTY_DATE = datetime(2001, 1, 2)
+LAWSUITS_SQL_EMPTY_REF = b"\x00" * 16
+
+LAWSUITS_DOC_TYPE_BY_ORDER = {
+    0: "Претензия",
+    1: "Судебный спор",
+    2: "Исковая работа",
+}
+LAWSUITS_GC_ROLE_BY_ORDER = {
+    0: "Истец",
+    1: "Ответчик",
+    2: "Заявитель",
+    3: "Кредитор",
+    4: "Третье лицо",
+    5: "Взыскатель",
+}
 
 
 def _discover_doc_entity(session: requests.Session) -> str:
@@ -188,6 +211,185 @@ def normalize_lawsuits_rows(raw) -> list[dict]:
         if isinstance(rows, list):
             return [r for r in rows if isinstance(r, dict)]
     return []
+
+
+def _sql_ref_to_guid(value) -> str:
+    if not isinstance(value, (bytes, bytearray)) or len(value) != 16 or bytes(value) == LAWSUITS_SQL_EMPTY_REF:
+        return ""
+    h = bytes(value).hex()
+    return f"{h[24:32]}-{h[20:24]}-{h[16:20]}-{h[0:4]}-{h[4:16]}"
+
+
+def _sql_1c_date(value) -> str:
+    if not isinstance(value, datetime) or value.year < LAWSUITS_SQL_YEAR_OFFSET + 2:
+        return ""
+    try:
+        return value.replace(year=value.year - LAWSUITS_SQL_YEAR_OFFSET).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _sql_text(value) -> str:
+    return str(value or "").strip()
+
+
+def _load_sql_ref_map(cur, table: str, refs: set[bytes]) -> dict[bytes, str]:
+    refs = {bytes(r) for r in refs if isinstance(r, (bytes, bytearray)) and bytes(r) != LAWSUITS_SQL_EMPTY_REF}
+    if not refs:
+        return {}
+
+    result: dict[bytes, str] = {}
+    items = list(refs)
+    for start in range(0, len(items), 500):
+        chunk = items[start:start + 500]
+        placeholders = ",".join("?" for _ in chunk)
+        cur.execute(
+            f"SELECT _IDRRef,_Description FROM dbo.[{table}] WHERE _IDRRef IN ({placeholders})",
+            chunk,
+        )
+        for row in cur.fetchall():
+            result[bytes(row._IDRRef)] = _sql_text(row._Description)
+    return result
+
+
+def _load_sql_enum_orders(
+    cur,
+    enum_table: str,
+    refs: set[bytes],
+    labels_by_order: dict[int, str] | None = None,
+) -> dict[bytes, str]:
+    refs = {bytes(r) for r in refs if isinstance(r, (bytes, bytearray)) and bytes(r) != LAWSUITS_SQL_EMPTY_REF}
+    if not refs:
+        return {}
+
+    result: dict[bytes, str] = {}
+    items = list(refs)
+    for start in range(0, len(items), 500):
+        chunk = items[start:start + 500]
+        placeholders = ",".join("?" for _ in chunk)
+        cur.execute(
+            f"SELECT _IDRRef,_EnumOrder FROM dbo.[{enum_table}] WHERE _IDRRef IN ({placeholders})",
+            chunk,
+        )
+        for row in cur.fetchall():
+            try:
+                order = int(row._EnumOrder)
+            except (TypeError, ValueError):
+                order = None
+            result[bytes(row._IDRRef)] = (
+                labels_by_order.get(order)
+                if labels_by_order and order is not None and order in labels_by_order
+                else f"enum:{row._EnumOrder}"
+            )
+    return result
+
+
+def _fetch_from_sql(year: int, month: int, include_all: bool = False) -> list[dict]:
+    """Загружает судебные дела напрямую из SQL-снимка erp_pm."""
+    from sql_connection import SqlConnection
+
+    if not 1 <= int(month) <= 12:
+        return []
+    if month == 12:
+        date_next = datetime(year + LAWSUITS_SQL_YEAR_OFFSET + 1, 1, 1)
+    else:
+        date_next = datetime(year + LAWSUITS_SQL_YEAR_OFFSET, month + 1, 1)
+
+    with SqlConnection().connect_ctx() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT
+                _Number,
+                _Date_Time,
+                _Marked,
+                _Fld185097 AS doc_date,
+                _Fld185098RRef AS status_ref,
+                _Fld185099RRef AS doc_type_ref,
+                _Fld185107RRef AS contractor_ref,
+                _Fld185109 AS subject,
+                _Fld185111 AS claim_amount,
+                _Fld185105RRef AS gc_role_ref,
+                _Fld185118_RRRef AS gc_entity_ref,
+                _Fld185119 AS situation_summary,
+                _Fld185121RRef AS initiator_ref,
+                _Fld185173RRef AS initiator_dept_ref,
+                _Fld185174 AS sla_date
+            FROM dbo.[{LAWSUITS_SQL_TABLE}]
+            WHERE _Marked = 0x00
+              AND _Date_Time < ?
+            ORDER BY _Date_Time DESC, _Number
+            """,
+            date_next,
+        )
+        raw_rows = cur.fetchall()
+
+        contractor_refs = {bytes(r.contractor_ref) for r in raw_rows if isinstance(r.contractor_ref, bytes)}
+        org_refs = {bytes(r.gc_entity_ref) for r in raw_rows if isinstance(r.gc_entity_ref, bytes)}
+        dept_refs = {bytes(r.initiator_dept_ref) for r in raw_rows if isinstance(r.initiator_dept_ref, bytes)}
+        status_refs = {bytes(r.status_ref) for r in raw_rows if isinstance(r.status_ref, bytes)}
+        doc_type_refs = {bytes(r.doc_type_ref) for r in raw_rows if isinstance(r.doc_type_ref, bytes)}
+        gc_role_refs = {bytes(r.gc_role_ref) for r in raw_rows if isinstance(r.gc_role_ref, bytes)}
+
+        contractors = _load_sql_ref_map(cur, LAWSUITS_SQL_CONTRACTOR_TABLE, contractor_refs)
+        orgs = _load_sql_ref_map(cur, LAWSUITS_SQL_ORG_TABLE, org_refs)
+        depts = _load_sql_ref_map(cur, LAWSUITS_SQL_DEPT_TABLE, dept_refs)
+        statuses = _load_sql_enum_orders(cur, "_Enum185084", status_refs)
+        doc_types = _load_sql_enum_orders(
+            cur,
+            "_Enum1421",
+            doc_type_refs,
+            labels_by_order=LAWSUITS_DOC_TYPE_BY_ORDER,
+        )
+        gc_roles = _load_sql_enum_orders(
+            cur,
+            "_Enum185087",
+            gc_role_refs,
+            labels_by_order=LAWSUITS_GC_ROLE_BY_ORDER,
+        )
+
+    result_rows: list[dict] = []
+    for row in raw_rows:
+        dept_ref = bytes(row.initiator_dept_ref) if isinstance(row.initiator_dept_ref, bytes) else LAWSUITS_SQL_EMPTY_REF
+        init_dept_key = _sql_ref_to_guid(dept_ref)
+        if not include_all and init_dept_key not in ALLOWED_DEPARTMENTS:
+            continue
+
+        contractor_ref = bytes(row.contractor_ref) if isinstance(row.contractor_ref, bytes) else LAWSUITS_SQL_EMPTY_REF
+        status_ref = bytes(row.status_ref) if isinstance(row.status_ref, bytes) else LAWSUITS_SQL_EMPTY_REF
+        doc_type_ref = bytes(row.doc_type_ref) if isinstance(row.doc_type_ref, bytes) else LAWSUITS_SQL_EMPTY_REF
+        gc_role_ref = bytes(row.gc_role_ref) if isinstance(row.gc_role_ref, bytes) else LAWSUITS_SQL_EMPTY_REF
+        gc_entity_ref = bytes(row.gc_entity_ref) if isinstance(row.gc_entity_ref, bytes) else LAWSUITS_SQL_EMPTY_REF
+
+        try:
+            amount = float(row.claim_amount or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+
+        gc_role = gc_roles.get(gc_role_ref, "")
+        gc_entity = orgs.get(gc_entity_ref, "")
+
+        result_rows.append({
+            "number": _sql_text(row._Number),
+            "date": _sql_1c_date(row.doc_date) or _sql_1c_date(row._Date_Time),
+            "status": statuses.get(status_ref, _sql_ref_to_guid(status_ref)),
+            "doc_type": doc_types.get(doc_type_ref, _sql_ref_to_guid(doc_type_ref)),
+            "counterparty": contractors.get(contractor_ref, ""),
+            "subject": _sql_text(row.subject).replace("\r\n", " ").replace("\n", " "),
+            "claim_amount": amount,
+            "gc_role": gc_role,
+            "role": gc_role,
+            "gc_entity": gc_entity,
+            "legal_entity": gc_entity,
+            "jur_entity": gc_entity,
+            "initiator_dept": depts.get(dept_ref, ""),
+            "initiator_dept_key": init_dept_key,
+            "sla_date": _sql_1c_date(row.sla_date),
+            "situation_summary": _odata_multiline_text(row.situation_summary),
+            "source": "sql_erp_pm",
+        })
+
+    return result_rows
 
 
 def _odata_date(value) -> str:
@@ -416,11 +618,15 @@ def fetch_lawsuits_for_month(year: int, month: int, include_all: bool = False) -
         return cached
 
     try:
-        rows = _fetch_from_odata(year, month, include_all=include_all)
+        rows = _fetch_from_sql(year, month, include_all=include_all)
     except Exception as e:
-        logger.error("Failed to fetch lawsuits: %s", e)
-        stale = _load_stale_nonempty_cache(year, month, include_all=include_all)
-        return stale or []
+        logger.error("Failed to fetch lawsuits from SQL: %s", e)
+        try:
+            rows = _fetch_from_odata(year, month, include_all=include_all)
+        except Exception as e:
+            logger.error("Failed to fetch lawsuits: %s", e)
+            stale = _load_stale_nonempty_cache(year, month, include_all=include_all)
+            return stale or []
 
     if rows:
         _save_cache(year, month, rows, include_all=include_all)

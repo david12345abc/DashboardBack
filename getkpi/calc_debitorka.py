@@ -60,7 +60,7 @@ TOLERANCE = 0.01
 DEPT_ALIAS_SOURCE = "debitorka_department_aliases_v3"
 # Версия только для детализации просрочки: при смене инвалидируется overdue_detail,
 # не трогая помесячные снимки ДЗ (dept_alias_source).
-OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_with_liquidated_v1"
+OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_sql_erp_pm_v1"
 DEALER_SALES_DEPT_GUID = "7587c178-92f6-11f0-96f9-6cb31113810e"
 DEBITORKA_DEPT_ALIASES = {
     source: target
@@ -479,6 +479,188 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
 
     rows.sort(key=lambda x: -x["amount"])
     return rows
+
+
+def _sql_ref_to_guid(ref: bytes | bytearray | memoryview | None) -> str:
+    if not ref:
+        return EMPTY
+    hx = bytes(ref).hex()
+    if len(hx) != 32 or hx == "0" * 32:
+        return EMPTY
+    return f"{hx[24:32]}-{hx[20:24]}-{hx[16:20]}-{hx[0:4]}-{hx[4:16]}".lower()
+
+
+def _sql_1c_date_to_iso(value) -> str:
+    if not isinstance(value, datetime):
+        return ""
+    year = value.year - 2000 if value.year >= 2000 else value.year
+    if year <= 1:
+        return ""
+    return value.replace(year=year).isoformat()
+
+
+def _calc_overdue_detail_sql(na_datu: date) -> dict:
+    """SQL-detail from erp_pm using the same register/filter as KD-M5 tiles."""
+    from datetime import timedelta
+
+    from comdir.common import connect_ctx, to_1c_dt, uuid_to_1c_bytes
+
+    accum = "_AccumRg107662"
+    obj_col = "_Fld140445RRef"
+    plan_col = "_Fld107667"
+    dolg_col = "_Fld107672"
+    obj_table = "_Reference134945"
+    obj_dept = "_Fld138169RRef"
+    obj_partner = "_Fld138177RRef"
+    obj_number = "_Fld138171"
+    obj_date = "_Fld138172"
+    partner_table = "_Reference328"
+
+    p_end = to_1c_dt(na_datu + timedelta(days=1))
+    na_1c = to_1c_dt(na_datu)
+    allowed_depts = list(DEPARTMENTS) + list(LIQUIDATED_DEPT_NAMES)
+    liquidated_keys_lower = {k.lower() for k in LIQUIDATED_DEPT_NAMES}
+
+    with connect_ctx() as cn:
+        cur = cn.cursor()
+        cur.execute("SET NOCOUNT ON")
+        cur.execute("IF OBJECT_ID('tempdb..#dz_depts') IS NOT NULL DROP TABLE #dz_depts")
+        cur.execute("CREATE TABLE #dz_depts (id binary(16) PRIMARY KEY, guid char(36))")
+        for guid in allowed_depts:
+            cur.execute(
+                "INSERT INTO #dz_depts (id, guid) VALUES (?, ?)",
+                uuid_to_1c_bytes(guid),
+                guid,
+            )
+
+        cur.execute(
+            f"""
+            SELECT
+              CONVERT(varchar(36), d.guid) AS source_dept_guid,
+              s.[{obj_col}] AS obj_ref,
+              s.[{plan_col}] AS planned_dt,
+              o.[{obj_partner}] AS partner_ref,
+              p._Description AS partner_name,
+              o.[{obj_number}] AS order_num,
+              o.[{obj_date}] AS order_dt,
+              SUM(CASE WHEN s._RecordKind = 1 THEN -s.[{dolg_col}] ELSE s.[{dolg_col}] END) AS balance
+            FROM [{accum}] s WITH (NOLOCK)
+            INNER JOIN [{obj_table}] o WITH (NOLOCK) ON o._IDRRef = s.[{obj_col}]
+            INNER JOIN #dz_depts d ON d.id = o.[{obj_dept}]
+            LEFT JOIN [{partner_table}] p WITH (NOLOCK) ON p._IDRRef = o.[{obj_partner}]
+            WHERE s._Period < ? AND s._Active = 0x01
+            GROUP BY
+              d.guid, s.[{obj_col}], s.[{plan_col}], o.[{obj_partner}],
+              p._Description, o.[{obj_number}], o.[{obj_date}]
+            HAVING ABS(SUM(CASE WHEN s._RecordKind = 1 THEN -s.[{dolg_col}] ELSE s.[{dolg_col}] END)) >= ?
+            """,
+            p_end,
+            TOLERANCE,
+        )
+        sql_rows = cur.fetchall()
+
+    by_order: dict[str, dict] = defaultdict(lambda: {
+        "amount": 0.0,
+        "dz_total": 0.0,
+        "max_days": 0,
+        "dept": "",
+        "dept_name": "",
+        "source_dept": "",
+        "liquidated_dept_name": "",
+        "partner": "",
+        "partner_name": "",
+        "order_num": "",
+        "order_date": "",
+        "installments": [],
+    })
+
+    for row in sql_rows:
+        source_dept = str(row.source_dept_guid or "").strip().lower()
+        dept = normalize_debitorka_dept_guid(source_dept).lower()
+        dept_name = (
+            LIQUIDATED_DEPT_NAMES.get(source_dept)
+            if source_dept in liquidated_keys_lower
+            else DEPARTMENTS.get(dept, dept[:8])
+        )
+        liquidated_name = LIQUIDATED_DEPT_NAMES.get(source_dept, "")
+        obj_key = _sql_ref_to_guid(row.obj_ref)
+        if not obj_key or obj_key == EMPTY:
+            continue
+
+        balance = float(row.balance or 0)
+        entry = by_order[obj_key]
+        entry["dept"] = dept
+        entry["dept_name"] = dept_name or ""
+        entry["source_dept"] = source_dept
+        entry["liquidated_dept_name"] = liquidated_name
+        entry["partner"] = _sql_ref_to_guid(row.partner_ref)
+        entry["partner_name"] = (row.partner_name or "").strip()
+        entry["order_num"] = (row.order_num or "").strip()
+        entry["order_date"] = _sql_1c_date_to_iso(row.order_dt)[:10]
+        entry["dz_total"] += balance
+
+        planned_dt = row.planned_dt
+        if not isinstance(planned_dt, datetime) or planned_dt.year <= 2000 or planned_dt >= na_1c:
+            continue
+
+        entry["amount"] += balance
+        if abs(balance) >= TOLERANCE:
+            planned_iso = _sql_1c_date_to_iso(planned_dt)[:10]
+            if not planned_iso:
+                continue
+            planned_date = date.fromisoformat(planned_iso)
+            days_overdue = (na_datu - planned_date).days
+            entry["installments"].append({
+                "planned_date": planned_iso,
+                "amount": round(balance, 2),
+                "days_overdue": days_overdue,
+                "bucket": aging_bucket(days_overdue) if balance > TOLERANCE else "",
+            })
+            if balance > TOLERANCE:
+                entry["max_days"] = max(entry["max_days"], days_overdue)
+
+    rows: list[dict] = []
+    for obj_key, data in by_order.items():
+        if abs(data["amount"]) < TOLERANCE:
+            continue
+        liquidated_name = (data.get("liquidated_dept_name") or "").strip()
+        dept_name = data.get("dept_name") or ""
+        department = liquidated_name or dept_name
+        partner_name = data.get("partner_name") or data.get("partner") or ""
+        installments = sorted(data["installments"], key=lambda x: x["planned_date"])
+        rows.append({
+            "dept_key": data["dept"],
+            "dept_name": dept_name,
+            "source_dept_key": data["source_dept"],
+            "liquidated_dept_name": liquidated_name,
+            "department": department,
+            "partner_key": data["partner"],
+            "partner_name": partner_name,
+            "counterparty": partner_name,
+            "order_key": obj_key,
+            "order_num": data["order_num"],
+            "order_date": data["order_date"],
+            "amount": round(data["amount"], 2),
+            "dz_total": round(data["dz_total"], 2),
+            "days_overdue": data["max_days"],
+            "installments_count": len(installments),
+            "installments": installments,
+            "reason": "",
+            "action": "",
+            "source": "sql_erp_pm",
+        })
+
+    rows.sort(key=lambda x: -x["amount"])
+    total = round(sum(r["amount"] for r in rows), 2)
+    return {
+        "na_datu": na_datu.isoformat(),
+        "cache_date": date.today().isoformat(),
+        "dept_alias_source": DEPT_ALIAS_SOURCE,
+        "overdue_detail_version": OVERDUE_DETAIL_CACHE_VERSION,
+        "source": "sql_erp_pm",
+        "total_overdue": total,
+        "rows": rows,
+    }
 
 
 def aging_bucket(days: int) -> str:
@@ -1136,6 +1318,11 @@ def _calc_overdue_detail(na_datu: date) -> dict:
     Возвращает список строк (partner_name, order_num, amount, days_overdue,
     reason, action) с разбивкой по подразделениям.
     """
+    try:
+        return _calc_overdue_detail_sql(na_datu)
+    except Exception as exc:
+        logger.warning("calc_debitorka: SQL overdue detail failed, fallback to OData: %s", exc)
+
     session = requests.Session()
     session.auth = AUTH
     na_datu_str = na_datu.isoformat()
@@ -1187,14 +1374,22 @@ def get_overdue_detail(year: int | None = None,
             data = dict(cached)
             data["cache_refresh_status"] = "running"
         else:
-            monthly = _load_json(_cache_path_monthly(ref_y, ref_m))
-            total = _monthly_overdue_total(monthly, ref_y, ref_m)
-            data = {
-                "na_datu": na_datu.isoformat(),
-                "total_overdue": total or 0,
-                "rows": [],
-                "cache_refresh_status": "running",
-            }
+            try:
+                data = _calc_overdue_detail_sql(na_datu)
+                _save_json(cache_path, data)
+            except Exception as exc:
+                logger.warning(
+                    "calc_debitorka: immediate SQL overdue detail failed: %s",
+                    exc,
+                )
+                monthly = _load_json(_cache_path_monthly(ref_y, ref_m))
+                total = _monthly_overdue_total(monthly, ref_y, ref_m)
+                data = {
+                    "na_datu": na_datu.isoformat(),
+                    "total_overdue": total or 0,
+                    "rows": [],
+                    "cache_refresh_status": "running",
+                }
     else:
         _ensure_debitorka_caches_for_period(ref_y, ref_m, include_overdue_detail=True)
         cached = _load_json(cache_path)

@@ -78,7 +78,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 9
+KOMDIR_PAYLOAD_CACHE_VERSION = 14
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -266,7 +266,12 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
         y = row.get('year', ref_y)
         fact = row.get('fact')
         plan, plan_full = _plan_values(plans_by_month.get(m) or 0, y, m)
-        expected_plan = expected_by_month.get(m) or 0
+        expected_plan = row.get('expected_current')
+        if expected_plan is None:
+            expected_plan = expected_by_month.get(m) or 0
+        expected_plan_full = row.get('expected_full')
+        if expected_plan_full is None:
+            expected_plan_full = expected_plan
         pct = round(fact / plan * 100, 1) if plan and fact is not None else None
         mrow = {
             'month': m,
@@ -276,6 +281,8 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             'plan_full': plan_full,
             'fact': fact,
             'expected_plan': expected_plan,
+            'expected_plan_current': expected_plan,
+            'expected_plan_full': expected_plan_full,
             'kpi_pct': pct,
             'has_data': fact is not None,
         }

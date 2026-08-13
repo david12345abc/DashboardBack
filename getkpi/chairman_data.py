@@ -1904,7 +1904,7 @@ def build_chairman_commerce_payload(
             'periodicity': 'ежемесячно',
             'description': (
                 'Претензии из 1С (Catalog_Претензии) за выбранный месяц; '
-                'причина возникновения = Претензия; сумма заказа > 1 млн'
+                'причина возникновения = Претензия; сумма заказа > 1 млн, если сумма доступна'
             ),
             'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
             'rows': claims_rows,

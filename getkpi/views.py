@@ -4444,7 +4444,13 @@ def _filter_psd_claim_rows(rows: list[dict]) -> list[dict]:
     return [
         row for row in rows
         if row.get('reason_key') == PSD_CLAIM_REASON_PRETENSION_KEY
-        and _psd_claim_order_sum(row) > PSD_CLAIM_MIN_ORDER_SUM
+        and (
+            _psd_claim_order_sum(row) > PSD_CLAIM_MIN_ORDER_SUM
+            or (
+                row.get('source') == 'sql_erp_pm'
+                and _psd_claim_order_sum(row) <= 0
+            )
+        )
     ]
 
 

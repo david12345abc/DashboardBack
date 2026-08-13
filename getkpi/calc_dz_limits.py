@@ -38,7 +38,7 @@ import logging
 import re
 import sys
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -55,6 +55,12 @@ EMPTY = "00000000-0000-0000-0000-000000000000"
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 _CACHE_FILE = CACHE_DIR / "dz_limits_latest.json"
+
+SQL_DOC_TABLE = "_Document185072"
+SQL_TAB_TABLE = "_Document185072_VT185074"
+SQL_DEPT_TABLE = "_Reference513"
+SQL_YEAR_OFFSET = 2000
+SQL_EMPTY_REF = b"\x00" * 16
 
 # Основное имя сущности в OData (определено эмпирически по $metadata).
 DOC_ENTITY_DEFAULT = "Document_ТД_ЛимитыПросроченнойДЗ"
@@ -80,6 +86,45 @@ DEPT_GUID_TO_SHORT: dict[str, str] = {
 
 _DISCOVERED_DOC: str | None = None
 _DISCOVERED_TAB: str | None = None
+
+
+def _sql_ref_to_guid(value) -> str:
+    if not isinstance(value, (bytes, bytearray)) or len(value) != 16 or bytes(value) == SQL_EMPTY_REF:
+        return ""
+    h = bytes(value).hex()
+    return f"{h[24:32]}-{h[20:24]}-{h[16:20]}-{h[0:4]}-{h[4:16]}"
+
+
+def _sql_1c_date(value) -> str:
+    if not isinstance(value, datetime) or value.year < SQL_YEAR_OFFSET + 2:
+        return ""
+    try:
+        return value.replace(year=value.year - SQL_YEAR_OFFSET).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _sql_text(value) -> str:
+    return str(value or "").strip()
+
+
+def _load_sql_dept_names(cur, refs: set[bytes]) -> dict[bytes, str]:
+    refs = {bytes(r) for r in refs if isinstance(r, (bytes, bytearray)) and bytes(r) != SQL_EMPTY_REF}
+    if not refs:
+        return {}
+
+    result: dict[bytes, str] = {}
+    items = list(refs)
+    for start in range(0, len(items), 500):
+        chunk = items[start:start + 500]
+        placeholders = ",".join("?" for _ in chunk)
+        cur.execute(
+            f"SELECT _IDRRef,_Description FROM dbo.[{SQL_DEPT_TABLE}] WHERE _IDRRef IN ({placeholders})",
+            chunk,
+        )
+        for row in cur.fetchall():
+            result[bytes(row._IDRRef)] = _sql_text(row._Description)
+    return result
 
 
 def _discover_entities(session: requests.Session) -> tuple[str, str]:
@@ -263,6 +308,79 @@ def _try_fetch_from_odata(session: requests.Session) -> dict | None:
     }
 
 
+def _try_fetch_from_sql() -> dict | None:
+    """Берёт последний проведённый документ лимитов напрямую из SQL erp_pm."""
+    from sql_connection import SqlConnection
+
+    with SqlConnection().connect_ctx() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT TOP 1 _IDRRef, _Number, _Date_Time
+            FROM dbo.[{SQL_DOC_TABLE}]
+            WHERE _Marked = 0x00
+              AND _Posted = 0x01
+            ORDER BY _Date_Time DESC
+            """
+        )
+        doc = cur.fetchone()
+        if doc is None:
+            return None
+
+        doc_ref = bytes(doc._IDRRef)
+        cur.execute(
+            f"""
+            SELECT _Fld185076RRef AS dept_ref, _Fld185077 AS limit_mln
+            FROM dbo.[{SQL_TAB_TABLE}]
+            WHERE _Document185072_IDRRef = ?
+            ORDER BY _LineNo185075
+            """,
+            doc_ref,
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return None
+
+        dept_refs = {bytes(r.dept_ref) for r in rows if isinstance(r.dept_ref, bytes)}
+        dept_names = _load_sql_dept_names(cur, dept_refs)
+
+    limits_by_guid: dict[str, float] = {}
+    limits_by_name: dict[str, float] = {}
+
+    for row in rows:
+        dept_ref = bytes(row.dept_ref) if isinstance(row.dept_ref, bytes) else SQL_EMPTY_REF
+        dept_key = _sql_ref_to_guid(dept_ref).lower()
+        if not dept_key:
+            continue
+        try:
+            limit_mln = float(row.limit_mln or 0)
+        except (TypeError, ValueError):
+            limit_mln = 0.0
+        limit_rub = round(limit_mln * 1_000_000, 2)
+        limits_by_guid[dept_key] = limit_rub
+
+        short = (
+            DEPT_GUID_TO_SHORT.get(dept_key)
+            or dept_names.get(dept_ref)
+            or f"Отдел {dept_key[:8]}"
+        )
+        limits_by_name[short] = limit_rub
+
+    if not limits_by_guid:
+        return None
+
+    return {
+        "doc": {
+            "ref": _sql_ref_to_guid(doc_ref),
+            "number": _sql_text(doc._Number),
+            "date": _sql_1c_date(doc._Date_Time),
+            "source": "sql_erp_pm",
+        },
+        "limits_by_guid": limits_by_guid,
+        "limits_by_name": limits_by_name,
+    }
+
+
 def _load_cache() -> dict | None:
     """Возвращает полный payload (с doc/limits_by_guid/limits_by_name) или None."""
     if not _CACHE_FILE.exists():
@@ -276,6 +394,8 @@ def _load_cache() -> dict | None:
         return None
     # Проверим, что кэш — в новом формате (есть limits_by_guid).
     if "limits_by_guid" not in data:
+        return None
+    if not data.get("doc") and not (data.get("limits_by_guid") or {}):
         return None
     return data
 
@@ -294,9 +414,16 @@ def _save_cache(payload: dict) -> None:
 
 def _fetch_limits_payload() -> dict:
     """
-    Собирает payload лимитов, кэширует на день. Если OData недоступен —
+    Собирает payload лимитов, кэширует на день. Если SQL и OData недоступны —
     возвращает payload с пустыми лимитами (никаких магических fallback-значений).
     """
+    try:
+        result = _try_fetch_from_sql()
+        if result:
+            return result
+    except Exception as exc:
+        logger.warning("dz_limits: SQL fetch error: %s", exc)
+
     session = requests.Session()
     session.auth = AUTH
 

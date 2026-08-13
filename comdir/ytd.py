@@ -42,8 +42,8 @@ from getkpi.valovaya_pribyl import vp_plan_for_month  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# v13: KD-M3 договоры — план без закрытых объектов, ожидаемо SQL (не HTTP).
-CACHE_VERSION = 13
+# v14: KD-M2 отгрузки — ожидаемо из erp_pm SQL, без 1C/OData overlay.
+CACHE_VERSION = 15
 
 
 def _kpi_pct(fact, plan) -> float | None:
@@ -228,10 +228,16 @@ def compute_dengi_month(year: int, month: int) -> dict[str, Any]:
         cur.execute("SET NOCOUNT ON")
         plan_by_name = dengi_mod.calc_plan(cur, p0, p_next)
         fact_by_name = dengi_mod.calc_fact(cur, p0, fact_next)
-        expected_by_name = dengi_mod.calc_expected(cur, p0, p_next)
+        expected_current_by_name = dengi_mod.calc_expected(cur, p0, fact_next)
+        expected_full_by_name = (
+            expected_current_by_name
+            if fact_next == p_next
+            else dengi_mod.calc_expected(cur, p0, p_next)
+        )
     plan_map = aggregate_by_odata_name(plan_by_name)
     fact_map = aggregate_by_odata_name(fact_by_name)
-    expected_map = aggregate_by_odata_name(expected_by_name)
+    expected_map = aggregate_by_odata_name(expected_current_by_name)
+    expected_full_map = aggregate_by_odata_name(expected_full_by_name)
     guids = set(plan_map) | set(fact_map) | set(expected_map)
     by_dept = _merge_by_dept_maps(
         guids,
@@ -245,6 +251,8 @@ def compute_dengi_month(year: int, month: int) -> dict[str, Any]:
         "fact": round(sum(fact_map.values()), 2),
         "plan": round(sum(plan_map.values()), 2),
         "expected": round(sum(expected_map.values()), 2),
+        "expected_current": round(sum(expected_map.values()), 2),
+        "expected_full": round(sum(expected_full_map.values()), 2),
         "by_dept": by_dept,
     }
 
@@ -293,34 +301,47 @@ def get_dengi_ytd(
 
 def compute_otgruzki_month(year: int, month: int) -> dict[str, Any]:
     p0, p_next = period_bounds(year, month)
+    today = date.today()
+    expected_next = p_next
+    if year == today.year and month == today.month:
+        expected_next = otg_mod.to_1c_dt(today + timedelta(days=1))
     with connect_ctx() as cn:
         cur = cn.cursor()
         cur.execute("SET NOCOUNT ON")
         plan_by_name = otg_mod.calc_mp_plan(cur, p0, p_next)
         fact_by_name = otg_mod.calc_fact(cur, p0, p_next)
+        expected_current_by_name = otg_mod.calc_expected(cur, expected_next)
+        expected_full_by_name = (
+            expected_current_by_name
+            if expected_next == p_next
+            else otg_mod.calc_expected(cur, p_next)
+        )
     plan_map = aggregate_by_odata_name(plan_by_name)
     fact_map = aggregate_by_odata_name(fact_by_name)
-    guids = set(plan_map) | set(fact_map)
+    expected_map = aggregate_by_odata_name(expected_current_by_name)
+    expected_full_map = aggregate_by_odata_name(expected_full_by_name)
+    guids = set(plan_map) | set(fact_map) | set(expected_map)
     by_dept = _merge_by_dept_maps(
-        guids, fact_map=fact_map, plan_map=plan_map, expected_map={g: 0.0 for g in guids},
+        guids, fact_map=fact_map, plan_map=plan_map, expected_map=expected_map,
     )
     return {
         "year": year,
         "month": month,
         "fact": round(sum(fact_map.values()), 2),
         "plan": round(sum(plan_map.values()), 2),
-        "expected": 0.0,
+        "expected": round(sum(expected_map.values()), 2),
+        "expected_current": round(sum(expected_map.values()), 2),
+        "expected_full": round(sum(expected_full_map.values()), 2),
         "by_dept": by_dept,
     }
 
 
 def build_otgruzki_payload(year: int, month: int) -> dict[str, Any]:
     months = [compute_otgruzki_month(year, m) for m in range(1, month + 1)]
-    months = _overlay_expected_from_1c(months, year, month, "otgruzki")
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M2")
     payload["debug"] = {
         **(payload.get("debug") or {}),
-        "source": "comdir.sql+1c_expected",
+        "source": "comdir.sql",
     }
     return payload
 
@@ -334,7 +355,7 @@ def get_otgruzki_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m2_ytd",
-        source_tag="comdir_kd_m2_ytd_sql_v7",
+        source_tag="comdir_kd_m2_ytd_sql_expected_v1",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m2",
         compute_fn=build_otgruzki_payload,
@@ -365,10 +386,16 @@ def compute_dogovory_month(year: int, month: int) -> dict[str, Any]:
         cur.execute("SET NOCOUNT ON")
         plan_by_name = dog_mod.calc_mp_plan(cur, p0, p_next)
         fact_by_name = dog_mod.calc_fact(cur, p0, asof_next)
-        expected_by_name = dog_mod.calc_expected(cur, p0, p_next, p_asof=asof_next)
+        expected_current_by_name = dog_mod.calc_expected(cur, p0, p_next, p_asof=asof_next)
+        expected_full_by_name = (
+            expected_current_by_name
+            if asof_next == p_next
+            else dog_mod.calc_expected(cur, p0, p_next, p_asof=p_next)
+        )
     plan_map = aggregate_by_odata_name(plan_by_name)
     fact_map = aggregate_by_odata_name(fact_by_name)
-    expected_map = aggregate_by_odata_name(expected_by_name)
+    expected_map = aggregate_by_odata_name(expected_current_by_name)
+    expected_full_map = aggregate_by_odata_name(expected_full_by_name)
     guids = set(plan_map) | set(fact_map) | set(expected_map)
     by_dept = _merge_by_dept_maps(
         guids,
@@ -382,6 +409,8 @@ def compute_dogovory_month(year: int, month: int) -> dict[str, Any]:
         "fact": round(sum(fact_map.values()), 2),
         "plan": round(sum(plan_map.values()), 2),
         "expected": round(sum(expected_map.values()), 2),
+        "expected_current": round(sum(expected_map.values()), 2),
+        "expected_full": round(sum(expected_full_map.values()), 2),
         "by_dept": by_dept,
     }
 

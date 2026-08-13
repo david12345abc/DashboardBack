@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -37,7 +37,7 @@ VED_DEPT_NAME = "Отдел ВЭД"
 UZTRANSGAZ_PARTNER_MARKER = "узтрансгаз"
 
 CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
-CACHE_VERSION = 9
+CACHE_VERSION = 10
 ALLOWED_CLAIM_STATUSES = frozenset({
     "Зарегистрирована",
     "Обрабатывается",
@@ -56,6 +56,15 @@ MONTH_NAMES = {
     5: "май", 6: "июнь", 7: "июль", 8: "август",
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
+
+CLAIMS_SQL_TABLE = "_Reference389"
+CLAIMS_SQL_PARTNER_TABLE = "_Reference328"
+CLAIMS_SQL_REASON_TABLE = "_Reference396"
+CLAIMS_SQL_NOMENCLATURE_TABLE = "_Reference269"
+CLAIMS_SQL_CHARACTERISTIC_TABLE = "_Reference600"
+CLAIMS_SQL_YEAR_OFFSET = 2000
+CLAIMS_SQL_EMPTY_DATE = datetime(2001, 1, 2)
+CLAIMS_SQL_EMPTY_REF = b"\x00" * 16
 
 
 def _cache_path(year: int, month: int, include_all: bool = False) -> Path:
@@ -113,6 +122,143 @@ def _save_cache(year: int, month: int, rows: list[dict], include_all: bool = Fal
             )
     except OSError:
         pass
+
+
+def _sql_ref_to_guid(value) -> str:
+    if not isinstance(value, (bytes, bytearray)) or len(value) != 16 or bytes(value) == CLAIMS_SQL_EMPTY_REF:
+        return ""
+    h = bytes(value).hex()
+    return f"{h[24:32]}-{h[20:24]}-{h[16:20]}-{h[0:4]}-{h[4:16]}"
+
+
+def _sql_1c_date(value) -> str:
+    if not isinstance(value, datetime) or value.year < CLAIMS_SQL_YEAR_OFFSET + 2:
+        return ""
+    try:
+        return value.replace(year=value.year - CLAIMS_SQL_YEAR_OFFSET).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _sql_text(value) -> str:
+    return str(value or "").strip()
+
+
+def _load_sql_ref_map(cur, table: str, refs: set[bytes], *, with_code: bool = False) -> dict[bytes, str]:
+    refs = {bytes(r) for r in refs if isinstance(r, (bytes, bytearray)) and bytes(r) != CLAIMS_SQL_EMPTY_REF}
+    if not refs:
+        return {}
+
+    result: dict[bytes, str] = {}
+    items = list(refs)
+    for start in range(0, len(items), 500):
+        chunk = items[start:start + 500]
+        placeholders = ",".join("?" for _ in chunk)
+        cols = "_IDRRef,_Description" + (",_Code" if with_code else "")
+        cur.execute(
+            f"SELECT {cols} FROM dbo.[{table}] WHERE _IDRRef IN ({placeholders})",
+            chunk,
+        )
+        for row in cur.fetchall():
+            desc = _sql_text(row._Description)
+            if with_code:
+                code = _sql_text(row._Code)
+                result[bytes(row._IDRRef)] = f"{desc} ({code})" if desc and code else desc or code
+            else:
+                result[bytes(row._IDRRef)] = desc
+    return result
+
+
+def _fetch_from_sql(year: int, month: int, include_all: bool = False) -> list[dict]:
+    """Загружает активные претензии напрямую из SQL-снимка erp_pm."""
+    from sql_connection import SqlConnection
+
+    if not 1 <= int(month) <= 12:
+        return []
+    date_to = datetime(year + CLAIMS_SQL_YEAR_OFFSET, month, 28)
+    if month == 12:
+        date_next = datetime(year + CLAIMS_SQL_YEAR_OFFSET + 1, 1, 1)
+    else:
+        date_next = datetime(year + CLAIMS_SQL_YEAR_OFFSET, month + 1, 1)
+
+    with SqlConnection().connect_ctx() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT
+                _Code,
+                _Description,
+                _Fld11617 AS date_reg,
+                _Fld11618 AS date_end,
+                _Fld132055 AS date_plan,
+                _Fld11622 AS claim_description,
+                _Fld11623RRef AS reason_ref,
+                _Fld11624RRef AS partner_ref,
+                _Fld132070RRef AS nomenclature_ref,
+                _Fld132071RRef AS characteristic_ref
+            FROM dbo.[{CLAIMS_SQL_TABLE}]
+            WHERE _Marked = 0x00
+              AND _Fld11617 < ?
+              AND (_Fld11618 < ? OR _Fld11618 >= ?)
+            ORDER BY _Fld11617 DESC, _Code
+            """,
+            date_next,
+            CLAIMS_SQL_EMPTY_DATE,
+            date_next,
+        )
+        raw_rows = cur.fetchall()
+
+        partner_refs = {bytes(r.partner_ref) for r in raw_rows if isinstance(r.partner_ref, bytes)}
+        reason_refs = {bytes(r.reason_ref) for r in raw_rows if isinstance(r.reason_ref, bytes)}
+        nom_refs = {bytes(r.nomenclature_ref) for r in raw_rows if isinstance(r.nomenclature_ref, bytes)}
+        char_refs = {bytes(r.characteristic_ref) for r in raw_rows if isinstance(r.characteristic_ref, bytes)}
+
+        partners = _load_sql_ref_map(cur, CLAIMS_SQL_PARTNER_TABLE, partner_refs)
+        reasons = _load_sql_ref_map(cur, CLAIMS_SQL_REASON_TABLE, reason_refs)
+        nom_display = _load_sql_ref_map(cur, CLAIMS_SQL_NOMENCLATURE_TABLE, nom_refs, with_code=True)
+        char_names = _load_sql_ref_map(cur, CLAIMS_SQL_CHARACTERISTIC_TABLE, char_refs)
+
+    result_rows: list[dict] = []
+    for row in raw_rows:
+        partner_ref = bytes(row.partner_ref) if isinstance(row.partner_ref, bytes) else CLAIMS_SQL_EMPTY_REF
+        partner = partners.get(partner_ref, _sql_ref_to_guid(partner_ref))
+        is_uztransgaz = _is_uztransgaz_partner(partner)
+        normalized_dept_key = VED_DEPT_KEY if is_uztransgaz else ""
+        if not include_all and normalized_dept_key not in ALLOWED_DEPARTMENTS:
+            # В SQL-снимке прямой связи с отделом заказа для этого справочника нет.
+            # Для дочерних отделов лучше ничего не подмешивать, чем показать чужую претензию.
+            continue
+
+        reason_ref = bytes(row.reason_ref) if isinstance(row.reason_ref, bytes) else CLAIMS_SQL_EMPTY_REF
+        reason_key = _sql_ref_to_guid(reason_ref)
+        reason = CLAIM_REASON_LABELS.get(reason_key) or reasons.get(reason_ref) or reason_key
+
+        nom_ref = bytes(row.nomenclature_ref) if isinstance(row.nomenclature_ref, bytes) else CLAIMS_SQL_EMPTY_REF
+        char_ref = bytes(row.characteristic_ref) if isinstance(row.characteristic_ref, bytes) else CLAIMS_SQL_EMPTY_REF
+        desc = _sql_text(row.claim_description).replace("\r\n", " ").replace("\n", " ")
+
+        result_rows.append({
+            "code": _sql_text(row._Code),
+            "name": _sql_text(row._Description),
+            "partner": partner,
+            "date_reg": _sql_1c_date(row.date_reg),
+            "date_plan": _sql_1c_date(row.date_plan),
+            "date_end": _sql_1c_date(row.date_end),
+            "order_num": "",
+            "order_dept": VED_DEPT_NAME if is_uztransgaz else "",
+            "order_dept_key": VED_DEPT_KEY if is_uztransgaz else "",
+            "normalized_order_dept_key": normalized_dept_key,
+            "nomenclature": nom_display.get(nom_ref, ""),
+            "characteristic": char_names.get(char_ref, ""),
+            "order_sum": 0,
+            "description": desc,
+            "reason_key": reason_key,
+            "reason": reason,
+            "status": "Обрабатывается",
+            "source": "sql_erp_pm",
+        })
+
+    return result_rows
 
 
 def _load_catalog_full(session: requests.Session,
@@ -360,11 +506,15 @@ def fetch_claims_for_month(year: int, month: int, include_all: bool = False) -> 
         return cached
 
     try:
-        rows = _fetch_from_odata(year, month, include_all=include_all)
+        rows = _fetch_from_sql(year, month, include_all=include_all)
     except Exception as e:
-        logger.error("Failed to fetch claims: %s", e)
-        stale = _load_stale_nonempty_cache(year, month, include_all=include_all)
-        return stale or []
+        logger.error("Failed to fetch claims from SQL: %s", e)
+        try:
+            rows = _fetch_from_odata(year, month, include_all=include_all)
+        except Exception as e:
+            logger.error("Failed to fetch claims: %s", e)
+            stale = _load_stale_nonempty_cache(year, month, include_all=include_all)
+            return stale or []
 
     if rows:
         _save_cache(year, month, rows, include_all=include_all)
