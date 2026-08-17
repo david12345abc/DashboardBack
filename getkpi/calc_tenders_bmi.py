@@ -18,16 +18,20 @@ calc_tenders_bmi.py — % выигранных тендеров для учре�
   data = get_tenders_departments(2026)   # {'plan': int, 'fact': int, 'pct': float|None, ...}
 """
 import functools
+import logging
 import sys
 import time
-from datetime import date
+from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
 import requests
 from requests.auth import HTTPBasicAuth
 
+from comdir.common import uuid_to_1c_bytes
+
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
+logger = logging.getLogger(__name__)
 
 BMI_KEY   = "9edaa7d4-37a5-11ee-93d3-6cb31113810e"  # Отдел продаж БМИ
 TEMA_KEY  = "f88a0ca1-82eb-11e8-827b-ac1f6b05524d"  # "Запрос документов по тендеру (регл.)"
@@ -75,6 +79,19 @@ STATUS_MATCHERS = {
     "не участвуем": ("не участв", "отказ"),
 }
 
+SQL_DOC_TABLE = "_Document76733"
+SQL_TOPIC_COL = "_Fld76743_RRRef"
+SQL_TENDER_DEPT_COL = "_Fld184255RRef"
+SQL_RESULT_COL = "_Fld178500"
+SQL_TENDER_NUMBER_COL = "_Fld112271"
+SQL_TENDER_NAME_COL = "_Fld114339"
+SQL_CUSTOMER_COL = "_Fld112272"
+SQL_NMC_COL = "_Fld112273"
+SQL_TKP_COL = "_Fld178516"
+SQL_RESULT_COMMENT_COL = "_Fld184345"
+SQL_YEAR_OFFSET = 2000
+SQL_EMPTY_REF = b"\x00" * 16
+
 
 def _normalize_result_code(value) -> int:
     """OData может вернуть код результата строкой; приводим к int для стабильного расчёта."""
@@ -82,6 +99,39 @@ def _normalize_result_code(value) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _sql_ref_to_guid(ref: bytes | bytearray | memoryview | None) -> str:
+    if not ref:
+        return ""
+    hx = bytes(ref).hex()
+    if len(hx) != 32 or hx == "0" * 32:
+        return ""
+    return f"{hx[24:32]}-{hx[20:24]}-{hx[16:20]}-{hx[0:4]}-{hx[4:16]}".lower()
+
+
+def _sql_1c_date_to_iso(value) -> str:
+    if not isinstance(value, datetime):
+        return ""
+    year = value.year - SQL_YEAR_OFFSET if value.year >= SQL_YEAR_OFFSET else value.year
+    if year <= 1:
+        return ""
+    return value.replace(year=year).isoformat()
+
+
+def _to_sql_dt(value: date) -> datetime:
+    return datetime(value.year + SQL_YEAR_OFFSET, value.month, value.day)
+
+
+def _sql_code_to_canonical() -> dict[int, str]:
+    result: dict[int, str] = {}
+    for code, raw_label in REZ_NAME.items():
+        lc = str(raw_label).lower()
+        for canonical, needles in STATUS_MATCHERS.items():
+            if any(n in lc for n in needles):
+                result[int(code)] = canonical
+                break
+    return result
 
 
 # Кэш маппинга code -> canonical_label (канонический ярлык из STATUS_LABELS).
@@ -279,6 +329,98 @@ def _build_tenders_result(
     }
 
 
+def _fetch_from_sql(
+    *,
+    year: int,
+    month: int,
+    departments: dict[str, str],
+    cumulative: bool,
+) -> dict:
+    from sql_connection import SqlConnection
+
+    end_dt = _month_end(year, month)
+    today = date.today()
+    if year == today.year and end_dt >= today:
+        end_dt = today
+    start_dt = date(year, 1, 1) if cumulative else date(year, month, 1)
+    start_sql = _to_sql_dt(start_dt)
+    end_sql = _to_sql_dt(end_dt + timedelta(days=1))
+    topic_ref = uuid_to_1c_bytes(TEMA_KEY)
+
+    with SqlConnection().connect_ctx() as conn:
+        cur = conn.cursor()
+        cur.execute("SET NOCOUNT ON")
+        cur.execute("IF OBJECT_ID('tempdb..#tender_depts') IS NOT NULL DROP TABLE #tender_depts")
+        cur.execute("CREATE TABLE #tender_depts (id binary(16) PRIMARY KEY, guid char(36))")
+        for guid in departments:
+            cur.execute(
+                "INSERT INTO #tender_depts (id, guid) VALUES (?, ?)",
+                uuid_to_1c_bytes(guid),
+                guid,
+            )
+        cur.execute(
+            f"""
+            SELECT
+              d.guid AS dept_guid,
+              s._IDRRef AS ref_key,
+              s._Number AS number,
+              s._Date_Time AS date_time,
+              s._Marked AS deletion_mark,
+              s._Posted AS posted,
+              s.[{SQL_RESULT_COL}] AS result_code,
+              s.[{SQL_TENDER_NUMBER_COL}] AS tender_number,
+              s.[{SQL_TENDER_NAME_COL}] AS tender_name,
+              s.[{SQL_CUSTOMER_COL}] AS customer,
+              s.[{SQL_NMC_COL}] AS nmc_sum,
+              s.[{SQL_TKP_COL}] AS tkp_sum,
+              s.[{SQL_RESULT_COMMENT_COL}] AS result_comment
+            FROM dbo.[{SQL_DOC_TABLE}] s WITH (NOLOCK)
+            INNER JOIN #tender_depts d ON d.id = s.[{SQL_TENDER_DEPT_COL}]
+            WHERE s._Date_Time >= ?
+              AND s._Date_Time < ?
+              AND s.[{SQL_TOPIC_COL}] = ?
+            """,
+            start_sql,
+            end_sql,
+            topic_ref,
+        )
+        raw_rows = cur.fetchall()
+
+    rows = []
+    for row in raw_rows:
+        if bytes(row.deletion_mark or b"") == b"\x01":
+            continue
+        dept_guid = str(row.dept_guid or "").strip().lower()
+        rows.append({
+            "Ref_Key": _sql_ref_to_guid(row.ref_key),
+            "Number": (row.number or "").strip(),
+            "Date": _sql_1c_date_to_iso(row.date_time),
+            "Posted": bytes(row.posted or b"") == b"\x01",
+            "DeletionMark": False,
+            "ТемаСлужебнойЗаписки": TEMA_KEY,
+            "УТО_ПодразделениеТендер_Key": dept_guid,
+            "УТО_РезультатТендера": int(row.result_code or 0),
+            "УТО_НомерТендера": (row.tender_number or "").strip(),
+            "УТО_НаименованиеТендера": (row.tender_name or "").strip(),
+            "УТО_Заказчик": (row.customer or "").strip(),
+            "УТО_СуммаНМЦ": float(row.nmc_sum or 0),
+            "УТО_СуммаТКПТендера": float(row.tkp_sum or 0),
+            "УТО_КомментарийПоРезультатуТендера": (row.result_comment or "").strip(),
+            "source": "sql_erp_pm",
+        })
+
+    return _build_tenders_result(
+        rows,
+        year=year,
+        month=month,
+        period_start=start_dt.isoformat(),
+        period_end=end_dt.isoformat(),
+        cumulative=cumulative,
+        code_to_canon=_sql_code_to_canonical(),
+        dept_names=departments,
+    )
+
+
 def get_tenders_departments(
     year: int | None = None,
     *,
@@ -298,6 +440,13 @@ def get_tenders_departments(
     end = f"{end_dt.isoformat()}T23:59:59"
 
     dept_names = departments or TENDER_DEPARTMENTS
+    try:
+        result = _fetch_from_sql(year=y, month=m, departments=dept_names, cumulative=cumulative)
+        result["source"] = "sql_erp_pm"
+        return result
+    except Exception as exc:
+        logger.warning("tenders: SQL fetch failed, fallback to OData: %s", exc)
+
     dept_filter = " or ".join(
         f"УТО_ПодразделениеТендер_Key eq guid'{key}'"
         for key in dept_names

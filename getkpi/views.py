@@ -470,7 +470,7 @@ CHIEF_METROLOG_TILE_ORDER = (
 def _required_prod_deputy_kpi_ids(department: str | None) -> set[str]:
     return {
         *PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.keys(),
-        'PD-M2',
+        'PD-M2.1', 'PD-M2.2',
         'PD-M3.B1', 'PD-M3.B2',
         'PD-M3.F1', 'PD-M3.F2',
         'PD-Q1',
@@ -3456,7 +3456,7 @@ def _build_universal_payload(
                 tile['frequency'] = 'ежемесячно'
                 if entry.get('data_granularity') == 'monthly':
                     tile['data_granularity'] = 'monthly'
-        elif kpi.get('kpi_id') in {'PD-M2', 'GK-M1', 'GK-Q1'} or _kid_tile in {'MET-Q4-1', 'METD-Q1', 'METD-Q3'}:
+        elif kpi.get('kpi_id') in {'PD-M2', 'PD-M2.1', 'PD-M2.2', 'GK-M1', 'GK-Q1'} or _kid_tile in {'MET-Q4-1', 'METD-Q1', 'METD-Q3'}:
             tile['unit'] = 'шт.'
         elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1', 'QD-M6', 'QD-M7', 'QD-M8', 'QD-M9', 'QD-M10'}:
             tile['unit'] = 'шт.'
@@ -3956,7 +3956,7 @@ def _build_universal_payload(
 
 
 CHIEF_METROLOG_PAYLOAD_CACHE_VERSION = 3
-PROD_DEPUTY_PAYLOAD_CACHE_VERSION = 1
+PROD_DEPUTY_PAYLOAD_CACHE_VERSION = 3
 
 
 CHIEF_METROLOG_TABLE_CACHE_KPI_IDS = {
@@ -3994,6 +3994,18 @@ def _chief_metrolog_payload_cache_path(ref_y: int, ref_m: int) -> Path:
 def _prod_deputy_payload_cache_path(ref_y: int, ref_m: int) -> Path:
     cache_manager.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return cache_manager.CACHE_DIR / f"prod_deputy_payload_{int(ref_y)}_{int(ref_m):02d}.json"
+
+
+def _unwrap_payload_cache_envelope(raw) -> dict | None:
+    """Достать payload из snapshot `{cache_version, payload}` или вернуть его как есть."""
+    if not isinstance(raw, dict):
+        return None
+    if isinstance(raw.get('Плитки'), dict):
+        return raw
+    inner = raw.get('payload')
+    if isinstance(inner, dict) and isinstance(inner.get('Плитки'), dict):
+        return inner
+    return None
 
 
 def _mark_payload_cache_refreshing(payload: dict) -> dict:
@@ -4104,8 +4116,12 @@ def _prod_deputy_cache_files_for_kpi(kpi_id: str, ref_y: int, ref_m: int) -> lis
     elif kid.startswith('PD-M1.2'):
         from . import calc_prod_deputy_output
         paths.append(calc_prod_deputy_output.cache_path('pc2', ref_y, ref_m))
-    elif kid == 'PD-M2':
-        paths.append(cd / f"otif_vypusk_prod_monthly_{ref_y}_{ref_m:02d}.json")
+    elif kid in {'PD-M2', 'PD-M2.1'}:
+        from . import calc_otif_vypusk_zam_proizvodstva
+        paths.append(calc_otif_vypusk_zam_proizvodstva.cache_path('pc1', ref_y, ref_m))
+    elif kid == 'PD-M2.2':
+        from . import calc_otif_vypusk_zam_proizvodstva
+        paths.append(calc_otif_vypusk_zam_proizvodstva.cache_path('pc2', ref_y, ref_m))
     elif kid == 'PD-M3.B1':
         from .calc_prod_deputy_pc_common import cache_path as pc_cache_path
         paths.append(pc_cache_path('budget', 'pc1', ref_y, ref_m))
@@ -4362,13 +4378,13 @@ def _build_prod_deputy_payload(
         aggregation_mode=aggregation_mode,
         selected_quarters=selected_quarters,
     )
-    if (
-        isinstance(raw, dict)
-        and raw.get('cache_version') == PROD_DEPUTY_PAYLOAD_CACHE_VERSION
-        and isinstance(raw.get('payload'), dict)
-    ):
-        return _mark_payload_cache_refreshing(raw['payload'])
-    return raw
+    unwrapped = _unwrap_payload_cache_envelope(raw)
+    if unwrapped is None:
+        return {'Плитки': {'count': 0, 'items': []}, 'Таблицы': {}}
+    # locked_call на устаревшем snapshot отдаёт конверт файла, не сам payload.
+    if isinstance(raw, dict) and 'Плитки' not in raw:
+        return _prod_deputy_payload_with_active_refresh_status(unwrapped, ref_y, ref_m)
+    return unwrapped
 
 
 def _build_chief_metrolog_payload(
@@ -5144,17 +5160,19 @@ def _build_kpi_entry(
             entry['kpi_period'] = data.get('kpi_period')
             return entry
 
-    if kpi_id == 'PD-M2':
+    if kpi_id in {'PD-M2', 'PD-M2.1', 'PD-M2.2'}:
         if year and month:
             ref_y, ref_m = year, month
         else:
             today = date.today()
             ref_y, ref_m = today.year, today.month
+        shop = 'pc2' if kpi_id == 'PD-M2.2' else 'pc1'
         data = cache_manager.locked_call(
-            f'pd_m2_otif_{ref_y}_{ref_m}',
+            f'pd_m2_otif_{shop}_{ref_y}_{ref_m}',
             calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly,
             year=ref_y,
             month=ref_m,
+            shop=shop,
         )
         if data is not None:
             entry['data_granularity'] = 'monthly'

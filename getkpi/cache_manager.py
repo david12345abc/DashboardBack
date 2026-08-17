@@ -167,6 +167,8 @@ def is_cache_fresh(path: Path | str) -> bool:
                 return False
             if p.name.startswith('chief_metrolog_payload_') and data.get('cache_version') != 3:
                 return False
+            if p.name.startswith('prod_deputy_payload_') and data.get('cache_version') != 3:
+                return False
             cache_date = data.get('cache_date') or data.get('cached_at')
             if cache_date:
                 return str(cache_date)[:10] == date.today().isoformat()
@@ -692,9 +694,13 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          mpp_tasks_report.qd_q1_tile_cache_path(y, m),
          lambda yy=y, mm=m: mpp_tasks_report.get_qd_q1_ytd(year=yy, month=mm)),
 
-        (f'pd_m2_otif_{y}_{m}',
-         cd / f'otif_vypusk_prod_monthly_{y}_{m:02d}.json',
-         lambda: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(year=y, month=m)),
+        (f'pd_m2_otif_pc1_{y}_{m}',
+         calc_otif_vypusk_zam_proizvodstva.cache_path('pc1', y, m),
+         lambda: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(year=y, month=m, shop='pc1')),
+
+        (f'pd_m2_otif_pc2_{y}_{m}',
+         calc_otif_vypusk_zam_proizvodstva.cache_path('pc2', y, m),
+         lambda: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(year=y, month=m, shop='pc2')),
 
         (f'pd_m1_output_pc1_{y}_{m}',
          calc_prod_deputy_output.cache_path('pc1', y, m),

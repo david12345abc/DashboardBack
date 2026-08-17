@@ -1356,7 +1356,7 @@ def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
     points: list[dict] = []
     for m in range(1, end_m + 1):
         data = cache_manager.locked_call(
-            f"tenders_commercial_monthly_{ref_y}_{m:02d}",
+            f"tenders_commercial_sql_v1_monthly_{ref_y}_{m:02d}",
             calc_tenders_bmi.get_tenders_departments,
             year=ref_y,
             month=m,
@@ -1795,7 +1795,7 @@ def build_chairman_commerce_payload(
         if kid == "MRK-09":
             # Плитка считается только за выбранный месяц.
             tenders = cache_manager.locked_call(
-                f"tenders_commercial_monthly_{ref_y}_{ref_m:02d}",
+                f"tenders_commercial_sql_v1_monthly_{ref_y}_{ref_m:02d}",
                 calc_tenders_bmi.get_tenders_departments,
                 year=ref_y,
                 month=ref_m,
@@ -1816,7 +1816,7 @@ def build_chairman_commerce_payload(
                 "thresholds": _thresholds(meta),
                 "formula": "Выигранные тендеры / Все тендеры по коммерческим отделам × 100%",
                 "unit": "шт",
-                "source": meta.get("source"),
+                "source": tenders.get("source") or "sql_erp_pm / _Document76733",
                 "description": meta.get("description"),
                 "frequency": meta.get("frequency"),
                 "plan": plan_n,
@@ -1838,6 +1838,7 @@ def build_chairman_commerce_payload(
                     "month": tenders.get("month"),
                     "period_start": tenders.get("period_start"),
                     "period_end": tenders.get("period_end"),
+                    "source": tenders.get("source") or "sql_erp_pm",
                 },
             })
             continue
