@@ -2,7 +2,7 @@
   "na_datu": "2026-04-30",
   "dept_alias_source": "debitorka_department_aliases_v3",
   "total_dz": 353255213.27,
-  "total_kz": 228983514.44,
+  "total_kz": 228950406.88,
   "total_overdue": 149859521.32,
   "kz_source": "predoplata_upr",
   "by_dept": {
@@ -41,7 +41,7 @@
     },
     "Отдел БМИ": {
       "dz": 92725837.1,
-      "kz": 110522893.68,
+      "kz": 110489786.12,
       "overdue": 92725837.1,
       "aging": {
         "1-29 дн.": 0,

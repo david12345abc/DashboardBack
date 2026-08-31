@@ -291,8 +291,18 @@ def get_otif_vypusk_prod_monthly(
     path = cache_path(shop_key, ref_year, ref_month)
     is_current_month = ref_year == today.year and ref_month == today.month
 
+    from . import cache_manager
+
+    cache_manager.register_cache_path(
+        f"pd_m2_otif_{shop_key}_{ref_year}_{ref_month}",
+        path,
+    )
     cached = _load_json(path)
-    if cached is not None and cached.get("source") == SOURCE_TAG:
+    if (
+        cached is not None
+        and cached.get("source") == SOURCE_TAG
+        and not cache_manager.is_force_compute_context()
+    ):
         if not is_current_month or cached.get("cache_date") == today.isoformat():
             return cached
 

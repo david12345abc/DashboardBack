@@ -43,11 +43,13 @@ def warm_all_department_caches() -> None:
 
     from tools.dept_protocol.dashboard_table import warm_all_department_tables
 
-    from tools.dept_protocol.table_cache import warm_lock_key
 
 
+    # Lock is already held by cache_manager.locked_call(warm_lock_key()).
 
-    locked_call(warm_lock_key(), warm_all_department_tables)
+    # A nested locked_call on the same key deadlocks (threading.Lock is not reentrant).
+
+    warm_all_department_tables()
 
 
 

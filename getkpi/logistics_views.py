@@ -11,6 +11,7 @@ from . import (
     calc_logistics_price_deviation,
     calc_logistics_supplier_share,
     calc_logistics_tmc_on_time,
+    calc_logistics_warehouse_shipments,
 )
 
 from .kpi_periods import last_full_month
@@ -21,9 +22,12 @@ LOGISTICS_KPI_IDS = {
     "LOG-M3.B",
     "LOG-M3.F",
     "LOG-M5",
+    "LOG-M6",
+    "LOG-M7",
     "LOG-Q1",
     "LOG-Q2",
 }
+LOGISTICS_WAREHOUSE_SHIP_IDS = {"LOG-M6", "LOG-M7"}
 LOGISTICS_BUDGET_FOT_SPLIT_IDS = {"LOG-M3.B", "LOG-M3.F"}
 LOGISTICS_CLIENT_DZ_IDS = {"LOG-M5"}
 LOG_Q1_NAME = "Доля квалифицированных поставщиков"
@@ -195,6 +199,13 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
             pct = float(pct)
         return pct, _rag_higher_better(pct)
 
+    if kpi_id == "LOG-M6":
+        ref_row = entry.get("last_full_month_row") or {}
+        pct = ref_row.get("kpi_pct")
+        if pct is not None:
+            pct = float(pct)
+        return pct, _rag_higher_better(pct)
+
     return None
 
 
@@ -342,6 +353,40 @@ def build_kpi_entry(kpi_id: str, entry: dict, *, year: int | None = None, month:
         }
         return entry
 
+    if kpi_id == "LOG-M6":
+        ref_y, ref_m = _ref_period(year, month)
+        data = cache_manager.locked_call(
+            f"log_m6_npo_shipment_{ref_y}_{ref_m}",
+            calc_logistics_warehouse_shipments.get_logistics_npo_shipment_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry["data_granularity"] = "monthly"
+        entry["monthly_data"] = data.get("months") or []
+        entry["quarterly_data"] = data.get("quarterly_data") or []
+        entry["yearly_data"] = data.get("yearly_data") or []
+        entry["last_full_month_row"] = data.get("last_full_month_row")
+        entry["ytd"] = data.get("ytd") or {}
+        entry["kpi_period"] = data.get("kpi_period")
+        return entry
+
+    if kpi_id == "LOG-M7":
+        ref_y, ref_m = _ref_period(year, month)
+        data = cache_manager.locked_call(
+            f"log_m7_almaz_shipment_{ref_y}_{ref_m}",
+            calc_logistics_warehouse_shipments.get_logistics_almaz_shipment_monthly,
+            year=ref_y,
+            month=ref_m,
+        )
+        entry["data_granularity"] = "monthly"
+        entry["monthly_data"] = data.get("months") or []
+        entry["quarterly_data"] = data.get("quarterly_data") or []
+        entry["yearly_data"] = data.get("yearly_data") or []
+        entry["last_full_month_row"] = data.get("last_full_month_row")
+        entry["ytd"] = data.get("ytd") or {}
+        entry["kpi_period"] = data.get("kpi_period")
+        return entry
+
     if kpi_id in LOGISTICS_CLIENT_DZ_IDS:
         data = cache_manager.locked_call(
             f"log_client_dz_{date.today().isoformat()}",
@@ -464,6 +509,13 @@ def apply_tile_overrides(kpi: dict, tile: dict) -> None:
         tile["name"] = LOG_Q1_NAME
         tile["unit"] = "поставщиков"
         tile["units"] = "поставщиков"
+    elif kpi_id == "LOG-M6":
+        tile["unit"] = "руб."
+        tile["units"] = "руб."
+    elif kpi_id == "LOG-M7":
+        tile["unit"] = "шт."
+        tile["units"] = "шт."
+        tile["fact_only"] = True
 
 
 def apply_tile_value_overrides(kpi: dict, tile: dict, entry: dict) -> None:
@@ -499,6 +551,32 @@ def apply_tile_value_overrides(kpi: dict, tile: dict, entry: dict) -> None:
         tile["total_dz"] = row.get("total_dz")
         tile["total_overdue"] = row.get("total_overdue")
         tile["plan_fact_period_label"] = row.get("na_datu") or ""
+        return
+
+    if kpi.get("kpi_id") == "LOG-M6":
+        row = entry.get("last_full_month_row") or {}
+        tile["plan"] = row.get("plan")
+        tile["fact"] = row.get("fact")
+        tile["kpi_pct"] = row.get("kpi_pct")
+        tile["percent"] = row.get("kpi_pct")
+        tile["unit"] = "руб."
+        tile["units"] = "руб."
+        tile["has_data"] = bool(row.get("has_data") or row.get("plan") is not None)
+        return
+
+    if kpi.get("kpi_id") == "LOG-M7":
+        row = entry.get("last_full_month_row") or {}
+        tile["plan"] = None
+        tile["fact"] = row.get("fact")
+        tile["kpi_pct"] = None
+        tile["percent"] = None
+        tile["unit"] = "шт."
+        tile["units"] = "шт."
+        tile["fact_only"] = True
+        tile["has_data"] = bool(row.get("has_data") or row.get("fact") is not None)
+        tile["fg"] = row.get("fg")
+        tile["repair_out"] = row.get("repair_out")
+        tile["repair_in"] = row.get("repair_in")
         return
 
     if kpi.get("kpi_id") not in LOGISTICS_BUDGET_FOT_SPLIT_IDS:

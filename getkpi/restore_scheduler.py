@@ -76,6 +76,31 @@ def run_restore_once(*, force: bool = False) -> dict[str, Any]:
                     "restore scheduler: commercial cache refresh failed after restore"
                 )
                 result["commercial_refresh"] = {"started": False, "reason": "error"}
+            try:
+                from datetime import date as date_cls
+
+                from . import cache_manager, calc_metrolog_production_plan
+
+                today = date_cls.today()
+                logger.info(
+                    "restore scheduler: refreshing METD-M1 from erp_pm after restore"
+                )
+                with cache_manager.force_compute():
+                    calc_metrolog_production_plan.get_metrolog_production_plan_monthly(
+                        today.year, today.month
+                    )
+                payload_path = (
+                    cache_manager.CACHE_DIR
+                    / f"chief_metrolog_payload_{today.year}_{today.month:02d}.json"
+                )
+                payload_path.unlink(missing_ok=True)
+                cache_manager.clear_memoized_dashboard_payload("chief_metrolog_payload_")
+                result["metrolog_m1_refresh"] = {"started": True, "year": today.year, "month": today.month}
+            except Exception:
+                logger.exception(
+                    "restore scheduler: METD-M1 refresh failed after restore"
+                )
+                result["metrolog_m1_refresh"] = {"started": False, "reason": "error"}
         elif status == "skipped":
             logger.info(
                 "restore scheduler: bak unchanged; commercial refresh not triggered"

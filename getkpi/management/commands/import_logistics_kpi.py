@@ -112,6 +112,55 @@ LOGISTICS_KPI_DEFINITIONS: list[dict] = [
         "position": 4,
     },
     {
+        "kpi_id": "LOG-M6",
+        "name": "Отгрузка со склада НПО",
+        "block": "плитка",
+        "frequency": "ежемесячно",
+        "perspective": "Процессы",
+        "goal": "Контролировать отгрузку со склада НПО относительно маркетингового плана КС",
+        "formula": "Факт выручки НПО / План МП по отгрузке (без услуг и БМИ) × 100%",
+        "unit": "руб.",
+        "source": "MSSQL erp_pm: ТД_ПланированиеДоговоровОтгрузокДС, ВыручкаИСебестоимостьПродаж",
+        "monthly_target": "≥100%",
+        "quarterly_target": None,
+        "yearly_target": "≥100%",
+        "green_threshold": "≥100%",
+        "yellow_threshold": "90–99,9%",
+        "red_threshold": "<90%",
+        "weight_pct": 0.0,
+        "position": 5,
+        "description": (
+            "План: сумма МП КС по виду «Отгрузки» без отдела услуг и БМИ.\n"
+            "Факт: выручка отчёта «Валовая прибыль предприятия — для зп склада» "
+            "по организации НПО, те же отделы."
+        ),
+    },
+    {
+        "kpi_id": "LOG-M7",
+        "name": "Отгрузка со склада Алмаз",
+        "block": "плитка",
+        "frequency": "ежемесячно",
+        "perspective": "Процессы",
+        "goal": "Контролировать отгрузку и приёмку по складам Алмаза",
+        "formula": "Отгрузка ГП №2 + отгрузка ремонтных №2 + приёмка ремонтных №2",
+        "unit": "шт.",
+        "source": "MSSQL erp_pm: РаспоряженияНаОтгрузку / склады Алмаза",
+        "monthly_target": None,
+        "quarterly_target": None,
+        "yearly_target": None,
+        "green_threshold": None,
+        "yellow_threshold": None,
+        "red_threshold": None,
+        "weight_pct": 0.0,
+        "position": 6,
+        "description": (
+            "Факт из ведомости по товарам на складах:\n"
+            "• склад готовой продукции №2, расход, аналитика счётчики / датчики давления / СПУ;\n"
+            "• склад готовой продукции ремонтных приборов №2, расход;\n"
+            "• склад приёмки ремонтных приборов №2, приход."
+        ),
+    },
+    {
         "kpi_id": "LOG-Q1",
         "name": "Доля квалифицированных поставщиков",
         "block": "плитка",
@@ -128,7 +177,7 @@ LOGISTICS_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "70–79,9%",
         "red_threshold": "<70%",
         "weight_pct": 15.0,
-        "position": 5,
+        "position": 7,
     },
     {
         "kpi_id": "LOG-Q2",
@@ -147,7 +196,7 @@ LOGISTICS_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "5,1–7%",
         "red_threshold": ">7%",
         "weight_pct": 15.0,
-        "position": 6,
+        "position": 8,
     },
     {
         "kpi_id": "LOG-M4",
@@ -166,7 +215,7 @@ LOGISTICS_KPI_DEFINITIONS: list[dict] = [
         "yellow_threshold": "80–94,9%",
         "red_threshold": "<80%",
         "weight_pct": 20.0,
-        "position": 7,
+        "position": 9,
     },
 ]
 

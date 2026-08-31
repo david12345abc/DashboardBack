@@ -1,7 +1,9 @@
 {
   "year": 2026,
   "ref_month": 4,
-  "source": "psd_vipusk_fact_movement_products_v4",
+  "cache_date": "2026-08-21",
+  "cache_version": 5,
+  "source": "psd_vipusk_fact_movement_products_v5",
   "months": [
     {
       "year": 2026,
@@ -86,7 +88,7 @@
       "month": 4,
       "period_from": "2026-04-01",
       "period_to": "2026-04-30",
-      "fact_rub_total": 169962882.22,
+      "fact_rub_total": 169962882.21,
       "fact_qty_total": 8447.0,
       "by_org": {
         "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 53.0,
@@ -94,7 +96,7 @@
         "АЛМАЗ ООО": 8394.0
       },
       "by_org_rub": {
-        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 157609545.62,
+        "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО": 157609545.61,
         "Турбулентность-Дон ООО": 0.0,
         "АЛМАЗ ООО": 12353336.6
       },

@@ -1,67 +1,62 @@
+"""METD-M1 — план производства в части МС из локальной копии 1С (erp_pm).
+
+SQL:
+  InformationRegister.ГрафикЭтаповПроизводства2_2 → dbo._InfoRg43704
+  Document.ЭтапПроизводства2_2                    → dbo._Document1052
+  Document.ЗаказНаПроизводство2_2                 → dbo._Document709
+  Catalog.СтруктураПредприятия                    → dbo._Reference513
+
+Даты 1С в SQL хранятся со смещением +2000 лет.
+"""
 from __future__ import annotations
 
 import json
 import logging
-import os
+import uuid
 from calendar import monthrange
 from datetime import date, datetime, time
 from pathlib import Path
-from urllib.parse import quote
 
-import requests
-from requests.auth import HTTPBasicAuth
+from comdir.common import connect_ctx, to_1c_dt, uuid_to_1c_bytes
 
 from . import cache_manager
-from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "http://192.168.2.229:81/erp_pm"
-EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
+YEAR_OFFSET = 2000
+EMPTY16 = bytes(16)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v6_stage_rows"
-CACHE_VERSION = 6
+CACHE_SOURCE_TAG = "metrolog_production_plan_monthly_v7_sql"
+CACHE_VERSION = 7
 
-BASE = DEFAULT_BASE_URL.rstrip("/") + "/odata/standard.odata"
-if os.getenv("ONEC_BASE_URL"):
-    raw_base = os.getenv("ONEC_BASE_URL", DEFAULT_BASE_URL).strip().rstrip("/")
-    BASE = raw_base if raw_base.endswith("/odata/standard.odata") else f"{raw_base}/odata/standard.odata"
+SCHEDULE_TABLE = "_InfoRg43704"
+STAGE_TABLE = "_Document1052"
+ORDER_TABLE = "_Document709"
+DEPT_TABLE = "_Reference513"
 
-AUTH = HTTPBasicAuth(
-    os.getenv("ODATA_USER", "odata.user"),
-    os.getenv("ODATA_PASSWORD", "npo852456"),
-)
-
-SCHEDULE_ENTITY_CANDIDATES = (
-    "InformationRegister_ГрафикЭтаповПроизводства2_2",
-)
-STAGE_DOC_ENTITY = "Document_ЭтапПроизводства2_2"
-DEPARTMENT_ENTITY = "Catalog_СтруктураПредприятия"
-SURVEY_DOC_TYPES = (
-    "Document_ТД_КартаЗаказаUFG",
-    "Document_ТД_КартаЗаказаCFM",
-    "Document_ТД_КартаЗаказаUFGH",
-    "Document_ТД_КартаЗаказаTFG",
-    "Document_ТД_КартаЗаказаUFL",
-    "Document_ТД_КартаЗаказаПлотномер",
-    "Document_ТД_КартаЗаказаГранд",
-    "Document_ТД_КартаЗаказаСПУ3М",
-    "Document_ТД_КартаЗаказаРаботУслуг",
-)
-SURVEY_DOC_LABELS = {
-    "Document_ТД_КартаЗаказаUFG": "Карта заказа UFG",
-    "Document_ТД_КартаЗаказаCFM": "Карта заказа CFM",
-    "Document_ТД_КартаЗаказаUFGH": "Карта заказа UFGH",
-    "Document_ТД_КартаЗаказаTFG": "Карта заказа TFG",
-    "Document_ТД_КартаЗаказаUFL": "Карта заказа UFL",
-    "Document_ТД_КартаЗаказаПлотномер": "Карта заказа Плотномер",
-    "Document_ТД_КартаЗаказаГранд": "Карта заказа Гранд",
-    "Document_ТД_КартаЗаказаСПУ3М": "Карта заказа СПУ3М",
-    "Document_ТД_КартаЗаказаРаботУслуг": "Карта заказа Работ/услуг",
-}
+COL_STAGE_REF = "_Fld43707_RRRef"
+COL_PLAN_START = "_Fld43708"
+COL_PLAN_END = "_Fld43709"
+COL_ORDER_REF = "_Fld43705RRef"
+COL_STAGE_DEPT = "_Fld41036RRef"
+COL_FACT_START = "_Fld41047"
+COL_FACT_END = "_Fld41048"
+COL_SURVEY_REF = "_Fld100560_RRRef"
 
 DEPARTMENT_NAME = "Метрологическая служба"
 DEPARTMENT_KEY = "4668a58a-6eb1-11e2-afce-001e67112509"
+
+SURVEY_TABLES = (
+    ("_Document86501", "Карта заказа UFG"),
+    ("_Document132108", "Карта заказа CFM"),
+    ("_Document166682", "Карта заказа UFGH"),
+    ("_Document111938", "Карта заказа TFG"),
+    ("_Document171890", "Карта заказа UFL"),
+    ("_Document109400", "Карта заказа Плотномер"),
+    ("_Document144170", "Карта заказа Гранд"),
+    ("_Document122051", "Карта заказа СПУ3М"),
+    ("_Document86500", "Карта заказа Работ/услуг"),
+)
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -108,28 +103,35 @@ def _save_cache(year: int, month: int, payload: dict) -> None:
         logger.exception("Не удалось сохранить кэш METD-M1")
 
 
-def _dt(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    raw = str(value).strip()
-    if not raw or raw.startswith("0001-01-01"):
+def _bin_to_guid(value) -> str:
+    if value is None:
+        return ""
+    raw = bytes(value)
+    if len(raw) != 16 or raw == EMPTY16:
+        return ""
+    guid_bytes = raw[12:16] + raw[10:12] + raw[8:10] + raw[0:8]
+    return str(uuid.UUID(bytes=guid_bytes))
+
+
+def _clean_number(value) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isprintable()).strip()
+
+
+def _from_sql_dt(value) -> datetime | None:
+    if not isinstance(value, datetime) or value.year <= YEAR_OFFSET + 1:
         return None
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+        return value.replace(year=value.year - YEAR_OFFSET, tzinfo=None)
     except ValueError:
-        try:
-            return datetime.strptime(raw[:19], "%Y-%m-%dT%H:%M:%S")
-        except ValueError:
-            return None
+        return None
 
 
 def _fmt(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def _fmt_ru_date(value: str | datetime | None) -> str:
-    dt = value if isinstance(value, datetime) else _dt(str(value) if value else None)
-    return dt.strftime("%d.%m.%Y") if dt else ""
+def _fmt_ru_date(value: datetime | None) -> str:
+    return value.strftime("%d.%m.%Y") if value else ""
 
 
 def _late_by_calendar_day(
@@ -151,265 +153,148 @@ def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     return start, end
 
 
-def _odata_rows(session: requests.Session, entity: str, query: str, *, label: str) -> tuple[list[dict], int | None, str]:
-    rows: list[dict] = []
-    skip = 0
-    last_status: int | None = None
-    last_error = ""
-    while True:
-        page_query = f"{query}&$top=5000&$skip={skip}"
-        url = f"{BASE}/{quote(entity)}?{page_query}"
-        response = request_with_retry(session, url, timeout=120, retries=3, label=label)
-        if response is None:
-            return rows, last_status, "request_dropped"
-        last_status = response.status_code
-        if not response.ok:
-            last_error = response.text[:500]
-            return rows, last_status, last_error
-        batch = response.json().get("value", []) or []
-        rows.extend(batch)
-        if len(batch) < 5000:
-            return rows, last_status, ""
-        skip += len(batch)
+def _to_sql_dt(dt: datetime) -> datetime:
+    return dt.replace(year=dt.year + YEAR_OFFSET)
 
 
-def _fetch_single(session: requests.Session, entity: str, key: str, select: str) -> dict | None:
-    clean_key = str(key or "").strip()
-    if not clean_key or clean_key == EMPTY_GUID:
-        return None
-    url = f"{BASE}/{quote(entity)}(guid'{clean_key}')?$format=json&$select={quote(select, safe=',_')}"
-    response = request_with_retry(session, url, timeout=60, retries=3, label=f"METD-M1/{entity}")
-    if response is None or not response.ok:
-        return None
-    data = response.json()
-    return data if isinstance(data, dict) else None
-
-
-def _resolve_department(session: requests.Session) -> dict:
-    row = _fetch_single(session, DEPARTMENT_ENTITY, DEPARTMENT_KEY, "Ref_Key,Description,Code,DeletionMark")
+def _resolve_department(cur) -> dict:
+    cur.execute(
+        f"""
+        SELECT _Description, _Code, _Marked
+        FROM {DEPT_TABLE} WITH (NOLOCK)
+        WHERE _IDRRef = ?
+        """,
+        uuid_to_1c_bytes(DEPARTMENT_KEY),
+    )
+    row = cur.fetchone()
+    name = DEPARTMENT_NAME
+    code = None
+    marked = None
+    if row:
+        name = (row[0] or DEPARTMENT_NAME).strip() or DEPARTMENT_NAME
+        code = _clean_number(row[1]) or None
+        marked = bool(row[2] and bytes(row[2]) != b"\x00")
     return {
-        "entity": DEPARTMENT_ENTITY,
+        "entity": DEPT_TABLE,
         "key": DEPARTMENT_KEY,
-        "name": (row or {}).get("Description") or DEPARTMENT_NAME,
-        "code": (row or {}).get("Code"),
-        "deletion_mark": (row or {}).get("DeletionMark"),
+        "name": name,
+        "code": code,
+        "deletion_mark": marked,
     }
 
 
-def _load_schedule_rows(
-    session: requests.Session,
-    period_start: datetime,
-    period_end: datetime,
-    current_dt: datetime,
-) -> tuple[list[dict], dict]:
-    select = "Этап,Этап_Type,Начало,Окончание,ЗаказНаПроизводство_Key"
-    odata_filter = (
-        f"Начало ge datetime'{_fmt(period_start)}' "
-        f"and Окончание le datetime'{_fmt(period_end)}' "
-        f"and Окончание le datetime'{_fmt(current_dt)}'"
-    )
-    query = (
-        "$format=json"
-        f"&$select={quote(select, safe=',_')}"
-        f"&$filter={quote(odata_filter, safe='')}"
-    )
-    attempts = []
-    for entity in SCHEDULE_ENTITY_CANDIDATES:
-        rows, status, error = _odata_rows(session, entity, query, label=f"METD-M1/{entity}")
-        attempts.append({
-            "entity": entity,
-            "http_status": status,
-            "rows": len(rows),
-            "error": error,
-            "query": query,
-            "filter": odata_filter,
-        })
-        if status is not None and 200 <= status < 300:
-            return rows, {
-                "entity": entity,
-                "select": select,
-                "filter": odata_filter,
-                "query": query,
-                "attempts": attempts,
-            }
-    return [], {
-        "entity": None,
-        "select": select,
-        "filter": odata_filter,
-        "query": query,
-        "attempts": attempts,
-        "error": "Регистр сведений ГрафикЭтаповПроизводства2_2 не опубликован в OData под ожидаемым именем.",
-    }
-
-
-def _stage_key(row: dict) -> str:
-    return str(row.get("Этап") or "").strip()
-
-
-def _load_stage_docs(session: requests.Session, stage_keys: set[str]) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    keys = sorted(key for key in stage_keys if key and key != EMPTY_GUID)
-    select = "Ref_Key,Number,Date,Подразделение_Key,ФактическоеОкончаниеЭтапа,ФактическоеНачалоЭтапа"
-    for i in range(0, len(keys), 25):
-        batch = keys[i:i + 25]
-        flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in batch)
-        query = (
-            "$format=json"
-            f"&$select={quote(select, safe=',_')}"
-            f"&$filter={quote(flt, safe='')}"
-        )
-        rows, _status, _error = _odata_rows(session, STAGE_DOC_ENTITY, query, label="METD-M1/stages")
-        for row in rows:
-            key = str(row.get("Ref_Key") or "")
-            if key:
-                out[key] = row
-    return out
-
-
-def _load_production_orders(session: requests.Session, order_keys: set[str]) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    keys = sorted(key for key in order_keys if key and key != EMPTY_GUID)
-    select = "Ref_Key,Number,Date,ТД_ОпросныйЛист"
-    for i in range(0, len(keys), 25):
-        batch = keys[i:i + 25]
-        flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in batch)
-        query = (
-            "$format=json"
-            f"&$select={quote(select, safe=',_')}"
-            f"&$filter={quote(flt, safe='')}"
-        )
-        rows, _status, _error = _odata_rows(
-            session,
-            "Document_ЗаказНаПроизводство2_2",
-            query,
-            label="METD-M1/production-orders",
-        )
-        for row in rows:
-            key = str(row.get("Ref_Key") or "")
-            if key:
-                out[key] = row
-    return out
-
-
-def _survey_doc_title(entity: str, row: dict) -> str:
-    number = str(row.get("Number") or "").strip()
-    doc_date = _fmt_ru_date(row.get("Date"))
-    label = SURVEY_DOC_LABELS.get(entity, entity.replace("Document_", ""))
-    title = label
-    if number:
-        title = f"{title} №{number}"
-    if doc_date:
-        title = f"{title} от {doc_date}"
-    return title
-
-
-def _load_survey_titles(session: requests.Session, survey_keys: set[str]) -> dict[str, str]:
+def _load_survey_titles(cur, survey_refs: list[bytes]) -> dict[str, str]:
     out: dict[str, str] = {}
-    keys = sorted(key for key in survey_keys if key and key != EMPTY_GUID)
-    if not keys:
+    pending = [ref for ref in survey_refs if ref and ref != EMPTY16]
+    if not pending:
         return out
-
-    select = "Ref_Key,Number,Date"
-    for entity in SURVEY_DOC_TYPES:
-        missing = [key for key in keys if key not in out]
-        if not missing:
+    for table, label in SURVEY_TABLES:
+        still = [ref for ref in pending if _bin_to_guid(ref) not in out]
+        if not still:
             break
-        for i in range(0, len(missing), 25):
-            batch = missing[i:i + 25]
-            flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in batch)
-            query = (
-                "$format=json"
-                f"&$select={quote(select, safe=',_')}"
-                f"&$filter={quote(flt, safe='')}"
+        still_ph = ",".join("?" for _ in still)
+        try:
+            cur.execute(
+                f"""
+                SELECT _IDRRef, _Number, _Date_Time
+                FROM {table} WITH (NOLOCK)
+                WHERE _IDRRef IN ({still_ph})
+                """,
+                still,
             )
-            rows, status, _error = _odata_rows(session, entity, query, label=f"METD-M1/survey/{entity}")
-            if status is None or not (200 <= status < 300):
+        except Exception:
+            logger.exception("METD-M1: не удалось прочитать %s", table)
+            continue
+        for ref, number, doc_date in cur.fetchall():
+            key = _bin_to_guid(ref)
+            if not key:
                 continue
-            for row in rows:
-                key = str(row.get("Ref_Key") or "").strip()
-                if key:
-                    out[key] = _survey_doc_title(entity, row)
+            title = label
+            num = _clean_number(number)
+            if num:
+                title = f"{title} №{num}"
+            ru_date = _fmt_ru_date(_from_sql_dt(doc_date))
+            if ru_date:
+                title = f"{title} от {ru_date}"
+            out[key] = title
     return out
 
 
-def _month_row(year: int, month: int) -> dict:
+def _month_row(year: int, month: int, cur) -> dict:
     period_start, period_end = _month_bounds(year, month)
-    current_dt = datetime.now()
+    current_dt = datetime.now().replace(microsecond=0)
     evaluation_dt = min(current_dt, period_end)
-    session = requests.Session()
-    session.auth = AUTH
+    department = _resolve_department(cur)
 
-    department = _resolve_department(session)
-    schedule_rows, query_protocol = _load_schedule_rows(session, period_start, period_end, evaluation_dt)
-    unique_schedule: dict[str, dict] = {}
-    population_rows: list[tuple[str, dict]] = []
-    for row in schedule_rows:
-        key = _stage_key(row)
-        if not key or key == EMPTY_GUID:
-            continue
-        population_rows.append((key, row))
-        if key not in unique_schedule:
-            unique_schedule[key] = row
-
-    stages = _load_stage_docs(session, set(unique_schedule.keys())) if unique_schedule else {}
-    production_order_keys = {
-        str(row.get("ЗаказНаПроизводство_Key") or "").strip()
-        for row in schedule_rows
-        if str(row.get("ЗаказНаПроизводство_Key") or "").strip()
-        and str(row.get("ЗаказНаПроизводство_Key") or "").strip() != EMPTY_GUID
-    }
-    production_orders = (
-        _load_production_orders(session, production_order_keys)
-        if production_order_keys
-        else {}
+    cur.execute(
+        f"""
+        SELECT
+            s.{COL_STAGE_REF} AS stage_ref,
+            s.{COL_PLAN_START} AS plan_start,
+            s.{COL_PLAN_END} AS plan_end,
+            s.{COL_ORDER_REF} AS order_ref,
+            st._Number AS stage_number,
+            st.{COL_FACT_END} AS fact_end,
+            ord.{COL_SURVEY_REF} AS survey_ref
+        FROM {SCHEDULE_TABLE} s WITH (NOLOCK)
+        INNER JOIN {STAGE_TABLE} st WITH (NOLOCK)
+            ON st._IDRRef = s.{COL_STAGE_REF}
+        LEFT JOIN {ORDER_TABLE} ord WITH (NOLOCK)
+            ON ord._IDRRef = s.{COL_ORDER_REF}
+        WHERE s.{COL_PLAN_START} >= ?
+          AND s.{COL_PLAN_END} <= ?
+          AND s.{COL_PLAN_END} <= ?
+          AND st.{COL_STAGE_DEPT} = ?
+          AND s.{COL_STAGE_REF} <> ?
+        """,
+        _to_sql_dt(period_start),
+        _to_sql_dt(period_end),
+        _to_sql_dt(evaluation_dt),
+        uuid_to_1c_bytes(DEPARTMENT_KEY),
+        EMPTY16,
     )
-    survey_keys_for_rows: set[str] = set()
+    rows = cur.fetchall()
+    survey_refs: list[bytes] = []
     on_time = 0
     late = 0
-    skipped_wrong_department = 0
     details: list[dict] = []
     stage_rows: list[dict] = []
-    for key, schedule in population_rows:
-        stage = stages.get(key) or {}
-        if str(stage.get("Подразделение_Key") or "").strip() != DEPARTMENT_KEY:
-            skipped_wrong_department += 1
-            continue
-        plan_end = _dt(schedule.get("Окончание"))
-        fact_end = _dt(stage.get("ФактическоеОкончаниеЭтапа"))
+    for stage_ref, plan_start_raw, plan_end_raw, order_ref, stage_number, fact_end_raw, survey_ref in rows:
+        plan_start = _from_sql_dt(plan_start_raw)
+        plan_end = _from_sql_dt(plan_end_raw)
+        fact_end = _from_sql_dt(fact_end_raw)
         is_late = _late_by_calendar_day(plan_end, fact_end, evaluation_dt)
         if is_late:
             late += 1
         else:
             on_time += 1
-        order_key = str(schedule.get("ЗаказНаПроизводство_Key") or "").strip()
-        production_order = production_orders.get(order_key) or {}
-        survey_key = str(production_order.get("ТД_ОпросныйЛист") or "").strip()
-        if survey_key and survey_key != EMPTY_GUID:
-            survey_keys_for_rows.add(survey_key)
+        stage_key = _bin_to_guid(stage_ref)
+        order_key = _bin_to_guid(order_ref)
+        survey_key = _bin_to_guid(survey_ref)
+        if survey_ref and bytes(survey_ref) != EMPTY16:
+            survey_refs.append(bytes(survey_ref))
         stage_rows.append({
-            "Этап": stage.get("Number") or key,
-            "Начало": _fmt_ru_date(schedule.get("Начало")),
-            "Окончание": _fmt_ru_date(schedule.get("Окончание")),
-            "ЭтапФактическоеОкончание": _fmt_ru_date(stage.get("ФактическоеОкончаниеЭтапа")),
-            "ЗаказНаПроизводствоТД_ОпросныйЛист": (
-                survey_key if survey_key and survey_key != EMPTY_GUID else ""
-            ),
-            "stage_key": key,
+            "Этап": _clean_number(stage_number) or stage_key,
+            "Начало": _fmt_ru_date(plan_start),
+            "Окончание": _fmt_ru_date(plan_end),
+            "ЭтапФактическоеОкончание": _fmt_ru_date(fact_end),
+            "ЗаказНаПроизводствоТД_ОпросныйЛист": survey_key,
+            "stage_key": stage_key,
             "production_order_key": order_key,
-            "survey_key": survey_key if survey_key != EMPTY_GUID else "",
+            "survey_key": survey_key,
             "late": is_late,
         })
         details.append({
-            "stage_key": key,
-            "stage_number": stage.get("Number"),
-            "plan_start": _fmt_ru_date(schedule.get("Начало")),
-            "plan_end": _fmt_ru_date(schedule.get("Окончание")),
-            "fact_end": _fmt_ru_date(stage.get("ФактическоеОкончаниеЭтапа")),
+            "stage_key": stage_key,
+            "stage_number": _clean_number(stage_number),
+            "plan_start": _fmt_ru_date(plan_start),
+            "plan_end": _fmt_ru_date(plan_end),
+            "fact_end": _fmt_ru_date(fact_end),
             "late": is_late,
             "production_order_key": order_key,
         })
 
-    survey_titles = _load_survey_titles(session, survey_keys_for_rows)
+    survey_titles = _load_survey_titles(cur, survey_refs)
     for row in stage_rows:
         survey_key = row.get("survey_key") or ""
         if survey_key:
@@ -441,20 +326,26 @@ def _month_row(year: int, month: int) -> dict:
         "period_end": _fmt(period_end),
         "current_date": _fmt(evaluation_dt),
         "debug": {
-            "source_register": "InformationRegister_ГрафикЭтаповПроизводства2_2",
-            "stage_document": STAGE_DOC_ENTITY,
+            "source_register": SCHEDULE_TABLE,
+            "stage_document": STAGE_TABLE,
             "department": department,
-            "schedule_rows_loaded": len(schedule_rows),
-            "unique_stage_refs_from_schedule": len(unique_schedule),
-            "population_schedule_rows": len(population_rows),
-            "stage_docs_loaded": len(stages),
-            "production_orders_loaded": len(production_orders),
+            "schedule_rows_loaded": len(rows),
+            "unique_stage_refs_from_schedule": len({row[0] for row in rows}),
+            "population_schedule_rows": len(rows),
+            "stage_docs_loaded": len({row[0] for row in rows}),
+            "production_orders_loaded": len({row[3] for row in rows if row[3] and bytes(row[3]) != EMPTY16}),
             "survey_titles_loaded": len(survey_titles),
-            "skipped_wrong_department": skipped_wrong_department,
-            "query_protocol": query_protocol,
+            "skipped_wrong_department": 0,
+            "query_protocol": {
+                "entity": SCHEDULE_TABLE,
+                "filter": (
+                    f"{COL_PLAN_START} >= period_start and {COL_PLAN_END} <= period_end "
+                    f"and {COL_PLAN_END} <= evaluation_dt and {STAGE_TABLE}.{COL_STAGE_DEPT} = МС"
+                ),
+            },
             "details_sample": details[:100],
             "formula": (
-                "total = строки регистра с непустым Этап; late = дата(ФактическоеОкончаниеЭтапа) > дата(Окончание) "
+                "total = строки графика этапов МС с непустым Этап; late = дата(ФактическоеОкончаниеЭтапа) > дата(Окончание) "
                 "или факт пустой и дата(Окончание) < дата(ТекущаяДата); on_time = остальные"
             ),
         },
@@ -546,7 +437,9 @@ def get_metrolog_production_plan_monthly(year: int, month: int) -> dict:
             stale = dict(stale)
             stale["cache_refresh_status"] = "running"
             return ensure_stage_rows_in_payload(stale) or stale
-    months = [_month_row(ref_y, m) for m in range(1, ref_m + 1)]
+    with connect_ctx() as cn:
+        cur = cn.cursor()
+        months = [_month_row(ref_y, m, cur) for m in range(1, ref_m + 1)]
     last = months[-1] if months else None
     payload = {
         "data_granularity": "monthly",
@@ -582,7 +475,7 @@ def get_metrolog_late_stage_table(year: int, month: int) -> dict:
         "name": f"Просроченные этапы метрологической службы за {MONTH_NAMES.get(int(month), month)} {int(year)}",
         "periodicity": "ежемесячно",
         "description": (
-            "Строки регистра ГрафикЭтаповПроизводства2_2, где этап относится к метрологической службе. "
+            "Строки регистра ГрафикЭтаповПроизводства2_2 из erp_pm, где этап относится к метрологической службе. "
             "День-в-день не считается просрочкой: сравниваются календарные даты, а не время."
         ),
         "period": {

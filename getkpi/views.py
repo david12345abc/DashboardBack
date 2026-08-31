@@ -733,6 +733,26 @@ def _rag_higher_better(pct: float | None) -> str:
     return 'red'
 
 
+def _metd_m1_rag(plan, fact, pct=None) -> str:
+    """METD-M1: план = факт → зелёный; иначе RAG по % выполнения."""
+    try:
+        plan_n = float(plan) if plan is not None else None
+        fact_n = float(fact) if fact is not None else None
+    except (TypeError, ValueError):
+        plan_n = None
+        fact_n = None
+    if plan_n is not None and fact_n is not None and abs(plan_n - fact_n) < 1e-9:
+        return 'green'
+    if pct is not None:
+        try:
+            return _rag_higher_better(float(pct))
+        except (TypeError, ValueError):
+            pass
+    if plan_n and fact_n is not None:
+        return _rag_higher_better((fact_n / plan_n) * 100)
+    return 'unknown'
+
+
 def _rag_lower_turnover(fact_pct: float | None) -> str:
     """Fallback без плана: абсолютные пороги по факту текучести (%)."""
     if fact_pct is None:
@@ -1123,6 +1143,14 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         if pct is not None:
             pct = float(pct)
         color = _rag_higher_better(pct)
+    elif kid in {'METD-M1', 'МЕТ-M1'}:
+        ref_row = entry.get('last_full_month_row') or {}
+        pct = ref_row.get('kpi_pct')
+        if pct is None:
+            pct = ytd.get('kpi_pct')
+        if pct is not None:
+            pct = float(pct)
+        color = _metd_m1_rag(ref_row.get('plan'), ref_row.get('fact'), pct)
     elif (logistics_color := logistics_views.tile_color(kid, entry)) is not None:
         pct, color = logistics_color
     elif _is_turnover_style_tile(kpi):
@@ -3227,6 +3255,11 @@ def _build_universal_payload(
                 lm = calc_metrolog_production_plan.hydrate_stage_rows_in_month_row(lm) or lm
             tile['plan'] = lm.get('plan')
             tile['fact'] = lm.get('fact')
+            if _kid_tile in {'METD-M1', 'МЕТ-M1'}:
+                if lm.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = lm.get('kpi_pct')
+                tile['color'] = _metd_m1_rag(lm.get('plan'), lm.get('fact'), lm.get('kpi_pct'))
+                tile['status_color'] = tile['color']
             if 'has_data' in lm:
                 tile['has_data'] = lm.get('has_data')
             if 'plan_by_dept' in lm:
@@ -3419,6 +3452,7 @@ def _build_universal_payload(
             'PD-M3.B1', 'PD-M3.B2', 'PD-M3.F1', 'PD-M3.F2',
             'PD-M3.1', 'PD-M3.2', 'METD-M3.B', 'METD-M3.F',
             'LOG-M2',
+            'LOG-M6',
         }:
             tile['unit'] = 'руб.'
         elif (

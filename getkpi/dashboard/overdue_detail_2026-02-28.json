@@ -1,6 +1,6 @@
 {
   "na_datu": "2026-02-28",
-  "cache_date": "2026-08-19",
+  "cache_date": "2026-08-31",
   "dept_alias_source": "debitorka_department_aliases_v3",
   "overdue_detail_version": "overdue_detail_sql_erp_pm_v1",
   "total_overdue": 224534902.44,
@@ -117,7 +117,7 @@
       "order_num": "НП00-001787",
       "order_date": "2025-10-28",
       "amount": 26772241.29,
-      "dz_total": 33156399.0,
+      "dz_total": 33189506.56,
       "days_overdue": 6,
       "installments_count": 1,
       "installments": [

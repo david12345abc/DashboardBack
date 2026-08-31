@@ -1,7 +1,9 @@
 {
   "year": 2026,
   "ref_month": 3,
-  "source": "psd_vipusk_fact_movement_products_v4",
+  "cache_date": "2026-08-21",
+  "cache_version": 5,
+  "source": "psd_vipusk_fact_movement_products_v5",
   "months": [
     {
       "year": 2026,

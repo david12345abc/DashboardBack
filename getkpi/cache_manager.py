@@ -467,6 +467,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from . import (
         calc_debitorka,
         calc_logistics_price_deviation, calc_logistics_supplier_share, calc_logistics_tmc_on_time,
+        calc_logistics_warehouse_shipments,
         calc_dz_limits, calc_komdir_active_dealers, calc_ks_razvitie,
         calc_otif_vypusk_zam_proizvodstva,
         calc_psd_vipusk_plan,
@@ -750,6 +751,14 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          calc_logistics_supplier_share.cache_path(y, m),
          lambda: calc_logistics_supplier_share.get_logistics_supplier_share_monthly(year=y, month=m)),
 
+        (f'log_m6_npo_shipment_{y}_{m}',
+         calc_logistics_warehouse_shipments.cache_path_npo(y, m),
+         lambda: calc_logistics_warehouse_shipments.get_logistics_npo_shipment_monthly(year=y, month=m)),
+
+        (f'log_m7_almaz_shipment_{y}_{m}',
+         calc_logistics_warehouse_shipments.cache_path_almaz(y, m),
+         lambda: calc_logistics_warehouse_shipments.get_logistics_almaz_shipment_monthly(year=y, month=m)),
+
         (f'ks_razvitie_{y}',
          calc_ks_razvitie.cache_path(y),
          lambda yy=y: calc_ks_razvitie.get_ks_razvitie_plans(year=yy)),
@@ -975,6 +984,8 @@ def _run_warm_tasks(tasks: list[tuple[str, Path, object]], *, force: bool = Fals
                 finally:
                     _refresh_local.force_compute = previous
                 logger.info("cache_manager: [%s] done", key)
+            except SystemExit:
+                logger.exception("cache_manager: [%s] aborted via SystemExit", key)
             except Exception:
                 logger.exception("cache_manager: [%s] error", key)
 
