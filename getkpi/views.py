@@ -1319,6 +1319,10 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
             calc_debitorka.overdue_detail_cache_path(ref_y, ref_m),
             *comdir_cache_stamp_paths('KD-M5', ref_y, ref_m),
         ]
+    elif kid == 'LOG-M6':
+        from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
+
+        cache_files = comdir_cache_stamp_paths('KD-M2', ref_y, ref_m)
     elif kid == 'IT-M3':
         cache_files = (
             _autoit_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
@@ -1438,6 +1442,13 @@ def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int 
     elif kid == 'KD-M2':
         paths.append(cd / f'otgruzki_monthly_{ref_y}_{ref_m:02d}.json')
         paths.append(cd / f'plans_monthly_{ref_y}_{ref_m:02d}.json')
+        from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
+
+        paths.extend(comdir_cache_stamp_paths('KD-M2', ref_y, ref_m))
+    elif kid == 'LOG-M6':
+        from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
+
+        paths.extend(comdir_cache_stamp_paths('KD-M2', ref_y, ref_m))
     elif kid == 'KD-M3':
         paths.append(cd / f'dogovory_monthly_{ref_y}_{ref_m:02d}.json')
         paths.append(cd / f'plans_monthly_{ref_y}_{ref_m:02d}.json')

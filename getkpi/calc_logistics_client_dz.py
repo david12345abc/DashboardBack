@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Клиентская ДЗ НПО+АЛМАЗ для дашборда начальника логистики.
+"""ДЗ НПО+АЛМАЗ для дашборда начальника логистики.
 
-Источник: erp_pm SQL, регистр РасчетыСКлиентамиПоСрокам (_AccumRg107662).
+Источник: erp_pm SQL, ведомость расчётов с поставщиками
+(AccumulationRegister_РасчетыСПоставщикамиПоСрокам → _AccumRg107721).
 
-Просроченной для этой логистической плитки считаем стабильную ДЗ:
-остаток на начало 60-дневного окна равен остатку на дату среза, а движений
-по объекту расчетов за окно нет.
+ДЗ = ПредоплатаРегл (авансы, выданные поставщикам).
+Внутренние связки НПО ↔ Алмаз в обе стороны не входят.
+
+Просроченной считаем стабильную ДЗ: остаток на начало 60-дневного окна
+равен остатку на дату среза, а движений по объекту за окно нет.
 """
 from __future__ import annotations
 
@@ -21,14 +24,14 @@ if str(_ROOT) not in sys.path:
 from comdir.common import connect_ctx, to_1c_dt, uuid_to_1c_bytes
 from getkpi import cache_manager
 
-ACCUM = "_AccumRg107662"
+ACCUM = "_AccumRg107721"
 OBJ_TABLE = "_Reference134945"
 PARTNER_TABLE = "_Reference328"
 ORG_TABLE = "_Reference288"
 
-OBJ_COL = "_Fld140445RRef"
-PLAN_COL = "_Fld107667"
-DOLG_COL = "_Fld107672"
+OBJ_COL = "_Fld140466RRef"
+PLAN_COL = "_Fld107726"
+AMOUNT_COL = "_Fld107729"  # ПредоплатаРегл
 OBJ_ORG_COL = "_Fld138178RRef"
 OBJ_PARTNER_COL = "_Fld138177RRef"
 OBJ_NUMBER_COL = "_Fld138170"
@@ -39,14 +42,23 @@ ORG_ALMAZ = "fbca2146-6cfd-11e7-812d-001e67112509"
 ORG_KEYS = (ORG_NPO, ORG_ALMAZ)
 ORG_BINS = tuple(uuid_to_1c_bytes(g) for g in ORG_KEYS)
 
-SOURCE_TAG = "logistics_client_dz_sql_v1"
+ALMAZ_PARTNER_NAMES = (
+    "АЛМАЗ ООО",
+    "АЛМАЗ ООО (рабочий)",
+)
+NPO_PARTNER_NAMES = (
+    "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО",
+    "Турбулентность-ДОН ООО НПО",
+)
+
+SOURCE_TAG = "logistics_supplier_dz_sql_v1"
 TOLERANCE = 0.01
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 
 
 def _cache_path(na_datu: date) -> Path:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return CACHE_DIR / f"logistics_client_dz_{na_datu.isoformat()}.json"
+    return CACHE_DIR / f"logistics_supplier_dz_{na_datu.isoformat()}.json"
 
 
 def cache_path(na_datu: date) -> Path:
@@ -98,6 +110,16 @@ def _window_start(na_datu: date) -> date:
     return na_datu - timedelta(days=60)
 
 
+def _is_internal_npo_almaz_pair(org_name: str, partner_name: str) -> bool:
+    org = (org_name or "").strip()
+    partner = (partner_name or "").strip()
+    if org == "ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО" and partner in ALMAZ_PARTNER_NAMES:
+        return True
+    if org == "АЛМАЗ ООО" and partner in NPO_PARTNER_NAMES:
+        return True
+    return False
+
+
 def _fetch_rows(na_datu: date) -> list[dict]:
     window_start = _window_start(na_datu)
     p_open = to_1c_dt(window_start)
@@ -111,7 +133,7 @@ def _fetch_rows(na_datu: date) -> list[dict]:
             f"""
             WITH opening AS (
               SELECT s.[{OBJ_COL}] AS obj,
-                     SUM(CASE WHEN s._RecordKind = 1 THEN -s.[{DOLG_COL}] ELSE s.[{DOLG_COL}] END) AS balance
+                     SUM(CASE WHEN s._RecordKind = 1 THEN -s.[{AMOUNT_COL}] ELSE s.[{AMOUNT_COL}] END) AS balance
               FROM [{ACCUM}] s WITH (NOLOCK)
               INNER JOIN [{OBJ_TABLE}] o WITH (NOLOCK) ON o._IDRRef = s.[{OBJ_COL}]
               WHERE s._Period < ?
@@ -121,7 +143,7 @@ def _fetch_rows(na_datu: date) -> list[dict]:
             ),
             closing AS (
               SELECT s.[{OBJ_COL}] AS obj,
-                     SUM(CASE WHEN s._RecordKind = 1 THEN -s.[{DOLG_COL}] ELSE s.[{DOLG_COL}] END) AS balance
+                     SUM(CASE WHEN s._RecordKind = 1 THEN -s.[{AMOUNT_COL}] ELSE s.[{AMOUNT_COL}] END) AS balance
               FROM [{ACCUM}] s WITH (NOLOCK)
               INNER JOIN [{OBJ_TABLE}] o WITH (NOLOCK) ON o._IDRRef = s.[{OBJ_COL}]
               WHERE s._Period < ?
@@ -131,7 +153,7 @@ def _fetch_rows(na_datu: date) -> list[dict]:
             ),
             movement AS (
               SELECT s.[{OBJ_COL}] AS obj,
-                     SUM(ABS(s.[{DOLG_COL}])) AS turnover_abs,
+                     SUM(ABS(s.[{AMOUNT_COL}])) AS turnover_abs,
                      COUNT_BIG(*) AS records,
                      MIN(s._Period) AS first_period,
                      MAX(s._Period) AS last_period
@@ -140,7 +162,7 @@ def _fetch_rows(na_datu: date) -> list[dict]:
               WHERE s._Period >= ?
                 AND s._Period < ?
                 AND s._Active = 0x01
-                AND ABS(s.[{DOLG_COL}]) > ?
+                AND ABS(s.[{AMOUNT_COL}]) > ?
                 AND o.[{OBJ_ORG_COL}] IN ({org_placeholders})
               GROUP BY s.[{OBJ_COL}]
             )
@@ -206,6 +228,8 @@ def calculate(na_datu: date | None = None, *, use_cache: bool = True) -> dict:
         is_overdue = closing_balance > TOLERANCE and balance_unchanged and no_movements
         if closing_balance <= TOLERANCE:
             continue
+        if _is_internal_npo_almaz_pair(item.get("org_name") or "", item.get("partner_name") or ""):
+            continue
 
         total_dz += closing_balance
         if is_overdue:
@@ -257,10 +281,11 @@ def calculate(na_datu: date | None = None, *, use_cache: bool = True) -> dict:
             "positive_objects": len(rows),
             "overdue_objects": sum(1 for row in rows if row.get("is_overdue")),
             "rules": [
-                "closing balance ДолгРегл > 0 на дату среза",
+                "closing balance ПредоплатаРегл > 0 на дату среза",
                 "организация объекта расчетов НПО или АЛМАЗ",
+                "исключены связки НПО↔АЛМАЗ ООО / АЛМАЗ ООО (рабочий) в обе стороны",
                 "просрочка = остаток на начало 60-дневного окна равен остатку на дату среза",
-                "просрочка = движений ДолгРегл по объекту за 60-дневное окно нет",
+                "просрочка = движений ПредоплатаРегл по объекту за 60-дневное окно нет",
             ],
         },
         "debug": {
@@ -276,7 +301,8 @@ def calculate(na_datu: date | None = None, *, use_cache: bool = True) -> dict:
                 "number": OBJ_NUMBER_COL,
                 "date": OBJ_DATE_COL,
             },
-            "amount_field": DOLG_COL,
+            "amount_field": AMOUNT_COL,
+            "amount_meaning": "ПредоплатаРегл",
         },
     }
     _save_json(cache_file, payload)

@@ -751,10 +751,6 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          calc_logistics_supplier_share.cache_path(y, m),
          lambda: calc_logistics_supplier_share.get_logistics_supplier_share_monthly(year=y, month=m)),
 
-        (f'log_m6_npo_shipment_{y}_{m}',
-         calc_logistics_warehouse_shipments.cache_path_npo(y, m),
-         lambda: calc_logistics_warehouse_shipments.get_logistics_npo_shipment_monthly(year=y, month=m)),
-
         (f'log_m7_almaz_shipment_{y}_{m}',
          calc_logistics_warehouse_shipments.cache_path_almaz(y, m),
          lambda: calc_logistics_warehouse_shipments.get_logistics_almaz_shipment_monthly(year=y, month=m)),

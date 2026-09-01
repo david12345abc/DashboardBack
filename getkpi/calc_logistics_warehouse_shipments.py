@@ -8,16 +8,10 @@ from typing import Any, Callable
 
 from .cache_manager import CACHE_DIR
 from .calc_fot_management import MONTH_RU, _normalize_period
-from .logistics_warehouse_sql import calculate_almaz_month, calculate_npo_month
+from .logistics_warehouse_sql import calculate_almaz_month
 from sql_connection import SqlConnection
 
-SOURCE_TAG_NPO = "logistics_npo_wh_ship_v1_vp_mp"
 SOURCE_TAG_ALMAZ = "logistics_almaz_wh_ship_v1_qty"
-
-
-def cache_path_npo(year: int, ref_month: int) -> Path:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return CACHE_DIR / f"logistics_npo_shipment_{year}_{ref_month:02d}.json"
 
 
 def cache_path_almaz(year: int, ref_month: int) -> Path:
@@ -160,15 +154,29 @@ def _build_payload(
 
 
 def get_logistics_npo_shipment_monthly(year: int | None = None, month: int | None = None) -> dict:
-    return _build_payload(
-        year=year,
-        month=month,
-        source=SOURCE_TAG_NPO,
-        path_fn=cache_path_npo,
-        month_fn=calculate_npo_month,
-        unit="руб.",
-        has_plan=True,
-    )
+    """LOG-M6 больше не использует этот расчёт: плитка берёт get_otgruzki_ytd (KD-M2)."""
+    from comdir.ytd import get_otgruzki_ytd
+    from .komdir_dashboard import _build_plan_fact_tile
+
+    ref_year, ref_month = _normalize_period(year, month)
+    otg = get_otgruzki_ytd(year=ref_year, month=ref_month)
+    raw = otg.get("months") or []
+    plans_by_month = {row["month"]: (row.get("plan") or 0) for row in raw}
+    expected_by_month = {row["month"]: (row.get("expected") or 0) for row in raw}
+    data = _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_year, ref_month)
+    months = data.get("monthly_data") or []
+    return {
+        "cache_date": date.today().isoformat(),
+        "source": "comdir_kd_m2_ytd",
+        "year": ref_year,
+        "ref_month": ref_month,
+        "months": months,
+        "quarterly_data": [],
+        "yearly_data": [],
+        "last_full_month_row": data.get("last_full_month_row"),
+        "ytd": data.get("ytd") or {},
+        "kpi_period": data.get("kpi_period"),
+    }
 
 
 def get_logistics_almaz_shipment_monthly(year: int | None = None, month: int | None = None) -> dict:

@@ -78,6 +78,17 @@ def normalize_kpi_definitions(department: str, rows: list[dict]) -> list[dict]:
             row["source"] = "1С ERP / Регистр сведений ТД_ОценкаПоставщиков"
             row["monthly_target"] = row.get("monthly_target") or row.get("quarterly_target") or "≥80%"
             row["quarterly_target"] = None
+        if str(row.get("kpi_id") or "") == "LOG-M5":
+            row["source"] = (
+                "MSSQL erp_pm: ведомость расчётов с поставщиками "
+                "(РасчетыСПоставщикамиПоСрокам), без связок НПО↔Алмаз"
+            )
+        if str(row.get("kpi_id") or "") == "LOG-M6":
+            row["formula"] = "Факт отгрузок / План МП по отгрузкам × 100%"
+            row["source"] = "MSSQL erp_pm: те же отгрузки, что KD-M2"
+            row["green_threshold"] = "≥100%"
+            row["yellow_threshold"] = "90–99,9%"
+            row["red_threshold"] = "<90%"
     return normalized_rows
 
 
@@ -204,6 +215,13 @@ def tile_color(kpi_id: str, entry: dict) -> tuple[float | None, str] | None:
         pct = ref_row.get("kpi_pct")
         if pct is not None:
             pct = float(pct)
+        try:
+            plan_value = float(ref_row.get("plan"))
+            fact_value = float(ref_row.get("fact"))
+        except (TypeError, ValueError):
+            return pct, _rag_higher_better(pct)
+        if abs(plan_value - fact_value) < 1e-9 or fact_value > plan_value:
+            return pct, "green"
         return pct, _rag_higher_better(pct)
 
     return None
@@ -354,17 +372,25 @@ def build_kpi_entry(kpi_id: str, entry: dict, *, year: int | None = None, month:
         return entry
 
     if kpi_id == "LOG-M6":
+        from comdir.ytd import get_otgruzki_ytd
+        from .komdir_dashboard import _build_plan_fact_tile, _series_through_month
+
         ref_y, ref_m = _ref_period(year, month)
-        data = cache_manager.locked_call(
-            f"log_m6_npo_shipment_{ref_y}_{ref_m}",
-            calc_logistics_warehouse_shipments.get_logistics_npo_shipment_monthly,
+        series_m = _series_through_month(date.today(), ref_y, ref_m)
+        otg = cache_manager.locked_call(
+            f"comdir_otgruzki_{ref_y}_{series_m}",
+            get_otgruzki_ytd,
             year=ref_y,
-            month=ref_m,
+            month=series_m,
         )
+        raw = otg.get("months") or []
+        plans_by_month = {row["month"]: (row.get("plan") or 0) for row in raw}
+        expected_by_month = {row["month"]: (row.get("expected") or 0) for row in raw}
+        data = _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
         entry["data_granularity"] = "monthly"
-        entry["monthly_data"] = data.get("months") or []
-        entry["quarterly_data"] = data.get("quarterly_data") or []
-        entry["yearly_data"] = data.get("yearly_data") or []
+        entry["monthly_data"] = data.get("monthly_data") or []
+        entry["quarterly_data"] = []
+        entry["yearly_data"] = []
         entry["last_full_month_row"] = data.get("last_full_month_row")
         entry["ytd"] = data.get("ytd") or {}
         entry["kpi_period"] = data.get("kpi_period")
@@ -512,6 +538,8 @@ def apply_tile_overrides(kpi: dict, tile: dict) -> None:
     elif kpi_id == "LOG-M6":
         tile["unit"] = "руб."
         tile["units"] = "руб."
+        tile["pct_higher_is_better"] = True
+        tile["rag_direction"] = "higher_better"
     elif kpi_id == "LOG-M7":
         tile["unit"] = "шт."
         tile["units"] = "шт."
@@ -557,11 +585,18 @@ def apply_tile_value_overrides(kpi: dict, tile: dict, entry: dict) -> None:
         row = entry.get("last_full_month_row") or {}
         tile["plan"] = row.get("plan")
         tile["fact"] = row.get("fact")
+        tile["expected_plan"] = row.get("expected_plan")
         tile["kpi_pct"] = row.get("kpi_pct")
         tile["percent"] = row.get("kpi_pct")
         tile["unit"] = "руб."
         tile["units"] = "руб."
+        tile["pct_higher_is_better"] = True
+        tile["rag_direction"] = "higher_better"
         tile["has_data"] = bool(row.get("has_data") or row.get("plan") is not None)
+        colored = tile_color("LOG-M6", entry)
+        if colored is not None:
+            tile["color"] = colored[1]
+            tile["status_color"] = colored[1]
         return
 
     if kpi.get("kpi_id") == "LOG-M7":
