@@ -205,21 +205,34 @@ def _months_pct_as_plan_fact(pct_dict, months):
     return rows
 
 
+def _ytd_month_rows(payload: dict | None) -> list[dict]:
+    """Достать помесячные строки из ответа get_*_ytd или из файлового штампа."""
+    data = cache_manager.unwrap_stamp_payload(payload) if payload else None
+    if not isinstance(data, dict):
+        return []
+    months = data.get("months")
+    return months if isinstance(months, list) else []
+
+
 def _build_fnd_t1_revenue_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T1 «Выручка» = деньги план/факт из comdir (те же, что KD-M1 у комдира)."""
     if not months:
         return []
     max_m = max(months)
 
-    dengi_payload = cache_manager.locked_call(
-        f"comdir_dengi_{ref_y}_{max_m}",
-        get_dengi_ytd,
-        year=ref_y, month=max_m, dept_guid=None,
-    )
+    # Как в коммерческом блоке ПСД: не отдавать «пустой» stale-штамп
+    # (обёртка без months) — иначе FND-T1 рисует «Нет данных из источника»,
+    # хотя KD-M1 / шапка «план денег» уже посчитаны.
+    with cache_manager.force_compute():
+        dengi_payload = cache_manager.locked_call(
+            f"comdir_dengi_{ref_y}_{max_m}",
+            get_dengi_ytd,
+            year=ref_y, month=max_m, dept_guid=None,
+        )
 
     plan_by_m: dict[int, float | None] = {}
     fact_by_m: dict[int, float | None] = {}
-    for row in dengi_payload.get("months", []) or []:
+    for row in _ytd_month_rows(dengi_payload):
         m = int(row.get("month") or 0)
         if 1 <= m <= 12:
             plan_by_m[m] = row.get("plan")
@@ -1485,7 +1498,7 @@ def _comdir_kd_plan_fact_tile(
         month=series_m,
         dept_guid=None,
     )
-    raw = ytd.get("months") or []
+    raw = _ytd_month_rows(ytd)
     plans_by_month = {r["month"]: (r.get("plan") or 0) for r in raw}
     expected_by_month = {r["month"]: (r.get("expected") or 0) for r in raw}
     tile = _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
@@ -2063,6 +2076,7 @@ def build_chairman_payload(
             "is_ytd_fallback": bool(display_row and display_row.get("is_ytd_fallback")),
             "plan_fact_period_label": display_period_label,
             "monthly_data": td.get("monthly_data"),
+            "last_full_month_row": dict(lm) if lm else None,
         }
 
         # FND-T3 «Соотношение ДЗ и КЗ» — прокидываем custom-поля

@@ -177,6 +177,25 @@ def is_cache_fresh(path: Path | str) -> bool:
     return (datetime.now().timestamp() - p.stat().st_mtime) < MAX_AGE_SECONDS
 
 
+def unwrap_stamp_payload(data: dict | None) -> dict | None:
+    """Файловый YTD-штамп ``{cache_source, payload}`` → внутренний payload.
+
+    ``get_*_ytd()`` всегда отдаёт развёрнутый объект с ``months``.
+    ``locked_call`` при stale-hit читает файл как есть — без разворота
+    плитки (FND-T1 и др.) видят пустой ``months`` и рисуют «Нет данных».
+    """
+    if not isinstance(data, dict):
+        return data
+    if data.get("months") is not None or data.get("monthly_data") is not None:
+        return data
+    inner = data.get("payload")
+    if isinstance(inner, dict) and (
+        data.get("cache_source") or data.get("cache_version") is not None
+    ):
+        return inner
+    return data
+
+
 def locked_call(key: str, fn, *args, **kwargs):
     """Выполнить fn под блокировкой key.
 
@@ -193,13 +212,13 @@ def locked_call(key: str, fn, *args, **kwargs):
             if lock.acquire(blocking=False):
                 lock.release()
                 _start_background_refresh(key, cache_path, fn, args, kwargs)
-            return stale
+            return unwrap_stamp_payload(stale)
 
     if not lock.acquire(blocking=False):
         if cache_path is not None:
             stale = _load_json_cache(cache_path)
             if stale is not None:
-                return stale
+                return unwrap_stamp_payload(stale)
         with lock:
             return fn(*args, **kwargs)
 
