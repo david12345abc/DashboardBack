@@ -91,10 +91,19 @@ def load_payload(
             raw = json.load(f)
     except (json.JSONDecodeError, OSError):
         return None
-    if raw.get("cache_source") != source_tag:
-        return None
-    if raw.get("cache_version") != version:
-        return None
+    raw_src = str(raw.get("cache_source") or "")
+    if raw_src != source_tag:
+        if not (perpetual and _same_source_family(raw_src, source_tag)):
+            return None
+    raw_ver = raw.get("cache_version")
+    if raw_ver != version:
+        if not (
+            perpetual
+            and isinstance(raw_ver, int)
+            and raw_ver < version
+            and _same_source_family(raw_src, source_tag)
+        ):
+            return None
     payload = raw.get("payload")
     if not isinstance(payload, dict):
         return None
@@ -114,14 +123,40 @@ def load_payload(
     return None
 
 
+_COMDIR_YTD_FAMILIES = (
+    "comdir_kd_m1_ytd",
+    "comdir_kd_m2_ytd",
+    "comdir_kd_m3_ytd",
+    "comdir_kd_m4_ytd",
+    "comdir_kd_m6_ytd",
+    "comdir_kd_m7_ytd",
+    "comdir_kd_m8_ytd",
+    "comdir_kd_m9_ytd",
+    "comdir_kd_m10_ytd",
+    "comdir_mrk06_share_ytd",
+)
+
+
 def _source_family(tag: str | None) -> str:
-    """comdir_kd_m2_ytd_sql_v5 → comdir_kd_m2_ytd_sql (для совместимости версий)."""
+    """Свести теги одной плитки к общему семейству.
+
+    ``comdir_kd_m2_ytd_sql_v5`` и ``comdir_kd_m2_ytd_odata_fact_sql_plan_odata_expected_v1``
+    — одна плитка. Иначе bump source_tag заставляет синхронно пересчитать
+    прошлый год (MRK-04) и коммерческий блок ПСД падает в timeout.
+    """
     s = str(tag or "").strip()
     if "_v" in s:
         head, tail = s.rsplit("_v", 1)
         if tail.isdigit():
-            return head
+            s = head
+    for prefix in _COMDIR_YTD_FAMILIES:
+        if s == prefix or s.startswith(prefix + "_"):
+            return prefix
     return s
+
+
+def _same_source_family(raw_tag: str | None, wanted_tag: str | None) -> bool:
+    return _source_family(raw_tag) == _source_family(wanted_tag)
 
 
 def load_stale_payload(
@@ -146,10 +181,7 @@ def load_stale_payload(
         return None
     raw_src = str(raw.get("cache_source") or "")
     if raw_src != source_tag:
-        if not (
-            allow_prior_version
-            and _source_family(raw_src) == _source_family(source_tag)
-        ):
+        if not (allow_prior_version and _same_source_family(raw_src, source_tag)):
             return None
     raw_ver = raw.get("cache_version")
     if raw_ver != version:

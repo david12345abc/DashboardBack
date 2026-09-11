@@ -24,7 +24,7 @@ calc_debitorka.py — Дебиторская и просроченная деб�
 """
 
 import requests, sys, time, json, os, functools, calendar, logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 from collections import defaultdict
@@ -58,9 +58,19 @@ DEPARTMENTS = {
 
 TOLERANCE = 0.01
 DEPT_ALIAS_SOURCE = "debitorka_department_aliases_v3"
+# Срез как в отчёте 1С «Задолженность клиентов по срокам»:
+# 6 коммерческих отделов + ликв. дилерские, без холдингов.
+KZ_SCOPE = "client_report_depts_no_holdings_v2"
+# р/с 40702810400000043118 (ГПБ). Авансы, которые РегистраторРасчетов
+# разносит на этот счёт в день отчёта, в выгрузке 1С «Задолженность
+# клиентов по срокам» на ту же дату не видны (Period при этом вчера 23:59:59).
+# Основной р/с 43114 в том же утреннем регламенте в отчёт попадает.
+KZ_REPORT_DAY_PREPAY_BANK_GUIDS = {
+    "1c831a6e-ae62-11ec-885a-ac1f6b05524d",
+}
 # Версия только для детализации просрочки: при смене инвалидируется overdue_detail,
 # не трогая помесячные снимки ДЗ (dept_alias_source).
-OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_sql_erp_pm_v1"
+OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_odata_v1"
 DEALER_SALES_DEPT_GUID = "7587c178-92f6-11f0-96f9-6cb31113810e"
 DEBITORKA_DEPT_ALIASES = {
     source: target
@@ -78,6 +88,45 @@ LIQUIDATED_DEPT_NAMES = {
 REGISTER = "AccumulationRegister_РасчетыСКлиентамиПоСрокам_RecordType"
 
 
+HOLDINGS_DEPT_GUIDS = {
+    "c6810cc3-cf32-11ef-95e8-6cb31113810e",
+    "ebd2d511-cf38-11ef-95e8-6cb31113810e",
+    "ad83f8bd-cf39-11ef-95e8-6cb31113810e",
+}
+HOLDINGS_DEPT_NAMES = {
+    "(ликв.) Отдел по работе с холдингами 1",
+    "(ликв.) Отдел по работе с холдингами 2",
+    "(ликв.) Отдел по работе с холдингами 3",
+}
+KEY_CLIENTS_DEPT_GUID = "639ec87b-67b6-11eb-8523-ac1f6b05524d"
+
+
+def _is_holdings_dept(guid: str = "", name: str = "") -> bool:
+    return guid.lower() in HOLDINGS_DEPT_GUIDS or name in HOLDINGS_DEPT_NAMES
+
+
+def apply_client_report_scope(snap: dict) -> dict:
+    """Убрать холдинги из снимка и пересчитать итоги (как отбор отчёта 1С)."""
+    by_dept = {
+        name: row
+        for name, row in (snap.get("by_dept") or {}).items()
+        if not _is_holdings_dept(name=name)
+    }
+    snap["by_dept"] = by_dept
+    snap["total_dz"] = round(sum(float((row or {}).get("dz") or 0) for row in by_dept.values()), 2)
+    snap["total_kz"] = round(
+        sum(max(0.0, float((row or {}).get("kz") or 0)) for row in by_dept.values()),
+        2,
+    )
+    snap["total_overdue"] = round(
+        sum(float((row or {}).get("overdue") or 0) for row in by_dept.values()),
+        2,
+    )
+    snap["by_dept_guid"] = by_dept_guid_from_names(by_dept)
+    snap["kz_scope"] = KZ_SCOPE
+    return snap
+
+
 def normalize_debitorka_dept_guid(dept_guid: str | None) -> str:
     """Для ДЗ не подтягиваем ликвидированные дилерские отделы в текущий ОДП."""
     if not dept_guid:
@@ -85,14 +134,133 @@ def normalize_debitorka_dept_guid(dept_guid: str | None) -> str:
     return DEBITORKA_DEPT_ALIASES.get(dept_guid, dept_guid)
 
 
+def by_dept_guid_from_names(by_dept: dict | None) -> dict:
+    """Срез по 6 коммерческим GUID: холдинги → ключевые, ликв. дилеры не в ОДП."""
+    name_to_guid = {name: guid for guid, name in DEPARTMENTS.items()}
+    acc = {
+        guid: {"dz": 0.0, "overdue": 0.0, "name": name}
+        for guid, name in DEPARTMENTS.items()
+    }
+    for name, row in (by_dept or {}).items():
+        dz = float((row or {}).get("dz") or 0)
+        overdue = float((row or {}).get("overdue") or 0)
+        guid = name_to_guid.get(name)
+        if guid:
+            acc[guid]["dz"] += dz
+            acc[guid]["overdue"] += overdue
+        elif name in HOLDINGS_DEPT_NAMES:
+            acc[KEY_CLIENTS_DEPT_GUID]["dz"] += dz
+            acc[KEY_CLIENTS_DEPT_GUID]["overdue"] += overdue
+    return {
+        guid: {
+            "dz": round(vals["dz"], 2),
+            "overdue": round(vals["overdue"], 2),
+            "name": vals["name"],
+        }
+        for guid, vals in acc.items()
+    }
+
+
+def _parse_odata_date(value) -> date | None:
+    text = str(value or "")
+    if len(text) >= 10 and text[4] == "-":
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _odata_docs_by_key(session, entity: str, keys: list[str], select: str) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    keys = [k for k in keys if k and k != EMPTY]
+    for i in range(0, len(keys), 40):
+        batch = keys[i:i + 40]
+        expr = " or ".join(f"Ref_Key eq guid'{k}'" for k in batch)
+        url = (
+            f"{BASE}/{entity}?$format=json"
+            f"&$select={quote(select, safe=',_')}"
+            f"&$filter={quote(expr, safe='')}&$top=500"
+        )
+        resp = request_with_retry(session, url, timeout=90, retries=3, label=entity[:22])
+        if resp is None or not resp.ok:
+            continue
+        for item in resp.json().get("value") or []:
+            out[str(item.get("Ref_Key") or "").lower()] = item
+    return out
+
+
+def exclude_report_day_service_prepay(records: list, na_datu: date, session) -> list:
+    """Не брать КЗ с р/с услуг, разнесённую регистратором в день отчёта."""
+    if session is None or not records:
+        return records
+    prev = (na_datu - timedelta(days=1)).isoformat()
+    candidates: list[tuple[int, str, str, str]] = []
+    for idx, row in enumerate(records):
+        if abs(float(row.get("ПредоплатаУпр") or 0)) < TOLERANCE:
+            continue
+        if "РегистраторРасчетов" not in str(row.get("Recorder_Type") or ""):
+            continue
+        if not str(row.get("Period") or "").startswith(prev):
+            continue
+        recorder = str(row.get("Recorder") or "").lower()
+        calc = str(row.get("РасчетныйДокумент") or "").lower()
+        calc_type = str(row.get("РасчетныйДокумент_Type") or "").split(".")[-1]
+        if recorder and recorder != EMPTY:
+            candidates.append((idx, recorder, calc, calc_type))
+    if not candidates:
+        return records
+
+    rec_docs = _odata_docs_by_key(
+        session,
+        "Document_РегистраторРасчетов",
+        list({item[1] for item in candidates}),
+        "Ref_Key,Date",
+    )
+    pay_needed: list[tuple[int, str, str]] = []
+    for idx, recorder, calc, calc_type in candidates:
+        rec_date = _parse_odata_date((rec_docs.get(recorder) or {}).get("Date"))
+        if rec_date is None or rec_date < na_datu:
+            continue
+        if calc and calc != EMPTY and calc_type:
+            pay_needed.append((idx, calc, calc_type))
+    if not pay_needed:
+        return records
+
+    by_type: dict[str, list[str]] = defaultdict(list)
+    for _, calc, calc_type in pay_needed:
+        by_type[calc_type].append(calc)
+    pay_bank: dict[str, str] = {}
+    for entity, keys in by_type.items():
+        for key, item in _odata_docs_by_key(
+            session, entity, list(set(keys)), "Ref_Key,БанковскийСчет_Key"
+        ).items():
+            pay_bank[key] = str(item.get("БанковскийСчет_Key") or "").lower()
+
+    drop_idx = {
+        idx
+        for idx, calc, _ in pay_needed
+        if pay_bank.get(calc) in KZ_REPORT_DAY_PREPAY_BANK_GUIDS
+    }
+    if not drop_idx:
+        return records
+    out = []
+    for idx, row in enumerate(records):
+        if idx in drop_idx:
+            row = dict(row)
+            row["ПредоплатаУпр"] = 0
+        out.append(row)
+    return out
+
+
 def fetch_all_register(session, na_datu: str):
     """Загрузить ВСЕ записи регистра с Period <= НаДату (конец дня)."""
 
     sel = quote(
-        "RecordType,Period,Active,"
+        "RecordType,Period,Active,Recorder,Recorder_Type,"
         "ОбъектРасчетов_Key,АналитикаУчетаПоПартнерам_Key,"
         "Валюта_Key,ДатаПлановогоПогашения,ДатаВозникновения,"
-        "ДолгУпр,ПредоплатаУпр",
+        "ДолгУпр,ПредоплатаУпр,РасчетныйДокумент,РасчетныйДокумент_Type",
         safe=",_",
     )
     flt = quote(
@@ -176,25 +344,60 @@ def aggregate_balances(records):
     return {k: v["dolg"] for k, v in full.items() if abs(v["dolg"]) >= TOLERANCE}
 
 
+def _catalog_item(item: dict) -> tuple[str, dict]:
+    k = str(item.get("Ref_Key", EMPTY)).lower()
+    raw_dept = str(item.get("Подразделение_Key", EMPTY)).lower()
+    return k, {
+        "dept": normalize_debitorka_dept_guid(raw_dept).lower(),
+        "source_dept": raw_dept,
+        "liquidated_dept_name": LIQUIDATED_DEPT_NAMES.get(raw_dept, ""),
+        "partner": str(item.get("Партнер_Key", EMPTY)).lower(),
+        "desc": item.get("Description", ""),
+        "number": item.get("Номер", "?"),
+        "date": item.get("Дата", ""),
+    }
+
+
 def resolve_objects(session, obj_keys: set):
     """
-    Загрузить Catalog_ОбъектыРасчетов страницами, собрать маппинг
-    Ref_Key (lower) → {dept, partner, desc, number, date}.
-    Подразделение берётся из каталога и нормализуется.
-    В дебиторке ликвидированные дилерские отделы не попадают в текущий ОДП.
+    Загрузить Catalog_ОбъектыРасчетов: сначала коммерческие и ликвидированные
+    отделы (короткий $filter), затем добрать недостающие общим сканом.
     """
     sel = quote(
         "Ref_Key,Подразделение_Key,Партнер_Key,Description,Номер,Дата",
         safe=",_",
     )
-
     catalog = {}
     needed = set(obj_keys)
-    skip = 0
-    PAGE = 1000
     t0 = time.time()
+    PAGE = 1000
 
-    while True:
+    for guid in list(DEPARTMENTS) + list(LIQUIDATED_DEPT_NAMES):
+        skip = 0
+        while True:
+            flt = quote(f"Подразделение_Key eq guid'{guid}'", safe="")
+            url = (
+                f"{BASE}/Catalog_ОбъектыРасчетов"
+                f"?$format=json&$select={sel}&$filter={flt}"
+                f"&$top={PAGE}&$skip={skip}"
+            )
+            r = request_with_retry(session, url, timeout=120, retries=4, label="DZ/ObjCatalog")
+            if r is None or not r.ok:
+                break
+            chunk = r.json().get("value", [])
+            for item in chunk:
+                k, row = _catalog_item(item)
+                if k in needed:
+                    catalog[k] = row
+            if len(chunk) < PAGE:
+                break
+            skip += PAGE
+        if len(catalog) >= len(needed):
+            break
+
+    missing = needed - set(catalog.keys())
+    skip = 0
+    while missing:
         url = (
             f"{BASE}/Catalog_ОбъектыРасчетов"
             f"?$format=json&$select={sel}"
@@ -208,37 +411,24 @@ def resolve_objects(session, obj_keys: set):
         if not chunk:
             break
         for item in chunk:
-            k = str(item.get("Ref_Key", EMPTY)).lower()
-            if k in needed:
-                raw_dept = str(item.get("Подразделение_Key", EMPTY)).lower()
-                normalized_dept = normalize_debitorka_dept_guid(raw_dept).lower()
-                # Всегда сохраняем исходный ликвидированный отдел для колонки
-                # «Подразделение» (даже если для KPI GUID не алиасится в ОДП).
-                liquidated_dept_name = LIQUIDATED_DEPT_NAMES.get(raw_dept, "")
-                catalog[k] = {
-                    "dept": normalized_dept,
-                    "source_dept": raw_dept,
-                    "liquidated_dept_name": liquidated_dept_name,
-                    "partner": str(item.get("Партнер_Key", EMPTY)).lower(),
-                    "desc": item.get("Description", ""),
-                    "number": item.get("Номер", "?"),
-                    "date": item.get("Дата", ""),
-                }
+            k, row = _catalog_item(item)
+            if k in missing:
+                catalog[k] = row
+                missing.discard(k)
         skip += len(chunk)
-        found = sum(1 for k in needed if k in catalog)
-        if skip % 10000 == 0 or found >= len(needed):
+        if skip % 10000 == 0 or not missing:
             print(
                 f"  скан каталога: {skip} записей, найдено "
-                f"{found}/{len(needed)} · {time.time()-t0:.1f}с"
+                f"{len(catalog)}/{len(needed)} · {time.time()-t0:.1f}с"
             )
-        if found >= len(needed):
-            break
-        if len(chunk) < PAGE:
+        if not missing or len(chunk) < PAGE:
             break
 
     missing = needed - set(catalog.keys())
     if missing:
         print(f"  WARNING: не найдено в каталоге: {len(missing)} ОбъектРасчетов")
+    else:
+        print(f"  каталог объектов: {len(catalog)}/{len(needed)} · {time.time()-t0:.1f}с")
 
     return catalog
 
@@ -894,6 +1084,7 @@ def _calc_snapshot_for_date(na_datu: date) -> dict:
     logger.info("calc_debitorka: computing snapshot for %s", na_datu_str)
 
     records = fetch_all_register(session, na_datu_str)
+    records = exclude_report_day_service_prepay(records, na_datu, session)
     full_balances = aggregate_balances_full(records)
 
     # См. _calc_snapshots_batch: берём obj_keys из сырых записей, чтобы
@@ -908,7 +1099,8 @@ def _calc_snapshot_for_date(na_datu: date) -> dict:
     return _build_snapshot_from_balances(na_datu, full_balances, obj_catalog)
 
 
-def _build_snapshot_from_data(na_datu: date, records: list, obj_catalog: dict) -> dict:
+def _build_snapshot_from_data(na_datu: date, records: list, obj_catalog: dict,
+                              session=None) -> dict:
     """Построить снимок ДЗ/КЗ из предзагруженных записей + каталога.
 
     Считаем НЕТТО-остатки по каждому заказу (ОбъектРасчетов) ОТДЕЛЬНО по
@@ -922,6 +1114,7 @@ def _build_snapshot_from_data(na_datu: date, records: list, obj_catalog: dict) -
     cutoff_period = f"{na_datu_str}T23:59:59"
 
     filtered = [r for r in records if (r.get("Period") or "") <= cutoff_period]
+    filtered = exclude_report_day_service_prepay(filtered, na_datu, session)
     full_balances = aggregate_balances_full(filtered)
 
     return _build_snapshot_from_balances(na_datu, full_balances, obj_catalog)
@@ -976,6 +1169,8 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
         effective = source_dept if source_dept in liquidated_keys_lower else dept
         if effective not in allowed_depts:
             continue
+        if _is_holdings_dept(guid=source_dept) or _is_holdings_dept(guid=dept):
+            continue
 
         entry = per_order[obj_key]
         entry["dept"] = dept
@@ -1003,13 +1198,22 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
         dz_net = data["dz_net"]
         kz_net = data["kz_net"]
         overdue_net = data["overdue_net"]
+        # В таблице 1С «Просрочено» не поднимается выше долга клиента по заказу.
+        if dz_net <= TOLERANCE:
+            overdue_net = 0.0
+            aging_scale = 0.0
+        elif overdue_net > dz_net + TOLERANCE:
+            aging_scale = dz_net / overdue_net
+            overdue_net = dz_net
+        else:
+            aging_scale = 1.0
 
         # Как в SQL comdir: без фильтра «только +заказы» — сверка с 1С ~323.93M.
         dz_by_dept[dept_name] += dz_net
         kz_by_dept[dept_name] += kz_net
         overdue_by_dept[dept_name] += overdue_net
         for b, amt in data["aging_buckets"].items():
-            aging_by_dept[dept_name][b] += amt
+            aging_by_dept[dept_name][b] += amt * aging_scale
 
     depts_all = sorted(
         d
@@ -1019,13 +1223,15 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
         or abs(overdue_by_dept.get(d, 0)) >= TOLERANCE
     )
 
-    return {
+    payload = {
         "na_datu": na_datu_str,
         "dept_alias_source": DEPT_ALIAS_SOURCE,
+        "source": "odata.AccumulationRegister_РасчетыСКлиентамиПоСрокам",
         "total_dz": round(sum(dz_by_dept.values()), 2),
         "total_kz": round(sum(max(0.0, v) for v in kz_by_dept.values()), 2),
         "total_overdue": round(sum(overdue_by_dept.values()), 2),
         "kz_source": "predoplata_upr",
+        "kz_scope": KZ_SCOPE,
         "by_dept": {
             d: {
                 "dz": round(dz_by_dept.get(d, 0), 2),
@@ -1036,6 +1242,8 @@ def _build_snapshot_from_balances(na_datu: date, balances: dict,
             for d in depts_all
         },
     }
+    payload["by_dept_guid"] = by_dept_guid_from_names(payload["by_dept"])
+    return payload
 
 
 def _build_overdue_detail_from_data(na_datu: date, records: list,
@@ -1103,7 +1311,7 @@ def _calc_snapshots_batch(dates_to_compute: list[date],
 
     results: dict[date, dict] = {}
     for na_datu in sorted_dates:
-        snapshot = _build_snapshot_from_data(na_datu, records, obj_catalog)
+        snapshot = _build_snapshot_from_data(na_datu, records, obj_catalog, session)
         if _snapshot_is_empty(snapshot):
             existing = _load_json(_cache_path_snapshot(na_datu))
             if existing is not None and not _snapshot_is_empty(existing):
@@ -1147,6 +1355,9 @@ def get_snapshot_for_date(na_datu: date) -> dict:
         and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
         and not _snapshot_is_empty(cached)
     ):
+        if cached.get("kz_scope") != KZ_SCOPE:
+            cached = apply_client_report_scope(dict(cached))
+            _save_json(_cache_path_snapshot(na_datu), cached)
         return cached
     # Пустой кэш на дату не считаем валидным — пробуем пересчитать, но не затираем
     # хороший файл нулями (см. _save_snapshot_json).
@@ -1289,6 +1500,9 @@ def _ensure_debitorka_caches_for_period(
         if snap.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
             snap["dept_alias_source"] = DEPT_ALIAS_SOURCE
             _save_json(_cache_path_snapshot(d), snap)
+        if snap.get("kz_scope") != KZ_SCOPE:
+            snap = apply_client_report_scope(snap)
+            _save_json(_cache_path_snapshot(d), snap)
             return False
         return False
 
@@ -1313,16 +1527,7 @@ def _ensure_debitorka_caches_for_period(
 
 
 def _calc_overdue_detail(na_datu: date) -> dict:
-    """Детализация просроченной ДЗ по заказам клиентов на дату.
-
-    Возвращает список строк (partner_name, order_num, amount, days_overdue,
-    reason, action) с разбивкой по подразделениям.
-    """
-    try:
-        return _calc_overdue_detail_sql(na_datu)
-    except Exception as exc:
-        logger.warning("calc_debitorka: SQL overdue detail failed, fallback to OData: %s", exc)
-
+    """Детализация просроченной ДЗ по заказам клиентов на дату (живой OData)."""
     session = requests.Session()
     session.auth = AUTH
     na_datu_str = na_datu.isoformat()
@@ -1375,11 +1580,11 @@ def get_overdue_detail(year: int | None = None,
             data["cache_refresh_status"] = "running"
         else:
             try:
-                data = _calc_overdue_detail_sql(na_datu)
+                data = _calc_overdue_detail(na_datu)
                 _save_json(cache_path, data)
             except Exception as exc:
                 logger.warning(
-                    "calc_debitorka: immediate SQL overdue detail failed: %s",
+                    "calc_debitorka: immediate OData overdue detail failed: %s",
                     exc,
                 )
                 monthly = _load_json(_cache_path_monthly(ref_y, ref_m))

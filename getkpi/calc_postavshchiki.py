@@ -563,6 +563,45 @@ def get_supplier_dz_detail(na_datu: date) -> dict:
     return payload
 
 
+def _expected_snap_date(year: int, month: int, today: date | None = None) -> date:
+    today = today or date.today()
+    d = _month_end(year, month)
+    return today if d > today else d
+
+
+def _monthly_cache_is_fresh(cached: dict | None, year: int, ref_month: int) -> bool:
+    """Кэш годится, только если у каждого месяца дата среза = конец месяца / сегодня."""
+    if cached is None or cached.get("source") != SOURCE_TAG:
+        return False
+    rows = cached.get("months") or []
+    if len(rows) < ref_month:
+        return False
+    today = date.today()
+    by_m = {int(r.get("month") or 0): r for r in rows}
+    for mm in range(1, ref_month + 1):
+        row = by_m.get(mm)
+        if not row:
+            return False
+        if not all(
+            key in row
+            for key in (
+                "dolg_regl",
+                "predoplata_regl",
+                "closing_dolg_regl",
+                "closing_predoplata_regl",
+                "na_datu",
+            )
+        ):
+            return False
+        try:
+            na = date.fromisoformat(str(row.get("na_datu") or ""))
+        except ValueError:
+            return False
+        if na != _expected_snap_date(year, mm, today):
+            return False
+    return True
+
+
 def get_supplier_monthly(year: int, ref_month: int) -> dict:
     """
     Помесячные ДЗ/КЗ как дельта между соседними месячными остатками.
@@ -573,25 +612,14 @@ def get_supplier_monthly(year: int, ref_month: int) -> dict:
     """
     cache_path = _cache_path_monthly(year, ref_month)
     cached = _load_json(cache_path)
-    if cached is not None and cached.get("source") == SOURCE_TAG:
-        rows = cached.get("months") or []
-        if rows and all(
-            "dolg_regl" in r
-            and "predoplata_regl" in r
-            and "closing_dolg_regl" in r
-            and "closing_predoplata_regl" in r
-            for r in rows
-        ):
-            return cached
+    if _monthly_cache_is_fresh(cached, year, ref_month):
+        return cached
 
     today = date.today()
 
     snap_dates: list[tuple[int, date]] = []
     for mm in range(1, ref_month + 1):
-        d = _month_end(year, mm)
-        if d > today:
-            d = today
-        snap_dates.append((mm, d))
+        snap_dates.append((mm, _expected_snap_date(year, mm, today)))
 
     if not snap_dates:
         payload = {
@@ -605,7 +633,7 @@ def get_supplier_monthly(year: int, ref_month: int) -> dict:
 
     session = requests.Session()
     session.auth = AUTH
-    allowed_obj_keys = _load_supplier_obj_keys(session)
+    allowed_obj_keys: set[str] | None = None
     logger.info(
         "calc_postavshchiki: monthly for %s, ref_month=%d",
         year,
@@ -616,13 +644,17 @@ def get_supplier_monthly(year: int, ref_month: int) -> dict:
     prev_closing_kz = 0.0
     prev_closing_dz = 0.0
     for mm, na_datu in snap_dates:
-        snapshot = _build_snapshot(session, na_datu, allowed_obj_keys)
+        snapshot = _load_json(_cache_path_snapshot(na_datu))
+        if snapshot is None or snapshot.get("source") != SOURCE_TAG:
+            if allowed_obj_keys is None:
+                allowed_obj_keys = _load_supplier_obj_keys(session)
+            snapshot = _build_snapshot(session, na_datu, allowed_obj_keys)
+            _save_json(_cache_path_snapshot(na_datu), snapshot)
         closing_kz = float(snapshot.get("total_dolg_regl") or 0)
         closing_dz = float(snapshot.get("total_predoplata_regl") or 0)
         month_kz = round(closing_kz - prev_closing_kz, 2)
         month_dz = round(closing_dz - prev_closing_dz, 2)
 
-        _save_json(_cache_path_snapshot(na_datu), snapshot)
         rows_out.append({
             "year": year,
             "month": mm,

@@ -327,13 +327,12 @@ def _build_fnd_t3_dz_kz_rows(months: list[int], ref_y: int) -> list[dict]:
                           по регистру РасчетыСКлиентамиПоСрокам.
       - `kz_client`    — наш долг клиентам (КЗ) = Σ |отрицательных| нетто-остатков
                           по тому же регистру (авансы / переплаты клиентов).
-      - `dz_supplier`  — дельта ДЗ поставщиков за месяц.
-      - `kz_supplier`  — дельта КЗ поставщикам за месяц.
+      - `dz_supplier`  — остаток ДЗ поставщиков на конец месяца
+                          (авансы, ПредоплатаРегл).
+      - `kz_supplier`  — остаток КЗ поставщикам на конец месяца (ДолгРегл).
 
-    Для поставщиков месячные числа нужны фронту именно как помесячные
-    значения, чтобы он мог суммировать выбранный диапазон. При этом
-    `pct_supplier` по-прежнему считаем по закрывающему остатку месяца,
-    а не по дельте, чтобы не ломать текущий KPI плитки.
+    Соотношение на дату — остаток к остатку, не дельта месяца.
+    На фронте FND-T3 агрегируется как снимок (последний месяц диапазона).
 
     Проценты:
       - `pct_client`   = dz_client   / kz_client   × 100  (higher_better)
@@ -376,19 +375,21 @@ def _build_fnd_t3_dz_kz_rows(months: list[int], ref_y: int) -> list[dict]:
         sup_row = sup_by_m.get(m) or {}
         dz_client = float(dz_row.get("dz_fact") or 0)
         kz_client = float(dz_row.get("kz_fact") or 0)
-        dz_supplier = float(sup_row.get("predoplata_regl") or 0)
-        kz_supplier = float(sup_row.get("dolg_regl") or 0)
-        dz_supplier_closing = float(
-            sup_row.get("closing_predoplata_regl") or dz_supplier
+        dz_supplier = float(
+            sup_row.get("closing_predoplata_regl")
+            or sup_row.get("predoplata_regl")
+            or 0
         )
-        kz_supplier_closing = float(
-            sup_row.get("closing_dolg_regl") or kz_supplier
+        kz_supplier = float(
+            sup_row.get("closing_dolg_regl")
+            or sup_row.get("dolg_regl")
+            or 0
         )
 
         pct_client = round(dz_client / kz_client * 100, 1) if kz_client > 0 else None
         pct_supplier = (
-            round(dz_supplier_closing / kz_supplier_closing * 100, 1)
-            if kz_supplier_closing > 0 else None
+            round(dz_supplier / kz_supplier * 100, 1)
+            if kz_supplier > 0 else None
         )
         dz_total = dz_client + dz_supplier
         kz_total = kz_client + kz_supplier
@@ -422,7 +423,7 @@ def _build_fnd_t3_dz_kz_rows(months: list[int], ref_y: int) -> list[dict]:
 
 def _build_fnd_t7_debitorka_rows(months: list[int], ref_y: int) -> list[dict]:
     """FND-T7 «Дебиторская задолженность» — те же данные, что и у коммерческого
-    директора (KD-M4): SQL-агрегат comdir (COMM + ликвидированные).
+    директора (KD-M4): живой OData (COMM + ликвидированные).
     План — фиксированный (100 млн руб.), как у коммерческого директора.
     """
     if not months:
@@ -987,7 +988,7 @@ COMMERCE_TILE_IDS = [f"MRK-{i:02d}" for i in range(1, 10)]
 
 # Демо-факт на опорный месяц (значения с макета дашборда).
 # ВАЖНО: MRK-01/02/03 считаются по данным КомДира, MRK-04 — из _mrk04_shipment_growth_yoy,
-# MRK-06 — из comdir SQL-отгрузок (доля БМИ+Газпром), MRK-09 — из calc_tenders_bmi.
+# MRK-06 — доля БМИ+Газпром из тех же отгрузок, что KD-M2 (OData), MRK-09 — из calc_tenders_bmi.
 # Числа ниже остаются только для плиток, у которых ещё нет реальных калькуляторов
 # (MRK-10) — fallback-ветка в конце цикла.
 _COMMERCE_FACT: dict[str, float | int] = {
@@ -1408,7 +1409,7 @@ def _mrk09_rag(pct: float | None) -> str:
 
 def _mrk06_share_bmi_gazprom(ref_y: int, ref_m: int) -> dict:
     """
-    Данные плитки MRK-06 «Доля Газпром + БМИ в отгрузке» (SQL comdir / KD-M2).
+    Данные плитки MRK-06 «Доля Газпром + БМИ в отгрузке» (тот же факт, что KD-M2).
     Период: январь..ref_m выбранного года.
     """
     return cache_manager.locked_call(
@@ -1421,7 +1422,7 @@ def _mrk06_share_bmi_gazprom(ref_y: int, ref_m: int) -> dict:
 
 def _mrk06_share_bmi_gazprom_monthly(ref_y: int, ref_m: int) -> dict:
     """
-    Помесячная разбивка MRK-06 за янв..ref_m (SQL + кэш comdir_mrk06_share_ytd).
+    Помесячная разбивка MRK-06 за янв..ref_m (кэш comdir_mrk06_share_ytd).
     """
     return cache_manager.locked_call(
         f"comdir_mrk06_share_monthly_{ref_y}_{ref_m:02d}",
@@ -1500,8 +1501,15 @@ def _comdir_kd_plan_fact_tile(
     )
     raw = _ytd_month_rows(ytd)
     plans_by_month = {r["month"]: (r.get("plan") or 0) for r in raw}
-    expected_by_month = {r["month"]: (r.get("expected") or 0) for r in raw}
-    tile = _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
+    expected_by_month = {
+        r["month"]: (r.get("expected_full") or r.get("expected") or 0) for r in raw
+    } if kpi_id == "KD-M2" else {
+        r["month"]: (r.get("expected") or 0) for r in raw
+    }
+    tile = _build_plan_fact_tile(
+        raw, plans_by_month, expected_by_month, ref_y, ref_m,
+        use_expected_full=(kpi_id == "KD-M2"),
+    )
     tile["debug"] = {
         "status": (ytd.get("debug") or {}).get("status") or "ok",
         "kpi_id": kpi_id,
@@ -1519,34 +1527,33 @@ def build_chairman_commerce_payload(
     """
     Блок «Председатель / коммерция»: MRK-01…03 = те же SQL comdir, что KD-M2/M3/M1;
     на плитках — план/факт/ожидаемо за опорный месяц; в monthly_data — помесячно.
-    MRK-04 — рост отгрузок; MRK-06 — доля БМИ+Газпром (SQL); остальные — свои источники.
+    MRK-04 — рост отгрузок; MRK-06 — доля БМИ+Газпром (KD-M2); остальные — свои источники.
     """
     by_id = {k["kpi_id"]: k for k in kpi_list}
 
     ref_y, ref_m, _pairs, series_m = _komdir_commerce_context(month, year)
 
-    # Те же данные, что у коммерческого директора. Для ПСД не отдаём устаревший
-    # файловый кэш: иначе первый ответ за месяц показывает "Нет данных", а
-    # пересчёт нужных comdir-кэшей начинается уже после ответа.
-    with cache_manager.force_compute():
-        td_m1 = _comdir_kd_plan_fact_tile(
-            kpi_id="KD-M1",
-            get_ytd_fn=get_dengi_ytd,
-            lock_prefix="comdir_dengi",
-            ref_y=ref_y, ref_m=ref_m, series_m=series_m,
-        )
-        td_m2 = _comdir_kd_plan_fact_tile(
-            kpi_id="KD-M2",
-            get_ytd_fn=get_otgruzki_ytd,
-            lock_prefix="comdir_otgruzki",
-            ref_y=ref_y, ref_m=ref_m, series_m=series_m,
-        )
-        td_m3 = _comdir_kd_plan_fact_tile(
-            kpi_id="KD-M3",
-            get_ytd_fn=get_dogovory_ytd,
-            lock_prefix="comdir_dogovory",
-            ref_y=ref_y, ref_m=ref_m, series_m=series_m,
-        )
+    # Читаем уже собранные comdir YTD. Принудительный пересчёт здесь нельзя:
+    # MRK-04 тянет прошлый год, а смена source_tag раньше запускала полный
+    # OData/SQL на запросе и фронт ПСД уходил в timeout → mock техдиректора.
+    td_m1 = _comdir_kd_plan_fact_tile(
+        kpi_id="KD-M1",
+        get_ytd_fn=get_dengi_ytd,
+        lock_prefix="comdir_dengi",
+        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
+    )
+    td_m2 = _comdir_kd_plan_fact_tile(
+        kpi_id="KD-M2",
+        get_ytd_fn=get_otgruzki_ytd,
+        lock_prefix="comdir_otgruzki",
+        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
+    )
+    td_m3 = _comdir_kd_plan_fact_tile(
+        kpi_id="KD-M3",
+        get_ytd_fn=get_dogovory_ytd,
+        lock_prefix="comdir_dogovory",
+        ref_y=ref_y, ref_m=ref_m, series_m=series_m,
+    )
 
     komdir_for_chart = {"KD-M1": td_m1, "KD-M2": td_m2, "KD-M3": td_m3}
     mrk_from_komdir: dict[str, tuple[str, dict]] = {

@@ -42,8 +42,11 @@ from getkpi.valovaya_pribyl import vp_plan_for_month  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# v14: KD-M2 отгрузки — ожидаемо из erp_pm SQL, без 1C/OData overlay.
-CACHE_VERSION = 15
+# v17: KD-M1 ожидаемо на плитке — полный месяц (как колонка 14 отчёта), не «до завтра».
+#      KD-M2 отгрузки — план SQL, факт live OData, ожидаемо live OData полный месяц.
+CACHE_VERSION = 17
+KD_M1_SOURCE_TAG = "comdir_kd_m1_ytd_odata_fact_expected_sql_plan_v2"
+KD_M2_SOURCE_TAG = "comdir_kd_m2_ytd_odata_fact_sql_plan_odata_expected_v1"
 
 
 def _kpi_pct(fact, plan) -> float | None:
@@ -236,33 +239,87 @@ def compute_dengi_month(year: int, month: int) -> dict[str, Any]:
         )
     plan_map = aggregate_by_odata_name(plan_by_name)
     fact_map = aggregate_by_odata_name(fact_by_name)
-    expected_map = aggregate_by_odata_name(expected_current_by_name)
+    expected_current_map = aggregate_by_odata_name(expected_current_by_name)
     expected_full_map = aggregate_by_odata_name(expected_full_by_name)
-    guids = set(plan_map) | set(fact_map) | set(expected_map)
+    guids = set(plan_map) | set(fact_map) | set(expected_full_map)
     by_dept = _merge_by_dept_maps(
         guids,
         fact_map=fact_map,
         plan_map=plan_map,
-        expected_map=expected_map,
+        expected_map=expected_full_map,
     )
     return {
         "year": year,
         "month": month,
         "fact": round(sum(fact_map.values()), 2),
         "plan": round(sum(plan_map.values()), 2),
-        "expected": round(sum(expected_map.values()), 2),
-        "expected_current": round(sum(expected_map.values()), 2),
+        "expected": round(sum(expected_full_map.values()), 2),
+        "expected_current": round(sum(expected_current_map.values()), 2),
         "expected_full": round(sum(expected_full_map.values()), 2),
         "by_dept": by_dept,
     }
 
 
+def _overlay_dengi_fact_odata(months: list[dict[str, Any]], year: int, ref_month: int) -> str:
+    """Подставить живой факт OData. При ошибке оставляет SQL."""
+    from getkpi.calc_dengi_fact import get_dengi_monthly
+
+    data = get_dengi_monthly(year, ref_month)
+    by_m = {int(row.get("month") or 0): row for row in (data.get("months") or [])}
+    if not by_m:
+        raise RuntimeError("OData факт денег пуст")
+    for row in months:
+        src = by_m.get(int(row.get("month") or 0))
+        if not src:
+            continue
+        row["fact"] = round(float(src.get("fact") or 0), 2)
+        row["fact_source"] = "odata"
+        buckets = row.get("by_dept") or {}
+        for guid, amt in (src.get("by_dept") or {}).items():
+            bucket = buckets.setdefault(str(guid).lower(), {})
+            bucket["fact"] = float(amt or 0)
+        row["by_dept"] = buckets
+    return "odata"
+
+
+def _overlay_dengi_expected_odata(months: list[dict[str, Any]], year: int, ref_month: int) -> str:
+    """Подставить ожидаемо OData за полный месяц (колонка 14 отчёта)."""
+    from getkpi.calc_plan import get_dengi_expected_by_month
+
+    by_m = get_dengi_expected_by_month(year, ref_month)
+    for row in months:
+        fmap = by_m.get(int(row.get("month") or 0)) or {}
+        total = round(sum(fmap.values()), 2)
+        row["expected"] = total
+        row["expected_full"] = total
+        row["expected_current"] = total
+        row["expected_source"] = "odata"
+        buckets = row.get("by_dept") or {}
+        for guid, amt in fmap.items():
+            bucket = buckets.setdefault(str(guid).lower(), {})
+            bucket["expected"] = float(amt or 0)
+        row["by_dept"] = buckets
+    return "odata_full_month"
+
+
 def build_dengi_payload(year: int, month: int) -> dict[str, Any]:
     months = [compute_dengi_month(year, m) for m in range(1, month + 1)]
+    fact_source = "sql"
+    expected_source = "sql"
+    try:
+        fact_source = _overlay_dengi_fact_odata(months, year, month)
+    except Exception:
+        logger.exception("KD-M1: живой факт OData не собрался, оставляю SQL")
+    try:
+        expected_source = _overlay_dengi_expected_odata(months, year, month)
+    except Exception:
+        logger.exception("KD-M1: живое ожидаемо OData не собралось, оставляю SQL")
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M1")
     payload["debug"] = {
         **(payload.get("debug") or {}),
-        "source": "comdir.sql",
+        "source": f"comdir.sql_plan + {fact_source}.fact + {expected_source}.expected",
+        "fact_source": fact_source,
+        "expected": expected_source,
     }
     return payload
 
@@ -272,17 +329,14 @@ def get_dengi_ytd(
     month: int | None = None,
     dept_guid: str | None = None,
 ) -> dict[str, Any]:
-    def _compute(y: int, m: int) -> dict[str, Any]:
-        return build_dengi_payload(y, m)
-
     payload = get_ytd_via_cache(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m1_ytd",
-        source_tag="comdir_kd_m1_ytd_sql_v12",
+        source_tag=KD_M1_SOURCE_TAG,
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m1",
-        compute_fn=_compute,
+        compute_fn=build_dengi_payload,
         kpi_id="KD-M1",
         error_factory=lambda y, m, e: empty_error_payload(y, m, "KD-M1", e),
     )
@@ -318,30 +372,88 @@ def compute_otgruzki_month(year: int, month: int) -> dict[str, Any]:
         )
     plan_map = aggregate_by_odata_name(plan_by_name)
     fact_map = aggregate_by_odata_name(fact_by_name)
-    expected_map = aggregate_by_odata_name(expected_current_by_name)
-    expected_full_map = aggregate_by_odata_name(expected_full_by_name)
-    guids = set(plan_map) | set(fact_map) | set(expected_map)
+    expected_current_map = aggregate_by_odata_name(
+        expected_current_by_name, include_liquidated=False,
+    )
+    expected_full_map = aggregate_by_odata_name(
+        expected_full_by_name, include_liquidated=False,
+    )
+    guids = set(plan_map) | set(fact_map) | set(expected_full_map)
     by_dept = _merge_by_dept_maps(
-        guids, fact_map=fact_map, plan_map=plan_map, expected_map=expected_map,
+        guids, fact_map=fact_map, plan_map=plan_map, expected_map=expected_full_map,
     )
     return {
         "year": year,
         "month": month,
         "fact": round(sum(fact_map.values()), 2),
         "plan": round(sum(plan_map.values()), 2),
-        "expected": round(sum(expected_map.values()), 2),
-        "expected_current": round(sum(expected_map.values()), 2),
+        "expected": round(sum(expected_full_map.values()), 2),
+        "expected_current": round(sum(expected_current_map.values()), 2),
         "expected_full": round(sum(expected_full_map.values()), 2),
         "by_dept": by_dept,
+        "fact_source": "sql",
     }
+
+
+def _overlay_otgruzki_fact_odata(months: list[dict[str, Any]], year: int, ref_month: int) -> str:
+    """Подставить живой факт OData. При ошибке оставляет SQL."""
+    from getkpi.calc_otgruzki_fact import get_otgruzki_fact_by_month
+
+    fact_by_m = get_otgruzki_fact_by_month(year, ref_month)
+    for row in months:
+        month = int(row.get("month") or 0)
+        fmap = fact_by_m.get(month) or {}
+        row["fact"] = round(sum(fmap.values()), 2)
+        row["fact_source"] = "odata"
+        buckets = row.get("by_dept") or {}
+        for guid, amt in fmap.items():
+            bucket = buckets.setdefault(guid, {})
+            bucket["fact"] = float(amt or 0)
+        row["by_dept"] = buckets
+    return "odata"
+
+
+def _overlay_otgruzki_expected_odata(months: list[dict[str, Any]], year: int, ref_month: int) -> str:
+    """Подставить живое ожидаемо OData (полный месяц). При ошибке оставляет SQL."""
+    from getkpi.calc_plan import get_otgruzki_expected_by_month
+
+    exp_by_m = get_otgruzki_expected_by_month(year, ref_month)
+    if not exp_by_m:
+        raise RuntimeError("OData ожидаемо отгрузок пусто")
+    for row in months:
+        month = int(row.get("month") or 0)
+        emap = exp_by_m.get(month) or {}
+        total = round(sum(emap.values()), 2)
+        row["expected"] = total
+        row["expected_full"] = total
+        row["expected_current"] = total
+        row["expected_source"] = "odata"
+        buckets = row.get("by_dept") or {}
+        for guid, amt in emap.items():
+            bucket = buckets.setdefault(str(guid).lower(), {})
+            bucket["expected"] = float(amt or 0)
+        row["by_dept"] = buckets
+    return "odata"
 
 
 def build_otgruzki_payload(year: int, month: int) -> dict[str, Any]:
     months = [compute_otgruzki_month(year, m) for m in range(1, month + 1)]
+    fact_source = "sql"
+    expected_source = "sql"
+    try:
+        fact_source = _overlay_otgruzki_fact_odata(months, year, month)
+    except Exception:
+        logger.exception("KD-M2: живой факт OData не собрался, оставляю SQL")
+    try:
+        expected_source = _overlay_otgruzki_expected_odata(months, year, month)
+    except Exception:
+        logger.exception("KD-M2: живое ожидаемо OData не собралось, оставляю SQL")
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M2")
     payload["debug"] = {
         **(payload.get("debug") or {}),
-        "source": "comdir.sql",
+        "source": f"comdir.sql_plan + {fact_source}.fact + {expected_source}.expected",
+        "fact_source": fact_source,
+        "expected": f"{expected_source}_full_month",
     }
     return payload
 
@@ -355,7 +467,7 @@ def get_otgruzki_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m2_ytd",
-        source_tag="comdir_kd_m2_ytd_sql_expected_v1",
+        source_tag=KD_M2_SOURCE_TAG,
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m2",
         compute_fn=build_otgruzki_payload,
@@ -420,7 +532,8 @@ def build_dogovory_payload(year: int, month: int) -> dict[str, Any]:
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M3")
     payload["debug"] = {
         **(payload.get("debug") or {}),
-        "source": "comdir.sql",
+        "source": "comdir.odata_fact_sql_plan_expected",
+        "fact_source": "odata_signed_offer_reorder",
     }
     return payload
 
@@ -434,7 +547,7 @@ def get_dogovory_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m3_ytd",
-        source_tag="comdir_kd_m3_ytd_sql_v13",
+        source_tag="comdir_kd_m3_ytd_odata_reorder_v3",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m3",
         compute_fn=build_dogovory_payload,
@@ -800,14 +913,17 @@ def get_tkp_sla_ytd(
 # ── KD-M4 / KD-M5 ДЗ и просроченная ДЗ ─────────────────────────
 
 def compute_debitorka_month(year: int, month: int) -> dict[str, Any]:
-    from comdir.calc_debitorka import month_end, snapshot_on_date
+    from calendar import monthrange
+
+    from getkpi.calc_debitorka import by_dept_guid_from_names, get_snapshot_for_date
 
     today = date.today()
-    na = month_end(year, month)
+    last_day = monthrange(year, month)[1]
+    na = date(year, month, last_day)
     if na > today:
         na = today
-    snap = snapshot_on_date(na)
-    by_guid = snap.get("by_dept_guid") or {}
+    snap = get_snapshot_for_date(na)
+    by_guid = snap.get("by_dept_guid") or by_dept_guid_from_names(snap.get("by_dept") or {})
     by_dept = {
         g: {
             "fact": float(v.get("dz") or 0),
@@ -822,11 +938,11 @@ def compute_debitorka_month(year: int, month: int) -> dict[str, Any]:
         "dz_fact": float(snap.get("total_dz") or 0),
         "kz_fact": float(snap.get("total_kz") or 0),
         "overdue_fact": float(snap.get("total_overdue") or 0),
-        "fact": float(snap.get("total_dz") or 0),  # для stamp / debug
+        "fact": float(snap.get("total_dz") or 0),
         "plan": None,
         "by_dept": by_dept,
         "by_dept_names": snap.get("by_dept") or {},
-        "source": snap.get("source"),
+        "source": snap.get("source") or "odata.AccumulationRegister_РасчетыСКлиентамиПоСрокам",
     }
 
 
@@ -836,8 +952,9 @@ def build_debitorka_payload(year: int, month: int) -> dict[str, Any]:
     # Совместимость с get_komdir_dz_monthly / плитками M4/M5
     payload["months"] = months
     payload["monthly_data"] = months
-    payload["kz_source"] = "predoplata"
-    payload["dept_alias_source"] = "debitorka_sql_v1"
+    payload["kz_source"] = "predoplata_upr"
+    payload["dept_alias_source"] = "debitorka_odata_v1"
+    payload["debug"] = {"status": "ok", "kpi_id": "KD-M4", "source": "odata"}
     return payload
 
 
@@ -851,7 +968,7 @@ def get_debitorka_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m4_ytd",
-        source_tag="comdir_kd_m4_ytd_sql_v1",
+        source_tag="comdir_kd_m4_ytd_odata_v1",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m4",
         compute_fn=build_debitorka_payload,
@@ -876,8 +993,8 @@ def get_debitorka_ytd(
     rebuilt = _build_ytd_payload(ref_y, ref_m, months_out, kpi_id="KD-M4")
     rebuilt["months"] = months_out
     rebuilt["monthly_data"] = months_out
-    rebuilt["kz_source"] = "predoplata"
-    rebuilt["dept_alias_source"] = "debitorka_sql_v1"
+    rebuilt["kz_source"] = "predoplata_upr"
+    rebuilt["dept_alias_source"] = "debitorka_odata_v1"
     rebuilt["debug"] = payload.get("debug") or rebuilt.get("debug")
     return rebuilt
 

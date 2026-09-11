@@ -1,7 +1,7 @@
 """
-MRK-06: доля (БМИ + ПАО Газпром) в отгрузке — SQL через comdir отгрузки.
+MRK-06: доля (БМИ + ПАО Газпром) в отгрузке.
 
-Считает помесячно из get_otgruzki_ytd (тот же факт, что KD-M2), без OData.
+Считает помесячно из get_otgruzki_ytd (тот же факт, что KD-M2 / живая OData).
 Результат кэшируется в getkpi/dashboard/comdir_mrk06_share_ytd_YYYY_MM.json.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from comdir.common import empty_error_payload  # noqa: E402
 from comdir.sql_tile_cache import get_ytd_via_cache, normalize_period  # noqa: E402
 from comdir.ytd import get_otgruzki_ytd  # noqa: E402
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 # Те же 6 отделов продаж, что в OData-эталоне MRK-06
 SHARE_DEPARTMENTS: dict[str, str] = {
@@ -118,7 +118,7 @@ def build_share_monthly_payload(year: int, month: int) -> dict[str, Any]:
         "pct_bmi": _pct(bmi, total),
         "pct_gp": _pct(gp, total),
         "pct_pair": _pct(pair, total),
-        "debug": {"status": "ok", "kpi_id": "MRK-06", "source": "comdir.sql.otgruzki"},
+        "debug": {"status": "ok", "kpi_id": "MRK-06", "source": "comdir.kd_m2.odata.otgruzki"},
     }
 
 
@@ -133,7 +133,7 @@ def get_shipment_share_bmi_gazprom_monthly(
         year=year,
         month=month,
         cache_prefix="comdir_mrk06_share_ytd",
-        source_tag="comdir_mrk06_share_sql_v1",
+        source_tag="comdir_mrk06_share_odata_v2",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_mrk06_share",
         compute_fn=build_share_monthly_payload,
@@ -176,7 +176,7 @@ def get_shipment_share_bmi_gazprom(
         "pct_gp": payload.get("pct_gp"),
         "pct_pair": payload.get("pct_pair"),
         "months": payload.get("months") or [],
-        "debug": payload.get("debug") or {"status": "ok", "source": "comdir.sql.otgruzki"},
+        "debug": payload.get("debug") or {"status": "ok", "source": "comdir.kd_m2.odata.otgruzki"},
     }
 
 

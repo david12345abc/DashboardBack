@@ -45,8 +45,10 @@ logger = logging.getLogger(__name__)
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
 EMPTY = "00000000-0000-0000-0000-000000000000"
-LAWSUITS_CACHE_VERSION = 7
-CLOSED_STATUSES = {"закрыта"}
+LAWSUITS_CACHE_VERSION = 8
+CLOSED_STATUSES = {"закрыта", "закрыто"}
+# ТД_СтатусыПретензийСудебныхСпоров.Закрыта в SQL-снимке erp_pm.
+CLOSED_STATUS_ORDERS = {14}
 EMPTY_1C_DATE_PREFIXES = ("0001-01-01", "0001-01-01T")
 
 # Дети «коммерческого директора» (по structure.json + аналогично komdir_claims.ALLOWED_DEPARTMENTS).
@@ -202,15 +204,34 @@ def _save_cache(year: int, month: int, rows: list[dict], include_all: bool = Fal
         pass
 
 
+def _is_closed_lawsuit_status(status) -> bool:
+    s = str(status or "").strip().lower()
+    if not s:
+        return False
+    if s in CLOSED_STATUSES:
+        return True
+    if s.startswith("enum:"):
+        try:
+            return int(s.split(":", 1)[1]) in CLOSED_STATUS_ORDERS
+        except ValueError:
+            return False
+    return False
+
+
+def _drop_closed_lawsuits(rows: list[dict]) -> list[dict]:
+    return [r for r in rows if not _is_closed_lawsuit_status(r.get("status"))]
+
+
 def normalize_lawsuits_rows(raw) -> list[dict]:
     """locked_call / JSON-кэш могут вернуть list или обёртку {rows: [...]}."""
     if isinstance(raw, list):
-        return [r for r in raw if isinstance(r, dict)]
-    if isinstance(raw, dict):
-        rows = raw.get("rows")
-        if isinstance(rows, list):
-            return [r for r in rows if isinstance(r, dict)]
-    return []
+        rows = [r for r in raw if isinstance(r, dict)]
+    elif isinstance(raw, dict):
+        raw_rows = raw.get("rows")
+        rows = [r for r in raw_rows if isinstance(r, dict)] if isinstance(raw_rows, list) else []
+    else:
+        rows = []
+    return _drop_closed_lawsuits(rows)
 
 
 def _sql_ref_to_guid(value) -> str:
@@ -297,28 +318,35 @@ def _fetch_from_sql(year: int, month: int, include_all: bool = False) -> list[di
 
     with SqlConnection().connect_ctx() as conn:
         cur = conn.cursor()
+        closed_orders = ",".join(str(o) for o in sorted(CLOSED_STATUS_ORDERS))
         cur.execute(
             f"""
             SELECT
-                _Number,
-                _Date_Time,
-                _Marked,
-                _Fld185097 AS doc_date,
-                _Fld185098RRef AS status_ref,
-                _Fld185099RRef AS doc_type_ref,
-                _Fld185107RRef AS contractor_ref,
-                _Fld185109 AS subject,
-                _Fld185111 AS claim_amount,
-                _Fld185105RRef AS gc_role_ref,
-                _Fld185118_RRRef AS gc_entity_ref,
-                _Fld185119 AS situation_summary,
-                _Fld185121RRef AS initiator_ref,
-                _Fld185173RRef AS initiator_dept_ref,
-                _Fld185174 AS sla_date
-            FROM dbo.[{LAWSUITS_SQL_TABLE}]
-            WHERE _Marked = 0x00
-              AND _Date_Time < ?
-            ORDER BY _Date_Time DESC, _Number
+                d._Number,
+                d._Date_Time,
+                d._Marked,
+                d._Fld185097 AS doc_date,
+                d._Fld185098RRef AS status_ref,
+                d._Fld185099RRef AS doc_type_ref,
+                d._Fld185107RRef AS contractor_ref,
+                d._Fld185109 AS subject,
+                d._Fld185111 AS claim_amount,
+                d._Fld185105RRef AS gc_role_ref,
+                d._Fld185118_RRRef AS gc_entity_ref,
+                d._Fld185119 AS situation_summary,
+                d._Fld185121RRef AS initiator_ref,
+                d._Fld185173RRef AS initiator_dept_ref,
+                d._Fld185174 AS sla_date
+            FROM dbo.[{LAWSUITS_SQL_TABLE}] d
+            WHERE d._Marked = 0x00
+              AND d._Date_Time < ?
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM dbo.[_Enum185084] e
+                  WHERE e._IDRRef = d._Fld185098RRef
+                    AND e._EnumOrder IN ({closed_orders})
+              )
+            ORDER BY d._Date_Time DESC, d._Number
             """,
             date_next,
         )
@@ -368,11 +396,14 @@ def _fetch_from_sql(year: int, month: int, include_all: bool = False) -> list[di
 
         gc_role = gc_roles.get(gc_role_ref, "")
         gc_entity = orgs.get(gc_entity_ref, "")
+        status = statuses.get(status_ref, _sql_ref_to_guid(status_ref))
+        if _is_closed_lawsuit_status(status):
+            continue
 
         result_rows.append({
             "number": _sql_text(row._Number),
             "date": _sql_1c_date(row.doc_date) or _sql_1c_date(row._Date_Time),
-            "status": statuses.get(status_ref, _sql_ref_to_guid(status_ref)),
+            "status": status,
             "doc_type": doc_types.get(doc_type_ref, _sql_ref_to_guid(doc_type_ref)),
             "counterparty": contractors.get(contractor_ref, ""),
             "subject": _sql_text(row.subject).replace("\r\n", " ").replace("\n", " "),
@@ -501,7 +532,7 @@ def _fetch_from_odata(year: int, month: int, include_all: bool = False) -> list[
     docs = [
         d for d in docs
         if not d.get("DeletionMark")
-        and str(d.get("Статус") or "").strip().lower() not in CLOSED_STATUSES
+        and not _is_closed_lawsuit_status(d.get("Статус"))
     ]
 
     # ── Контрагенты ──
@@ -615,7 +646,7 @@ def fetch_lawsuits_for_month(year: int, month: int, include_all: bool = False) -
     """
     cached = _load_cache(year, month, include_all=include_all)
     if cached is not None:
-        return cached
+        return _drop_closed_lawsuits(cached)
 
     try:
         rows = _fetch_from_sql(year, month, include_all=include_all)
@@ -626,8 +657,9 @@ def fetch_lawsuits_for_month(year: int, month: int, include_all: bool = False) -
         except Exception as e:
             logger.error("Failed to fetch lawsuits: %s", e)
             stale = _load_stale_nonempty_cache(year, month, include_all=include_all)
-            return stale or []
+            return _drop_closed_lawsuits(stale or [])
 
+    rows = _drop_closed_lawsuits(rows)
     if rows:
         _save_cache(year, month, rows, include_all=include_all)
     return rows

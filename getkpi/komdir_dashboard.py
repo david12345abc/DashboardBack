@@ -78,7 +78,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 14
+KOMDIR_PAYLOAD_CACHE_VERSION = 16
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -256,7 +256,9 @@ def _generate_tile_monthly_data(kpi_id: str, plan: float,
 
 def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, float],
                           expected_by_month: dict[int, float] | None,
-                          ref_y: int, ref_m: int) -> dict:
+                          ref_y: int, ref_m: int,
+                          *,
+                          use_expected_full: bool = False) -> dict:
     """Общая логика сборки плитки план/факт для KD-M1/M2/M3."""
     months = []
     ref_row = None
@@ -266,12 +268,13 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
         y = row.get('year', ref_y)
         fact = row.get('fact')
         plan, plan_full = _plan_values(plans_by_month.get(m) or 0, y, m)
-        expected_plan = row.get('expected_current')
-        if expected_plan is None:
-            expected_plan = expected_by_month.get(m) or 0
+        expected_current = row.get('expected_current')
+        if expected_current is None:
+            expected_current = expected_by_month.get(m) or 0
         expected_plan_full = row.get('expected_full')
         if expected_plan_full is None:
-            expected_plan_full = expected_plan
+            expected_plan_full = expected_current
+        expected_plan = expected_plan_full if use_expected_full else expected_current
         pct = round(fact / plan * 100, 1) if plan and fact is not None else None
         mrow = {
             'month': m,
@@ -281,7 +284,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             'plan_full': plan_full,
             'fact': fact,
             'expected_plan': expected_plan,
-            'expected_plan_current': expected_plan,
+            'expected_plan_current': expected_current,
             'expected_plan_full': expected_plan_full,
             'kpi_pct': pct,
             'has_data': fact is not None,
@@ -331,7 +334,7 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
     series_m — последний месяц в загрузке фактов (включает текущий неполный для графиков).
 
     KD-M1/M2/M3/M6/M7/M8/M9/M10 — SQL-эталоны comdir (get_*_ytd).
-    KD-M4/KD-M5 — из comdir SQL (РасчетыСКлиентамиПоСрокам / _AccumRg107662).
+    KD-M4/KD-M5 — живой OData (AccumulationRegister_РасчетыСКлиентамиПоСрокам).
     KD-M11 — calc_tekuchest.
     dept_guid — GUID подразделения для фильтрации (None = агрегат).
     plans_payload — устаревший OData-планы; для M1–M3 план берётся из comdir.
@@ -346,8 +349,11 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         )
         raw = dengi.get('months') or []
         plans_by_month = {r['month']: (r.get('plan') or 0) for r in raw}
-        expected_by_month = {r['month']: (r.get('expected') or 0) for r in raw}
-        return _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
+        expected_by_month = {r['month']: (r.get('expected_full') or r.get('expected') or 0) for r in raw}
+        return _build_plan_fact_tile(
+            raw, plans_by_month, expected_by_month, ref_y, ref_m,
+            use_expected_full=True,
+        )
 
     if kpi_id == 'KD-M2':
         otg = cache_manager.locked_call(
@@ -357,8 +363,11 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
         )
         raw = otg.get('months') or []
         plans_by_month = {r['month']: (r.get('plan') or 0) for r in raw}
-        expected_by_month = {r['month']: (r.get('expected') or 0) for r in raw}
-        return _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
+        expected_by_month = {r['month']: (r.get('expected_full') or r.get('expected') or 0) for r in raw}
+        return _build_plan_fact_tile(
+            raw, plans_by_month, expected_by_month, ref_y, ref_m,
+            use_expected_full=True,
+        )
 
     if kpi_id == 'KD-M3':
         dog = cache_manager.locked_call(

@@ -5,17 +5,26 @@
 Маркетинговый план (МП) — без изменений:
   _AccumRg96963, вид «Договоры», 6 коммерческих отделов.
 
-Факт договоров = регистр + ветка счёт-оферта (как в отчёте «План-факт»):
+Факт договоров = регистр + счёт-оферта + дозаказ (как в отчёте «План-факт»):
 
   A) ТД_ДоговорыПодписанные (live OData; SQL — fallback):
   • ДатаПодписания в периоде, Спецификация.Статус = Действует
   • перепродажа / ТД_СопровождениеПродажи / ТД_НеУчитыватьВПланФакте
-  • доп.: партнёр заказа ∈ перепродажи или сопровождение на заказе
+  • доп.: не учитывать / сопровождение на заказе; ОПБО — перепродажа без МГС
+    (МГС в факте 1С остаётся), прочие отделы — любая перепродажа
   • курсы валют заказа
 
   B) Счёт-оферта (из расшифровки Excel): заказы с ТД_СчетОферта,
      без строки в ТД_ДоговорыПодписанные, проведённые, с оплатой в периоде;
      сумма = СуммаОплатыРегл за период (ОПБО/ОДП — перепродажа без МГС).
+
+  C) Дозаказ по уже подписанному соглашению:
+  • ТД_СчетОферта = нет, соглашение действует
+  • типовое: заказа нет в регистре за период
+  • спецификация: заказа нет в регистре, дата заказа в периоде, оплата полная
+  • по тому же соглашению есть подписание строго раньше начала периода
+  • проведён, не «не учитывать» / не сопровождение / не перепродажа
+  • сумма = оплата РасчетыСКлиентами за период
 
 Ожидаемые = UNION как в отчёте 1С «План-факт»:
 
@@ -237,54 +246,20 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
     SQL-копия `_InfoRg112278` в erp_pm часто отстаёт (нет строк за последние дни),
     поэтому для факта берём живой регистр через OData.
     """
-    from comdir.resale import (
-        PREDEFINED_MGS_REF,
-        PREDEFINED_OPBO_REF,
-        PREDEFINED_RESALE_REF,
-        _base,
-        _session,
-        fetch_fx_rates,
-        guid_to_1c_bytes,
-    )
+    from comdir.resale import _base, _session, fetch_fx_rates, guid_to_1c_bytes
 
     session = _session()
     base = _base()
-    empty = "00000000-0000-0000-0000-000000000000"
-    d0 = f"{p0.year - YEAR_OFFSET:04d}-{p0.month:02d}-{p0.day:02d}"
-    d1 = f"{p_next.year - YEAR_OFFSET:04d}-{p_next.month:02d}-{p_next.day:02d}"
+    d0 = _odata_period_str(p0)
+    d1 = _odata_period_str(p_next)
+    rows = [
+        r for r in load_signed_register_odata()
+        if d0 <= (r.get("ДатаПодписания") or "")[:10] < d1
+    ]
+    if not rows:
+        return {}
 
-    # партнёры перепродажи / МГС / ОПБО
-    flt = quote(f"Ref_Key eq guid'{PREDEFINED_RESALE_REF}'", safe="")
-    url = (
-        f"{base}/Catalog_ТД_ПредопределенныеЗначения_ДополнительныеЗначения"
-        f"?$format=json&$filter={flt}&$select=Значение,Значение_Type&$top=5000"
-    )
-    resale: set[str] = set()
-    for row in session.get(url, timeout=45).json().get("value") or []:
-        val = row.get("Значение")
-        if val and "Catalog_Партнеры" in str(row.get("Значение_Type") or ""):
-            resale.add(val)
-    flt_m = quote(f"Ref_Key eq guid'{PREDEFINED_MGS_REF}'", safe="")
-    mgs = (
-        (session.get(
-            f"{base}/Catalog_ТД_ПредопределенныеЗначения?$format=json"
-            f"&$filter={flt_m}&$select=Значение,Значение_Type&$top=1",
-            timeout=30,
-        ).json().get("value") or [{}])[0].get("Значение")
-    )
-    if mgs:
-        resale.add(mgs)
-    resale_nomgs = set(resale) - ({mgs} if mgs else set())
-
-    flt_o = quote(f"Ref_Key eq guid'{PREDEFINED_OPBO_REF}'", safe="")
-    opbo = (
-        (session.get(
-            f"{base}/Catalog_ТД_ПредопределенныеЗначения?$format=json"
-            f"&$filter={flt_o}&$select=Значение,Значение_Type&$top=1",
-            timeout=30,
-        ).json().get("value") or [{}])[0].get("Значение")
-    )
-
+    resale, resale_nomgs, opbo = _odata_resale_guid_sets(session, base)
     rates = fetch_fx_rates()
     cur_map = {
         "0a7c6f22-e1b6-11df-963e-001cc4d04388": rates["USD"],
@@ -292,67 +267,34 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
         "095e2c36-45dc-11ec-8756-ac1f6b05524d": rates["BYN"],
         "e2bc7bc0-de2e-11ef-95fc-6cb31113810e": rates["KZT"],
     }
-
-    entity = quote("InformationRegister_ТД_ДоговорыПодписанные")
-    flt = quote(
-        f"ДатаПодписания ge datetime'{d0}T00:00:00' and "
-        f"ДатаПодписания lt datetime'{d1}T00:00:00'"
+    specs = _odata_batch_by_ref(
+        session,
+        base,
+        "Catalog_СоглашенияСКлиентами",
+        {r.get("Спецификация_Key") or "" for r in rows},
+        "Ref_Key,Статус",
+        label="Dog/SpecStatus",
     )
-    select = quote(
-        "Спецификация_Key,Подразделение_Key,Партнер_Key,ЗаказКлиента_Key,"
-        "СуммаДоговора,ТД_СопровождениеПродажи",
-        safe=",",
+    orders = _odata_batch_by_ref(
+        session,
+        base,
+        "Document_ЗаказКлиента",
+        {
+            r.get("ЗаказКлиента_Key") or ""
+            for r in rows
+            if r.get("ЗаказКлиента_Key") not in ("", None, _EMPTY_GUID)
+        },
+        "Ref_Key,Партнер_Key,Валюта_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи",
+        label="Dog/SignedOrders",
     )
-    rows: list[dict] = []
-    skip = 0
-    while True:
-        url = (
-            f"{base}/{entity}?$format=json&$top=1000&$skip={skip}"
-            f"&$select={select}&$filter={flt}"
-        )
-        batch = session.get(url, timeout=120).json().get("value") or []
-        rows.extend(batch)
-        if len(batch) < 1000:
-            break
-        skip += 1000
-
-    status: dict[str, str] = {}
-    for sk in {r.get("Спецификация_Key") for r in rows if r.get("Спецификация_Key")}:
-        rr = session.get(
-            f"{base}/{quote('Catalog_СоглашенияСКлиентами')}(guid'{sk}')"
-            f"?$format=json&$select=Статус",
-            timeout=30,
-        )
-        if rr.ok:
-            status[sk] = rr.json().get("Статус") or ""
-
-    order_keys = sorted({
-        r.get("ЗаказКлиента_Key")
-        for r in rows
-        if r.get("ЗаказКлиента_Key") and r.get("ЗаказКлиента_Key") != empty
-    })
-    orders: dict[str, dict] = {}
-    for i in range(0, len(order_keys), 15):
-        batch = order_keys[i : i + 15]
-        oflt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
-        url = (
-            f"{base}/{quote('Document_ЗаказКлиента')}?$format=json&$filter={oflt}"
-            f"&$select={quote('Ref_Key,Партнер_Key,Валюта_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи', safe=',')}"
-            f"&$top=50"
-        )
-        rr = session.get(url, timeout=60)
-        if not rr.ok:
-            continue
-        for it in rr.json().get("value") or []:
-            orders[it["Ref_Key"]] = it
 
     name_by_bin = _dept_name_by_bin()
     out: dict[str, float] = {}
     for r in rows:
-        if status.get(r.get("Спецификация_Key") or "") != "Действует":
+        if (specs.get(r.get("Спецификация_Key") or "") or {}).get("Статус") != "Действует":
             continue
-        dept_key = r.get("Подразделение_Key") or empty
-        if dept_key == empty:
+        dept_key = r.get("Подразделение_Key") or _EMPTY_GUID
+        if dept_key == _EMPTY_GUID:
             continue
         try:
             dept_name = name_by_bin.get(guid_to_1c_bytes(dept_key))
@@ -361,7 +303,7 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
         if not dept_name:
             continue
 
-        partner = r.get("Партнер_Key") or empty
+        partner = r.get("Партнер_Key") or _EMPTY_GUID
         sopr_reg = bool(r.get("ТД_СопровождениеПродажи"))
         if opbo and dept_key == opbo:
             if partner in resale_nomgs:
@@ -370,15 +312,21 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
             if partner in resale and not sopr_reg:
                 continue
 
-        ok = r.get("ЗаказКлиента_Key") or empty
+        ok = r.get("ЗаказКлиента_Key") or _EMPTY_GUID
         rate = 1.0
-        if ok != empty:
+        if ok != _EMPTY_GUID:
             od = orders.get(ok) or {}
             if od.get("ТД_НеУчитыватьВПланФакте"):
                 continue
             if od.get("ТД_СопровождениеПродажи"):
                 continue
-            if (od.get("Партнер_Key") or empty) in resale:
+            # Как в запросе 1С: ОПБО режет только перепродажу без МГС.
+            # Полный список перепродажи на заказе выкидывал МГС (~6.5 млн в августе).
+            op = od.get("Партнер_Key") or _EMPTY_GUID
+            if opbo and dept_key == opbo:
+                if op in resale_nomgs:
+                    continue
+            elif op in resale:
                 continue
             rate = float(cur_map.get(od.get("Валюта_Key") or "", 1.0) or 1.0)
 
@@ -446,6 +394,123 @@ def calc_fact_sql(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
 
 def _odata_period_str(p: datetime) -> str:
     return f"{p.year - YEAR_OFFSET:04d}-{p.month:02d}-{p.day:02d}"
+
+
+_EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
+_SIGNED_REG_CACHE: list[dict] | None = None
+
+
+def _odata_json(session, url: str, timeout: int = 120, label: str = "dogovory") -> list[dict]:
+    from getkpi.odata_http import request_with_retry
+
+    r = request_with_retry(session, url, timeout=timeout, retries=3, label=label)
+    if r is None or not r.ok:
+        return []
+    try:
+        return r.json().get("value") or []
+    except Exception:
+        return []
+
+
+def _odata_batch_by_ref(
+    session,
+    base: str,
+    entity: str,
+    keys: set[str],
+    select: str,
+    label: str = "dogovory",
+) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    keys_l = sorted({k for k in keys if k and k != _EMPTY_GUID})
+    for i in range(0, len(keys_l), 15):
+        batch = keys_l[i : i + 15]
+        flt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
+        url = (
+            f"{base}/{quote(entity)}?$format=json&$filter={flt}"
+            f"&$select={quote(select, safe=',_')}&$top={len(batch)}"
+        )
+        for it in _odata_json(session, url, timeout=45, label=label):
+            if it.get("Ref_Key"):
+                out[it["Ref_Key"]] = it
+    return out
+
+
+def load_signed_register_odata() -> list[dict]:
+    """Все строки ТД_ДоговорыПодписанные.
+
+    Регистр независимый (поля Period нет): ключ — измерения, ДатаПодписания — ресурс.
+    Отбор ``ДатаПодписания ge/lt datetime'...'`` на этой базе проходит, но для
+    дозаказа нужны все строки (заказ в регистре вообще, соглашение подписано
+    до начала месяца), поэтому грузим целиком и режем период в Python.
+    """
+    global _SIGNED_REG_CACHE
+    if _SIGNED_REG_CACHE is not None:
+        return _SIGNED_REG_CACHE
+    from comdir.resale import _base, _session
+
+    session = _session()
+    base = _base()
+    entity = quote("InformationRegister_ТД_ДоговорыПодписанные")
+    select = quote(
+        "Спецификация_Key,Подразделение_Key,Партнер_Key,ЗаказКлиента_Key,"
+        "СуммаДоговора,ДатаПодписания,ТД_СопровождениеПродажи",
+        safe=",",
+    )
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        url = f"{base}/{entity}?$format=json&$top=5000&$skip={skip}&$select={select}"
+        batch = _odata_json(session, url, timeout=120, label="Dog/SignedReg")
+        rows.extend(batch)
+        if len(batch) < 5000:
+            break
+        skip += 5000
+    _SIGNED_REG_CACHE = rows
+    return rows
+
+
+def _odata_resale_guid_sets(session, base: str) -> tuple[set[str], set[str], str | None]:
+    """(перепродажа, перепродажа без МГС, guid ОПБО)."""
+    from comdir.resale import (
+        PREDEFINED_MGS_REF,
+        PREDEFINED_OPBO_REF,
+        PREDEFINED_RESALE_REF,
+    )
+
+    resale: set[str] = set()
+    flt = quote(f"Ref_Key eq guid'{PREDEFINED_RESALE_REF}'", safe="")
+    url = (
+        f"{base}/Catalog_ТД_ПредопределенныеЗначения_ДополнительныеЗначения"
+        f"?$format=json&$filter={flt}&$select=Значение,Значение_Type&$top=5000"
+    )
+    for row in _odata_json(session, url, timeout=45, label="Dog/Resale"):
+        val = row.get("Значение")
+        if val and "Catalog_Партнеры" in str(row.get("Значение_Type") or ""):
+            resale.add(val)
+    flt_m = quote(f"Ref_Key eq guid'{PREDEFINED_MGS_REF}'", safe="")
+    mgs = (
+        (_odata_json(
+            session,
+            f"{base}/Catalog_ТД_ПредопределенныеЗначения?$format=json"
+            f"&$filter={flt_m}&$select=Значение,Значение_Type&$top=1",
+            timeout=30,
+            label="Dog/MGS",
+        ) or [{}])[0].get("Значение")
+    )
+    if mgs:
+        resale.add(mgs)
+    resale_nomgs = set(resale) - ({mgs} if mgs else set())
+    flt_o = quote(f"Ref_Key eq guid'{PREDEFINED_OPBO_REF}'", safe="")
+    opbo = (
+        (_odata_json(
+            session,
+            f"{base}/Catalog_ТД_ПредопределенныеЗначения?$format=json"
+            f"&$filter={flt_o}&$select=Значение,Значение_Type&$top=1",
+            timeout=30,
+            label="Dog/OPBO",
+        ) or [{}])[0].get("Значение")
+    )
+    return resale, resale_nomgs, opbo or None
 
 
 _PAYMENT_RECORDER_MARKERS = (
@@ -638,15 +703,218 @@ def calc_fact_offer_odata(cur, p0: datetime, p_next: datetime) -> dict[str, floa
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
+def calc_fact_offer_live_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Счёт-оферта по live-флагу соглашения. SQL-копия _Fld13700 часто врёт."""
+    from comdir.resale import _base, _session, guid_to_1c_bytes
+
+    pay_by_obj = _fetch_settlement_payments_odata(p0, p_next)
+    if not pay_by_obj:
+        return {}
+    session = _session()
+    base = _base()
+    signed_any = {
+        r.get("ЗаказКлиента_Key") or ""
+        for r in load_signed_register_odata()
+        if (r.get("ЗаказКлиента_Key") or "") not in ("", _EMPTY_GUID)
+    }
+    objs = _odata_batch_by_ref(
+        session, base, "Catalog_ОбъектыРасчетов", set(pay_by_obj),
+        "Ref_Key,Объект,Объект_Type", label="Dog/OfferObj",
+    )
+    order_keys = {
+        o.get("Объект") or ""
+        for o in objs.values()
+        if o.get("Объект") and "Document_ЗаказКлиента" in str(o.get("Объект_Type") or "")
+    }
+    orders = _odata_batch_by_ref(
+        session, base, "Document_ЗаказКлиента", order_keys,
+        "Ref_Key,Posted,Статус,Подразделение_Key,Партнер_Key,Соглашение_Key,"
+        "ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи",
+        label="Dog/OfferLiveOrders",
+    )
+    agreements = _odata_batch_by_ref(
+        session, base, "Catalog_СоглашенияСКлиентами",
+        {o.get("Соглашение_Key") or "" for o in orders.values()},
+        "Ref_Key,ТД_СчетОферта,Статус",
+        label="Dog/OfferLiveAgr",
+    )
+    resale, resale_nomgs, opbo = _odata_resale_guid_sets(session, base)
+    name_by_bin = _dept_name_by_bin()
+    out: dict[str, float] = {}
+    for obj_key, amt in pay_by_obj.items():
+        obj = objs.get(obj_key) or {}
+        if "Document_ЗаказКлиента" not in str(obj.get("Объект_Type") or ""):
+            continue
+        order_key = obj.get("Объект") or ""
+        if not order_key or order_key in signed_any:
+            continue
+        order = orders.get(order_key)
+        if not order or not order.get("Posted"):
+            continue
+        if (order.get("Статус") or "") == "НеСогласован":
+            continue
+        if order.get("ТД_НеУчитыватьВПланФакте") or order.get("ТД_СопровождениеПродажи"):
+            continue
+        agr = agreements.get(order.get("Соглашение_Key") or "") or {}
+        if not agr.get("ТД_СчетОферта"):
+            continue
+        if (agr.get("Статус") or "") != "Действует":
+            continue
+        dept_key = order.get("Подразделение_Key") or _EMPTY_GUID
+        try:
+            dept_name = name_by_bin.get(guid_to_1c_bytes(dept_key))
+        except Exception:
+            dept_name = None
+        if not dept_name:
+            continue
+        partner = order.get("Партнер_Key") or _EMPTY_GUID
+        if opbo and dept_key == opbo:
+            if partner in resale_nomgs:
+                continue
+        elif partner in resale:
+            continue
+        out[dept_name] = out.get(dept_name, 0.0) + float(amt or 0)
+    return {k: round(v, 2) for k, v in out.items()}
+
+
 def calc_fact_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """Ветка счёт-оферта факта: предпочтительно live OData, иначе SQL."""
+    """Ветка счёт-оферта факта: live OData-флаг, иначе SQL."""
     try:
-        odata = calc_fact_offer_odata(cur, p0, p_next)
-        if odata:
-            return odata
+        return calc_fact_offer_live_odata(p0, p_next)
     except Exception:
-        logger.exception("OData оплаты счёт-оферта недоступны — SQL fallback")
-    return calc_fact_offer_sql(cur, p0, p_next)
+        logger.exception("OData счёт-оферта недоступна — SQL fallback")
+        return calc_fact_offer_sql(cur, p0, p_next)
+
+
+def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Дозаказ: оплата по уже подписанному соглашению, как в отчёте «План-факт».
+
+    Типовое соглашение: заказ не в регистре за выбранный период
+    (новый заказ по рамке, либо доплата по заказу прошлого месяца).
+
+    Спецификация: заказа нет в регистре вообще, дата заказа в периоде,
+    оплата на полную сумму документа.     Ежемесячный ТО по спецификации идёт в факт, только если сумма
+    соглашения ≈ 1× или 12× сумма заказа. Иначе (сезон, некратное)
+    в отчёте 1С это деньги/отгрузки, не «договоры заключенные».
+    """
+    from comdir.resale import _base, _session, guid_to_1c_bytes
+
+    pay_by_obj = _fetch_settlement_payments_odata(p0, p_next)
+    if not pay_by_obj:
+        return {}
+
+    session = _session()
+    base = _base()
+    d0 = _odata_period_str(p0)
+    d1 = _odata_period_str(p_next)
+    orders_in_period: set[str] = set()
+    signed_any: set[str] = set()
+    agr_prior: set[str] = set()
+    for r in load_signed_register_odata():
+        dt = (r.get("ДатаПодписания") or "")[:10]
+        ok = r.get("ЗаказКлиента_Key") or ""
+        sk = r.get("Спецификация_Key") or ""
+        if ok and ok != _EMPTY_GUID:
+            signed_any.add(ok)
+            if d0 <= dt < d1:
+                orders_in_period.add(ok)
+        if dt and dt < d0 and sk and sk != _EMPTY_GUID:
+            agr_prior.add(sk)
+
+    objs = _odata_batch_by_ref(
+        session,
+        base,
+        "Catalog_ОбъектыРасчетов",
+        set(pay_by_obj),
+        "Ref_Key,Объект,Объект_Type",
+        label="Dog/ReorderObj",
+    )
+    order_keys = {
+        o.get("Объект") or ""
+        for o in objs.values()
+        if o.get("Объект") and "Document_ЗаказКлиента" in str(o.get("Объект_Type") or "")
+    }
+    orders = _odata_batch_by_ref(
+        session,
+        base,
+        "Document_ЗаказКлиента",
+        order_keys,
+        "Ref_Key,Date,Posted,Статус,СуммаДокумента,Подразделение_Key,Партнер_Key,"
+        "Соглашение_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи",
+        label="Dog/ReorderOrders",
+    )
+    agreements = _odata_batch_by_ref(
+        session,
+        base,
+        "Catalog_СоглашенияСКлиентами",
+        {o.get("Соглашение_Key") or "" for o in orders.values()},
+        "Ref_Key,Description,ТД_СчетОферта,Статус,СуммаДокумента",
+        label="Dog/ReorderAgr",
+    )
+    resale, resale_nomgs, opbo = _odata_resale_guid_sets(session, base)
+    name_by_bin = _dept_name_by_bin()
+    out: dict[str, float] = {}
+    for obj_key, amt in pay_by_obj.items():
+        obj = objs.get(obj_key) or {}
+        if "Document_ЗаказКлиента" not in str(obj.get("Объект_Type") or ""):
+            continue
+        order_key = obj.get("Объект") or ""
+        if not order_key:
+            continue
+        order = orders.get(order_key)
+        if not order or not order.get("Posted"):
+            continue
+        if (order.get("Статус") or "") == "НеСогласован":
+            continue
+        if order.get("ТД_НеУчитыватьВПланФакте") or order.get("ТД_СопровождениеПродажи"):
+            continue
+        agr_key = order.get("Соглашение_Key") or ""
+        agr = agreements.get(agr_key) or {}
+        if agr.get("ТД_СчетОферта"):
+            continue
+        if (agr.get("Статус") or "") != "Действует":
+            continue
+        desc = (agr.get("Description") or "").strip()
+        is_typical = desc.lower().startswith("типовое")
+        if is_typical:
+            if order_key in orders_in_period:
+                continue
+            if agr_key not in agr_prior:
+                continue
+        else:
+            if order_key in signed_any:
+                continue
+            if agr_key not in agr_prior:
+                continue
+            order_dt = (order.get("Date") or "")[:10]
+            if not (d0 <= order_dt < d1):
+                continue
+            # Частичная оплата по спецификации в отчёте в факт не идёт.
+            doc_amt = float(order.get("СуммаДокумента") or 0)
+            if doc_amt and abs(float(amt or 0) - doc_amt) > 1:
+                continue
+            agr_amt = float(agr.get("СуммаДокумента") or 0)
+            if doc_amt and agr_amt:
+                ratio = agr_amt / doc_amt
+                # В факт 1С идёт разовая спецификация (1×) или годовой ТО (12×).
+                # Сезон / некратное (9×, 7.4×, 2×) — только деньги и отгрузки.
+                if abs(ratio - 1) > 0.02 and abs(ratio - 12) > 0.02:
+                    continue
+        dept_key = order.get("Подразделение_Key") or _EMPTY_GUID
+        try:
+            dept_name = name_by_bin.get(guid_to_1c_bytes(dept_key))
+        except Exception:
+            dept_name = None
+        if not dept_name:
+            continue
+        partner = order.get("Партнер_Key") or _EMPTY_GUID
+        if opbo and dept_key == opbo:
+            if partner in resale_nomgs:
+                continue
+        elif partner in resale:
+            continue
+        out[dept_name] = out.get(dept_name, 0.0) + float(amt or 0)
+    return {k: round(v, 2) for k, v in out.items()}
 
 
 def _merge_fact(a: dict[str, float], b: dict[str, float]) -> dict[str, float]:
@@ -657,25 +925,31 @@ def _merge_fact(a: dict[str, float], b: dict[str, float]) -> dict[str, float]:
 
 
 def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """Договоры заключённые (факт) = регистр + счёт-оферта (как в отчёте 1С).
+    """Договоры заключённые (факт) = регистр + счёт-оферта + дозаказ.
 
-    Регистр — MSSQL; оплаты счёт-оферта — live OData (SQL часто отстаёт).
+    Все месяцы: live OData и ветка дозаказа (как отчёт «План-факт»).
+    SQL — только fallback, если OData недоступен.
     """
     try:
-        reg = calc_fact_sql(cur, p0, p_next)
+        reg = calc_fact_odata(p0, p_next)
     except Exception:
-        logger.exception("SQL факт договоров недоступен — fallback OData")
+        logger.exception("OData факт договоров недоступен — SQL fallback")
         try:
-            reg = calc_fact_odata(p0, p_next)
+            reg = calc_fact_sql(cur, p0, p_next)
         except Exception:
-            logger.exception("OData факт договоров тоже недоступен")
+            logger.exception("SQL факт договоров тоже недоступен")
             reg = {}
     try:
-        offer = calc_fact_offer(cur, p0, p_next)
+        offer = calc_fact_offer_live_odata(p0, p_next)
     except Exception:
         logger.exception("Ветка счёт-оферта факта договоров недоступна")
         offer = {}
-    return _merge_fact(reg, offer)
+    try:
+        reorder = calc_fact_reorder_odata(p0, p_next)
+    except Exception:
+        logger.exception("Ветка дозаказа факта договоров недоступна")
+        reorder = {}
+    return _merge_fact(_merge_fact(reg, offer), reorder)
 
 
 def calc_expected_potential(

@@ -14,7 +14,7 @@ from datetime import date
 from pathlib import Path
 
 from .commercial_tiles import commercial_kpi_key, dept_guid_for_kpi_key
-from .komdir_lawsuits import fetch_lawsuits_for_month
+from .komdir_lawsuits import fetch_lawsuits_for_month, normalize_lawsuits_rows
 
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
@@ -103,7 +103,7 @@ def get_sudy_by_department(year: int, month: int, department: str) -> dict:
         return cached
 
     # include_all=True: иначе строки без инициатора отфильтровываются.
-    all_rows = fetch_lawsuits_for_month(year, month, include_all=True)
+    all_rows = normalize_lawsuits_rows(fetch_lawsuits_for_month(year, month, include_all=True))
     if dept_guid:
         rows = [r for r in all_rows if (r.get("initiator_dept_key") or "") == dept_guid]
     else:

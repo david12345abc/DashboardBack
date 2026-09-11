@@ -28,7 +28,7 @@ import json
 import logging
 import sys
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import requests
@@ -570,6 +570,31 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
         "year": payload.get("year"),
         "ref_month": payload.get("ref_month"),
         "months": sliced_months,
+    }
+
+
+def get_otgruzki_fact_by_month(year: int, ref_month: int) -> dict[int, dict[str, float]]:
+    """Живой факт отгрузок январь..ref_month по 6 отделам.
+
+    Текущий месяц режется «сегодня + 1», как период отчёта 1С.
+    Без помесячного файлового кэша — чтобы плитка не брала утренний снимок.
+    """
+    from .odata_http import disable_access_guard
+
+    disable_access_guard()
+    session = requests.Session()
+    session.auth = AUTH
+    rashod = _load_rashod_records(session, year, ref_month)
+    if not rashod:
+        raise RuntimeError("OData: РаспоряженияНаОтгрузку пуст или не ответил")
+    today = date.today()
+    if year == today.year and ref_month == today.month:
+        cut = f"{(today + timedelta(days=1)).isoformat()}T00:00:00"
+        rashod = [row for row in rashod if (row.get("Period") or "") < cut]
+    monthly = _calc_main_otgruzki(session, rashod, year, ref_month)
+    return {
+        month: {dept: round(monthly[dept][month], 2) for dept in DEPT_SET}
+        for month in range(1, ref_month + 1)
     }
 
 

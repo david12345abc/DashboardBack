@@ -52,7 +52,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -604,9 +604,12 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict,
 
 
 def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, list[dict]],
-                  excl_full: set,
+                  excl_full: set, excl_no_mgs: set,
                   max_month: int) -> dict[str, dict[int, float]]:
-    """Ветка 2: Комиссия (СуммаПостоплатыРегл). Возвращает by_dept."""
+    """Ветка 2: Комиссия (СуммаПостоплатыРегл). Возвращает by_dept.
+
+    У дилеров (ОПБО) Метрогазсервис не отсекается — как в отчёте 1С и во ветке 1.
+    """
     monthly: dict[str, dict[int, float]] = {
         d: {m: 0.0 for m in range(1, max_month + 1)} for d in DEPT_SET
     }
@@ -619,10 +622,6 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, l
         if not _is_commission_report_type(row.get("РасчетныйДокумент_Type")):
             continue
         if not _is_postuplenie_beznal_type(row.get("Recorder_Type")):
-            continue
-
-        reg_partner = row.get("Партнер_Key", "")
-        if reg_partner in excl_full:
             continue
 
         reg_dept = normalize_commercial_dept_guid(row.get("Подразделение_Key", ""))
@@ -638,6 +637,11 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, l
                     reg_dept = cat_dept
                 else:
                     continue
+
+        reg_partner = row.get("Партнер_Key", "")
+        excl = excl_no_mgs if reg_dept == OPBO_DEPT else excl_full
+        if reg_partner in excl:
+            continue
 
         amt = float(row.get("СуммаПостоплатыРегл") or row.get("СуммаПостоплаты") or 0)
         if not amt:
@@ -769,6 +773,11 @@ def get_dengi_monthly(year: int | None = None,
     session.auth = AUTH
 
     compute_start_m = ref_m if force_compute else 1
+    if force_compute:
+        for m in range(1, ref_m):
+            if _load_cache(ref_y, m) is None:
+                compute_start_m = 1
+                break
     logger.info(
         "calc_dengi_fact: loading registers for %d months %d-%d",
         ref_y, compute_start_m, ref_m,
@@ -800,6 +809,10 @@ def get_dengi_monthly(year: int | None = None,
     orders_by_obj = _scan_orders_by_object_keys(session, obj_keys)
 
     all_partner_keys: set[str] = set()
+    for x in ds_rows:
+        pk = x.get("Партнер_Key", "")
+        if pk and pk != EMPTY:
+            all_partner_keys.add(pk)
     for c in catalog.values():
         pk = c.get("partner", "")
         if pk and pk != EMPTY:
@@ -815,7 +828,7 @@ def get_dengi_monthly(year: int | None = None,
     excl_no_mgs = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS}
 
     b1 = _calc_branch1(ds_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
-    b2 = _calc_branch2(ds_rows, catalog, orders_by_obj, excl_full, ref_m)
+    b2 = _calc_branch2(ds_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
     b3 = _calc_branch3(kk_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
 
     merged = _merge_by_dept(b1, b2, b3, ref_m)
@@ -829,7 +842,9 @@ def get_dengi_monthly(year: int | None = None,
         else:
             by_dept = {d: merged[d][m] for d in DEPT_SET}
             total = round(sum(by_dept.values()), 2)
-            _save_cache(ref_y, m, total, by_dept)
+            # Регистр грузили с compute_start_m: чужой месяц нулями не затираем.
+            if m >= compute_start_m:
+                _save_cache(ref_y, m, total, by_dept)
         out_months.append({
             "year": ref_y, "month": m,
             "fact": total,

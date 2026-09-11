@@ -13,10 +13,13 @@ calc_plan.py — Плановые показатели: Договоры, Ден
   - Период МЕЖДУ НачалоПериода(месяц) И КонецПериода(месяц)
   - Подразделение <> ПустаяСсылка
   - Подразделение В (&ПодразделениеСписок)
-  - СУММА по ВидПланирования:
+    - СУММА по ВидПланирования:
     Отгрузки → МП_СуммаОтгрузки
     Деньги   → МП_ОжидаемаяСуммаОплаты
     Договоры → МП_СуммаДоговораПлан
+  - объект планирования (Ответственный = Catalog_ТД_ГруппыМенеджеров)
+    не в архиве на конец месяца: ПомещеноВАрхив пустая или >= начало следующего месяца
+    (как отчёт 1С «План-факт» и SQL calc_plan_fact_*)
 
 API:
   from getkpi.calc_plan import get_plans_monthly
@@ -83,7 +86,7 @@ EXPECTED_CONTRACT_DOC = "Document_КоммерческоеПредложение
 EXPECTED_POTENTIAL_CONTRACTS = "InformationRegister_ТД_ДоговорыПотенциальные"
 SIGNED_CONTRACTS_REG = "InformationRegister_ТД_ДоговорыПодписанные"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_VERSION = 15
+CACHE_VERSION = 17
 PLAN_KEYS = ("dengi", "otgruzki", "dogovory")
 EXPECTED_KEYS = {
     "dengi": "dengi_expected",
@@ -184,7 +187,10 @@ def _load_register(session: requests.Session,
     else:
         d_to = f"{year}-{ref_month + 1:02d}-01T00:00:00"
 
-    sel = quote("Period,Active,Подразделение_Key,ВидПланирования,Сумма", safe=",_")
+    sel = quote(
+        "Period,Active,Подразделение_Key,ВидПланирования,Сумма,Ответственный",
+        safe=",_",
+    )
     flt = quote(
         f"Period ge datetime'{d_from}' and Period lt datetime'{d_to}' and Active eq true",
         safe="",
@@ -209,6 +215,56 @@ def _load_register(session: requests.Session,
             break
         skip += 5000
     return rows
+
+
+CATALOG_MANAGER_GROUPS = "Catalog_ТД_ГруппыМенеджеров"
+ARCHIVE_EMPTY = "2001-01-01"
+
+
+def _month_end_exclusive_iso(year: int, month: int) -> str:
+    if month == 12:
+        return f"{year + 1}-01-01"
+    return f"{year}-{month + 1:02d}-01"
+
+
+def _archive_is_empty(archive_iso: str) -> bool:
+    return (not archive_iso) or archive_iso <= ARCHIVE_EMPTY
+
+
+def _keep_plan_object(archive_iso: str, year: int, month: int) -> bool:
+    """Как отчёт 1С: пустая дата архива или закрытие не раньше конца месяца."""
+    if _archive_is_empty(archive_iso):
+        return True
+    return archive_iso >= _month_end_exclusive_iso(year, month)
+
+
+def _load_manager_group_archives(
+    session: requests.Session,
+    entries: list[dict],
+) -> dict[str, str]:
+    """guid группы менеджеров → ПомещеноВАрхив (YYYY-MM-DD)."""
+    keys = sorted({
+        str(row.get("Ответственный") or "")
+        for row in entries
+        if row.get("Ответственный") and row.get("Ответственный") != EMPTY
+    })
+    result: dict[str, str] = {}
+    if not keys:
+        return result
+    sel = quote("Ref_Key,ПомещеноВАрхив", safe=",_")
+    for i in range(0, len(keys), 20):
+        batch = keys[i:i + 20]
+        flt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
+        url = (
+            f"{BASE}/{CATALOG_MANAGER_GROUPS}?$format=json&$top={len(batch)}"
+            f"&$filter={flt}&$select={sel}"
+        )
+        r = request_with_retry(session, url, timeout=60, retries=3, label="Plans/Groups")
+        if r is None or not r.ok:
+            continue
+        for item in r.json().get("value") or []:
+            result[item["Ref_Key"]] = str(item.get("ПомещеноВАрхив") or "")[:10]
+    return result
 
 
 def _load_expected_documents(session: requests.Session,
@@ -409,7 +465,7 @@ def _batch_load_orders_for_expected(session: requests.Session,
     fields = (
         "Ref_Key,Date,Подразделение_Key,Партнер_Key,Соглашение_Key,Валюта_Key,ОбъектРасчетов_Key,"
         "ДатаОтгрузки,ТД_НеУчитыватьВПланФакте,ТД_НеУчитыватьВПланФактеДС,"
-        "ТД_НеУчитыватьВПланФактеОтгрузки"
+        "ТД_НеУчитыватьВПланФактеОтгрузки,ТД_СопровождениеПродажи"
     )
     sel = quote(fields, safe=",_")
     for i in range(0, len(keys), 15):
@@ -435,6 +491,7 @@ def _batch_load_orders_for_expected(session: requests.Session,
                     "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
                     "ne_uchit_ds": it.get("ТД_НеУчитыватьВПланФактеДС", False),
                     "ne_uchit_ship": it.get("ТД_НеУчитыватьВПланФактеОтгрузки", False),
+                    "soprovozhd": it.get("ТД_СопровождениеПродажи", False),
                 }
         except Exception:
             pass
@@ -549,15 +606,16 @@ def _load_customer_settlement_rows(session: requests.Session,
     return rows
 
 
+# Остаток «ожидаемо» — все движения до конца месяца. Окно «с прошлого года»
+# отрезает заказы 2024 и раньше (БМИ −5,09 млн, дилеры −0,79 млн в сентябре 2026).
+SHIPMENT_EXPECTED_FROM = "2018-01-01T00:00:00"
+
+
 def _load_shipment_order_rows(session: requests.Session,
                               year: int,
                               ref_month: int,
                               order_keys: set[str]) -> list[dict]:
-    # The 1C report builds expected shipments from the accumulation register
-    # turnover balance. In practice the report includes carry-over customer
-    # orders from the previous year, so the OData fallback uses the same
-    # carry-over window instead of only the current calendar year.
-    d_from = _month_start(year - 1, 1)
+    d_from = SHIPMENT_EXPECTED_FROM
     d_to = _month_end_exclusive(year, ref_month)
     sel = quote(
         "Period,Active,Распоряжение,Распоряжение_Type,ВидДвиженияРегистра,Сумма,Сторно",
@@ -600,11 +658,14 @@ def _signed_balance_amount(row: dict, field: str) -> float:
 
 def _expected_order_passes_common_filters(order: dict,
                                           resale_partners: set[str],
-                                          resale_without_mgs: set[str]) -> str | None:
-    dept = _normalize_expected_dept(order.get("dept", ""))
+                                          resale_without_mgs: set[str],
+                                          *,
+                                          map_liquidated: bool = True) -> str | None:
+    raw_dept = order.get("dept", "")
+    dept = _normalize_expected_dept(raw_dept) if map_liquidated else (raw_dept or "")
     if not dept or dept not in DEPT_SET:
         return None
-    if not _is_expected_dept(order.get("dept", "")):
+    if map_liquidated and not _is_expected_dept(raw_dept):
         return None
     if order.get("agreement") in ("", EMPTY):
         return None
@@ -704,9 +765,14 @@ def _merge_expected_shipments(result: dict[int, dict],
             if not order:
                 continue
             ship_date = (order.get("ship_date") or "")[:10]
-            if not ship_date or not (ship_date < end[:10]):
+            if ship_date.startswith("0001-01-01"):
+                ship_date = ""
+            # Пустая ДатаОтгрузки в отчёте 1С входит в «ожидаемо».
+            if ship_date and not (ship_date < end[:10]):
                 continue
-            dept = _expected_order_passes_common_filters(order, resale_partners, resale_without_mgs)
+            dept = _expected_order_passes_common_filters(
+                order, resale_partners, resale_without_mgs, map_liquidated=False,
+            )
             if not dept:
                 continue
             key = (dept, order_key)
@@ -1054,6 +1120,30 @@ def _merge_expected_shipments_from_odata(result: dict[int, dict],
             )
 
 
+def get_otgruzki_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str, float]]:
+    """Живое ожидаемо отгрузок январь..ref_month по 6 отделам.
+
+    Как колонка «Заказы ожидаемые к отгрузке» в отчёте 1С: остаток регистра,
+    пустая ДатаОтгрузки входит, ликвидированные холдинги не клеятся.
+    """
+    from .odata_http import disable_access_guard
+
+    disable_access_guard()
+    session = requests.Session()
+    session.auth = AUTH
+    result: dict[int, dict] = {}
+    for m in range(1, ref_month + 1):
+        result[m] = {
+            "otgruzki_expected": 0.0,
+            "by_dept": {d: {"otgruzki_expected": 0.0} for d in DEPT_SET},
+        }
+    _merge_expected_shipments_from_odata(result, session, year, ref_month)
+    return {
+        month: {dept: round(result[month]["by_dept"][dept]["otgruzki_expected"], 2) for dept in DEPT_SET}
+        for month in range(1, ref_month + 1)
+    }
+
+
 def _merge_expected_money_from_odata(result: dict[int, dict],
                                     session: requests.Session,
                                     year: int,
@@ -1078,12 +1168,111 @@ def _merge_expected_money_from_odata(result: dict[int, dict],
             )
 
 
+def _order_passes_report_money_expected(
+    order: dict,
+    resale_partners: set[str],
+    resale_without_mgs: set[str],
+) -> str | None:
+    """Фильтры колонки 14 отчёта «План-факт»: отдел, соглашение, флаги, перепродажа."""
+    dept = _normalize_expected_dept(order.get("dept") or "")
+    if not dept or dept not in DEPT_SET:
+        return None
+    if (order.get("agreement") or "") in ("", EMPTY):
+        return None
+    if order.get("ne_uchit") or order.get("ne_uchit_ds") or order.get("soprovozhd"):
+        return None
+    partner = order.get("partner") or ""
+    if dept == OPBO_DEPT:
+        if partner in resale_without_mgs:
+            return None
+    elif partner in resale_partners:
+        return None
+    return dept
+
+
+def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str, float]]:
+    """Ожидаемые платежи январь..ref_month как колонка 14 отчёта «План-факт».
+
+    Этап оплаты в самом месяце, остаток КОплате на конец месяца, один заказ
+    на объект расчётов (MIN Ref). У дилеров Метрогазсервис не отсекается.
+    """
+    from .odata_http import disable_access_guard
+
+    disable_access_guard()
+    session = requests.Session()
+    session.auth = AUTH
+
+    resale_partners, resale_without_mgs = _partner_resale_sets(session)
+    payment_months = _load_payment_stage_order_months(session, year, ref_month)
+    orders = _batch_load_orders_for_expected(session, set(payment_months))
+    obj_keys = {
+        order.get("calc_obj") or ""
+        for order in orders.values()
+        if (order.get("calc_obj") or "") not in ("", EMPTY)
+    }
+    calc_objects = _batch_load_calc_objects(session, obj_keys)
+    settlement_rows = _load_customer_settlement_rows(session, year, ref_month, obj_keys)
+    rows_sorted = sorted(settlement_rows, key=lambda row: (row.get("Period") or ""))
+
+    result: dict[int, dict[str, float]] = {
+        month: {dept: 0.0 for dept in DEPT_SET} for month in range(1, ref_month + 1)
+    }
+    balances: dict[str, float] = {}
+    idx = 0
+    for month in range(1, ref_month + 1):
+        end = _month_end_exclusive(year, month)
+        while idx < len(rows_sorted) and (rows_sorted[idx].get("Period") or "") < end:
+            row = rows_sorted[idx]
+            idx += 1
+            obj_key = row.get("ОбъектРасчетов_Key") or ""
+            if obj_key in ("", EMPTY):
+                continue
+            balances[obj_key] = balances.get(obj_key, 0.0) + _signed_balance_amount(
+                row, "КОплате",
+            )
+
+        picked: dict[str, str] = {}
+        for order_key, order in orders.items():
+            if month not in payment_months.get(order_key, set()):
+                continue
+            if not _order_passes_report_money_expected(
+                order, resale_partners, resale_without_mgs,
+            ):
+                continue
+            obj_key = order.get("calc_obj") or ""
+            if obj_key in ("", EMPTY):
+                continue
+            prev = picked.get(obj_key)
+            if prev is None or order_key < prev:
+                picked[obj_key] = order_key
+
+        for obj_key, order_key in picked.items():
+            calc_obj = calc_objects.get(obj_key)
+            if not calc_obj or ORDER_TYPE_MARKER not in (calc_obj.get("obj_type") or ""):
+                continue
+            bal = balances.get(obj_key, 0.0)
+            if bal <= 0:
+                continue
+            order = orders[order_key]
+            dept = _normalize_expected_dept(order.get("dept") or "")
+            if dept not in DEPT_SET:
+                continue
+            result[month][dept] += bal * _currency_rate(order.get("currency") or "")
+
+    return {
+        month: {dept: round(amt, 2) for dept, amt in by_dept.items()}
+        for month, by_dept in result.items()
+    }
+
+
 def _calc_plans(entries: list[dict],
-                ref_month: int) -> dict[int, dict]:
+                ref_month: int,
+                archives: dict[str, str] | None = None) -> dict[int, dict]:
     """
     Агрегировать записи в помесячный план по отделам.
     Возвращает {month: {"dengi": total, "otgruzki": total, "dogovory": total,
                         "by_dept": {guid: {"dengi": ..., "otgruzki": ..., "dogovory": ...}}}}
+    archives: guid группы менеджеров → ПомещеноВАрхив. None — без отсева архива.
     """
     result: dict[int, dict] = {}
     for m in range(1, ref_month + 1):
@@ -1113,6 +1302,16 @@ def _calc_plans(entries: list[dict],
         dept = row.get("Подразделение_Key", "")
         if not dept or dept == EMPTY or dept not in DEPT_SET:
             continue
+
+        if archives is not None:
+            group = str(row.get("Ответственный") or "")
+            if group and group != EMPTY:
+                try:
+                    year = int(period_str[:4])
+                except (ValueError, IndexError):
+                    continue
+                if not _keep_plan_object(archives.get(group, ""), year, m):
+                    continue
 
         vid = row.get("ВидПланирования", "")
         sm = float(row.get("Сумма") or 0)
@@ -1430,7 +1629,8 @@ def get_plans_monthly(year: int | None = None,
 
     logger.info("calc_plan: loading register for %d months 1-%d", ref_y, ref_m)
     entries = _load_register(session, ref_y, ref_m)
-    computed = _calc_plans(entries, ref_m)
+    archives = _load_manager_group_archives(session, entries)
+    computed = _calc_plans(entries, ref_m, archives)
     # План (Маркетинговый план) считается из регистра выше. Ожидаемые значения
     # сначала берём из расчётного HTTP-сервиса 1С; если сервис не опубликован,
     # деньги/договоры/отгрузки ожидаемые воспроизводим по OData-объектам из запросов 1С.

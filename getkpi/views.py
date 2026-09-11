@@ -1557,6 +1557,12 @@ def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int 
             paths.append(hrd_q4.cache_file_path_for_period(ref_y, ref_m))
 
     paths.extend(techdir_dashboard.cache_stamp_paths(kid, ref_y, ref_m))
+    paths.extend(_gspp_kpi_views.cache_stamp_paths(kid, ref_y, ref_m))
+    if _gspp_kpi_views.gspp_q4_kpi_id_matches(kid):
+        from getkpi.gspp_q4 import gspp_q4_deviation_tables_cache_path
+
+        paths.append(gspp_q4_deviation_tables_cache_path(ref_y, ref_m))
+        paths.extend(cd.glob(f"dashboard_payload_gspp_*_{ref_y}_{ref_m:02d}.json"))
     return list(dict.fromkeys(paths))
 
 
@@ -3078,7 +3084,8 @@ def _build_universal_payload(
     if _is_gspp_department(dept) and not include_debug:
         # v10: ГСП-Q4 — просрочка по finish_date (график Turbo), не по baseline.
         # v11: ГСП-M5 — сумма бюджета по всей Q4-когорте (без среза [:1]).
-        gspp_memo_key = f"gspp_dashboard:v11:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v12: ГСП-Q4 — будущая дата в колонке «Окончание» не считается просрочкой.
+        gspp_memo_key = f"gspp_dashboard:v12:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -3128,7 +3135,7 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v11_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v12_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
             dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
@@ -4544,13 +4551,13 @@ def _fetch_claims_rows_for_department(
 
 
 def _fetch_lawsuits_rows_for_department(year: int, month: int, department: str) -> list[dict]:
-    from .komdir_lawsuits import fetch_lawsuits_for_month
+    from .komdir_lawsuits import fetch_lawsuits_for_month, normalize_lawsuits_rows
 
     canonical_dept, dept_guid = _normalize_commercial_context_department(department)
     # Суды: коммерческий директор и ПСД (в коммерческом блоке) видят ВСЕ суды
     # компании, а не только инициированные сотрудниками коммерческих отделов.
     # Конкретное подразделение видит только свои (отфильтруем ниже по initiator_dept_key).
-    rows = fetch_lawsuits_for_month(year, month, include_all=True)
+    rows = normalize_lawsuits_rows(fetch_lawsuits_for_month(year, month, include_all=True))
     if dept_guid:
         rows = [r for r in rows if r.get('initiator_dept_key') == dept_guid]
     return rows

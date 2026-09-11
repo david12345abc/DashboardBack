@@ -12,7 +12,7 @@
 
 Ожидаемые (Заказы ожидаемые к отгрузке)
   — тот же регистр: Приход + Расход (знаковая сумма) по заказам
-    с ДатаОтгрузки < конец месяца, остаток > 0
+    с ДатаОтгрузки < конец месяца (пустая дата 1С тоже входит), остаток > 0
   — ветка возвратов комиссионеров (СебестоимостьТоваров) не включена
 
 Итог коммерческого директора = сумма по отделам отчёта.
@@ -104,6 +104,7 @@ def load_resale(cur) -> None:
 
 
 def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Маркетинговый план отгрузок: те же 6 отделов и фильтр объекта планирования, что у денег."""
     load_depts(cur, COMMERCIAL_DEPTS, "#plan_depts")
     cur.execute(
         """
@@ -111,12 +112,21 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
                SUM(CASE WHEN p._Active = 0x01 THEN p._Fld96971 ELSE 0 END) AS PlanSum
         FROM _AccumRg96963 p WITH (NOLOCK)
         INNER JOIN #plan_depts d ON d.id = p._Fld96965RRef
+        LEFT JOIN _Reference112236 plan_obj WITH (NOLOCK)
+          ON plan_obj._IDRRef = p._Fld96964_RRRef
         WHERE p._Fld122525RRef = ?
           AND p._Period >= ? AND p._Period < ?
+          AND (
+                plan_obj._IDRRef IS NULL
+                OR plan_obj._Fld122423 <= ?
+                OR plan_obj._Fld122423 >= ?
+              )
         GROUP BY d.name
         """,
         PLAN_SHIPS,
         p0,
+        p_next,
+        datetime(2001, 1, 1),
         p_next,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
@@ -173,13 +183,16 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
 
 
 def calc_expected(cur, p_month_end: datetime) -> dict[str, float]:
-    """Заказы ожидаемые к отгрузке: остаток > 0, ДатаОтгрузки < конец месяца."""
+    """Заказы ожидаемые к отгрузке: остаток > 0, ДатаОтгрузки < конец месяца.
+
+    Пустая дата 1С (0001-01-01 → 2001-01-01 в SQL) входит в отчёт
+    «План-фактный анализ продаж», поэтому нижнюю отсечку не ставим.
+    """
     from comdir.resale import ORDER_SOPR_FIELD
 
     all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS
     load_depts(cur, all_depts, "#exp_depts")
     load_resale(cur)
-    empty_date = datetime(4001, 1, 2)  # «пустая» дата 1С с запасом
     cur.execute(
         f"""
         SELECT d.name, SUM(x.net) AS ExpSum
@@ -196,7 +209,6 @@ def calc_expected(cur, p_month_end: datetime) -> dict[str, float]:
             AND s._Fld169758_RTRef = ?
             AND o._Fld21183RRef <> ?
             AND o._Fld21205 < ?
-            AND o._Fld21205 > ?
             AND ISNULL(o._Fld184301, 0x00) = 0x00
             AND ISNULL(o._Fld185211, 0x00) = 0x00
             AND (
@@ -222,7 +234,6 @@ def calc_expected(cur, p_month_end: datetime) -> dict[str, float]:
         ORDER_TREF,
         EMPTY16,
         p_month_end,
-        empty_date,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 

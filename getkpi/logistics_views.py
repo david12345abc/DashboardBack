@@ -385,8 +385,11 @@ def build_kpi_entry(kpi_id: str, entry: dict, *, year: int | None = None, month:
         )
         raw = otg.get("months") or []
         plans_by_month = {row["month"]: (row.get("plan") or 0) for row in raw}
-        expected_by_month = {row["month"]: (row.get("expected") or 0) for row in raw}
-        data = _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_y, ref_m)
+        expected_by_month = {row["month"]: (row.get("expected_full") or row.get("expected") or 0) for row in raw}
+        data = _build_plan_fact_tile(
+            raw, plans_by_month, expected_by_month, ref_y, ref_m,
+            use_expected_full=True,
+        )
         entry["data_granularity"] = "monthly"
         entry["monthly_data"] = data.get("monthly_data") or []
         entry["quarterly_data"] = []

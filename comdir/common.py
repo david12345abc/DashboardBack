@@ -184,10 +184,13 @@ def aggregate_by_odata_name(
     by_name: dict[str, float],
     *,
     include_unknown: bool = False,
+    include_liquidated: bool = True,
 ) -> dict[str, float]:
     """Суммы по имени отдела → {odata_guid: sum}, ликвидированные в действующие."""
     out: dict[str, float] = {}
     for name, val in by_name.items():
+        if not include_liquidated and str(name).startswith("(ликв.)"):
+            continue
         guid = name_to_odata(name)
         if not guid:
             if include_unknown:

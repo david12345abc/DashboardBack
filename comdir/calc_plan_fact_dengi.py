@@ -17,6 +17,7 @@
   — этап оплаты с ДатаПлатежа в выбранном месяце
   — фильтры заказа: соглашение, не ТД_НеУчитыватьВПланФакте/ДС,
     не ТД_СопровождениеПродажи, партнёр не из списка перепродажи
+    (у дилеров/ОПБО Метрогазсервис не отсекается — как в отчёте 1С)
   — валюта заказа × фиксированные курсы (как в отчёте 1С)
 
 Итог коммерческого директора = сумма по всем отделам факта / плану.
@@ -180,7 +181,8 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
           -- оплаты: отдел объекта расчётов
           SELECT o._Fld138169RRef AS dept,
                  CASE WHEN c._Fld51417RRef = ? THEN -c._Fld51434 ELSE c._Fld51434 END AS amt,
-                 COALESCE(ord._Fld21180RRef, c._Fld51418RRef) AS partner
+                 COALESCE(ord._Fld21180RRef, c._Fld51418RRef) AS partner,
+                 0 AS comm
           FROM _AccumRg51416 c WITH (NOLOCK)
           INNER JOIN _Reference134945 o WITH (NOLOCK)
             ON o._IDRRef = c._Fld140225_RRRef
@@ -205,9 +207,11 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
           UNION ALL
 
           -- комиссия: постоплата, отдел = измерение регистра
+          -- у дилеров/ОПБО Метрогазсервис не отсекаем (как отчёт 1С)
           SELECT c._Fld51419RRef,
                  c._Fld51437,
-                 c._Fld51418RRef
+                 c._Fld51418RRef,
+                 1 AS comm
           FROM _AccumRg51416 c WITH (NOLOCK)
           WHERE c._Period >= ? AND c._Period < ?
             AND c._Active = 0x01
@@ -216,13 +220,26 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
             AND c._Fld51432_RTRef = ?
             AND c._RecorderTRef = ?
             AND c._Fld51437 <> 0
+            AND (
+                  CASE
+                    WHEN EXISTS (SELECT 1 FROM #dept_nomgs dn WHERE dn.id = c._Fld51419RRef) THEN
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM #resale_nomgs r WHERE r.id = c._Fld51418RRef
+                      ) THEN 0 ELSE 1 END
+                    ELSE
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM #resale r WHERE r.id = c._Fld51418RRef
+                      ) THEN 0 ELSE 1 END
+                  END
+                ) = 1
 
           UNION ALL
 
           -- взаимозачёты
           SELECT o._Fld138169RRef,
                  c._Fld51626,
-                 ord._Fld21180RRef
+                 ord._Fld21180RRef,
+                 0 AS comm
           FROM _AccumRg51608 c WITH (NOLOCK)
           INNER JOIN _Reference134945 o WITH (NOLOCK)
             ON o._IDRRef = c._Fld140249_RRRef
@@ -237,12 +254,13 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
             AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
         ) x
         INNER JOIN #fact_depts d ON d.id = x.dept
-        WHERE (
-          CASE
-            WHEN EXISTS (SELECT 1 FROM #resale r WHERE r.id = x.partner)
-            THEN 0 ELSE 1
-          END
-        ) = 1
+        WHERE x.comm = 1
+           OR (
+             CASE
+               WHEN EXISTS (SELECT 1 FROM #resale r WHERE r.id = x.partner)
+               THEN 0 ELSE 1
+             END
+           ) = 1
         GROUP BY d.name
         """,
         RET_OP,
@@ -270,7 +288,8 @@ def calc_expected(cur, p_period_start: datetime, p_month_end: datetime) -> dict[
     • объект расчётов типа ЗаказКлиента (_Fld138162_RTRef);
     • заказ с этапом оплаты ДатаПлатежа в [начало выбранного месяца .. конец месяца);
     • соглашение заполнено; не ТД_НеУчитыватьВПланФакте / …ДС;
-    • партнёр заказа не из списка перепродажи.
+    • партнёр заказа не из списка перепродажи;
+      у отдела дилеров (ОПБО) Метрогазсервис оставляем, как отчёт 1С.
     """
     from comdir.resale import ORDER_SOPR_FIELD
 
@@ -323,7 +342,18 @@ def calc_expected(cur, p_period_start: datetime, p_month_end: datetime) -> dict[
                 AND st._Fld21281 >= ?
                 AND st._Fld21281 < ?
             )
-            AND NOT EXISTS (SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef)
+            AND (
+                  CASE
+                    WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = ord._Fld21220RRef) THEN
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
+                      ) THEN 0 ELSE 1 END
+                    ELSE
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                      ) THEN 0 ELSE 1 END
+                  END
+                ) = 1
           GROUP BY ord._Fld138973RRef
         ) pick ON pick.obj = bal.obj
         INNER JOIN _Document704 ord WITH (NOLOCK)

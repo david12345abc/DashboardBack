@@ -168,16 +168,28 @@ def snapshot_on_date(na_datu: date) -> dict[str, Any]:
 
     for e in per_order.values():
         guid = e["dept_guid"]
+        if guid in HOLDINGS_TO_KEY:
+            continue
         name = _dept_display_name(guid)
         slice_guid = _normalize_slice_guid(guid)
+        dz_net = e["dz_net"]
+        overdue_net = e["overdue_net"]
+        if dz_net <= TOLERANCE:
+            overdue_net = 0.0
+            aging_scale = 0.0
+        elif overdue_net > dz_net + TOLERANCE:
+            aging_scale = dz_net / overdue_net
+            overdue_net = dz_net
+        else:
+            aging_scale = 1.0
         # Без фильтра «только +заказы»: иначе +~21k vs отчёт 1С 323 930 180.89.
-        dz_by_dept[name] += e["dz_net"]
-        dz_by_slice[slice_guid] += e["dz_net"]
+        dz_by_dept[name] += dz_net
+        dz_by_slice[slice_guid] += dz_net
         kz_by_dept[name] += e["kz_net"]
-        overdue_by_dept[name] += e["overdue_net"]
-        overdue_by_slice[slice_guid] += e["overdue_net"]
+        overdue_by_dept[name] += overdue_net
+        overdue_by_slice[slice_guid] += overdue_net
         for b, amt in e["aging"].items():
-            aging_by_dept[name][b] += amt
+            aging_by_dept[name][b] += amt * aging_scale
 
     depts_all = sorted(
         d

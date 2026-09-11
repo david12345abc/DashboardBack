@@ -69,6 +69,7 @@ coverage/
 # Temporary files
 tmp/
 temp/
+_tmp*
 *.tmp
 *.bak
 *.orig
@@ -82,4 +83,5 @@ dashboard/*.json
 getkpi/dashboard/*.json
 getkpi/dashboard/**/*.json
 getkpi/*_cache.json
+getkpi/**/*_cache.json
 getkpi/dds_articles_cache.json

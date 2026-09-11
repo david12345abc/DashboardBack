@@ -6,8 +6,10 @@
 
 **Отклонение:** веха из когорты, у которой к дате расчёта
 (конец месяца для закрытых периодов, сегодня для текущего месяца):
-  - не выполнена (``percent_complete`` < 100%%), а срок не позже даты расчёта
-    (берётся baseline, иначе ``finish_date`` как текущий срок); или
+  - не выполнена (``percent_complete`` < 100%%), срок не позже даты расчёта
+    (берётся baseline, иначе ``finish_date`` как текущий срок), **и** дата
+    в колонке «Окончание» (график / baseline месяца) уже наступила —
+    будущий срок в графике не считается просрочкой; или
   - выполнена, но фактическое окончание позже baseline (если baseline нет —
     завершённая веха не считается отклонившейся, см. ``debug.milestones_without_baseline``).
 
@@ -73,12 +75,12 @@ STATUS_COMPLETED = frozenset({"завершен", "закрыт"})
 PROJECT_NAME_SUBSTR = "номенклатур"
 
 GSPP_Q4_CACHE_PREFIX = "gspp_q4_ytd"
-GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v12"
-GSPP_Q4_DISK_VERSION = 12
+GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v13"
+GSPP_Q4_DISK_VERSION = 13
 
 GSPP_Q4_DEVIATION_CACHE_PREFIX = "gspp_q4_deviation_tables"
-GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v7"
-GSPP_Q4_DEVIATION_DISK_VERSION = 7
+GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v8"
+GSPP_Q4_DEVIATION_DISK_VERSION = 8
 
 _MANAGER_PROJECTS_TTL = 3600
 _MANAGER_PROJECTS_DISK_TAG = "gspp_manager_projects_v1"
@@ -328,6 +330,8 @@ def _milestone_deviated(
             return False
         return act_d > base_d
 
+    if _ending_date_is_in_the_future(task, ref_y, ref_m, as_of_date):
+        return False
     due_d = base_d if base_d is not None else act_d
     if due_d is None:
         return False
@@ -348,6 +352,8 @@ def _gspp_delay_days_for_deviated(
             return max(0, (act_d - base_d).days)
         return 0
 
+    if _ending_date_is_in_the_future(task, ref_y, ref_m, as_of_date):
+        return 0
     due_d = base_d if base_d is not None else act_d
     if due_d is None:
         return 0
@@ -393,6 +399,18 @@ def _display_dates_for_month(
         # zero-duration: начало = окончание = плановая дата месяца
         return base_raw, base_raw, base_raw
     return start_raw, finish_raw, base_raw
+
+
+def _ending_date_is_in_the_future(
+    task: dict[str, Any], ref_y: int, ref_m: int, as_of_date: date,
+) -> bool:
+    """Колонка «Окончание» (график, иначе finish_date) ещё не наступила — не просрочка."""
+    ending_raw = _display_dates_for_month(task, ref_y, ref_m)[1]
+    ending_d = (
+        _calendar_date_from_field(ending_raw)
+        or _calendar_date_from_field(task.get("finish_date"))
+    )
+    return ending_d is not None and ending_d > as_of_date
 
 
 def _gspp_milestone_deviation_details(

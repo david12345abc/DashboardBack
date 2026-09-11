@@ -162,8 +162,11 @@ def get_logistics_npo_shipment_monthly(year: int | None = None, month: int | Non
     otg = get_otgruzki_ytd(year=ref_year, month=ref_month)
     raw = otg.get("months") or []
     plans_by_month = {row["month"]: (row.get("plan") or 0) for row in raw}
-    expected_by_month = {row["month"]: (row.get("expected") or 0) for row in raw}
-    data = _build_plan_fact_tile(raw, plans_by_month, expected_by_month, ref_year, ref_month)
+    expected_by_month = {row["month"]: (row.get("expected_full") or row.get("expected") or 0) for row in raw}
+    data = _build_plan_fact_tile(
+        raw, plans_by_month, expected_by_month, ref_year, ref_month,
+        use_expected_full=True,
+    )
     months = data.get("monthly_data") or []
     return {
         "cache_date": date.today().isoformat(),
