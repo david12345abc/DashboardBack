@@ -18,6 +18,8 @@
   — фильтры заказа: соглашение, не ТД_НеУчитыватьВПланФакте/ДС,
     не ТД_СопровождениеПродажи, партнёр не из списка перепродажи
     (у дилеров/ОПБО Метрогазсервис не отсекается — как в отчёте 1С)
+  — закрытый заказ с переплатой на начало месяца
+    (КОплате_open + Σэтапов месяца < 0) не берём
   — валюта заказа × фиксированные курсы (как в отчёте 1С)
 
 Итог коммерческого директора = сумма по всем отделам факта / плану.
@@ -47,6 +49,9 @@ CUR_USD = bytes.fromhex("963e001cc4d0438811dfe1b60a7c6f22")
 CUR_EUR = bytes.fromhex("81cd001583b3d75c11e07405d328a18d")
 CUR_BYN = bytes.fromhex("8756ac1f6b05524d11ec45dc095e2c36")
 CUR_KZT = bytes.fromhex("95fc6cb31113810e11efde2ee2bc7bc0")
+
+# Document_ЗаказКлиента.Статус = Закрыт
+ORDER_STATUS_CLOSED = bytes.fromhex("b0e8c70f8e9e2b96440ba5356e7c22c2")
 
 ODP_DEPT = bytes.fromhex("96f96cb31113810e11f092f67587c178")  # Отдел дилерских продаж
 OPBO_DEPT = bytes.fromhex("80da001e6711250911e49f994edcf3a0")  # ликв. бытовое
@@ -129,7 +134,12 @@ def load_resale(cur) -> None:
 
 
 def calc_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """План денег по 6 коммерческим отделам (полный месяц)."""
+    """План денег по 6 коммерческим отделам (полный месяц).
+
+    Объект планирования только с пустой «ПомещеноВАрхив» (_Fld122423 <= 2001).
+    Записи с датой архива в будущем (напр. 30.06.2026) отчёт 1С в янв–май
+    не показывает — иначе ОДП завышался на +9…20 млн.
+    """
     load_depts(cur, COMMERCIAL_DEPTS, "#plan_depts")
     cur.execute(
         """
@@ -144,7 +154,6 @@ def calc_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
           AND (
                 plan_obj._IDRRef IS NULL
                 OR plan_obj._Fld122423 <= ?
-                OR plan_obj._Fld122423 >= ?
               )
         GROUP BY d.name
         """,
@@ -152,7 +161,6 @@ def calc_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
         p0,
         p_next,
         datetime(2001, 1, 1),
-        p_next,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
@@ -287,9 +295,11 @@ def calc_expected(cur, p_period_start: datetime, p_month_end: datetime) -> dict[
     • остаток КОплате > 0 на конец месяца по ОбъектРасчетов;
     • объект расчётов типа ЗаказКлиента (_Fld138162_RTRef);
     • заказ с этапом оплаты ДатаПлатежа в [начало выбранного месяца .. конец месяца);
-    • соглашение заполнено; не ТД_НеУчитыватьВПланФакте / …ДС;
+    • соглашение заполнено; не ТД_НеУчитыватьВПланФакте / …ДС / сопровождение;
     • партнёр заказа не из списка перепродажи;
-      у отдела дилеров (ОПБО) Метрогазсервис оставляем, как отчёт 1С.
+      у отдела дилеров (ОПБО) Метрогазсервис оставляем, как отчёт 1С;
+    • закрытый заказ с переплатой на начало месяца (КОплате_open + Σэтапов_месяца < 0)
+      не берём — плюс на конец месяца из реализации, не из графика.
     """
     from comdir.resale import ORDER_SOPR_FIELD
 
@@ -359,6 +369,28 @@ def calc_expected(cur, p_period_start: datetime, p_month_end: datetime) -> dict[
         INNER JOIN _Document704 ord WITH (NOLOCK)
           ON ord._IDRRef = pick.ord_id
         INNER JOIN #exp_depts d ON d.id = ord._Fld21220RRef
+        OUTER APPLY (
+          SELECT SUM(
+                   CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END
+                 ) AS open_bal
+          FROM _AccumRg53885 s WITH (NOLOCK)
+          WHERE s._Fld140429RRef = bal.obj
+            AND s._Period < ?
+            AND s._Active = 0x01
+            AND ISNULL(s._Fld140434, 0x00) = 0x00
+            AND s._Fld53890 <> 0
+        ) opn
+        OUTER APPLY (
+          SELECT SUM(st._Fld21283) AS stage_sum
+          FROM _Document704_VT21278 st WITH (NOLOCK)
+          WHERE st._Document704_IDRRef = ord._IDRRef
+            AND st._Fld21281 >= ?
+            AND st._Fld21281 < ?
+        ) stg
+        WHERE NOT (
+          ord._Fld21195RRef = ?
+          AND ISNULL(opn.open_bal, 0) + ISNULL(stg.stage_sum, 0) < -0.01
+        )
         GROUP BY d.name
         """,
         CUR_USD,
@@ -371,6 +403,10 @@ def calc_expected(cur, p_period_start: datetime, p_month_end: datetime) -> dict[
         EMPTY16,
         p_period_start,
         p_month_end,
+        p_period_start,
+        p_period_start,
+        p_month_end,
+        ORDER_STATUS_CLOSED,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 

@@ -315,18 +315,22 @@ class CompanyResolver:
         if key in self._cache:
             return self._cache[key]
 
-        company = self._lookup_contact_company(name)
-        if not company:
-            company = self._lookup_external_user_company(name, INTERNAL_ODATA, self._internal_auth)
-        if not company and USE_WEB_ODATA:
-            company = self._lookup_external_user_company(
-                name,
-                WEB_ODATA,
-                basic_auth_header(
-                    os.getenv("TURBO_HS_USER", DEFAULT_USER),
-                    os.getenv("TURBO_HS_PASSWORD", DEFAULT_PASSWORD),
-                ),
-            )
+        company = ""
+        try:
+            company = self._lookup_contact_company(name)
+            if not company:
+                company = self._lookup_external_user_company(name, INTERNAL_ODATA, self._internal_auth)
+            if not company and USE_WEB_ODATA:
+                company = self._lookup_external_user_company(
+                    name,
+                    WEB_ODATA,
+                    basic_auth_header(
+                        os.getenv("TURBO_HS_USER", DEFAULT_USER),
+                        os.getenv("TURBO_HS_PASSWORD", DEFAULT_PASSWORD),
+                    ),
+                )
+        except Exception:
+            company = ""
 
         self._cache[key] = company
         return company

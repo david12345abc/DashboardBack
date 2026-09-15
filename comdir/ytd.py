@@ -44,9 +44,10 @@ logger = logging.getLogger(__name__)
 
 # v17: KD-M1 ожидаемо на плитке — полный месяц (как колонка 14 отчёта), не «до завтра».
 #      KD-M2 отгрузки — план SQL, факт live OData, ожидаемо live OData полный месяц.
-CACHE_VERSION = 17
-KD_M1_SOURCE_TAG = "comdir_kd_m1_ytd_odata_fact_expected_sql_plan_v2"
+CACHE_VERSION = 20
+KD_M1_SOURCE_TAG = "comdir_kd_m1_ytd_odata_fact_expected_sql_plan_v4"
 KD_M2_SOURCE_TAG = "comdir_kd_m2_ytd_odata_fact_sql_plan_odata_expected_v1"
+KD_M3_SOURCE_TAG = "comdir_kd_m3_ytd_odata_fact_sql_plan_expected_v4"
 
 
 def _kpi_pct(fact, plan) -> float | None:
@@ -532,7 +533,7 @@ def build_dogovory_payload(year: int, month: int) -> dict[str, Any]:
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M3")
     payload["debug"] = {
         **(payload.get("debug") or {}),
-        "source": "comdir.odata_fact_sql_plan_expected",
+        "source": KD_M3_SOURCE_TAG,
         "fact_source": "odata_signed_offer_reorder",
     }
     return payload
@@ -547,7 +548,7 @@ def get_dogovory_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m3_ytd",
-        source_tag="comdir_kd_m3_ytd_odata_reorder_v3",
+        source_tag=KD_M3_SOURCE_TAG,
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m3",
         compute_fn=build_dogovory_payload,

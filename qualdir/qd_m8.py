@@ -65,14 +65,16 @@ COL_STATUS = "_Fld148623RRef"
 COL_SIGNIFICANT = "_Fld185470"
 COL_DEPT = "_Fld148618RRef"
 
+# _Enum100559._EnumOrder — сверка OData↔SQL янв–авг 2026.
+# После расширения перечисления «Выполнено» стало 12, не 5.
 STATUS_BY_ORDER: dict[int, str] = {
     0: "Подготовлен",
     1: "НаСогласовании",
-    2: "НеСогласовано",
-    3: "РазработкаКМ",
-    4: "ИсполнениеКМ",
-    5: "Выполнено",
-    6: "Отменена",
+    7: "РазработкаКМ",
+    9: "ИсполнениеКМ",
+    11: "НеСогласовано",
+    12: "Выполнено",
+    13: "Отменена",
 }
 EXECUTED_STATUS = "Выполнено"
 PLAN_EXCLUDED_STATUSES = frozenset(
@@ -191,9 +193,8 @@ def load_status_bins(cur) -> dict[str, bytes]:
     )
     result: dict[str, bytes] = {}
     for idr, order in cur.fetchall():
-        name = STATUS_BY_ORDER.get(int(order))
-        if name:
-            result[name] = bytes(idr)
+        name = STATUS_BY_ORDER.get(int(order), f"Статус_{int(order)}")
+        result[name] = bytes(idr)
     missing = [name for name in STATUS_BY_ORDER.values() if name not in result]
     if missing:
         raise RuntimeError(f"Не найдены значения статуса в {ENUM_TABLE}: {missing}")
@@ -535,7 +536,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M8_YTD_CACHE_PREFIX = "qualdir_qd_m8_ytd"
 QD_M8_YTD_DISK_TAG = "qualdir_qd_m8_ytd_payload_sql_v1"
-QD_M8_YTD_DISK_VERSION = 21
+QD_M8_YTD_DISK_VERSION = 22
 
 
 def forma0317_month_cache_path(year: int, month: int) -> _Path:

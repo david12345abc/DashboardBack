@@ -97,7 +97,7 @@ def get_sh_t2_table(year: int | None = None, month: int | None = None) -> dict[s
         )
         return payload
 
-    return ytd_json_cache.resolve_payload(
+    payload = ytd_json_cache.resolve_payload(
         CACHE_PATH,
         source_tag=CACHE_SOURCE_TAG,
         version=CACHE_VERSION,
@@ -105,6 +105,27 @@ def get_sh_t2_table(year: int | None = None, month: int | None = None) -> dict[s
         lock_key="servhead_sh_t2_all",
         compute_fn=_compute_and_save,
     )
+    if isinstance(payload, dict):
+        return payload
+    return {
+        "kpi_id": TABLE_ID,
+        "name": "Анкеты удовлетворённости клиентов",
+        "periodicity": "за всё время",
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+            "scope": "all_time",
+        },
+        "columns": list(REPORT_COLUMNS),
+        "rows": [],
+        "totals": {"count": 0},
+        "debug": {
+            "kpi_id": TABLE_ID,
+            "status": "error",
+            "error": "cache lock timeout",
+        },
+    }
 
 
 def main() -> None:

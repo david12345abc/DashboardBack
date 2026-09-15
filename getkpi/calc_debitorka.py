@@ -1343,14 +1343,33 @@ def _calc_snapshots_batch(dates_to_compute: list[date],
     return results
 
 
+def snapshot_cache_path(na_datu: date) -> Path:
+    """Путь к daily-снимку ДЗ на дату."""
+    return _cache_path_snapshot(na_datu)
+
+
+def refresh_cache_paths(ref_y: int, ref_m: int) -> list[Path]:
+    """Файлы, которые надо сбросить, чтобы плитка сняла живой OData на дату среза."""
+    today = date.today()
+    na = _month_end(ref_y, ref_m)
+    if na > today:
+        na = today
+    return [
+        _cache_path_snapshot(na),
+        _cache_path_monthly(ref_y, ref_m),
+    ]
+
+
 def get_snapshot_for_date(na_datu: date) -> dict:
     """Кэшируемый снимок ДЗ/просрочки на дату."""
     cached = _load_json(_cache_path_snapshot(na_datu))
+    force = cache_manager.is_force_compute_context()
     # Старые файлы кэша (без поля kz_source == "predoplata_upr") пересчитываем:
     # до v2 КЗ рассчитывался как отрицательные ДолгУпр-остатки и всегда был 0,
     # теперь КЗ — это ПредоплатаУпр-остатки (колонка «Наш долг» в 1С).
     if (
-        cached is not None
+        not force
+        and cached is not None
         and cached.get("kz_source") == "predoplata_upr"
         and cached.get("dept_alias_source") == DEPT_ALIAS_SOURCE
         and not _snapshot_is_empty(cached)

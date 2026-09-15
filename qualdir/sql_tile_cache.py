@@ -50,12 +50,16 @@ def get_ytd_via_cache(
     perpetual = ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m)
 
     def _runner() -> dict[str, Any]:
-        cached = ytd_json_cache.load_payload(
-            disk_path,
-            source_tag=source_tag,
-            version=version,
-            perpetual=perpetual,
-        )
+        from getkpi import cache_manager
+
+        cached = None
+        if not cache_manager.is_force_compute_context():
+            cached = ytd_json_cache.load_payload(
+                disk_path,
+                source_tag=source_tag,
+                version=version,
+                perpetual=perpetual,
+            )
         if cached is not None:
             return cached
         try:

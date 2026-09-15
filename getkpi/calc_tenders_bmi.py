@@ -1,10 +1,13 @@
 """
 calc_tenders_bmi.py — % выигранных тендеров для учредителя (MRK-09).
 
+Источник: живая 1С OData (Document_ТД_СлужебнаяЗаписка).
+SQL-дамп erp_pm — только fallback, если OData недоступна.
+
 Алгоритм:
-  Берутся документы ТД_СлужебнаяЗаписка с начала года с отборами:
+  Берутся документы ТД_СлужебнаяЗаписка за выбранный месяц с отборами:
     - ТемаСлужебнойЗаписки = "Запрос документов по тендеру (регл.)"
-    - УТО_ПодразделениеТендер входит в список коммерческих тендерных отделов
+    - все такие служебные записки, без отсечения по отделу
 
   План  = количество таких документов (все тендеры)
   Факт  = план с фильтром (УТО_РезультатТендера = 1)  (выигранные)
@@ -18,16 +21,19 @@ calc_tenders_bmi.py — % выигранных тендеров для учре�
   data = get_tenders_departments(2026)   # {'plan': int, 'fact': int, 'pct': float|None, ...}
 """
 import functools
+import json
 import logging
 import sys
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
 from requests.auth import HTTPBasicAuth
 
 from comdir.common import uuid_to_1c_bytes
+from .odata_http import disable_access_guard, request_with_retry
 
 BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
 AUTH = HTTPBasicAuth("odata.user", "npo852456")
@@ -37,6 +43,10 @@ BMI_KEY   = "9edaa7d4-37a5-11ee-93d3-6cb31113810e"  # Отдел продаж Б
 TEMA_KEY  = "f88a0ca1-82eb-11e8-827b-ac1f6b05524d"  # "Запрос документов по тендеру (регл.)"
 TEMA_NAME = "Запрос документов по тендеру (регл.)"
 
+TENDER_OFFICE_KEY = "1c9f9419-d91b-11e0-8129-cd2988c3db2d"
+AMUR_KEY = "1184435b-2dc1-11e9-8288-ac1f6b05524d"
+FINDIR_KEY = "9e4a8fc9-3100-11e0-aed9-40618636da2b"
+
 TENDER_DEPARTMENTS: dict[str, str] = {
     BMI_KEY: "Отдел продаж БМИ",
     "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО Газпром",
@@ -44,6 +54,9 @@ TENDER_DEPARTMENTS: dict[str, str] = {
     "34497ef7-810f-11e4-80d6-001e67112509": "Отдел продаж эталонного оборудования и услуг",
     "7587c178-92f6-11f0-96f9-6cb31113810e": "Отдел дилерских продаж",
     "639ec87b-67b6-11eb-8523-ac1f6b05524d": "Отдел по работе с ключевыми клиентами",
+    AMUR_KEY: "Отдел продаж Амурской легенды",
+    TENDER_OFFICE_KEY: "Тендерный офис",
+    FINDIR_KEY: "Финансовый директор",
 }
 
 REZ_NAME = {
@@ -91,6 +104,73 @@ SQL_TKP_COL = "_Fld178516"
 SQL_RESULT_COMMENT_COL = "_Fld184345"
 SQL_YEAR_OFFSET = 2000
 SQL_EMPTY_REF = b"\x00" * 16
+
+CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
+CACHE_SOURCE_TAG = "odata_erp_pm"
+CACHE_KEY_PREFIX = "tenders_all_odata_v1"
+
+
+def _cache_scope(departments: dict[str, str] | None) -> str:
+    if departments is None:
+        return "all"
+    if departments == TENDER_DEPARTMENTS:
+        return "all"
+    if set(departments) == {BMI_KEY}:
+        return "bmi"
+    return "custom"
+
+
+def tenders_cache_path(
+    year: int,
+    month: int,
+    *,
+    cumulative: bool = False,
+    departments: dict[str, str] | None = None,
+) -> Path:
+    kind = "ytd" if cumulative else "monthly"
+    scope = _cache_scope(departments)
+    return CACHE_DIR / f"tenders_{scope}_odata_v1_{kind}_{year}_{month:02d}.json"
+
+
+def tenders_lock_key(
+    year: int,
+    month: int,
+    *,
+    cumulative: bool = False,
+    departments: dict[str, str] | None = None,
+) -> str:
+    kind = "ytd" if cumulative else "monthly"
+    scope = _cache_scope(departments)
+    return f"tenders_{scope}_odata_v1_{kind}_{year}_{month:02d}"
+
+
+def _load_cache(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if data.get("cache_date") != date.today().isoformat():
+        return None
+    if data.get("source") != CACHE_SOURCE_TAG:
+        return None
+    return data
+
+
+def _save_cache(path: Path, payload: dict) -> None:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {**payload, "cache_date": date.today().isoformat()},
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except OSError:
+        logger.warning("tenders: failed to write cache %s", path)
 
 
 def _normalize_result_code(value) -> int:
@@ -152,11 +232,8 @@ def _fetch_enum_labels(session) -> dict[int, str]:
     ]
     for name in candidates:
         url = f"{BASE}/{quote(name)}?$format=json"
-        try:
-            r = session.get(url, timeout=30)
-        except Exception:
-            continue
-        if not r.ok:
+        r = request_with_retry(session, url, timeout=30, retries=2, label="tenders-enum")
+        if r is None or not r.ok:
             continue
         try:
             items = r.json().get("value", []) or []
@@ -224,9 +301,11 @@ def _fetch_all(session, base_url, page_size=1000, timeout=120):
     while True:
         sep = "&" if "?" in base_url else "?"
         url = f"{base_url}{sep}$top={page_size}&$skip={skip}&$format=json"
-        r = session.get(url, timeout=timeout)
+        r = request_with_retry(session, url, timeout=timeout, retries=4, label="tenders-odata")
+        if r is None:
+            raise RuntimeError(f"OData unavailable: {base_url[:180]}")
         if not r.ok:
-            break
+            raise RuntimeError(f"OData HTTP {r.status_code}: {r.text[:200]}")
         items = r.json().get("value", [])
         out.extend(items)
         if len(items) < page_size:
@@ -238,6 +317,38 @@ def _fetch_all(session, base_url, page_size=1000, timeout=120):
 def _month_end(year: int, month: int) -> date:
     last_day = 31 if month in {1, 3, 5, 7, 8, 10, 12} else (30 if month != 2 else (29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28))
     return date(year, month, last_day)
+
+
+def _resolve_dept_name(session, key: str) -> str:
+    if not key:
+        return "(не указано)"
+    if key in TENDER_DEPARTMENTS:
+        return TENDER_DEPARTMENTS[key]
+    url = (
+        f"{BASE}/{quote('Catalog_СтруктураПредприятия')}(guid'{key}')"
+        f"?$format=json&$select=Description"
+    )
+    r = request_with_retry(session, url, timeout=30, retries=2, label="tenders-dept")
+    if r is not None and r.ok:
+        try:
+            name = str((r.json() or {}).get("Description") or "").strip()
+        except Exception:
+            name = ""
+        if name:
+            return name
+    return key
+
+
+def _names_for_rows(rows: list[dict], session=None, extra: dict[str, str] | None = None) -> dict[str, str]:
+    names = dict(TENDER_DEPARTMENTS)
+    if extra:
+        names.update(extra)
+    for r in rows:
+        key = str(r.get("УТО_ПодразделениеТендер_Key") or "")
+        if not key or key in names:
+            continue
+        names[key] = _resolve_dept_name(session, key) if session is not None else key
+    return names
 
 
 def _build_tenders_result(
@@ -309,7 +420,10 @@ def _build_tenders_result(
             "customer": (r.get("УТО_Заказчик") or "").strip(),
         })
 
-    departments = sorted(by_dept.values(), key=lambda row: row["department"])
+    departments = sorted(
+        (row for row in by_dept.values() if row["plan"] > 0),
+        key=lambda row: row["department"],
+    )
     return {
         "year": year,
         "month": month,
@@ -333,7 +447,7 @@ def _fetch_from_sql(
     *,
     year: int,
     month: int,
-    departments: dict[str, str],
+    departments: dict[str, str] | None,
     cumulative: bool,
 ) -> dict:
     from sql_connection import SqlConnection
@@ -346,22 +460,15 @@ def _fetch_from_sql(
     start_sql = _to_sql_dt(start_dt)
     end_sql = _to_sql_dt(end_dt + timedelta(days=1))
     topic_ref = uuid_to_1c_bytes(TEMA_KEY)
+    filter_keys = set(departments) if departments is not None else None
 
     with SqlConnection().connect_ctx() as conn:
         cur = conn.cursor()
         cur.execute("SET NOCOUNT ON")
-        cur.execute("IF OBJECT_ID('tempdb..#tender_depts') IS NOT NULL DROP TABLE #tender_depts")
-        cur.execute("CREATE TABLE #tender_depts (id binary(16) PRIMARY KEY, guid char(36))")
-        for guid in departments:
-            cur.execute(
-                "INSERT INTO #tender_depts (id, guid) VALUES (?, ?)",
-                uuid_to_1c_bytes(guid),
-                guid,
-            )
         cur.execute(
             f"""
             SELECT
-              d.guid AS dept_guid,
+              s.[{SQL_TENDER_DEPT_COL}] AS tender_dept_ref,
               s._IDRRef AS ref_key,
               s._Number AS number,
               s._Date_Time AS date_time,
@@ -375,7 +482,6 @@ def _fetch_from_sql(
               s.[{SQL_TKP_COL}] AS tkp_sum,
               s.[{SQL_RESULT_COMMENT_COL}] AS result_comment
             FROM dbo.[{SQL_DOC_TABLE}] s WITH (NOLOCK)
-            INNER JOIN #tender_depts d ON d.id = s.[{SQL_TENDER_DEPT_COL}]
             WHERE s._Date_Time >= ?
               AND s._Date_Time < ?
               AND s.[{SQL_TOPIC_COL}] = ?
@@ -390,7 +496,9 @@ def _fetch_from_sql(
     for row in raw_rows:
         if bytes(row.deletion_mark or b"") == b"\x01":
             continue
-        dept_guid = str(row.dept_guid or "").strip().lower()
+        dept_guid = _sql_ref_to_guid(row.tender_dept_ref)
+        if filter_keys is not None and dept_guid not in filter_keys:
+            continue
         rows.append({
             "Ref_Key": _sql_ref_to_guid(row.ref_key),
             "Number": (row.number or "").strip(),
@@ -417,48 +525,39 @@ def _fetch_from_sql(
         period_end=end_dt.isoformat(),
         cumulative=cumulative,
         code_to_canon=_sql_code_to_canonical(),
-        dept_names=departments,
+        dept_names=_names_for_rows(rows, extra=departments),
     )
 
 
-def get_tenders_departments(
-    year: int | None = None,
+def _fetch_from_odata(
     *,
-    month: int | None = None,
-    departments: dict[str, str] | None = None,
-    cumulative: bool = True,
+    year: int,
+    month: int,
+    departments: dict[str, str] | None,
+    cumulative: bool,
 ) -> dict:
+    disable_access_guard()
     today = date.today()
-    y = int(year) if year else today.year
-    m = max(1, min(12, int(month))) if month else 12
-    end_dt = _month_end(y, m)
-    if y == today.year and end_dt >= today:
+    end_dt = _month_end(year, month)
+    if year == today.year and end_dt >= today:
         end_dt = today
-
-    start_dt = date(y, 1, 1) if cumulative else date(y, m, 1)
+    start_dt = date(year, 1, 1) if cumulative else date(year, month, 1)
     start = f"{start_dt.isoformat()}T00:00:00"
     end = f"{end_dt.isoformat()}T23:59:59"
 
-    dept_names = departments or TENDER_DEPARTMENTS
-    try:
-        result = _fetch_from_sql(year=y, month=m, departments=dept_names, cumulative=cumulative)
-        result["source"] = "sql_erp_pm"
-        return result
-    except Exception as exc:
-        logger.warning("tenders: SQL fetch failed, fallback to OData: %s", exc)
-
-    dept_filter = " or ".join(
-        f"УТО_ПодразделениеТендер_Key eq guid'{key}'"
-        for key in dept_names
-    )
-
-    s = requests.Session()
-    s.auth = AUTH
+    session = requests.Session()
+    session.auth = AUTH
     flt = (
-        f"({dept_filter})"
-        f" and Date ge datetime'{start}'"
+        f"Date ge datetime'{start}'"
         f" and Date le datetime'{end}'"
+        f" and DeletionMark eq false"
     )
+    if departments:
+        dept_filter = " or ".join(
+            f"УТО_ПодразделениеТендер_Key eq guid'{key}'"
+            for key in departments
+        )
+        flt = f"({dept_filter}) and {flt}"
     url = (
         f"{BASE}/{quote('Document_ТД_СлужебнаяЗаписка')}"
         f"?$filter={quote(flt, safe='')}"
@@ -469,23 +568,59 @@ def get_tenders_departments(
         f"УТО_НаименованиеТендера,УТО_Заказчик,УТО_СуммаНМЦ,"
         f"УТО_СуммаТКПТендера,УТО_КомментарийПоРезультатуТендера"
     )
-
-    rows_all = _fetch_all(s, url)
-    rows = [r for r in rows_all
-            if r.get("ТемаСлужебнойЗаписки") == TEMA_KEY
-            or r.get("ТемаСлужебнойЗаписки") == TEMA_NAME]
-    alive = [r for r in rows if not r.get("DeletionMark")]
-    code_to_canon = _get_code_to_canonical(s)
+    rows_all = _fetch_all(session, url)
+    rows = [
+        r for r in rows_all
+        if r.get("ТемаСлужебнойЗаписки") == TEMA_KEY
+        or r.get("ТемаСлужебнойЗаписки") == TEMA_NAME
+    ]
     return _build_tenders_result(
-        alive,
-        year=y,
-        month=m,
+        rows,
+        year=year,
+        month=month,
         period_start=start[:10],
         period_end=end_dt.isoformat(),
         cumulative=cumulative,
-        code_to_canon=code_to_canon,
-        dept_names=dept_names,
+        code_to_canon=_get_code_to_canonical(session),
+        dept_names=_names_for_rows(rows, session=session, extra=departments),
     )
+
+
+def get_tenders_departments(
+    year: int | None = None,
+    *,
+    month: int | None = None,
+    departments: dict[str, str] | None = None,
+    cumulative: bool = True,
+) -> dict:
+    from . import cache_manager
+
+    today = date.today()
+    y = int(year) if year else today.year
+    m = max(1, min(12, int(month))) if month else 12
+    dept_names = departments
+    cache_path = tenders_cache_path(y, m, cumulative=cumulative, departments=dept_names)
+    cache_manager.register_cache_path(
+        tenders_lock_key(y, m, cumulative=cumulative, departments=dept_names),
+        cache_path,
+    )
+
+    if not cache_manager.is_force_compute_context():
+        cached = _load_cache(cache_path)
+        if cached is not None:
+            return cached
+
+    try:
+        result = _fetch_from_odata(year=y, month=m, departments=dept_names, cumulative=cumulative)
+        result["source"] = CACHE_SOURCE_TAG
+    except Exception as exc:
+        logger.warning("tenders: OData fetch failed, fallback to SQL dump: %s", exc)
+        result = _fetch_from_sql(year=y, month=m, departments=dept_names, cumulative=cumulative)
+        result["source"] = "sql_erp_pm"
+
+    if result.get("source") == CACHE_SOURCE_TAG:
+        _save_cache(cache_path, result)
+    return result
 
 
 def get_tenders_bmi(year: int | None = None,

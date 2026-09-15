@@ -22,8 +22,8 @@ SQL (erp_pm):
     _Fld148649RRef               — ПодразделениеПоставщика → _Reference513
   Catalog_СтруктураПредприятия   → dbo._Reference513
   Enum статусов формы            → dbo._Enum100559
-    0 Подготовлен, 1 НаСогласовании, 2 НеСогласовано,
-    3 РазработкаКМ, 4 ИсполнениеКМ, 5 Выполнено, 6 Отменена
+    0 Подготовлен, 1 НаСогласовании, 7 РазработкаКМ,
+    9 ИсполнениеКМ, 11 НеСогласовано, 12 Выполнено, 13 Отменена
 
 Даты в SQL хранятся со смещением YEAR_OFFSET = 2000
 (2026-03-01 → 4026-03-01).
@@ -56,15 +56,16 @@ COL_STATUS = "_Fld148654RRef"
 COL_SIGNIFICANT = "_Fld185471"
 COL_DEPT = "_Fld148649RRef"
 
-# _Enum100559._EnumOrder (тот же, что у формы 0319)
+# _Enum100559._EnumOrder — сверка OData↔SQL янв–авг 2026.
+# После расширения перечисления «Выполнено» стало 12, не 5.
 STATUS_BY_ORDER: dict[int, str] = {
     0: "Подготовлен",
     1: "НаСогласовании",
-    2: "НеСогласовано",
-    3: "РазработкаКМ",
-    4: "ИсполнениеКМ",
-    5: "Выполнено",
-    6: "Отменена",
+    7: "РазработкаКМ",
+    9: "ИсполнениеКМ",
+    11: "НеСогласовано",
+    12: "Выполнено",
+    13: "Отменена",
 }
 EXECUTED_STATUS = "Выполнено"
 PLAN_EXCLUDED_STATUSES = frozenset(
@@ -220,9 +221,8 @@ def load_status_bins(cur) -> dict[str, bytes]:
     )
     result: dict[str, bytes] = {}
     for idr, order in cur.fetchall():
-        name = STATUS_BY_ORDER.get(int(order))
-        if name:
-            result[name] = bytes(idr)
+        name = STATUS_BY_ORDER.get(int(order), f"Статус_{int(order)}")
+        result[name] = bytes(idr)
     missing = [name for name in STATUS_BY_ORDER.values() if name not in result]
     if missing:
         raise RuntimeError(f"Не найдены значения статуса в {ENUM_TABLE}: {missing}")
@@ -500,7 +500,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
 QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_sql_v1"
-QD_M5_YTD_DISK_VERSION = 21
+QD_M5_YTD_DISK_VERSION = 22
 
 
 def internal_brak_month_cache_path(year: int, month: int) -> _Path:

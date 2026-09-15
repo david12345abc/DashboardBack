@@ -50,6 +50,46 @@ REGISTER_ENTITY = "InformationRegister_ТД_ЗадачиПротоколов"
 EMPTY_DATE = "0001-01-01T00:00:00"
 PROTOCOL_SCOPE_START = date(2026, 1, 1)
 
+_REGISTER_PROBED = False
+_REGISTER_UNAVAILABLE: str | None = None
+
+UNPUBLISHED_REGISTER_MSG = (
+    f"{REGISTER_ENTITY}: не опубликован в OData (HTTP 404). "
+    "Попросите администратора 1С добавить регистр "
+    "InformationRegister_ТД_ЗадачиПротоколов в стандартный интерфейс OData."
+)
+
+
+def tasks_register_unavailable(session: requests.Session) -> str | None:
+    """Один probe регистра на процесс. None — сущность доступна."""
+    global _REGISTER_PROBED, _REGISTER_UNAVAILABLE
+    if _REGISTER_PROBED:
+        return _REGISTER_UNAVAILABLE
+
+    read_timeout = int(os.getenv("ODATA_READ_TIMEOUT", "240"))
+    url = f"{BASE}/{quote(REGISTER_ENTITY)}?$format=json&$top=1"
+    try:
+        probe = session.get(url, timeout=read_timeout)
+    except requests.RequestException:
+        return None
+
+    if probe.status_code == 404:
+        _REGISTER_PROBED = True
+        _REGISTER_UNAVAILABLE = UNPUBLISHED_REGISTER_MSG
+        return _REGISTER_UNAVAILABLE
+    if probe.status_code == 401:
+        _REGISTER_PROBED = True
+        _REGISTER_UNAVAILABLE = (
+            f"{REGISTER_ENTITY}: доступ запрещён для текущего пользователя OData (HTTP 401)."
+        )
+        return _REGISTER_UNAVAILABLE
+    if not probe.ok:
+        return f"{REGISTER_ENTITY}: HTTP {probe.status_code}: {probe.text[:500]}"
+
+    _REGISTER_PROBED = True
+    _REGISTER_UNAVAILABLE = None
+    return None
+
 COLUMNS = (
     ("Протокол", "Протокол"),
     ("ТемаСовещания", "ТемаСовещания"),
@@ -375,19 +415,13 @@ def load_tasks(
         f"&$expand={expand}"
     )
     read_timeout = int(os.getenv("ODATA_READ_TIMEOUT", "240"))
-    probe = session.get(f"{url}&$top=1", timeout=read_timeout)
-    if probe.status_code == 404:
-        raise LookupError(
-            f"{entity}: не опубликован в OData (HTTP 404). "
-            "Попросите администратора 1С добавить регистр "
-            "InformationRegister_ТД_ЗадачиПротоколов в стандартный интерфейс OData."
-        )
-    if probe.status_code == 401:
-        raise PermissionError(
-            f"{entity}: доступ запрещён для текущего пользователя OData (HTTP 401)."
-        )
-    if not probe.ok:
-        raise RuntimeError(f"{entity}: HTTP {probe.status_code}: {probe.text[:500]}")
+    unavailable = tasks_register_unavailable(session)
+    if unavailable:
+        if "HTTP 401" in unavailable:
+            raise PermissionError(unavailable)
+        if "HTTP 404" in unavailable or "не опубликован" in unavailable:
+            raise LookupError(unavailable)
+        raise RuntimeError(unavailable)
 
     rows = _fetch_register_all(session, url, page=500, timeout=read_timeout)
     rows = [row for row in rows if raw_task_in_scope(row, as_of)]

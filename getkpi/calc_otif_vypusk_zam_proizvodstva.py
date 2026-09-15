@@ -9,6 +9,7 @@ OTIF / выполнение плана отгрузок для заместит�
       КодСтроки = _Fld127738
       Количество: Document.ЗаказКлиента.Товары (_Document704_VT21248._Fld21254),
       не отменённые (_Fld21268).
+      Статус заказа ≠ НеСогласован («на согласовании»).
   • Факт OTIF (шт): РН РаспоряженияНаОтгрузку (_AccumRg169757),
       расход, |Заказано| = ABS(_Fld169766), отгрузки к концу юр. срока
       (Σ min(отгружено_к_сроку, план_строки)).
@@ -37,10 +38,13 @@ CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 
 ShopKey = Literal["pc1", "pc2"]
 
-SOURCE_TAG = "otif_vypusk_prod_monthly_sql_erp_pm_v2"
+SOURCE_TAG = "otif_vypusk_prod_monthly_sql_erp_pm_v3"
 EMPTY16 = bytes(16)
 ORDER_TREF = bytes.fromhex("000002c0")
 KIND_EXPENSE = bytes.fromhex("85662942ac5e614b4aca8d30654dd705")
+# Document.ЗаказКлиента.Статус = НеСогласован (в 1С часто «на согласовании»)
+ORDER_STATUS_FIELD = "_Fld21195RRef"
+ORDER_STATUS_NOT_AGREED = bytes.fromhex("a1675473ecec326649b4b85516d451ca")
 
 ORG_NPO = uuid_to_1c_bytes("fbca2148-6cfd-11e7-812d-001e67112509")
 ORG_TURB = uuid_to_1c_bytes("fbca2143-6cfd-11e7-812d-001e67112509")
@@ -111,6 +115,8 @@ def calc_month(cur, shop: ShopKey, year: int, month: int) -> dict:
     if excl:
         partner_filter = f"AND o._Fld21180RRef NOT IN ({excl_sql})"
         params.extend(excl)
+    status_filter = f"AND o.{ORDER_STATUS_FIELD} <> ?"
+    params.append(ORDER_STATUS_NOT_AGREED)
 
     cur.execute(
         f"""
@@ -136,6 +142,7 @@ def calc_month(cur, shop: ShopKey, year: int, month: int) -> dict:
                   AND ISNULL(o._Fld184301, 0x00) = 0x00
                   AND ISNULL(o._Fld185211, 0x00) = 0x00
                   {partner_filter}
+                  {status_filter}
                 GROUP BY r._Fld127735_RRRef, r._Fld127738
             ) p
             INNER JOIN _Document704_VT21248 t WITH (NOLOCK)
@@ -169,6 +176,7 @@ def calc_month(cur, shop: ShopKey, year: int, month: int) -> dict:
               AND ISNULL(o._Fld184301, 0x00) = 0x00
               AND ISNULL(o._Fld185211, 0x00) = 0x00
               {partner_filter}
+              {status_filter}
             GROUP BY r._Fld127735_RRRef, r._Fld127738
         ) p ON p.ord = s._Fld169758_RRRef AND p.ks = s._Fld169761
         WHERE s._Period >= ? AND s._Period < ?
@@ -213,6 +221,7 @@ def calc_month(cur, shop: ShopKey, year: int, month: int) -> dict:
                   AND ISNULL(o._Fld184301, 0x00) = 0x00
                   AND ISNULL(o._Fld185211, 0x00) = 0x00
                   {partner_filter}
+                  {status_filter}
                 GROUP BY r._Fld127735_RRRef, r._Fld127738
             ) p
             INNER JOIN _Document704_VT21248 t WITH (NOLOCK)
@@ -238,6 +247,7 @@ def calc_month(cur, shop: ShopKey, year: int, month: int) -> dict:
                   AND ISNULL(o._Fld184301, 0x00) = 0x00
                   AND ISNULL(o._Fld185211, 0x00) = 0x00
                   {partner_filter}
+                  {status_filter}
                 GROUP BY r._Fld127735_RRRef, r._Fld127738
             ) p
             INNER JOIN _AccumRg169757 s WITH (NOLOCK)
@@ -305,6 +315,7 @@ def get_otif_vypusk_prod_monthly(
     ):
         if not is_current_month or cached.get("cache_date") == today.isoformat():
             return cached
+        return cached
 
     months_out: list[dict] = []
     ref_row: dict | None = None

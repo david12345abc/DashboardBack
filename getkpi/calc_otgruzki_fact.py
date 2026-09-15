@@ -55,7 +55,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 ORDER_TYPE = "StandardODATA.Document_ЗаказКлиента"
 KEEPER_TRANSFER_TYPE = "StandardODATA.Document_ПередачаТоваровХранителю"
 
@@ -74,11 +74,12 @@ EXCLUDE_PARTNER_KEYS = frozenset({
     "6cdfe9f3-a8c4-11e7-8266-ac1f6b05524d",  # Турбулентность-ДОН ООО НПО
     "4babc7a7-a8c7-11e7-8266-ac1f6b05524d",  # СКТБ Турбо-Дон ООО
     "d7f5ff44-a8c6-11e7-8266-ac1f6b05524d",  # Метрогазсервис ООО
-    "237a2c5f-3b94-11e7-812b-001e67112509",  # Газпром межрегионгаз Владикавказ, ООО
 })
 EXCLUDE_PARTNER_KEYS_NO_MGS = EXCLUDE_PARTNER_KEYS - frozenset({
     "d7f5ff44-a8c6-11e7-8266-ac1f6b05524d",
 })
+# Только для ОДП: Владикавказ через «ПередачаТоваровХранителю».
+# В общем exclude нельзя — иначе эталон май −163 953 (НП00-000543).
 KEEPER_TRANSFER_PARTNER_KEYS = frozenset({
     "237a2c5f-3b94-11e7-812b-001e67112509",  # Газпром межрегионгаз Владикавказ, ООО
 })
@@ -442,6 +443,9 @@ def _calc_main_otgruzki(session: requests.Session,
                 pk in KEEPER_TRANSFER_PARTNER_KEYS
                 and row.get("Recorder_Type") == KEEPER_TRANSFER_TYPE
             )
+            # Владикавказ на ОДП — только передача хранителю; иначе как перепродажа.
+            if pk in KEEPER_TRANSFER_PARTNER_KEYS and not keeper_transfer_allowed:
+                continue
             if pk in excl_no_mgs and not keeper_transfer_allowed:
                 continue
         else:

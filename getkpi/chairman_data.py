@@ -1370,12 +1370,14 @@ def _mrk09_monthly_ytd(ref_y: int, ref_m: int) -> list[dict]:
     points: list[dict] = []
     for m in range(1, end_m + 1):
         data = cache_manager.locked_call(
-            f"tenders_commercial_sql_v1_monthly_{ref_y}_{m:02d}",
+            calc_tenders_bmi.tenders_lock_key(ref_y, m, cumulative=False),
             calc_tenders_bmi.get_tenders_departments,
             year=ref_y,
             month=m,
             cumulative=False,
         )
+        if not isinstance(data, dict):
+            data = {}
         plan = int(data.get("plan") or 0)
         fact = int(data.get("fact") or 0)
         pct = data.get("pct")
@@ -1412,24 +1414,26 @@ def _mrk06_share_bmi_gazprom(ref_y: int, ref_m: int) -> dict:
     Данные плитки MRK-06 «Доля Газпром + БМИ в отгрузке» (тот же факт, что KD-M2).
     Период: январь..ref_m выбранного года.
     """
-    return cache_manager.locked_call(
+    payload = cache_manager.locked_call(
         f"comdir_mrk06_share_{ref_y}_{ref_m:02d}",
         get_shipment_share_bmi_gazprom,
         year=ref_y,
         month=ref_m,
     )
+    return payload if isinstance(payload, dict) else {}
 
 
 def _mrk06_share_bmi_gazprom_monthly(ref_y: int, ref_m: int) -> dict:
     """
     Помесячная разбивка MRK-06 за янв..ref_m (кэш comdir_mrk06_share_ytd).
     """
-    return cache_manager.locked_call(
+    payload = cache_manager.locked_call(
         f"comdir_mrk06_share_monthly_{ref_y}_{ref_m:02d}",
         get_shipment_share_bmi_gazprom_monthly,
         year=ref_y,
         month=ref_m,
     )
+    return payload if isinstance(payload, dict) else {}
 
 
 def _mrk06_rag(pct: float | None) -> str:
@@ -1499,6 +1503,8 @@ def _comdir_kd_plan_fact_tile(
         month=series_m,
         dept_guid=None,
     )
+    if not isinstance(ytd, dict):
+        ytd = {}
     raw = _ytd_month_rows(ytd)
     plans_by_month = {r["month"]: (r.get("plan") or 0) for r in raw}
     expected_by_month = {
@@ -1510,11 +1516,12 @@ def _comdir_kd_plan_fact_tile(
         raw, plans_by_month, expected_by_month, ref_y, ref_m,
         use_expected_full=(kpi_id == "KD-M2"),
     )
+    debug = ytd.get("debug") if isinstance(ytd.get("debug"), dict) else {}
     tile["debug"] = {
-        "status": (ytd.get("debug") or {}).get("status") or "ok",
+        "status": debug.get("status") or ("ok" if raw else "empty"),
         "kpi_id": kpi_id,
         "source": "comdir.sql",
-        "cache": (ytd.get("debug") or {}).get("source") or "comdir.get_*_ytd",
+        "cache": debug.get("source") or "comdir.get_*_ytd",
     }
     return tile
 
@@ -1815,12 +1822,14 @@ def build_chairman_commerce_payload(
         if kid == "MRK-09":
             # Плитка считается только за выбранный месяц.
             tenders = cache_manager.locked_call(
-                f"tenders_commercial_sql_v1_monthly_{ref_y}_{ref_m:02d}",
+                calc_tenders_bmi.tenders_lock_key(ref_y, ref_m, cumulative=False),
                 calc_tenders_bmi.get_tenders_departments,
                 year=ref_y,
                 month=ref_m,
                 cumulative=False,
             )
+            if not isinstance(tenders, dict):
+                tenders = {}
             plan_n = int(tenders.get("plan") or 0)
             fact_n = int(tenders.get("fact") or 0)
             not_part_n = int(tenders.get("not_participating") or 0)
@@ -1834,9 +1843,9 @@ def build_chairman_commerce_payload(
                 "color": _mrk09_rag(pct),
                 "period": _period_label(meta),
                 "thresholds": _thresholds(meta),
-                "formula": "Выигранные тендеры / Все тендеры по коммерческим отделам × 100%",
+                "formula": "Выигранные тендеры / Все тендеры × 100%",
                 "unit": "шт",
-                "source": tenders.get("source") or "sql_erp_pm / _Document76733",
+                "source": tenders.get("source") or "odata_erp_pm / Document_ТД_СлужебнаяЗаписка",
                 "description": meta.get("description"),
                 "frequency": meta.get("frequency"),
                 "plan": plan_n,
@@ -1858,7 +1867,7 @@ def build_chairman_commerce_payload(
                     "month": tenders.get("month"),
                     "period_start": tenders.get("period_start"),
                     "period_end": tenders.get("period_end"),
-                    "source": tenders.get("source") or "sql_erp_pm",
+                    "source": tenders.get("source") or "odata_erp_pm",
                 },
             })
             continue

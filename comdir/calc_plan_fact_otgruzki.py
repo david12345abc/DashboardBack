@@ -119,7 +119,6 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
           AND (
                 plan_obj._IDRRef IS NULL
                 OR plan_obj._Fld122423 <= ?
-                OR plan_obj._Fld122423 >= ?
               )
         GROUP BY d.name
         """,
@@ -127,7 +126,6 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
         p0,
         p_next,
         datetime(2001, 1, 1),
-        p_next,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 

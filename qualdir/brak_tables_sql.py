@@ -47,15 +47,16 @@ PRODUCT_ENUM_TABLE = "_Enum87024"
 DEPT_TABLE = "_Reference513"
 KIND_TABLE = "_Reference100536"
 
-# _Enum100559._EnumOrder → имя статуса формы (как в qualdir.qd_m1/qd_m5/qd_m8)
+# _Enum100559._EnumOrder → имя статуса формы (сверка OData↔SQL янв–авг 2026).
+# После расширения перечисления «Выполнено» стало 12, не 5.
 STATUS_BY_ORDER: dict[int, str] = {
     0: "Подготовлен",
     1: "НаСогласовании",
-    2: "НеСогласовано",
-    3: "РазработкаКМ",
-    4: "ИсполнениеКМ",
-    5: "Выполнено",
-    6: "Отменена",
+    7: "РазработкаКМ",
+    9: "ИсполнениеКМ",
+    11: "НеСогласовано",
+    12: "Выполнено",
+    13: "Отменена",
 }
 
 # _Enum87024._EnumOrder → НаименованиеИзделия (перечисление «Изделие»).
@@ -217,9 +218,8 @@ def _load_status_bin_to_name(cur) -> dict[bytes, str]:
     )
     result: dict[bytes, str] = {}
     for idr, order in cur.fetchall():
-        name = STATUS_BY_ORDER.get(int(order))
-        if name:
-            result[bytes(idr)] = name
+        name = STATUS_BY_ORDER.get(int(order), f"Статус_{int(order)}")
+        result[bytes(idr)] = name
     return result
 
 

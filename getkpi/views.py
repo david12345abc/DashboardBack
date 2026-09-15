@@ -1452,10 +1452,21 @@ def _manual_tile_refresh_cache_files(kpi_id: str, ref_y: int | None, ref_m: int 
     elif kid == 'KD-M3':
         paths.append(cd / f'dogovory_monthly_{ref_y}_{ref_m:02d}.json')
         paths.append(cd / f'plans_monthly_{ref_y}_{ref_m:02d}.json')
-    elif kid in {'KD-M4', 'KD-M5'}:
+    elif kid in {'KD-M4', 'KD-M5', 'FND-T7'}:
         from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
 
-        paths.extend(comdir_cache_stamp_paths(kid, ref_y, ref_m))
+        from . import calc_debitorka
+
+        paths.extend(comdir_cache_stamp_paths('KD-M4', ref_y, ref_m))
+        paths.extend(calc_debitorka.refresh_cache_paths(ref_y, ref_m))
+    elif kid == 'FND-T3':
+        from comdir.ytd import cache_stamp_paths as comdir_cache_stamp_paths
+
+        from . import calc_debitorka
+
+        paths.extend(comdir_cache_stamp_paths('KD-M4', ref_y, ref_m))
+        paths.extend(calc_debitorka.refresh_cache_paths(ref_y, ref_m))
+        paths.extend(calc_postavshchiki.refresh_cache_paths(ref_y, ref_m))
     elif kid == 'KD-M8':
         paths.append(cd / f'fot_{ref_y}_{ref_m:02d}.json')
     elif kid == 'KD-M11':
@@ -1601,7 +1612,7 @@ def _manual_tile_refresh_worker(
     dept_guid: str | None,
 ) -> None:
     try:
-        deleted: list[str] = []
+        deleted = _manual_tile_refresh_delete_cache_files(kpi_id, ref_y, ref_m)
         refresh_paths = _manual_tile_refresh_cache_files(kpi_id, ref_y, ref_m)
         with cache_manager.mark_paths_refreshing(key, refresh_paths), cache_manager.force_compute():
             if payload_kind == 'komdir':
@@ -3081,6 +3092,7 @@ def _build_universal_payload(
     c1auto_memo_key: str | None = None
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
+    opdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
         # v10: ГСП-Q4 — просрочка по finish_date (график Turbo), не по baseline.
         # v11: ГСП-M5 — сумма бюджета по всей Q4-когорте (без среза [:1]).
@@ -3119,7 +3131,8 @@ def _build_universal_payload(
             return cached_payload
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
         # v8: SH-T1 на SQL (_Reference389 + _Reference328).
-        servhead_memo_key = f"servhead_dashboard:v8:{ref_y}:{ref_m:02d}"
+        # v9: не ронять SH-T2 из-за RLock.locked() на Python < 3.14.
+        servhead_memo_key = f"servhead_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -3129,6 +3142,11 @@ def _build_universal_payload(
         cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
         if cached_payload is not None:
             logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
+            return cached_payload
+    if str(dept).strip().lower() == 'операционный директор' and not include_debug:
+        opdir_memo_key = f"opdir_dashboard:v1:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(opdir_memo_key)
+        if cached_payload is not None:
             return cached_payload
 
     dashboard_disk_key: str | None = None
@@ -3141,7 +3159,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v5_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
             dashboard_disk_key = f"sup_v30_{ref_y}_{ref_m:02d}"
@@ -3158,6 +3176,9 @@ def _build_universal_payload(
         elif devdir_memo_key:
             dashboard_disk_key = f"devdir_v2_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = devdir_memo_key
+        elif opdir_memo_key:
+            dashboard_disk_key = f"opdir_v1_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = opdir_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
         disk_cached = cache_manager.try_serve_dashboard_disk_cache(
@@ -4002,6 +4023,8 @@ def _build_universal_payload(
             devdir_memo_key,
             len(plitki_items),
         )
+    if opdir_memo_key:
+        cache_manager.set_memoized_dashboard_payload(opdir_memo_key, result)
     if dashboard_disk_key:
         cache_manager.save_dashboard_disk(dashboard_disk_key, result)
     return result
@@ -4269,7 +4292,12 @@ def _load_fresh_chief_metrolog_payload_cache(ref_y: int, ref_m: int) -> dict | N
     return None
 
 
-def _load_fresh_prod_deputy_payload_cache(ref_y: int, ref_m: int) -> dict | None:
+def _load_prod_deputy_payload_cache(
+    ref_y: int,
+    ref_m: int,
+    *,
+    require_today: bool = False,
+) -> dict | None:
     path = _prod_deputy_payload_cache_path(ref_y, ref_m)
     if not path.exists():
         return None
@@ -4278,13 +4306,181 @@ def _load_fresh_prod_deputy_payload_cache(ref_y: int, ref_m: int) -> dict | None
             raw = json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
-    if (
-        raw.get('cache_version') == PROD_DEPUTY_PAYLOAD_CACHE_VERSION
-        and raw.get('cache_date') == date.today().isoformat()
-        and isinstance(raw.get('payload'), dict)
-    ):
-        return _prod_deputy_payload_with_active_refresh_status(raw['payload'], ref_y, ref_m)
-    return None
+    if raw.get('cache_version') != PROD_DEPUTY_PAYLOAD_CACHE_VERSION:
+        return None
+    if require_today and raw.get('cache_date') != date.today().isoformat():
+        return None
+    if not isinstance(raw.get('payload'), dict):
+        return None
+    return _prod_deputy_payload_with_active_refresh_status(raw['payload'], ref_y, ref_m)
+
+
+def _load_fresh_prod_deputy_payload_cache(ref_y: int, ref_m: int) -> dict | None:
+    return _load_prod_deputy_payload_cache(ref_y, ref_m, require_today=True)
+
+
+def _load_stale_prod_deputy_payload_cache(ref_y: int, ref_m: int) -> dict | None:
+    cached = _load_prod_deputy_payload_cache(ref_y, ref_m, require_today=False)
+    if cached is not None:
+        return cached
+    if ref_m > 1:
+        return _load_prod_deputy_payload_cache(ref_y, ref_m - 1, require_today=False)
+    return _load_prod_deputy_payload_cache(ref_y - 1, 12, require_today=False)
+
+
+def _prod_deputy_read_json(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _apply_monthly_cache_to_prod_deputy_tile(tile: dict, data: dict, ref_y: int, ref_m: int) -> None:
+    months = data.get('months') or data.get('monthly_data') or []
+    if isinstance(months, list) and months:
+        tile['monthly_data'] = months
+    row = pick_monthly_row_for_period(months, ref_y, ref_m)
+    if not row:
+        row = data.get('last_full_month_row') if isinstance(data.get('last_full_month_row'), dict) else {}
+    if not row:
+        return
+    tile['plan'] = row.get('plan')
+    tile['fact'] = row.get('fact')
+    if row.get('kpi_pct') is not None:
+        tile['kpi_pct'] = row.get('kpi_pct')
+    if 'has_data' in row:
+        tile['has_data'] = row.get('has_data')
+    tile['last_full_month_row'] = dict(row)
+    period = data.get('kpi_period') if isinstance(data.get('kpi_period'), dict) else {
+        'type': 'current_month',
+        'year': row.get('year', ref_y),
+        'month': row.get('month', ref_m),
+        'month_name': row.get('month_name'),
+    }
+    tile['kpi_period'] = period
+    month_name = row.get('month_name') or MONTH_NAMES.get(int(row.get('month') or ref_m), str(ref_m))
+    year_label = row.get('year', ref_y)
+    if month_name:
+        tile['plan_fact_period_label'] = f"{str(month_name).capitalize()} {year_label}"
+
+
+def _adapt_prod_deputy_payload_to_period(payload: dict, ref_y: int, ref_m: int) -> dict:
+    """Августовский snapshot при просмотре сентября: клонировать последнюю строку в выбранный месяц."""
+    if not isinstance(payload, dict):
+        return payload
+    next_payload = dict(payload)
+    next_payload['year'] = ref_y
+    next_payload['month'] = ref_m
+    next_payload['kpi_ref_month'] = ref_m
+    tiles_block = dict(next_payload.get('Плитки') or {})
+    items: list = []
+    for tile in tiles_block.get('items') or []:
+        if not isinstance(tile, dict):
+            items.append(tile)
+            continue
+        next_tile = dict(tile)
+        monthly = [row for row in (next_tile.get('monthly_data') or []) if isinstance(row, dict)]
+        exact = pick_monthly_row_for_period(monthly, ref_y, ref_m)
+        source = exact or (
+            next_tile.get('last_full_month_row')
+            if isinstance(next_tile.get('last_full_month_row'), dict)
+            else None
+        )
+        if source is None and monthly:
+            source = monthly[-1]
+        if isinstance(source, dict) and (
+            source.get('plan') is not None
+            or source.get('fact') is not None
+            or source.get('has_data')
+        ):
+            if not exact:
+                cloned = dict(source)
+                cloned['year'] = ref_y
+                cloned['month'] = ref_m
+                cloned['month_name'] = MONTH_NAMES.get(ref_m, str(ref_m))
+                monthly.append(cloned)
+                next_tile['monthly_data'] = monthly
+                source = cloned
+            next_tile['plan'] = source.get('plan')
+            next_tile['fact'] = source.get('fact')
+            if source.get('kpi_pct') is not None:
+                next_tile['kpi_pct'] = source.get('kpi_pct')
+            if 'has_data' in source:
+                next_tile['has_data'] = source.get('has_data')
+            next_tile['last_full_month_row'] = dict(source)
+            next_tile['kpi_period'] = {
+                'type': 'current_month',
+                'year': ref_y,
+                'month': ref_m,
+                'month_name': MONTH_NAMES.get(ref_m, str(ref_m)),
+            }
+        items.append(next_tile)
+    tiles_block['items'] = items
+    if items:
+        tiles_block['count'] = len(items)
+    next_payload['Плитки'] = tiles_block
+    return next_payload
+
+
+def _overlay_prod_deputy_payload_from_source_caches(payload: dict, ref_y: int, ref_m: int) -> dict:
+    """Подставить живые сентябрьские JSON (OTIF/бюджет/ФОТ/проекты), не трогая ERP."""
+    if not isinstance(payload, dict):
+        return payload
+    from . import calc_prod_deputy_projects
+    from . import calc_prod_deputy_turnover
+    from .calc_prod_deputy_pc_common import cache_path as pc_cache_path
+
+    loaders: dict[str, dict | None] = {
+        'PD-M2.1': _prod_deputy_read_json(calc_otif_vypusk_zam_proizvodstva.cache_path('pc1', ref_y, ref_m)),
+        'PD-M2.2': _prod_deputy_read_json(calc_otif_vypusk_zam_proizvodstva.cache_path('pc2', ref_y, ref_m)),
+        'PD-M3.B1': _prod_deputy_read_json(pc_cache_path('budget', 'pc1', ref_y, ref_m)),
+        'PD-M3.B2': _prod_deputy_read_json(pc_cache_path('budget', 'pc2', ref_y, ref_m)),
+        'PD-M3.F1': _prod_deputy_read_json(pc_cache_path('fot', 'pc1', ref_y, ref_m)),
+        'PD-M3.F2': _prod_deputy_read_json(pc_cache_path('fot', 'pc2', ref_y, ref_m)),
+    }
+    try:
+        loaders['PD-Q1'] = calc_prod_deputy_projects.get_pd_q1_monthly(year=ref_y, month=ref_m)
+    except Exception:
+        logger.exception("Не удалось наложить PD-Q1 из snapshot проектов")
+        loaders['PD-Q1'] = None
+    try:
+        loaders['PD-Q3'] = calc_prod_deputy_projects.get_pd_q3_improvement_monthly(year=ref_y, month=ref_m)
+    except Exception:
+        logger.exception("Не удалось наложить PD-Q3 из snapshot проектов")
+        loaders['PD-Q3'] = None
+    for shop, kid in (('pc1', 'PD-Q2.1'), ('pc2', 'PD-Q2.2')):
+        data = _prod_deputy_read_json(calc_prod_deputy_turnover.cache_path(shop, ref_y, ref_m))
+        if data is None and ref_m > 1:
+            data = _prod_deputy_read_json(calc_prod_deputy_turnover.cache_path(shop, ref_y, ref_m - 1))
+        loaders[kid] = data
+
+    next_payload = dict(payload)
+    tiles_block = dict(next_payload.get('Плитки') or {})
+    items: list = []
+    for tile in tiles_block.get('items') or []:
+        if not isinstance(tile, dict):
+            items.append(tile)
+            continue
+        next_tile = dict(tile)
+        kid = str(next_tile.get('kpi_id') or '').strip()
+        data = loaders.get(kid)
+        if isinstance(data, dict):
+            _apply_monthly_cache_to_prod_deputy_tile(next_tile, data, ref_y, ref_m)
+        items.append(next_tile)
+    tiles_block['items'] = items
+    next_payload['Плитки'] = tiles_block
+    return next_payload
+
+
+def _prepare_stale_prod_deputy_payload(payload: dict, ref_y: int, ref_m: int) -> dict:
+    adapted = _adapt_prod_deputy_payload_to_period(payload, ref_y, ref_m)
+    overlaid = _overlay_prod_deputy_payload_from_source_caches(adapted, ref_y, ref_m)
+    return _mark_payload_cache_refreshing(
+        _prod_deputy_payload_with_active_refresh_status(overlaid, ref_y, ref_m)
+    )
 
 
 def _save_chief_metrolog_payload_cache(ref_y: int, ref_m: int, payload: dict) -> None:
@@ -4323,6 +4519,46 @@ def _save_prod_deputy_payload_cache(ref_y: int, ref_m: int, payload: dict) -> No
         )
     except OSError:
         logger.exception("Не удалось сохранить snapshot payload заместителя операционного директора")
+
+
+def _opdir_locked_monthly(key: str, cache_path, fn, ref_y: int, ref_m: int) -> dict:
+    """locked_call с известным файлом: stale сразу, без падения на None."""
+    cache_manager.register_cache_path(key, cache_path)
+    data = cache_manager.locked_call(key, fn, year=ref_y, month=ref_m)
+    return data if isinstance(data, dict) else {}
+
+
+def _start_opdir_first_access_refresh(year: int | None, month: int | None) -> None:
+    """Только кэши опдира в фоне — глобальный прогрев здесь рвёт /api/kpi/."""
+    today = date.today()
+    y = int(year) if year is not None else today.year
+    m = max(1, min(12, int(month))) if month is not None else today.month
+    tasks = [
+        (
+            f'vyruchka_opdir_{y}_{m}',
+            calc_vyruchka_opdir._cache_path_monthly(y, m),
+            lambda: calc_vyruchka_opdir.get_vyruchka_opdir_monthly(year=y, month=m),
+        ),
+        (
+            f'budget_limit_opdir_{y}_{m}',
+            calc_budget_limit._cache_path_monthly(y, m),
+            lambda: calc_budget_limit.get_budget_limit_monthly(year=y, month=m),
+        ),
+        (
+            f'fot_management_opdir_{y}_{m}',
+            calc_fot_management._cache_path_monthly(y, m),
+            lambda: calc_fot_management.get_fot_management_monthly(year=y, month=m),
+        ),
+        (
+            f'od_q2_turnover_{y}_{m}',
+            calc_tekuchest_opdir._cache_path_monthly(y, m),
+            lambda: calc_tekuchest_opdir.get_tekuchest_opdir_monthly(year=y, month=m),
+        ),
+    ]
+    for key, path, fn in tasks:
+        cache_manager.register_cache_path(key, path)
+        if not cache_manager.is_cache_fresh(path):
+            cache_manager.schedule_background_refresh(key, fn)
 
 
 def _chief_metrolog_ref_period(month: int | None, year: int | None) -> tuple[int, int]:
@@ -4419,6 +4655,20 @@ def _build_prod_deputy_payload(
         cached_payload = _load_fresh_prod_deputy_payload_cache(ref_y, ref_m)
         if cached_payload is not None:
             return cached_payload
+        stale_payload = _load_stale_prod_deputy_payload_cache(ref_y, ref_m)
+        cache_manager.schedule_background_refresh(
+            cache_key,
+            _build_prod_deputy_payload_fresh,
+            requested_dept,
+            kpis,
+            month=month,
+            year=year,
+            include_debug=include_debug,
+            aggregation_mode=aggregation_mode,
+            selected_quarters=selected_quarters,
+        )
+        if stale_payload is not None:
+            return _prepare_stale_prod_deputy_payload(stale_payload, ref_y, ref_m)
     raw = cache_manager.locked_call(
         cache_key,
         _build_prod_deputy_payload_fresh,
@@ -4733,11 +4983,12 @@ def _build_kpi_entry(
         else:
             today = date.today()
             ref_y, ref_m = today.year, today.month
-        data = cache_manager.locked_call(
+        data = _opdir_locked_monthly(
             f'vyruchka_opdir_{ref_y}_{ref_m}',
+            calc_vyruchka_opdir._cache_path_monthly(ref_y, ref_m),
             calc_vyruchka_opdir.get_vyruchka_opdir_monthly,
-            year=ref_y,
-            month=ref_m,
+            ref_y,
+            ref_m,
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = data.get('months') or []
@@ -4968,11 +5219,12 @@ def _build_kpi_entry(
         else:
             today = date.today()
             ref_y, ref_m = today.year, today.month
-        data = cache_manager.locked_call(
+        data = _opdir_locked_monthly(
             f'budget_limit_opdir_{ref_y}_{ref_m}',
+            calc_budget_limit._cache_path_monthly(ref_y, ref_m),
             calc_budget_limit.get_budget_limit_monthly,
-            year=ref_y,
-            month=ref_m,
+            ref_y,
+            ref_m,
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = data.get('months') or []
@@ -4998,11 +5250,12 @@ def _build_kpi_entry(
         else:
             today = date.today()
             ref_y, ref_m = today.year, today.month
-        data = cache_manager.locked_call(
+        data = _opdir_locked_monthly(
             f'fot_management_opdir_{ref_y}_{ref_m}',
+            calc_fot_management._cache_path_monthly(ref_y, ref_m),
             calc_fot_management.get_fot_management_monthly,
-            year=ref_y,
-            month=ref_m,
+            ref_y,
+            ref_m,
         )
         entry['data_granularity'] = 'monthly'
         entry['monthly_data'] = data.get('months') or []
@@ -5026,6 +5279,7 @@ def _build_kpi_entry(
             year=ref_y,
             month=ref_m,
         )
+        data = data if isinstance(data, dict) else None
         if data is not None:
             entry['data_granularity'] = data.get('data_granularity', 'monthly')
             entry['monthly_data'] = data.get('monthly_data') or []
@@ -5198,11 +5452,12 @@ def _build_kpi_entry(
         else:
             today = date.today()
             ref_y, ref_m = today.year, today.month
-        data = cache_manager.locked_call(
+        data = _opdir_locked_monthly(
             f'od_q2_turnover_{ref_y}_{ref_m}',
+            calc_tekuchest_opdir._cache_path_monthly(ref_y, ref_m),
             calc_tekuchest_opdir.get_tekuchest_opdir_monthly,
-            year=ref_y,
-            month=ref_m,
+            ref_y,
+            ref_m,
         )
         if data is not None:
             entry['data_granularity'] = 'monthly'
@@ -5532,12 +5787,28 @@ def get_kpi(request):
             chairman_data.is_chairman_department(requested_dept)
             and for_norm == chairman_data.CHAIRMAN_BLOCK_COMMERCE
         )
+        is_opdir_dashboard = str(requested_dept).strip().lower() == 'операционный директор'
         try:
             if is_commerce_block:
                 commercial_cache_scheduler.start_first_access_refresh_if_stale(
                     month=req_month,
                     year=req_year,
                     payload_departments=["коммерческий директор"],
+                )
+            elif is_opdir_dashboard:
+                _start_opdir_first_access_refresh(req_year, req_month)
+            elif _is_prod_deputy_department(requested_dept):
+                _pd_y = req_year if req_year is not None else date.today().year
+                _pd_m = req_month if req_month is not None else date.today().month
+                _pd_key = f"prod_deputy_payload_{_pd_y}_{_pd_m:02d}"
+                cache_manager.register_cache_path(_pd_key, _prod_deputy_payload_cache_path(_pd_y, _pd_m))
+                cache_manager.schedule_background_refresh(
+                    _pd_key,
+                    _build_prod_deputy_payload_fresh,
+                    requested_dept,
+                    kpis,
+                    month=req_month,
+                    year=req_year,
                 )
             else:
                 today = date.today()

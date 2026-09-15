@@ -157,12 +157,11 @@ def get_pc_budget_monthly(shop: ShopKey, year: int | None = None, month: int | N
     path = cache_path("budget", shop, ref_year, ref_month)
 
     cached = load_json(path)
-    if (
-        cached is not None
-        and cached.get("source") == SOURCE_TAG_BUDGET
-        and cached.get("cache_date") == today.isoformat()
-    ):
-        return cached
+    if cached is not None and cached.get("source") == SOURCE_TAG_BUDGET:
+        from . import cache_manager
+
+        if cached.get("cache_date") == today.isoformat() or not cache_manager.is_force_compute_context():
+            return cached
 
     months_out: list[dict] = []
     session = requests.Session()

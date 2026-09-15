@@ -33,6 +33,7 @@ from protocol_tasks_by_leader import (  # type: ignore[import-untyped]
     normalize_row,
     normalized_task_in_scope,
     task_deadline_in_month,
+    tasks_register_unavailable,
 )
 from tools.dept_protocol.table_cache import (
     load_month_block,
@@ -226,6 +227,10 @@ def fetch_overdue_protocol_task_rows(
         ctx = create_protocol_context()
 
     try:
+        unavailable = tasks_register_unavailable(ctx.session)
+        if unavailable:
+            raise LookupError(unavailable)
+
         holders = find_holders_live(source, onec_paths, ctx.hr_rows)
         if not holders:
             return None
@@ -416,10 +421,18 @@ def build_protocol_overdue_table(
         ctx = create_protocol_context()
 
     try:
+        unavailable = tasks_register_unavailable(ctx.session)
+        if unavailable:
+            logger.warning("DEPT-T-PROTOCOL-OVERDUE: таблица недоступна — %s", unavailable)
+            return build_from_cached_months(department, ref_y, ref_m, allow_stale=True)
+
         monthly_data: list[dict[str, Any]] = []
         for y, m in pairs:
             try:
                 block = build_month_block(department, y, m, ctx=ctx, force=force)
+            except LookupError as exc:
+                logger.warning("DEPT-T-PROTOCOL-OVERDUE: таблица недоступна — %s", exc)
+                return build_from_cached_months(department, ref_y, ref_m, allow_stale=True)
             except requests.RequestException as exc:
                 logger.warning(
                     "DEPT-T-PROTOCOL-OVERDUE: OData error «%s» %04d-%02d: %s",
@@ -461,12 +474,28 @@ def warm_all_department_tables(*, force: bool = False) -> None:
 
     ctx = create_protocol_context()
     try:
+        unavailable = tasks_register_unavailable(ctx.session)
+        if unavailable:
+            logger.warning(
+                "DEPT-T-PROTOCOL-OVERDUE: прогрев пропущен — %s",
+                unavailable,
+            )
+            mark_warm_complete()
+            return
+
         for source in iter_configured_sources():
             for y, m in pairs:
                 if not force and load_month_block(source, y, m) is not None:
                     continue
                 try:
                     build_month_block(source, y, m, ctx=ctx, force=force)
+                except LookupError as exc:
+                    logger.warning(
+                        "DEPT-T-PROTOCOL-OVERDUE: прогрев остановлен — %s",
+                        exc,
+                    )
+                    mark_warm_complete()
+                    return
                 except Exception:
                     logger.exception(
                         "DEPT-T-PROTOCOL-OVERDUE: прогрев не удался для «%s» %04d-%02d",

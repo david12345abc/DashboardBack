@@ -44,9 +44,11 @@ def _load_cache() -> dict | None:
         data = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if data.get("cache_date") == date.today().isoformat() and data.get("cache_version") == CACHE_VERSION:
-        return data
-    return None
+    if data.get("cache_version") != CACHE_VERSION:
+        return None
+    if not isinstance(data.get("projects"), list):
+        return None
+    return data
 
 
 def _save_cache(payload: dict) -> None:
@@ -326,9 +328,15 @@ def _project_summary(summary_item: dict[str, Any], details: dict[str, Any]) -> d
 
 
 def _compute_projects_snapshot() -> dict:
+    cache_key = "prod_deputy_projects_snapshot"
+    cache_manager.register_cache_path(cache_key, CACHE_PATH)
     cached = _load_cache()
     if cached is not None:
-        return cached
+        if cached.get("cache_date") == date.today().isoformat():
+            return cached
+        if not cache_manager.is_force_compute_context():
+            cache_manager.schedule_background_refresh(cache_key, _compute_projects_snapshot)
+            return cached
 
     session = requests.Session()
     token = _login(session)

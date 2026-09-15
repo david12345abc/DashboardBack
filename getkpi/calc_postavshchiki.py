@@ -394,10 +394,32 @@ def _month_end(year: int, month: int) -> date:
 # ──────────────────────────────────────────────────────────────────────
 #  Публичный API
 # ──────────────────────────────────────────────────────────────────────
+def refresh_cache_paths(ref_y: int, ref_m: int) -> list[Path]:
+    """Снимок на дату среза и помесячный файл — их сбрасывает ручной refresh FND-T3."""
+    today = date.today()
+    na = _month_end(ref_y, ref_m)
+    if na > today:
+        na = today
+    return [
+        _cache_path_snapshot(na),
+        _cache_path_monthly(ref_y, ref_m),
+    ]
+
+
+def _is_force_compute() -> bool:
+    from . import cache_manager
+
+    return cache_manager.is_force_compute_context()
+
+
 def get_supplier_snapshot(na_datu: date) -> dict:
     """Остатки на одну дату. Кэшируется в файл."""
     cached = _load_json(_cache_path_snapshot(na_datu))
-    if cached is not None and cached.get("source") == SOURCE_TAG:
+    if (
+        cached is not None
+        and cached.get("source") == SOURCE_TAG
+        and not _is_force_compute()
+    ):
         return cached
 
     session = requests.Session()
@@ -612,7 +634,8 @@ def get_supplier_monthly(year: int, ref_month: int) -> dict:
     """
     cache_path = _cache_path_monthly(year, ref_month)
     cached = _load_json(cache_path)
-    if _monthly_cache_is_fresh(cached, year, ref_month):
+    force = _is_force_compute()
+    if _monthly_cache_is_fresh(cached, year, ref_month) and not force:
         return cached
 
     today = date.today()
@@ -645,7 +668,12 @@ def get_supplier_monthly(year: int, ref_month: int) -> dict:
     prev_closing_dz = 0.0
     for mm, na_datu in snap_dates:
         snapshot = _load_json(_cache_path_snapshot(na_datu))
-        if snapshot is None or snapshot.get("source") != SOURCE_TAG:
+        need_snap = (
+            snapshot is None
+            or snapshot.get("source") != SOURCE_TAG
+            or (force and na_datu == today)
+        )
+        if need_snap:
             if allowed_obj_keys is None:
                 allowed_obj_keys = _load_supplier_obj_keys(session)
             snapshot = _build_snapshot(session, na_datu, allowed_obj_keys)

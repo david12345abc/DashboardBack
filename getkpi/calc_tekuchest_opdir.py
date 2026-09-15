@@ -266,20 +266,69 @@ def yearly_month_totals(docs_dept: list, dept_names: dict[str, str], year: int) 
     return rows
 
 
+def _usable_cache(path: Path) -> dict | None:
+    cached = _load_json(path)
+    if (
+        isinstance(cached, dict)
+        and cached.get("source") == SOURCE_TAG
+        and cached.get("cache_version") == CACHE_VERSION
+    ):
+        return cached
+    return None
+
+
+def _empty_monthly_payload(ref_year: int, ref_month: int) -> dict:
+    return {
+        "cache_date": None,
+        "source": SOURCE_TAG,
+        "cache_version": CACHE_VERSION,
+        "year": ref_year,
+        "ref_month": ref_month,
+        "months": [],
+        "last_full_month_row": None,
+        "ytd": {},
+        "kpi_period": {
+            "type": "last_full_month",
+            "year": ref_year,
+            "month": ref_month,
+            "month_name": MONTH_RU[ref_month].lower(),
+        },
+        "cache_refresh_status": "computing",
+    }
+
+
 def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = None) -> dict:
     today = date.today()
     ref_year, ref_month = _normalize_period(year, month)
     cache_path = _cache_path_monthly(ref_year, ref_month)
+    cache_key = f"od_q2_turnover_{ref_year}_{ref_month}"
+    from . import cache_manager
+
+    cache_manager.register_cache_path(cache_key, cache_path)
     is_current_month = ref_year == today.year and ref_month == today.month
 
-    cached = _load_json(cache_path)
-    if (
-        cached is not None
-        and cached.get("source") == SOURCE_TAG
-        and cached.get("cache_version") == CACHE_VERSION
+    cached = _usable_cache(cache_path)
+    if cached is not None and (
+        not is_current_month or cached.get("cache_date") == today.isoformat()
     ):
-        if not is_current_month or cached.get("cache_date") == today.isoformat():
-            return cached
+        return cached
+
+    # Нет сентябрьского файла / устарел: не блокировать /api/kpi/ полным OData.
+    if not cache_manager.is_force_compute_context():
+        stale = cached
+        if stale is None and ref_month > 1:
+            stale = _usable_cache(_cache_path_monthly(ref_year, ref_month - 1))
+        cache_manager.schedule_background_refresh(
+            cache_key,
+            get_tekuchest_opdir_monthly,
+            year=ref_year,
+            month=ref_month,
+        )
+        if stale is not None:
+            out = dict(stale)
+            out["cache_refresh_status"] = "stale"
+            return out
+        return _empty_monthly_payload(ref_year, ref_month)
 
     session = requests.Session()
     session.auth = AUTH

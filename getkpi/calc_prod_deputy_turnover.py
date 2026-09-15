@@ -138,10 +138,32 @@ def get_prod_deputy_turnover_monthly(
     path = cache_path(shop, ref_year, ref_month)
     is_current_month = ref_year == today.year and ref_month == today.month
 
+    from . import cache_manager
+
+    cache_key = f"pd_q2_turnover_{shop}_{ref_year}_{ref_month}"
+    cache_manager.register_cache_path(cache_key, path)
     cached = _load_json(path)
     if cached is not None and cached.get("source") == SOURCE_TAG:
         if not is_current_month or cached.get("cache_date") == today.isoformat():
             return cached
+
+    if not cache_manager.is_force_compute_context():
+        stale = cached
+        if stale is None and ref_month > 1:
+            prev = _load_json(cache_path(shop, ref_year, ref_month - 1))
+            if prev is not None and prev.get("source") == SOURCE_TAG:
+                stale = prev
+        cache_manager.schedule_background_refresh(
+            cache_key,
+            get_prod_deputy_turnover_monthly,
+            shop,
+            year=ref_year,
+            month=ref_month,
+        )
+        if stale is not None:
+            out = dict(stale)
+            out["cache_refresh_status"] = "stale"
+            return out
 
     session = requests.Session()
     session.auth = AUTH

@@ -9,9 +9,8 @@
 
   A) ТД_ДоговорыПодписанные (live OData; SQL — fallback):
   • ДатаПодписания в периоде, Спецификация.Статус = Действует
-  • перепродажа / ТД_СопровождениеПродажи / ТД_НеУчитыватьВПланФакте
-  • доп.: не учитывать / сопровождение на заказе; ОПБО — перепродажа без МГС
-    (МГС в факте 1С остаётся), прочие отделы — любая перепродажа
+  • перепродажа без МГС / ТД_НеУчитыватьВПланФакте
+  • сопровождение на заказе режем, кроме МГС (в отчёте 1С МГС остаётся)
   • курсы валют заказа
 
   B) Счёт-оферта (из расшифровки Excel): заказы с ТД_СчетОферта,
@@ -20,11 +19,17 @@
 
   C) Дозаказ по уже подписанному соглашению:
   • ТД_СчетОферта = нет, соглашение действует
-  • типовое: заказа нет в регистре за период
-  • спецификация: заказа нет в регистре, дата заказа в периоде, оплата полная
-  • по тому же соглашению есть подписание строго раньше начала периода
-  • проведён, не «не учитывать» / не сопровождение / не перепродажа
+  • типовое: оплата за период; если заказ уже в регистре за месяц —
+    берём оплату только когда она не дублирует сумму регистра
+    (в отчёте 1С это две строки под одним заказом)
+  • типовое без строки в регистре: только дилер/дистрибьютор
+  • спецификация 12×: ТО при пустом заказе / декабре, либо подписание с марта
+    текущего года по договору прошлого/текущего года (Юг Руси; не Индушкин)
+  • ОДП: без Владикавказа в дозаказе/оферте (в регистре подписанных — остаётся)
+  • проведён, не «не учитывать»; сопровождение режем, кроме МГС
+  • перепродажа без МГС (МГС в факте 1С остаётся во всех отделах)
   • сумма = оплата РасчетыСКлиентами за период
+  • спецификация без суммы соглашения — не берём (не отличить 1×/12×)
 
 Ожидаемые = UNION как в отчёте 1С «План-факт»:
 
@@ -32,19 +37,25 @@
   • ДатаПодписанияПлан в выбранном периоде (для текущего месяца — по сегодня)
   • КП заполнен; ЗаказКлиента пуст
   • статус КП не НеСогласовано / Аннулировано (+ Черновик, Отменено)
-  • 6 коммерческих отделов; перепродажа (ОДП — без МГС)
+  • 6 коммерческих отделов, кроме БМИ (в Excel колонка ожидаемых по БМИ пустая)
+  • перепродажа (ОДП — без МГС)
   • сумма: ТД_СуммаТКПБМИ при ТД_ОсновноеТКПДляБМИ, иначе СуммаДоговора × курс КП
 
   B) Счёт-оферта (РасчетыСКлиентами.Остатки на конец месяца):
-  • соглашение ТД_СчетОферта; не в ТД_ДоговорыПодписанные
-  • этап оплаты ДатаПлатежа < конец месяца; КОплатеОстаток > 0
-  • ТД_ПредполагаемаяДатаАванса в выбранном периоде (поле отчёта)
+  • соглашение с «оферт» в наименовании (флаг SQL _Fld13700 врёт:
+    «ТИПОВОЕ … по договору» тоже помечен как оферта)
+  • не в ТД_ДоговорыПодписанные
+  • этап оплаты ДатаПлатежа < конец месяца; долг ≈ СуммаДокумента
+  • ТД_ПредполагаемаяДатаАванса < конец среза; в текущем месяце ещё
+    захватываем авансы прошлого месяца (как 1–15 в «План-факт»)
   • не ТД_НеУчитыватьВПланФакте / не ТД_СопровождениеПродажи; не перепродажа
-  • СуммаДоговораПлан = СуммаДокумента (при полном долге ≈ остаток КОплате)
+  • СуммаДоговораПлан = СуммаДокумента
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 from calendar import monthrange
 from datetime import date, datetime
 from pathlib import Path
@@ -205,7 +216,7 @@ def fx_params() -> list:
 
 
 def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
-    """МП по договорам: вид «Договоры», без закрытых объектов планирования."""
+    """МП по договорам: вид «Договоры», только объекты с пустой датой архива."""
     load_depts(cur, COMMERCIAL_DEPTS, "#plan_depts")
     cur.execute(
         """
@@ -220,7 +231,6 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
           AND (
                 plan_obj._IDRRef IS NULL
                 OR plan_obj._Fld122423 <= ?
-                OR plan_obj._Fld122423 >= ?
               )
         GROUP BY d.name
         """,
@@ -228,7 +238,6 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
         p0,
         p_next,
         datetime(2001, 1, 1),
-        p_next,
     )
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
@@ -309,7 +318,7 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
             if partner in resale_nomgs:
                 continue
         else:
-            if partner in resale and not sopr_reg:
+            if partner in resale_nomgs and not sopr_reg:
                 continue
 
         ok = r.get("ЗаказКлиента_Key") or _EMPTY_GUID
@@ -318,15 +327,12 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
             od = orders.get(ok) or {}
             if od.get("ТД_НеУчитыватьВПланФакте"):
                 continue
-            if od.get("ТД_СопровождениеПродажи"):
-                continue
-            # Как в запросе 1С: ОПБО режет только перепродажу без МГС.
-            # Полный список перепродажи на заказе выкидывал МГС (~6.5 млн в августе).
             op = od.get("Партнер_Key") or _EMPTY_GUID
-            if opbo and dept_key == opbo:
-                if op in resale_nomgs:
-                    continue
-            elif op in resale:
+            # Сопровождение в отчёте 1С остаётся только у МГС.
+            if od.get("ТД_СопровождениеПродажи") and op not in (resale - resale_nomgs):
+                continue
+            # Перепродажа без МГС — во всех отделах. МГС в факте 1С остаётся.
+            if op in resale_nomgs:
                 continue
             rate = float(cur_map.get(od.get("Валюта_Key") or "", 1.0) or 1.0)
 
@@ -361,9 +367,21 @@ def calc_fact_sql(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
                 s._Fld112481RRef = ?
                 OR (
                      ISNULL(ord._Fld184301, 0x00) = 0x00
-                     AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
+                     AND (
+                          ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
+                          OR (
+                            EXISTS (
+                              SELECT 1 FROM #resale r
+                              WHERE r.id = ord._Fld21180RRef
+                            )
+                            AND NOT EXISTS (
+                              SELECT 1 FROM #resale_nomgs r
+                              WHERE r.id = ord._Fld21180RRef
+                            )
+                          )
+                     )
                      AND NOT EXISTS (
-                       SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                       SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
                      )
                    )
               )
@@ -375,7 +393,7 @@ def calc_fact_sql(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
                     ) THEN 0 ELSE 1 END
                   ELSE
                     CASE WHEN EXISTS (
-                      SELECT 1 FROM #resale r WHERE r.id = s._Fld112282RRef
+                      SELECT 1 FROM #resale_nomgs r WHERE r.id = s._Fld112282RRef
                     ) AND ISNULL(s._Fld123477, 0x00) = 0x00
                     THEN 0 ELSE 1 END
                 END
@@ -398,6 +416,37 @@ def _odata_period_str(p: datetime) -> str:
 
 _EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 _SIGNED_REG_CACHE: list[dict] | None = None
+
+# ОДП: «Владикавказ» в ветке дозаказа/оферты отчёт 1С не берёт
+# (в регистре подписанных — берёт; поэтому сюда, не в calc_fact_odata).
+VLADIKAVKAZ_PARTNER = "237a2c5f-3b94-11e7-812b-001e67112509"
+
+
+_SPEC_CONTRACT_DT = re.compile(r"от\s+\d{2}\.\d{2}\.(\d{2,4})")
+
+
+def _spec_contract_year(desc: str) -> int | None:
+    m = _SPEC_CONTRACT_DT.search(desc or "")
+    if not m:
+        return None
+    y = int(m.group(1))
+    return y + 2000 if y < 100 else y
+
+
+def _opbo_skip_partner(
+    partner: str,
+    *,
+    dept_key: str,
+    opbo: str | None,
+    resale: set[str],
+    resale_nomgs: set[str],
+    extra_opbo_exclude: frozenset[str] | set[str] | None = None,
+) -> bool:
+    """True — строку не брать. extra_opbo_exclude — доп. партнёры только для ОДП."""
+    extra = extra_opbo_exclude or ()
+    if opbo and dept_key == opbo:
+        return partner in resale_nomgs or partner in extra
+    return partner in resale_nomgs
 
 
 def _odata_json(session, url: str, timeout: int = 120, label: str = "dogovory") -> list[dict]:
@@ -554,7 +603,12 @@ def _fetch_settlement_payments_odata(p0: datetime, p_next: datetime) -> dict[str
             f"{base}/{entity}?$format=json&$top=1000&$skip={skip}"
             f"&$select={select}&$filter={flt}"
         )
-        batch = session.get(url, timeout=120).json().get("value") or []
+        raw = session.get(url, timeout=120)
+        try:
+            payload = raw.json()
+        except Exception:
+            payload = json.loads((raw.content or b"").decode("utf-8-sig") or "{}")
+        batch = (payload or {}).get("value") or []
         for row in batch:
             rtype = str(row.get("Recorder_Type") or "")
             if not any(m in rtype for m in _PAYMENT_RECORDER_MARKERS):
@@ -768,10 +822,14 @@ def calc_fact_offer_live_odata(p0: datetime, p_next: datetime) -> dict[str, floa
         if not dept_name:
             continue
         partner = order.get("Партнер_Key") or _EMPTY_GUID
-        if opbo and dept_key == opbo:
-            if partner in resale_nomgs:
-                continue
-        elif partner in resale:
+        if _opbo_skip_partner(
+            partner,
+            dept_key=dept_key,
+            opbo=opbo,
+            resale=resale,
+            resale_nomgs=resale_nomgs,
+            extra_opbo_exclude={VLADIKAVKAZ_PARTNER},
+        ):
             continue
         out[dept_name] = out.get(dept_name, 0.0) + float(amt or 0)
     return {k: round(v, 2) for k, v in out.items()}
@@ -789,13 +847,13 @@ def calc_fact_offer(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
 def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
     """Дозаказ: оплата по уже подписанному соглашению, как в отчёте «План-факт».
 
-    Типовое соглашение: заказ не в регистре за выбранный период
-    (новый заказ по рамке, либо доплата по заказу прошлого месяца).
+    Типовое: оплата за период. Если заказ уже в регистре за месяц — не
+    дублируем ту же сумму (разные суммы в отчёте 1С складываются).
+    Без строки в регистре берём только рамку с СуммаДокумента > 0.
 
-    Спецификация: заказа нет в регистре вообще, дата заказа в периоде,
-    оплата на полную сумму документа.     Ежемесячный ТО по спецификации идёт в факт, только если сумма
-    соглашения ≈ 1× или 12× сумма заказа. Иначе (сезон, некратное)
-    в отчёте 1С это деньги/отгрузки, не «договоры заключенные».
+    Спецификация: заказа нет в регистре. 1× уже подписанная не повторяется;
+    новая 1× — оплаты за период (в т.ч. частичные). 12× — дата заказа в
+    периоде и полная оплата. Сезон / некратное — только деньги и отгрузки.
     """
     from comdir.resale import _base, _session, guid_to_1c_bytes
 
@@ -808,8 +866,15 @@ def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
     d0 = _odata_period_str(p0)
     d1 = _odata_period_str(p_next)
     orders_in_period: set[str] = set()
+    order_period_amt: dict[str, float] = {}
     signed_any: set[str] = set()
     agr_prior: set[str] = set()
+    # Годовой ТО: в регистре либо пустой заказ, либо подписание в декабре.
+    # Ежемесячный повтор (БТК / Котельщик) подписан обычным заказом — факт 0.
+    spec_allow_12x: set[str] = set()
+    spec_12x_cy_order: set[str] = set()
+    fact_year = p0.year - YEAR_OFFSET
+    y = f"{fact_year:04d}"
     for r in load_signed_register_odata():
         dt = (r.get("ДатаПодписания") or "")[:10]
         ok = r.get("ЗаказКлиента_Key") or ""
@@ -818,8 +883,20 @@ def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
             signed_any.add(ok)
             if d0 <= dt < d1:
                 orders_in_period.add(ok)
+                try:
+                    order_period_amt[ok] = order_period_amt.get(ok, 0.0) + float(
+                        r.get("СуммаДоговора") or 0
+                    )
+                except (TypeError, ValueError):
+                    pass
         if dt and dt < d0 and sk and sk != _EMPTY_GUID:
             agr_prior.add(sk)
+        if sk and sk != _EMPTY_GUID:
+            empty_ord = (not ok) or ok == _EMPTY_GUID
+            if empty_ord or (len(dt) >= 7 and dt[5:7] == "12"):
+                spec_allow_12x.add(sk)
+            elif dt[:4] == y and len(dt) >= 7 and dt[5:7] >= "03" and not empty_ord:
+                spec_12x_cy_order.add(sk)
 
     objs = _odata_batch_by_ref(
         session,
@@ -878,28 +955,52 @@ def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
         is_typical = desc.lower().startswith("типовое")
         if is_typical:
             if order_key in orders_in_period:
-                continue
-            if agr_key not in agr_prior:
-                continue
+                signed_amt = float(order_period_amt.get(order_key) or 0)
+                if abs(float(amt or 0) - signed_amt) <= 1:
+                    continue
+            elif agr_key not in agr_prior:
+                low = desc.lower()
+                if "дилер" not in low and "дистрибьютор" not in low:
+                    continue
         else:
             if order_key in signed_any:
                 continue
-            if agr_key not in agr_prior:
-                continue
-            order_dt = (order.get("Date") or "")[:10]
-            if not (d0 <= order_dt < d1):
-                continue
-            # Частичная оплата по спецификации в отчёте в факт не идёт.
             doc_amt = float(order.get("СуммаДокумента") or 0)
-            if doc_amt and abs(float(amt or 0) - doc_amt) > 1:
-                continue
             agr_amt = float(agr.get("СуммаДокумента") or 0)
-            if doc_amt and agr_amt:
-                ratio = agr_amt / doc_amt
-                # В факт 1С идёт разовая спецификация (1×) или годовой ТО (12×).
-                # Сезон / некратное (9×, 7.4×, 2×) — только деньги и отгрузки.
-                if abs(ratio - 1) > 0.02 and abs(ratio - 12) > 0.02:
+            if not doc_amt or not agr_amt:
+                continue
+            ratio = agr_amt / doc_amt
+            order_dt = (order.get("Date") or "")[:10]
+            if abs(ratio - 12) <= 0.02:
+                allowed_12x = agr_key in spec_allow_12x
+                if not allowed_12x and agr_key in spec_12x_cy_order:
+                    cy = _spec_contract_year(desc)
+                    allowed_12x = cy is not None and cy >= fact_year - 1
+                if agr_key not in agr_prior or not allowed_12x:
                     continue
+                if not (d0 <= order_dt < d1):
+                    continue
+                if abs(float(amt or 0) - doc_amt) > 1:
+                    continue
+            elif abs(ratio - 1) <= 0.02 and agr_amt <= 20000:
+                # Новая мелкая 1× спецификация (ЦСМ Тверской, Бумфа): оплаты,
+                # в т.ч. частичные. Крупные 1× без регистра в отчёте 1С — 0.
+                if p0.month == 1:
+                    lookback = p0.replace(year=p0.year - 1, month=12, day=1)
+                else:
+                    lookback = p0.replace(month=p0.month - 1, day=1)
+                if not (_odata_period_str(lookback) <= order_dt < d1):
+                    continue
+            elif (
+                agr_key not in agr_prior
+                and abs(ratio - 6) <= 0.02
+                and abs(float(amt or 0) - doc_amt) <= 1
+                and d0 <= order_dt < d1
+            ):
+                # Первая 6× спецификация без регистра (ДТС) — в отчёте в факт.
+                pass
+            else:
+                continue
         dept_key = order.get("Подразделение_Key") or _EMPTY_GUID
         try:
             dept_name = name_by_bin.get(guid_to_1c_bytes(dept_key))
@@ -908,10 +1009,14 @@ def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
         if not dept_name:
             continue
         partner = order.get("Партнер_Key") or _EMPTY_GUID
-        if opbo and dept_key == opbo:
-            if partner in resale_nomgs:
-                continue
-        elif partner in resale:
+        if _opbo_skip_partner(
+            partner,
+            dept_key=dept_key,
+            opbo=opbo,
+            resale=resale,
+            resale_nomgs=resale_nomgs,
+            extra_opbo_exclude={VLADIKAVKAZ_PARTNER},
+        ):
             continue
         out[dept_name] = out.get(dept_name, 0.0) + float(amt or 0)
     return {k: round(v, 2) for k, v in out.items()}
@@ -984,6 +1089,7 @@ def calc_expected_potential(
           AND p._Fld112241RRef <> ?
           AND p._Fld114063RRef = ?
           AND p._Fld112292_RRRef <> ?
+          AND d.name <> N'Отдел продаж БМИ'
           AND kp._Fld25044RRef NOT IN ({bl})
           AND (
                 CASE
@@ -1011,48 +1117,30 @@ def calc_expected_potential(
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
+def _expected_advance_from(p0: datetime) -> datetime:
+    """В текущем месяце 1С ещё держит неоплаченные оферты прошлого месяца."""
+    period = date(p0.year - YEAR_OFFSET, p0.month, 1)
+    today = date.today().replace(day=1)
+    if period != today:
+        return p0
+    if p0.month == 1:
+        return p0.replace(year=p0.year - 1, month=12, day=1)
+    return p0.replace(month=p0.month - 1, day=1)
+
+
 def calc_expected_offer(
     cur,
     p0: datetime,
     p_next: datetime,
     p_asof: datetime | None = None,
 ) -> dict[str, float]:
-    """Ветка счёт-оферта: СуммаДокумента при остатке КОплате > 0 и дате аванса в периоде."""
-    from comdir.resale import ORDER_SOPR_FIELD, guid_to_1c_bytes
+    """Счёт-оферта: полностью неоплаченный заказ по соглашению «оферта»."""
+    from comdir.resale import ORDER_SOPR_FIELD
 
     p_asof = p_asof or p_next
+    adv_from = _expected_advance_from(p0)
     load_depts(cur, COMMERCIAL_DEPTS, "#offer_depts")
     load_resale(cur)
-
-    # Исключить заказы, уже оплаченные в live 1С (SQL-остаток может ещё висеть).
-    cur.execute("IF OBJECT_ID('tempdb..#paid_offer') IS NOT NULL DROP TABLE #paid_offer")
-    cur.execute("CREATE TABLE #paid_offer (id binary(16) PRIMARY KEY)")
-    try:
-        pay_by_obj = _fetch_settlement_payments_odata(p0, p_asof)
-        if pay_by_obj:
-            cur.execute("IF OBJECT_ID('tempdb..#pay_obj2') IS NOT NULL DROP TABLE #pay_obj2")
-            cur.execute("CREATE TABLE #pay_obj2 (id binary(16) PRIMARY KEY)")
-            for obj_guid in pay_by_obj:
-                try:
-                    cur.execute(
-                        "INSERT INTO #pay_obj2(id) VALUES (?)",
-                        guid_to_1c_bytes(obj_guid),
-                    )
-                except Exception:
-                    continue
-            cur.execute(
-                """
-                INSERT INTO #paid_offer(id)
-                SELECT DISTINCT obj._Fld138162_RRRef
-                FROM #pay_obj2 p
-                INNER JOIN _Reference134945 obj WITH (NOLOCK)
-                  ON obj._IDRRef = p.id
-                 AND obj._Fld138162_RTRef = ?
-                """,
-                ORDER_TREF,
-            )
-    except Exception:
-        logger.exception("Не удалось исключить live-оплаты из ожидаемых счёт-оферта")
 
     amt = fx_sql("ord._Fld21186", "ord._Fld21185RRef")
     cur.execute(
@@ -1063,12 +1151,13 @@ def calc_expected_offer(
         INNER JOIN _Reference473 a WITH (NOLOCK)
           ON a._IDRRef = ord._Fld21183RRef
         WHERE a.[{AG_OFFER_FLAG}] = 0x01
+          AND a._Description LIKE N'%оферт%'
+          AND ord._Posted = 0x01
           AND ISNULL(ord._Fld184301, 0x00) = 0x00
           AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
           AND ord._Fld138973RRef <> ?
           AND ord.[{ORDER_ADVANCE_DT}] >= ?
           AND ord.[{ORDER_ADVANCE_DT}] < ?
-          AND NOT EXISTS (SELECT 1 FROM #paid_offer x WHERE x.id = ord._IDRRef)
           AND EXISTS (
             SELECT 1 FROM _Document704_VT21278 st WITH (NOLOCK)
             WHERE st._Document704_IDRRef = ord._IDRRef
@@ -1087,9 +1176,10 @@ def calc_expected_offer(
               AND ISNULL(s._Fld140434, 0x00) = 0x00
               AND s._Fld53890 <> 0
             GROUP BY s._Fld140429RRef
-            HAVING SUM(
-              CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END
-            ) > 0
+            HAVING ABS(
+              SUM(CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END)
+              - ord._Fld21186
+            ) < 1
           )
           AND (
                 CASE
@@ -1107,7 +1197,7 @@ def calc_expected_offer(
         """,
         *fx_params(),
         EMPTY16,
-        p0,
+        adv_from,
         p_asof,
         p_next,
         p_next,

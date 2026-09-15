@@ -77,12 +77,6 @@ def _cache_path_monthly(year: int, ref_month: int) -> Path:
     return CACHE_DIR / f"reclamations_monthly_{year}_{ref_month:02d}.json"
 
 
-def _is_past_period(year: int, month: int) -> bool:
-    """Прошлые полные месяцы кэшируются навсегда, текущий/будущий — на сутки."""
-    today = date.today()
-    return (year, month) < (today.year, today.month)
-
-
 def _load_cache(path: Path, *, perpetual: bool = False) -> dict | None:
     if not path.exists():
         return None
@@ -164,8 +158,8 @@ def get_reclamations_for_month(year: int, month: int) -> dict:
       }
     """
     cache_path = _cache_path(year, month)
-    perpetual = _is_past_period(year, month)
-    cached = _load_cache(cache_path, perpetual=perpetual)
+    # Даты в претензиях правят задним числом — вечный кэш прошлого месяца врёт.
+    cached = _load_cache(cache_path)
     if cached is not None:
         return cached
 

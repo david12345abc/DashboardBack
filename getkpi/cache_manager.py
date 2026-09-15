@@ -26,10 +26,40 @@ CACHE_DIR = Path(__file__).resolve().parent / 'dashboard'
 MAX_AGE_SECONDS = 86400  # 1 день
 DASHBOARD_PAYLOAD_MEM_TTL = 3600  # 1 час — повторные запросы дашборда ГСПП
 WARM_TASK_DELAY_SECONDS = float(os.getenv('CACHE_WARM_TASK_DELAY_SECONDS', '1.0'))
+LOCK_WAIT_TIMEOUT_SECONDS = float(os.getenv('CACHE_LOCK_WAIT_TIMEOUT_SECONDS', '90'))
 # v2: после восстановления plan на SQL-плитках текучести — сброс stale aggregate.
 DASHBOARD_DISK_VERSION = 2
 
-_locks: dict[str, threading.Lock] = {}
+class _TrackableRLock:
+    """RLock с ``locked()`` — в стандартной библиотеке он есть только с Python 3.14."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._holds = 0
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        ok = self._lock.acquire(blocking, timeout)
+        if ok:
+            self._holds += 1
+        return ok
+
+    def release(self) -> None:
+        self._holds -= 1
+        self._lock.release()
+
+    def locked(self) -> bool:
+        return self._holds > 0
+
+    def __enter__(self) -> "_TrackableRLock":
+        self.acquire()
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        self.release()
+        return False
+
+
+_locks: dict[str, _TrackableRLock] = {}
 _meta = threading.Lock()
 _warming = False
 _warm_cycle_lock = threading.Lock()
@@ -54,11 +84,16 @@ _GLOBAL_WARM_TASK_KEYS = frozenset({
 })
 
 
-def _get_lock(key: str) -> threading.Lock:
+def _get_lock(key: str) -> _TrackableRLock:
+    # RLock: warm-задачи вызывают get_sh_t1_table / get_*_ytd, а те снова
+    # делают locked_call с тем же key. Обычный Lock в этом случае зависает
+    # навсегда в том же потоке — /api/kpi/ не отвечает, плитки не приходят.
     with _meta:
-        if key not in _locks:
-            _locks[key] = threading.Lock()
-        return _locks[key]
+        lock = _locks.get(key)
+        if lock is None:
+            lock = _TrackableRLock()
+            _locks[key] = lock
+        return lock
 
 
 def is_computing(key: str) -> bool:
@@ -219,8 +254,25 @@ def locked_call(key: str, fn, *args, **kwargs):
             stale = _load_json_cache(cache_path)
             if stale is not None:
                 return unwrap_stamp_payload(stale)
-        with lock:
+        logger.warning(
+            "cache_manager: [%s] lock busy and no stale cache, waiting up to %.0fs",
+            key,
+            LOCK_WAIT_TIMEOUT_SECONDS,
+        )
+        if not lock.acquire(timeout=LOCK_WAIT_TIMEOUT_SECONDS):
+            logger.error(
+                "cache_manager: [%s] lock wait timeout, skip compute so API can return",
+                key,
+            )
+            if cache_path is not None:
+                stale = _load_json_cache(cache_path)
+                if stale is not None:
+                    return unwrap_stamp_payload(stale)
+            return None
+        try:
             return fn(*args, **kwargs)
+        finally:
+            lock.release()
 
     try:
         _mark_refresh_active(key, cache_path)
@@ -297,6 +349,9 @@ def schedule_background_refresh(key: str, fn, *args, **kwargs) -> None:
 
 def stale_while_revalidate(key: str, load_fresh, load_stale, compute):
     """Stale-while-revalidate: свежий кэш → устаревший + фон → синхронный пересчёт."""
+    if is_force_compute_context():
+        logger.info("cache_manager: [%s] force_compute, synchronous recompute", key)
+        return locked_call(key, compute)
     fresh = load_fresh()
     if fresh is not None:
         return fresh
@@ -307,7 +362,13 @@ def stale_while_revalidate(key: str, load_fresh, load_stale, compute):
             "cache_manager: [%s] serving stale cache, scheduling background refresh",
             key,
         )
-        schedule_background_refresh(key, compute)
+        try:
+            schedule_background_refresh(key, compute)
+        except Exception:
+            logger.exception(
+                "cache_manager: [%s] failed to schedule background refresh, serving stale",
+                key,
+            )
         return stale
 
     logger.info("cache_manager: [%s] no cache file, synchronous compute", key)
@@ -494,7 +555,12 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_prod_deputy_turnover,
         calc_reclamations,
         calc_svoevremennaya_otgruzka,
+        calc_tenders_bmi,
         calc_tekuchest,
+        calc_tekuchest_opdir,
+        calc_vyruchka_opdir,
+        calc_budget_limit,
+        calc_fot_management,
         calc_metrolog_budget, calc_metrolog_fot, calc_metrolog_production_plan,
         calc_metrolog_projects, calc_metrolog_turnover,
         techdir_m3, techdir_m4, techdir_m5, techdir_m6_bdds, techdir_projects, techdir_tekuchet,
@@ -610,6 +676,22 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
          cd / f'tekuchest_{y}_{m:02d}.json',
          lambda: calc_tekuchest.get_tekuchest_monthly(year=y, month=m)),
 
+        (f'vyruchka_opdir_{y}_{m}',
+         calc_vyruchka_opdir._cache_path_monthly(y, m),
+         lambda: calc_vyruchka_opdir.get_vyruchka_opdir_monthly(year=y, month=m)),
+
+        (f'budget_limit_opdir_{y}_{m}',
+         calc_budget_limit._cache_path_monthly(y, m),
+         lambda: calc_budget_limit.get_budget_limit_monthly(year=y, month=m)),
+
+        (f'fot_management_opdir_{y}_{m}',
+         calc_fot_management._cache_path_monthly(y, m),
+         lambda: calc_fot_management.get_fot_management_monthly(year=y, month=m)),
+
+        (f'od_q2_turnover_{y}_{m}',
+         calc_tekuchest_opdir._cache_path_monthly(y, m),
+         lambda: calc_tekuchest_opdir.get_tekuchest_opdir_monthly(year=y, month=m)),
+
         (f'svoevremennaya_monthly_{y}_{m}',
          cd / f'svoevremennaya_monthly_{y}_{m:02d}.json',
          lambda: calc_svoevremennaya_otgruzka.get_svoevremennaya_monthly(year=y, month=m)),
@@ -617,6 +699,17 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'reclamations_monthly_{y}_{m}',
          cd / f'reclamations_monthly_{y}_{m:02d}.json',
          lambda: calc_reclamations.get_reclamations_monthly(year=y, month=m)),
+
+        *[
+            (
+                calc_tenders_bmi.tenders_lock_key(y, mm, cumulative=False),
+                calc_tenders_bmi.tenders_cache_path(y, mm, cumulative=False),
+                lambda yy=y, mm=mm: calc_tenders_bmi.get_tenders_departments(
+                    year=yy, month=mm, cumulative=False,
+                ),
+            )
+            for mm in range(1, m + 1)
+        ],
 
         (f'overdue_detail_{y}_{m}',
          calc_debitorka.overdue_detail_cache_path(y, m),

@@ -52,7 +52,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 7
+CACHE_VERSION = 9
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -297,7 +297,10 @@ def _load_kk_register(session: requests.Session,
 
 def _batch_load_catalog(session: requests.Session,
                         obj_keys: set[str]) -> dict[str, dict]:
-    cat_select = quote("Ref_Key,Подразделение_Key,Партнер_Key,Соглашение,Объект,Объект_Type", safe=",_")
+    cat_select = quote(
+        "Ref_Key,Подразделение_Key,Партнер_Key,Соглашение,Объект,Объект_Type,Description",
+        safe=",_",
+    )
     catalog: dict[str, dict] = {}
     keys = sorted(obj_keys)
     for i in range(0, len(keys), BATCH):
@@ -316,6 +319,7 @@ def _batch_load_catalog(session: requests.Session,
                     "agreement": it.get("Соглашение", ""),
                     "obj": it.get("Объект", ""),
                     "obj_type": it.get("Объект_Type", ""),
+                    "description": (it.get("Description") or "").strip(),
                 }
         except Exception:
             pass
@@ -488,6 +492,12 @@ def _scan_orders_by_object_keys(
     return orders_by_obj
 
 
+def _is_customer_order_type(obj_type: str | None) -> bool:
+    """Объект расчётов ссылается на ЗаказКлиента (как _Fld138162_RTRef в SQL)."""
+    t = (obj_type or "").lower()
+    return "заказклиента" in t
+
+
 def _resolve_order_for_object(
     orders_by_obj: dict[str, list[dict]],
     obj_key: str,
@@ -505,36 +515,80 @@ def _resolve_order_for_object(
     return candidates[0]
 
 
+def _resolve_order_for_payment(
+    catalog_obj: dict,
+    orders_by_obj: dict[str, list[dict]],
+    obj_key: str,
+    partner_key: str | None,
+) -> dict | None:
+    """Заказ только если объект расчётов — заказ клиента.
+
+    Для договора/прочего SQL делает LEFT JOIN и получает NULL: оплату берём
+    по отделу без флагов заказа. Обратный поиск заказов по ОбъектРасчетов_Key
+    на договоре комиссионера цепляет чужие заказы и ошибочно режет факт.
+    """
+    if not _is_customer_order_type(catalog_obj.get("obj_type")):
+        return None
+    return _resolve_order_for_object(orders_by_obj, obj_key, partner_key)
+
+
 def _payment_dept_if_passes_plan_fact(
     catalog_obj: dict,
-    order: dict,
+    order: dict | None,
     excl_full: set,
     excl_no_mgs: set,
     *,
     opbo_mgs_exception: bool,
 ) -> str | None:
-    """Повторить отбор 1С: отдел/соглашение из объекта расчетов, флаги из заказа."""
-    dept = normalize_commercial_dept_guid(catalog_obj.get("dept", ""))
+    """Повторить отбор 1С: отдел из объекта расчетов; флаги — только при заказе.
+
+    Объект не заказ (договор комиссионера и т.п.): берём только если отдел
+    объекта — ликвидированный коммерческий (алиас в ОДП/ключевых). Иначе
+    отчёт 1С такие оплаты не показывает (бронирования, живые договоры).
+
+    Перепродажа / сопровождение — как в отгрузках и договорах:
+    • ОПБО: режем перепродажу без МГС; Метрогазсервис оставляем;
+    • прочие отделы: перепродажу режем только без ТД_СопровождениеПродажи
+      (с сопровождением — в отчёте, эталон апр/июл МГС +117к/+76к).
+    Жёстко резать все sop нельзя: тогда пропадают эти строки.
+    """
+    from .commercial_department_aliases import COMMERCIAL_DEPT_ALIASES
+
+    raw_dept = catalog_obj.get("dept", "") or ""
+    dept = normalize_commercial_dept_guid(raw_dept)
     if _is_empty_ref(dept) or dept not in DEPT_SET:
         return None
+
+    partner = catalog_obj.get("partner", "")
+
+    if not order:
+        # Ликвидированный отдел + договор с комиссионером (не «НЕ ИСПОЛЬЗОВАТЬ»).
+        # Март ОДП: МПГ00011528 +1.44 млн. Сентябрь: «НЕ ИСПОЛЬЗОВАТЬ» Псков — в отчёте нет.
+        if raw_dept not in COMMERCIAL_DEPT_ALIASES:
+            return None
+        desc = (catalog_obj.get("description") or "").strip()
+        desc_up = desc.upper()
+        if desc_up.startswith("НЕ ИСПОЛЬЗОВАТЬ"):
+            return None
+        if "КОМИССИОНЕР" not in desc_up:
+            return None
+        excl = excl_no_mgs if (opbo_mgs_exception and dept == OPBO_DEPT) else excl_full
+        if partner in excl:
+            return None
+        return dept
+
     if _is_empty_ref(catalog_obj.get("agreement")):
         return None
     if order.get("ne_uchit"):
         return None
-    if order.get("soprovozhd"):
-        return None
 
-    partner = catalog_obj.get("partner", "")
-    order_dept = normalize_commercial_dept_guid(order.get("dept", ""))
-    if opbo_mgs_exception and order_dept == OPBO_DEPT:
-        if order.get("partner", "") in excl_no_mgs:
-            return None
-        if partner in excl_no_mgs:
+    order_partner = order.get("partner", "") or partner
+    sop = bool(order.get("soprovozhd"))
+    if opbo_mgs_exception and dept == OPBO_DEPT:
+        if order_partner in excl_no_mgs or partner in excl_no_mgs:
             return None
     else:
-        if order.get("partner", "") in excl_full:
-            return None
-        if partner in excl_full:
+        if (order_partner in excl_full or partner in excl_full) and not sop:
             return None
 
     return dept
@@ -583,9 +637,9 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict,
         catalog_obj = catalog.get(obj_key)
         if not catalog_obj:
             continue
-        order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key"))
-        if not order:
-            continue
+        order = _resolve_order_for_payment(
+            catalog_obj, orders_by_obj, obj_key, row.get("Партнер_Key"),
+        )
         effective_dept = _payment_dept_if_passes_plan_fact(
             catalog_obj, order, excl_full, excl_no_mgs, opbo_mgs_exception=True,
         )
@@ -603,12 +657,32 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict,
     return monthly
 
 
+def _is_liquidated_commissionaire_object(catalog_obj: dict | None) -> bool:
+    """Договор с комиссионером на ликвидированном отделе — факт через СуммаОплатыРегл.
+
+    В регистре те же поступления дублируются как СуммаПостоплатыРегл.
+    В отчёте 1С сумма один раз; ветка комиссии их не берёт (иначе май/июнь двоятся).
+    """
+    from .commercial_department_aliases import COMMERCIAL_DEPT_ALIASES
+
+    if not catalog_obj:
+        return False
+    raw_dept = catalog_obj.get("dept", "") or ""
+    if raw_dept not in COMMERCIAL_DEPT_ALIASES:
+        return False
+    desc_up = (catalog_obj.get("description") or "").strip().upper()
+    if desc_up.startswith("НЕ ИСПОЛЬЗОВАТЬ"):
+        return False
+    return "КОМИССИОНЕР" in desc_up
+
+
 def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, list[dict]],
                   excl_full: set, excl_no_mgs: set,
                   max_month: int) -> dict[str, dict[int, float]]:
     """Ветка 2: Комиссия (СуммаПостоплатыРегл). Возвращает by_dept.
 
     У дилеров (ОПБО) Метрогазсервис не отсекается — как в отчёте 1С и во ветке 1.
+    Постоплата по договору комиссионера на ликв. отделе пропускается: сумма уже в ветке 1.
     """
     monthly: dict[str, dict[int, float]] = {
         d: {m: 0.0 for m in range(1, max_month + 1)} for d in DEPT_SET
@@ -624,14 +698,23 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, l
         if not _is_postuplenie_beznal_type(row.get("Recorder_Type")):
             continue
 
+        obj_key = row.get("ОбъектРасчетов", "")
+        cat = catalog.get(obj_key) if obj_key else None
+        if _is_liquidated_commissionaire_object(cat):
+            continue
+
         reg_dept = normalize_commercial_dept_guid(row.get("Подразделение_Key", ""))
         if _is_empty_ref(reg_dept) or reg_dept not in DEPT_SET:
-            obj_key = row.get("ОбъектРасчетов", "")
-            order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key")) if obj_key else None
+            order = (
+                _resolve_order_for_payment(
+                    cat or {}, orders_by_obj, obj_key, row.get("Партнер_Key"),
+                )
+                if cat
+                else None
+            )
             if order and normalize_commercial_dept_guid(order.get("dept", "")) in DEPT_SET:
                 reg_dept = normalize_commercial_dept_guid(order.get("dept", ""))
             else:
-                cat = catalog.get(obj_key) if obj_key else None
                 cat_dept = normalize_commercial_dept_guid(cat["dept"]) if cat else ""
                 if cat_dept in DEPT_SET:
                     reg_dept = cat_dept
@@ -656,7 +739,10 @@ def _calc_branch3(kk_rows: list[dict], catalog: dict,
                   orders_by_obj: dict[str, list[dict]],
                   excl_full: set, excl_no_mgs: set,
                   max_month: int) -> dict[str, dict[int, float]]:
-    """Ветка 3: Взаимозачёты (СуммаРегл). Возвращает by_dept."""
+    """Ветка 3: Взаимозачёты (СуммаРегл). Возвращает by_dept.
+
+    В SQL — INNER JOIN заказа: без объекта типа ЗаказКлиента строку не берём.
+    """
     monthly: dict[str, dict[int, float]] = {
         d: {m: 0.0 for m in range(1, max_month + 1)} for d in DEPT_SET
     }
@@ -672,7 +758,9 @@ def _calc_branch3(kk_rows: list[dict], catalog: dict,
         catalog_obj = catalog.get(obj_key)
         if not catalog_obj:
             continue
-        order = _resolve_order_for_object(orders_by_obj, obj_key, row.get("Партнер_Key"))
+        order = _resolve_order_for_payment(
+            catalog_obj, orders_by_obj, obj_key, row.get("Партнер_Key"),
+        )
         if not order:
             continue
         effective_dept = _payment_dept_if_passes_plan_fact(

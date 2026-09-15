@@ -18,8 +18,7 @@ calc_plan.py — Плановые показатели: Договоры, Ден
     Деньги   → МП_ОжидаемаяСуммаОплаты
     Договоры → МП_СуммаДоговораПлан
   - объект планирования (Ответственный = Catalog_ТД_ГруппыМенеджеров)
-    не в архиве на конец месяца: ПомещеноВАрхив пустая или >= начало следующего месяца
-    (как отчёт 1С «План-факт» и SQL calc_plan_fact_*)
+    только с пустой ПомещеноВАрхив (как отчёт 1С «План-факт» и SQL calc_plan_fact_*)
 
 API:
   from getkpi.calc_plan import get_plans_monthly
@@ -232,10 +231,12 @@ def _archive_is_empty(archive_iso: str) -> bool:
 
 
 def _keep_plan_object(archive_iso: str, year: int, month: int) -> bool:
-    """Как отчёт 1С: пустая дата архива или закрытие не раньше конца месяца."""
-    if _archive_is_empty(archive_iso):
-        return True
-    return archive_iso >= _month_end_exclusive_iso(year, month)
+    """Как отчёт 1С «План-факт»: только пустая «ПомещеноВАрхив».
+
+    Объекты с датой архива в будущем (даже после конца месяца) в колонку
+    маркетингового плана не входят — иначе ОДП янв–май завышается.
+    """
+    return _archive_is_empty(archive_iso)
 
 
 def _load_manager_group_archives(
@@ -464,7 +465,7 @@ def _batch_load_orders_for_expected(session: requests.Session,
     keys = sorted(k for k in order_keys if k and k != EMPTY)
     fields = (
         "Ref_Key,Date,Подразделение_Key,Партнер_Key,Соглашение_Key,Валюта_Key,ОбъектРасчетов_Key,"
-        "ДатаОтгрузки,ТД_НеУчитыватьВПланФакте,ТД_НеУчитыватьВПланФактеДС,"
+        "ДатаОтгрузки,Статус,ТД_НеУчитыватьВПланФакте,ТД_НеУчитыватьВПланФактеДС,"
         "ТД_НеУчитыватьВПланФактеОтгрузки,ТД_СопровождениеПродажи"
     )
     sel = quote(fields, safe=",_")
@@ -488,6 +489,7 @@ def _batch_load_orders_for_expected(session: requests.Session,
                     "currency": it.get("Валюта_Key", ""),
                     "calc_obj": it.get("ОбъектРасчетов_Key", ""),
                     "ship_date": it.get("ДатаОтгрузки", ""),
+                    "status": it.get("Статус", ""),
                     "ne_uchit": it.get("ТД_НеУчитыватьВПланФакте", False),
                     "ne_uchit_ds": it.get("ТД_НеУчитыватьВПланФактеДС", False),
                     "ne_uchit_ship": it.get("ТД_НеУчитыватьВПланФактеОтгрузки", False),
@@ -501,10 +503,21 @@ def _batch_load_orders_for_expected(session: requests.Session,
 def _load_payment_stage_order_months(session: requests.Session,
                                      year: int,
                                      ref_month: int) -> dict[str, set[int]]:
-    result: dict[str, set[int]] = {}
+    months, _sums = _load_payment_stage_months_and_sums(session, year, ref_month)
+    return months
+
+
+def _load_payment_stage_months_and_sums(
+    session: requests.Session,
+    year: int,
+    ref_month: int,
+) -> tuple[dict[str, set[int]], dict[str, dict[int, float]]]:
+    """Этапы оплаты: месяцы и суммы СуммаПлатежа по заказу."""
+    months: dict[str, set[int]] = {}
+    sums: dict[str, dict[int, float]] = {}
     start = _month_start(year, 1)
     end = _month_end_exclusive(year, ref_month)
-    sel = quote("Ref_Key,ДатаПлатежа", safe=",_")
+    sel = quote("Ref_Key,ДатаПлатежа,СуммаПлатежа", safe=",_")
     flt = quote(
         f"ДатаПлатежа ge datetime'{start}' and ДатаПлатежа lt datetime'{end}'",
         safe="",
@@ -527,11 +540,15 @@ def _load_payment_stage_order_months(session: requests.Session,
             m = _month_from_date(it.get("ДатаПлатежа"))
             order_key = it.get("Ref_Key", "")
             if m is not None and 1 <= m <= ref_month and order_key not in ("", EMPTY):
-                result.setdefault(order_key, set()).add(m)
+                months.setdefault(order_key, set()).add(m)
+                sums.setdefault(order_key, {})
+                sums[order_key][m] = sums[order_key].get(m, 0.0) + float(
+                    it.get("СуммаПлатежа") or 0
+                )
         if len(batch) < 5000:
             break
         skip += 5000
-    return result
+    return months, sums
 
 
 def _load_payment_stage_months(session: requests.Session,
@@ -1173,21 +1190,25 @@ def _order_passes_report_money_expected(
     resale_partners: set[str],
     resale_without_mgs: set[str],
 ) -> str | None:
-    """Фильтры колонки 14 отчёта «План-факт»: отдел, соглашение, флаги, перепродажа."""
-    dept = _normalize_expected_dept(order.get("dept") or "")
-    if not dept or dept not in DEPT_SET:
+    """Фильтры колонки 14 отчёта «План-факт»: отдел, соглашение, флаги, перепродажа.
+
+    Отдел — только 6 живых коммерческих (как SQL #exp_depts). Ликвидированные
+    холдинги в отчёт не входят: алиас в «ключевые» давал лишние +3,59 млн в апреле.
+    """
+    raw_dept = order.get("dept") or ""
+    if raw_dept not in DEPT_SET:
         return None
     if (order.get("agreement") or "") in ("", EMPTY):
         return None
     if order.get("ne_uchit") or order.get("ne_uchit_ds") or order.get("soprovozhd"):
         return None
     partner = order.get("partner") or ""
-    if dept == OPBO_DEPT:
+    if raw_dept == OPBO_DEPT:
         if partner in resale_without_mgs:
             return None
     elif partner in resale_partners:
         return None
-    return dept
+    return raw_dept
 
 
 def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str, float]]:
@@ -1195,6 +1216,10 @@ def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str
 
     Этап оплаты в самом месяце, остаток КОплате на конец месяца, один заказ
     на объект расчётов (MIN Ref). У дилеров Метрогазсервис не отсекается.
+
+    Закрытый заказ с переплатой на начало месяца больше суммы этапов месяца
+    не берём: плюс на конец месяца тогда из реализации, не из графика
+    (май Газпром НП00-001716 −2,28 млн).
     """
     from .odata_http import disable_access_guard
 
@@ -1203,7 +1228,9 @@ def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str
     session.auth = AUTH
 
     resale_partners, resale_without_mgs = _partner_resale_sets(session)
-    payment_months = _load_payment_stage_order_months(session, year, ref_month)
+    payment_months, stage_sums = _load_payment_stage_months_and_sums(
+        session, year, ref_month,
+    )
     orders = _batch_load_orders_for_expected(session, set(payment_months))
     obj_keys = {
         order.get("calc_obj") or ""
@@ -1220,6 +1247,7 @@ def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str
     balances: dict[str, float] = {}
     idx = 0
     for month in range(1, ref_month + 1):
+        opening = dict(balances)
         end = _month_end_exclusive(year, month)
         while idx < len(rows_sorted) and (rows_sorted[idx].get("Period") or "") < end:
             row = rows_sorted[idx]
@@ -1254,7 +1282,14 @@ def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str
             if bal <= 0:
                 continue
             order = orders[order_key]
-            dept = _normalize_expected_dept(order.get("dept") or "")
+            open_bal = opening.get(obj_key, 0.0)
+            stage_sum = stage_sums.get(order_key, {}).get(month, 0.0)
+            if (
+                open_bal + stage_sum < -0.01
+                and (order.get("status") or "") == "Закрыт"
+            ):
+                continue
+            dept = order.get("dept") or ""
             if dept not in DEPT_SET:
                 continue
             result[month][dept] += bal * _currency_rate(order.get("currency") or "")

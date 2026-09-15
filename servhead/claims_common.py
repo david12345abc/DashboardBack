@@ -222,7 +222,7 @@ def load_client_sla_rows(year: int, month: int) -> list[dict[str, Any]]:
 
     sql = SqlConnection()
     with sql.connect_ctx() as conn:
-        conn.timeout = 0
+        conn.timeout = 60
         cur = conn.cursor()
         cur.execute(
             f"""
@@ -361,7 +361,7 @@ def build_monthly_report(
 ) -> list[dict[str, Any]]:
     sql = SqlConnection()
     with sql.connect_ctx() as conn:
-        conn.timeout = 0
+        conn.timeout = 60
         cur = conn.cursor()
         status_bins = load_status_bins(cur)
         fact_bins = resolve_fact_bins(status_bins, fact_statuses)
@@ -396,7 +396,7 @@ def build_monthly_sla_report(
 ) -> list[dict[str, Any]]:
     sql = SqlConnection()
     with sql.connect_ctx() as conn:
-        conn.timeout = 0
+        conn.timeout = 60
         cur = conn.cursor()
         stats = load_monthly_sla_counts(
             cur,
