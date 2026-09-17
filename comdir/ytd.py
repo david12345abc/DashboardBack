@@ -43,10 +43,11 @@ from getkpi.valovaya_pribyl import vp_plan_for_month  # noqa: E402
 logger = logging.getLogger(__name__)
 
 # v17: KD-M1 ожидаемо на плитке — полный месяц (как колонка 14 отчёта), не «до завтра».
-#      KD-M2 отгрузки — план SQL, факт live OData, ожидаемо live OData полный месяц.
+#      KD-M2 отгрузки — план SQL, факт «итого выручка» отчёта валовой прибыли, ожидаемо OData.
+# v21: KD-M2/MRK-06 факт текущего месяца — по сегодня, без документов будущим числом.
 CACHE_VERSION = 20
 KD_M1_SOURCE_TAG = "comdir_kd_m1_ytd_odata_fact_expected_sql_plan_v4"
-KD_M2_SOURCE_TAG = "comdir_kd_m2_ytd_odata_fact_sql_plan_odata_expected_v1"
+KD_M2_SOURCE_TAG = "comdir_kd_m2_ytd_vyruchka_odata_fact_sql_plan_odata_expected_v1"
 KD_M3_SOURCE_TAG = "comdir_kd_m3_ytd_odata_fact_sql_plan_expected_v4"
 
 
@@ -357,14 +358,16 @@ def get_dengi_ytd(
 def compute_otgruzki_month(year: int, month: int) -> dict[str, Any]:
     p0, p_next = period_bounds(year, month)
     today = date.today()
+    fact_next = p_next
     expected_next = p_next
     if year == today.year and month == today.month:
-        expected_next = otg_mod.to_1c_dt(today + timedelta(days=1))
+        fact_next = otg_mod.to_1c_dt(today + timedelta(days=1))
+        expected_next = fact_next
     with connect_ctx() as cn:
         cur = cn.cursor()
         cur.execute("SET NOCOUNT ON")
         plan_by_name = otg_mod.calc_mp_plan(cur, p0, p_next)
-        fact_by_name = otg_mod.calc_fact(cur, p0, p_next)
+        fact_by_name = otg_mod.calc_fact(cur, p0, fact_next)
         expected_current_by_name = otg_mod.calc_expected(cur, expected_next)
         expected_full_by_name = (
             expected_current_by_name
@@ -396,21 +399,40 @@ def compute_otgruzki_month(year: int, month: int) -> dict[str, Any]:
     }
 
 
-def _overlay_otgruzki_fact_odata(months: list[dict[str, Any]], year: int, ref_month: int) -> str:
-    """Подставить живой факт OData. При ошибке оставляет SQL."""
-    from getkpi.calc_otgruzki_fact import get_otgruzki_fact_by_month
+def _overlay_otgruzki_fact_vyruchka(months: list[dict[str, Any]], year: int, ref_month: int) -> str:
+    """Факт = итого выручка отчёта «Валовая прибыль предприятия» (по отделам тоже)."""
+    from getkpi.commercial_tiles import DEPT_GUID_TO_DZ_NAME
+    from getkpi.valovaya_vyruchka_otgruzki import (
+        COMMERCIAL_GUIDS,
+        get_vyruchka_otgruzki_fact_by_month,
+    )
 
-    fact_by_m = get_otgruzki_fact_by_month(year, ref_month)
+    fact_by_m = get_vyruchka_otgruzki_fact_by_month(year, ref_month)
+    if not fact_by_m:
+        raise RuntimeError("выручка отчёта валовой прибыли пуста")
     for row in months:
         month = int(row.get("month") or 0)
-        fmap = fact_by_m.get(month) or {}
+        fmap = {str(g).lower(): float(v or 0) for g, v in (fact_by_m.get(month) or {}).items()}
         row["fact"] = round(sum(fmap.values()), 2)
         row["fact_source"] = "odata"
         buckets = row.get("by_dept") or {}
-        for guid, amt in fmap.items():
-            bucket = buckets.setdefault(guid, {})
-            bucket["fact"] = float(amt or 0)
+        for guid in set(buckets) | set(COMMERCIAL_GUIDS) | set(fmap):
+            gl = str(guid).lower()
+            bucket = buckets.setdefault(gl, {})
+            if not isinstance(bucket, dict):
+                bucket = {"fact": float(bucket or 0)}
+                buckets[gl] = bucket
+            if gl in fmap or gl in COMMERCIAL_GUIDS:
+                bucket["fact"] = float(fmap.get(gl) or 0)
         row["by_dept"] = buckets
+        row["fact_by_dept"] = {
+            name: round(float((buckets.get(guid) or {}).get("fact") or 0), 2)
+            for guid, name in DEPT_GUID_TO_DZ_NAME.items()
+        }
+        row["plan_by_dept"] = {
+            name: round(float((buckets.get(guid) or {}).get("plan") or 0), 2)
+            for guid, name in DEPT_GUID_TO_DZ_NAME.items()
+        }
     return "odata"
 
 
@@ -442,9 +464,9 @@ def build_otgruzki_payload(year: int, month: int) -> dict[str, Any]:
     fact_source = "sql"
     expected_source = "sql"
     try:
-        fact_source = _overlay_otgruzki_fact_odata(months, year, month)
+        fact_source = _overlay_otgruzki_fact_vyruchka(months, year, month)
     except Exception:
-        logger.exception("KD-M2: живой факт OData не собрался, оставляю SQL")
+        logger.exception("KD-M2: факт из выручки валовой прибыли не собрался, оставляю SQL")
     try:
         expected_source = _overlay_otgruzki_expected_odata(months, year, month)
     except Exception:

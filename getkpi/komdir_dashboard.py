@@ -78,7 +78,7 @@ KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
 }
-KOMDIR_PAYLOAD_CACHE_VERSION = 16
+KOMDIR_PAYLOAD_CACHE_VERSION = 17
 
 ODP_UFG_H_TILE_META = {
     "kpi_id": "UFG-H",
@@ -289,6 +289,10 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             'kpi_pct': pct,
             'has_data': fact is not None,
         }
+        if isinstance(row.get("fact_by_dept"), dict):
+            mrow["fact_by_dept"] = row["fact_by_dept"]
+        if isinstance(row.get("plan_by_dept"), dict):
+            mrow["plan_by_dept"] = row["plan_by_dept"]
         months.append(mrow)
         if y == ref_y and m == ref_m:
             ref_row = mrow
@@ -1799,6 +1803,25 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
             "cache_updated_at": _tile_cache_updated_at(kid, ref_y, series_m),
             "monthly_data": monthly_data,
         }
+        if kid == "KD-M2":
+            tile_item["source"] = (
+                "1С OData: отчёт «Валовая прибыль предприятия», колонка «Выручка» / строка «Итого»"
+            )
+            tile_item["description"] = (
+                "План:\n"
+                "Сумма, руб. — из ТД_ПланированиеДоговоровОтгрузокДС "
+                "(ВидПланирования = Отгрузки) за месяц по коммерческим отделам.\n\n"
+                "Факт:\n"
+                "«Итого выручка» отчёта 1С «Валовая прибыль предприятия» "
+                "(блок «По подразделениям», колонка «Выручка», валюта упр. учёта с НДС).\n"
+                "Источник: OData AccumulationRegister_ВыручкаИСебестоимостьПродаж_RecordType.СуммаВыручки. "
+                "Кроме продаж между собственными юр. лицами и контрагентов из отбора отчёта."
+            )
+            if lm:
+                if isinstance(lm.get("fact_by_dept"), dict):
+                    tile_item["fact_by_dept"] = lm["fact_by_dept"]
+                if isinstance(lm.get("plan_by_dept"), dict):
+                    tile_item["plan_by_dept"] = lm["plan_by_dept"]
         if kid in LOWER_IS_BETTER_IDS:
             tile_item["pct_lower_is_better"] = True
         elif kid in HIGHER_IS_BETTER_IDS:

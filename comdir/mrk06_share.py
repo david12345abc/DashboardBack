@@ -20,7 +20,7 @@ from comdir.common import empty_error_payload  # noqa: E402
 from comdir.sql_tile_cache import get_ytd_via_cache, normalize_period  # noqa: E402
 from comdir.ytd import get_otgruzki_ytd  # noqa: E402
 
-CACHE_VERSION = 2
+CACHE_VERSION = 4
 
 # Те же 6 отделов продаж, что в OData-эталоне MRK-06
 SHARE_DEPARTMENTS: dict[str, str] = {
@@ -46,6 +46,8 @@ def _dept_fact(by_dept: dict, guid: str) -> float:
 
 
 def _pct(part: float, total: float) -> float | None:
+    if not part:
+        return 0.0
     if not total:
         return None
     return round(part / total * 100, 1)
@@ -103,12 +105,16 @@ def build_share_monthly_payload(year: int, month: int) -> dict[str, Any]:
             by_dept_ytd[name] = round(by_dept_ytd.get(name, 0.0) + float(val or 0), 2)
 
     last_day = monthrange(year, month)[1]
+    period_end = date(year, month, last_day)
+    today = date.today()
+    if year == today.year and month == today.month and today < period_end:
+        period_end = today
     return {
         "year": year,
         "month": month,
         "ref_month": month,
         "period_start": f"{year}-01-01",
-        "period_end": f"{year}-{month:02d}-{last_day:02d}",
+        "period_end": period_end.isoformat(),
         "months": months_out,
         "total": round(total, 2),
         "by_dept": by_dept_ytd,
@@ -118,7 +124,7 @@ def build_share_monthly_payload(year: int, month: int) -> dict[str, Any]:
         "pct_bmi": _pct(bmi, total),
         "pct_gp": _pct(gp, total),
         "pct_pair": _pct(pair, total),
-        "debug": {"status": "ok", "kpi_id": "MRK-06", "source": "comdir.kd_m2.odata.otgruzki"},
+        "debug": {"status": "ok", "kpi_id": "MRK-06", "source": "comdir.kd_m2.valovaya_vyruchka"},
     }
 
 
@@ -133,7 +139,7 @@ def get_shipment_share_bmi_gazprom_monthly(
         year=year,
         month=month,
         cache_prefix="comdir_mrk06_share_ytd",
-        source_tag="comdir_mrk06_share_odata_v2",
+        source_tag="comdir_mrk06_share_vyruchka_odata_v1",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_mrk06_share",
         compute_fn=build_share_monthly_payload,

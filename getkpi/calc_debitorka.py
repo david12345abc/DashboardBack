@@ -359,70 +359,38 @@ def _catalog_item(item: dict) -> tuple[str, dict]:
 
 
 def resolve_objects(session, obj_keys: set):
-    """
-    Загрузить Catalog_ОбъектыРасчетов: сначала коммерческие и ликвидированные
-    отделы (короткий $filter), затем добрать недостающие общим сканом.
-    """
-    sel = quote(
-        "Ref_Key,Подразделение_Key,Партнер_Key,Description,Номер,Дата",
-        safe=",_",
-    )
+    """Загрузить Catalog_ОбъектыРасчетов пачками по Ref_Key, без полного скана."""
+    needed = {
+        str(k).lower()
+        for k in obj_keys
+        if k and str(k).lower() != EMPTY
+    }
     catalog = {}
-    needed = set(obj_keys)
+    if not needed:
+        return catalog
+
     t0 = time.time()
-    PAGE = 1000
+    keys = list(needed)
+    select = "Ref_Key,Подразделение_Key,Партнер_Key,Description,Номер,Дата"
+    # Прогресс раз в ~50 батчей _odata_docs_by_key (по 40 ключей).
+    PROGRESS = 2000
 
-    for guid in list(DEPARTMENTS) + list(LIQUIDATED_DEPT_NAMES):
-        skip = 0
-        while True:
-            flt = quote(f"Подразделение_Key eq guid'{guid}'", safe="")
-            url = (
-                f"{BASE}/Catalog_ОбъектыРасчетов"
-                f"?$format=json&$select={sel}&$filter={flt}"
-                f"&$top={PAGE}&$skip={skip}"
-            )
-            r = request_with_retry(session, url, timeout=120, retries=4, label="DZ/ObjCatalog")
-            if r is None or not r.ok:
-                break
-            chunk = r.json().get("value", [])
-            for item in chunk:
-                k, row = _catalog_item(item)
-                if k in needed:
-                    catalog[k] = row
-            if len(chunk) < PAGE:
-                break
-            skip += PAGE
-        if len(catalog) >= len(needed):
-            break
-
-    missing = needed - set(catalog.keys())
-    skip = 0
-    while missing:
-        url = (
-            f"{BASE}/Catalog_ОбъектыРасчетов"
-            f"?$format=json&$select={sel}"
-            f"&$top={PAGE}&$skip={skip}"
+    for i in range(0, len(keys), PROGRESS):
+        raw = _odata_docs_by_key(
+            session,
+            "Catalog_ОбъектыРасчетов",
+            keys[i:i + PROGRESS],
+            select,
         )
-        r = request_with_retry(session, url, timeout=120, retries=4, label="DZ/ObjCatalog")
-        if r is None or not r.ok:
-            print(f"  ⚠ HTTP {(r.status_code if r else 'no-response')} при skip={skip}")
-            break
-        chunk = r.json().get("value", [])
-        if not chunk:
-            break
-        for item in chunk:
+        for item in raw.values():
             k, row = _catalog_item(item)
-            if k in missing:
+            if k in needed:
                 catalog[k] = row
-                missing.discard(k)
-        skip += len(chunk)
-        if skip % 10000 == 0 or not missing:
-            print(
-                f"  скан каталога: {skip} записей, найдено "
-                f"{len(catalog)}/{len(needed)} · {time.time()-t0:.1f}с"
-            )
-        if not missing or len(chunk) < PAGE:
-            break
+        print(
+            f"  каталог по ключам: {len(catalog)}/{len(needed)}"
+            f" · запрошено {min(i + PROGRESS, len(keys))}"
+            f" · {time.time()-t0:.1f}с"
+        )
 
     missing = needed - set(catalog.keys())
     if missing:

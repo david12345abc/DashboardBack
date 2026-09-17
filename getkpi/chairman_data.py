@@ -1594,7 +1594,11 @@ def build_chairman_commerce_payload(
                 "thresholds": _thresholds(meta),
                 "formula": meta.get("formula"),
                 "unit": "руб.",
-                "source": "comdir.sql / " + kd_id,
+                "source": (
+                    "1С OData: отчёт «Валовая прибыль предприятия», итого выручка"
+                    if kd_id == "KD-M2"
+                    else "comdir.sql / " + kd_id
+                ),
                 "description": meta.get("description"),
                 "frequency": meta.get("frequency"),
                 "plan": _to_int_or_none(lm.get("plan")),
@@ -1603,6 +1607,10 @@ def build_chairman_commerce_payload(
                 "has_data": bool(lm.get("has_data")),
                 "plan_fact_period_label": month_label,
                 "monthly_data": _td.get("monthly_data"),
+                **({
+                    "fact_by_dept": lm.get("fact_by_dept"),
+                    "plan_by_dept": lm.get("plan_by_dept"),
+                } if kd_id == "KD-M2" else {}),
             })
             continue
 
@@ -1700,6 +1708,11 @@ def build_chairman_commerce_payload(
                 has_data_row = (total_m is not None and abs(total_m) > 0) or (
                     pair_m is not None and abs(pair_m) > 0
                 )
+                # Текущий месяц: 0% по БМИ+Газпром — факт «ещё не отгрузили», не «нет данных».
+                if mm == ref_m and pair_m is not None and abs(pair_m) < 1e-6:
+                    has_data_row = True
+                    if pct_m is None:
+                        pct_m = 0.0
                 md_row = {
                     "month": mm,
                     "year": ref_y,

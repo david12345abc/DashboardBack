@@ -107,10 +107,16 @@ def period_bounds(year: int, month: int):
     return f"{year}-{month:02d}-01T00:00:00", f"{year}-{month + 1:02d}-01T00:00:00"
 
 
-def load_records(session: requests.Session, p_start: str, p_end: str) -> list:
-    """Все записи регистра по двум организациям за период."""
+def load_records(
+    session: requests.Session,
+    p_start: str,
+    p_end: str,
+    org_keys: dict[str, str] | tuple[str, ...] | list[str] | None = None,
+) -> list:
+    """Записи регистра ДДС за период. По умолчанию — организации Турбулентности."""
+    orgs = TURB_ORGS if org_keys is None else org_keys
     reg = quote("AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент_RecordType")
-    org_or = " or ".join(f"Организация_Key eq guid'{o}'" for o in TURB_ORGS)
+    org_or = " or ".join(f"Организация_Key eq guid'{o}'" for o in orgs)
     flt = (
         f"Period ge datetime'{p_start}'"
         f" and Period lt datetime'{p_end}'"

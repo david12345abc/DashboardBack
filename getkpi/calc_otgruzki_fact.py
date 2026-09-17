@@ -55,7 +55,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 ORDER_TYPE = "StandardODATA.Document_ЗаказКлиента"
 KEEPER_TRANSFER_TYPE = "StandardODATA.Document_ПередачаТоваровХранителю"
 
@@ -179,15 +179,57 @@ def _save_cache(year: int, month: int, total: float,
         pass
 
 
-def _load_rashod_records(session: requests.Session,
-                         year: int, max_month: int) -> list[dict]:
-    """Загрузить записи расхода из РаспоряженияНаОтгрузку за январь–max_month."""
+def _period_date(value: object) -> date | None:
+    """Дата движения: ISO, YYYY-MM-DD или /Date(ms)/ из OData."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("/Date("):
+        try:
+            ms = int(raw.split("(")[1].split(")")[0].split("+")[0].split("-")[0])
+            return date.fromtimestamp(ms / 1000.0)
+        except (IndexError, ValueError, OSError):
+            return None
+    if len(raw) < 10:
+        return None
+    try:
+        return date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
+
+
+def _odata_as_of(year: int, max_month: int) -> date | None:
+    today = date.today()
+    if year == today.year and max_month == today.month:
+        return today
+    return None
+
+
+def _odata_window_end(year: int, max_month: int, as_of: date | None = None) -> date:
     last_day = calendar.monthrange(year, max_month)[1]
+    end = date(year, max_month, last_day)
+    if as_of is not None and as_of < end:
+        return as_of
+    return end
+
+
+def _load_rashod_records(
+    session: requests.Session,
+    year: int,
+    max_month: int,
+    as_of: date | None = None,
+) -> list[dict]:
+    """Загрузить расход РаспоряженияНаОтгрузку за январь–max_month.
+
+    Текущий месяц — только Period < завтра, без документов будущим числом.
+    """
+    end = _odata_window_end(year, max_month, as_of)
+    nxt = end + timedelta(days=1)
     d_from = f"{year}-01-01T00:00:00"
-    d_to = f"{year}-{max_month:02d}-{last_day}T23:59:59"
+    d_to = f"{nxt.isoformat()}T00:00:00"
 
     flt = quote(
-        f"Period ge datetime'{d_from}' and Period le datetime'{d_to}' "
+        f"Period ge datetime'{d_from}' and Period lt datetime'{d_to}' "
         f"and Active eq true "
         f"and ВидДвиженияРегистра eq 'Расход'",
         safe="",
@@ -220,15 +262,20 @@ def _load_rashod_records(session: requests.Session,
     return rows
 
 
-def _load_vozvrat_komisioner(session: requests.Session,
-                             year: int, max_month: int) -> list[dict]:
+def _load_vozvrat_komisioner(
+    session: requests.Session,
+    year: int,
+    max_month: int,
+    as_of: date | None = None,
+) -> list[dict]:
     """Загрузить возвраты от комиссионеров из СебестоимостьТоваров."""
-    last_day = calendar.monthrange(year, max_month)[1]
+    end = _odata_window_end(year, max_month, as_of)
+    nxt = end + timedelta(days=1)
     d_from = f"{year}-01-01T00:00:00"
-    d_to = f"{year}-{max_month:02d}-{last_day}T23:59:59"
+    d_to = f"{nxt.isoformat()}T00:00:00"
 
     flt = quote(
-        f"Period ge datetime'{d_from}' and Period le datetime'{d_to}' "
+        f"Period ge datetime'{d_from}' and Period lt datetime'{d_to}' "
         f"and Recorder_Type eq 'StandardODATA.Document_ВозвратТоваровОтКлиента' "
         f"and RecordType eq 'Expense'",
         safe="",
@@ -409,13 +456,10 @@ def _calc_main_otgruzki(session: requests.Session,
     }
 
     for row in rashod_rows:
-        period_str = (row.get("Period") or "")[:10]
-        if len(period_str) < 7:
+        pd = _period_date(row.get("Period"))
+        if pd is None or pd.year != year:
             continue
-        try:
-            m = int(period_str[5:7])
-        except (ValueError, IndexError):
-            continue
+        m = pd.month
         if m < 1 or m > max_month:
             continue
 
@@ -580,7 +624,8 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
 def get_otgruzki_fact_by_month(year: int, ref_month: int) -> dict[int, dict[str, float]]:
     """Живой факт отгрузок январь..ref_month по 6 отделам.
 
-    Текущий месяц режется «сегодня + 1», как период отчёта 1С.
+    Текущий месяц — только Period по сегодня включительно
+    (проведения будущим числом, как НП00-001144, не входят).
     Без помесячного файлового кэша — чтобы плитка не брала утренний снимок.
     """
     from .odata_http import disable_access_guard
@@ -588,13 +633,16 @@ def get_otgruzki_fact_by_month(year: int, ref_month: int) -> dict[int, dict[str,
     disable_access_guard()
     session = requests.Session()
     session.auth = AUTH
-    rashod = _load_rashod_records(session, year, ref_month)
+    as_of = _odata_as_of(year, ref_month)
+    rashod = _load_rashod_records(session, year, ref_month, as_of=as_of)
     if not rashod:
         raise RuntimeError("OData: РаспоряженияНаОтгрузку пуст или не ответил")
-    today = date.today()
-    if year == today.year and ref_month == today.month:
-        cut = f"{(today + timedelta(days=1)).isoformat()}T00:00:00"
-        rashod = [row for row in rashod if (row.get("Period") or "") < cut]
+    if as_of is not None:
+        # НП00-001144 от 16.09 и прочие проведения будущим числом не входят.
+        rashod = [
+            row for row in rashod
+            if (pd := _period_date(row.get("Period"))) is not None and pd <= as_of
+        ]
     monthly = _calc_main_otgruzki(session, rashod, year, ref_month)
     return {
         month: {dept: round(monthly[dept][month], 2) for dept in DEPT_SET}
@@ -662,7 +710,7 @@ def get_otgruzki_monthly(year: int | None = None,
     session = requests.Session()
     session.auth = AUTH
 
-    rashod = _load_rashod_records(session, ref_y, ref_m)
+    rashod = _load_rashod_records(session, ref_y, ref_m, as_of=_odata_as_of(ref_y, ref_m))
     if not rashod:
         fallback = _load_stale_monthly_cache(ref_y, ref_m)
         if fallback is not None:

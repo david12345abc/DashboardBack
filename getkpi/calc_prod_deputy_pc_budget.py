@@ -20,12 +20,29 @@ from .calc_prod_deputy_pc_common import (
     save_json,
 )
 
-SOURCE_TAG_BUDGET = "prod_deputy_pc_budget_v5_selected_month_period"
+SOURCE_TAG_BUDGET = "prod_deputy_pc_budget_v6_pc2_prvo2_dds"
 
 PC_BUDGET_CFO_NAME: dict[ShopKey, str] = {
     "pc1": "Производство №1",
     "pc2": "Производство №2",
 }
+
+ALMAZ_ORG = "fbca2146-6cfd-11e7-812d-001e67112509"
+
+# Статьи ДДС из папки «ПР-ВО2». Факт Алмаза — Σ СуммаОплаты по этим статьям,
+# а не по ЦФО «Производство №2» (туда попадают чужие заявки КТО/конструкторов).
+PC2_DDS_ARTICLES = frozenset({
+    "340add8a-5344-11eb-84f3-ac1f6b05524d",  # Инструмент_1_ПР-ВО2_3.10.
+    "c08a7b66-e21f-11e6-8127-001e67112509",  # Монтаж/демонтаж/сервисное обслуживание_1_ПР-ВО2_3.9.
+    "0a808054-5344-11eb-84f3-ac1f6b05524d",  # Оплата поставщику ТМЦ_1_ПР-ВО2_1.1.
+    "d93b41d8-8af9-11ec-8805-ac1f6b05524d",  # Поверка новых приборов_1_ПР-ВО2_3.14.
+    "5f3f6738-5344-11eb-84f3-ac1f6b05524d",  # Поверка эталонных приборов_1_ПР-ВО2_3.14.
+    "708827e7-5344-11eb-84f3-ac1f6b05524d",  # Проекты (ТМЦ, услуги)_1_ПР-ВО2_5.1.
+    "3ca832fe-5344-11eb-84f3-ac1f6b05524d",  # Расходные материалы и МЦ_1_ПР-ВО2_3.11.
+    "4e796de3-5344-11eb-84f3-ac1f6b05524d",  # Ремонт оборудования_1_ПР-ВО2_3.12.
+    "c3baf97d-b9ad-11e9-8299-ac1f6b05524d",  # Судебные расходы по браку/возмещение_1_ПР-ВО2_РУ_4.5.
+    "219988c5-5344-11eb-84f3-ac1f6b05524d",  # Услуги сторонних организаций_1_ПР-ВО2_3.9.
+})
 
 REQUEST_DOC_ENTITY = "Document_ЗаявкаНаРасходованиеДенежныхСредств"
 _NAV_DESC_CACHE: dict[str, str] = {}
@@ -123,7 +140,23 @@ def _is_request_for_shop(
     return False
 
 
+def _budget_fact_pc2_prvo2(session: requests.Session, year: int, month: int) -> float:
+    p_start, p_end = period_bounds(year, month)
+    rows = calc_budget_limit.load_records(session, p_start, p_end, org_keys=(ALMAZ_ORG,))
+    total = 0.0
+    for row in rows:
+        article = str(row.get("СтатьяДвиженияДенежныхСредств_Key") or "")
+        if article not in PC2_DDS_ARTICLES:
+            continue
+        sign = -1 if row.get("Сторно") else 1
+        total += float(row.get("СуммаОплаты") or 0) * sign
+    return round(total, 2)
+
+
 def _budget_fact_paid_requests(session: requests.Session, shop: ShopKey, year: int, month: int) -> float:
+    if shop == "pc2":
+        return _budget_fact_pc2_prvo2(session, year, month)
+
     p_start, p_end = period_bounds(year, month)
     rows = calc_budget_limit.load_records(session, p_start, p_end)
     paid_by_request: dict[str, float] = {}
