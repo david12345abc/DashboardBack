@@ -7,23 +7,17 @@ IT-M3 — бюджет службы автоматизации / ОИТ в пр�
   (оплаты из AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент)
 
 Логика факта:
-  Факт = Σ (СуммаОплаты − СуммаКВыплатеСверхЛимита)
-  по активным движениям регистра ДДС за календарный месяц,
-  с привязкой к заявке на расход ДС, у которой одновременно:
-    • ТД_ЦФО = «Служба автоматизации»
-    • Подразделение = «Отдел информационных технологий»
-
-  Суммы в SQL уже со знаком (сторно отрицательное).
-  В эталоне OData к сумме ошибочно могли добавляться предоплата/постоплата —
-  здесь только СуммаОплаты (как в QD-M3).
+  Факт = Σ Сумма расшифровки платежа проведённых документов
+  «Списание безналичных денежных средств» за календарный месяц,
+  организация НПО / Турбулентность-Дон, статья ДДС в группе «СА»
+  (статьи *_СА_СБ_IT_*). Это тот же отчёт «Списания ДС по статьям ДДС».
 
 План 2026 — константы из it_m3_plan.py (сумма 11 строк × месяц).
 
 SQL (erp_pm):
-  AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент → dbo._AccumRg51416
-  Document_ЗаявкаНаРасходованиеДенежныхСредств           → dbo._Document726
-  Catalog ТД_ЦФО                                         → dbo._Reference127708
-  Catalog_СтруктураПредприятия                           → dbo._Reference513
+  Document_СписаниеБезналичныхДенежныхСредств            → dbo._Document980
+  РасшифровкаПлатежа                                     → dbo._Document980_VT37251
+  Catalog_СтатьиДвиженияДенежныхСредств                  → dbo._Reference503
 
 Период в SQL = календарный год + 2000.
 
@@ -59,6 +53,13 @@ REG = "_AccumRg51416"
 DOC = "_Document726"
 STRUCT = "_Reference513"
 CFO_CAT = "_Reference127708"
+WRITEOFF = "_Document980"
+WRITEOFF_VT = "_Document980_VT37251"
+ART_CAT = "_Reference503"
+COL_WO_SUM = "_Fld37256"
+COL_WO_ART = "_Fld37254RRef"
+COL_WO_ORG = "_Fld37189RRef"
+ARTICLE_GROUP = "СА"
 
 COL_ORG = "_Fld51418RRef"
 COL_REQ = "_Fld140229RRef"
@@ -100,15 +101,17 @@ IT_M3_DEPARTMENT_ALIASES: tuple[str, ...] = (
     "оит",
 )
 
-# Эталон: янв–май = кэш DashboardBack; июнь–июль — live SQL (НПО, кэш отставал).
+# Эталон: списания ДС по статьям группы «СА», НПО + Турбулентность-Дон.
 REFERENCE_FACT_2026: dict[int, float] = {
-    1: 770_557.00,
-    2: 264_990.25,
-    3: 351_698.31,
-    4: 499_923.66,
-    5: 280_550.89,
-    6: 275_757.41,
-    7: 355_852.10,
+    1: 1_022_934.00,
+    2: 425_432.24,
+    3: 489_694.11,
+    4: 913_895.66,
+    5: 487_467.89,
+    6: 350_436.41,
+    7: 801_298.50,
+    8: 462_692.90,
+    9: 563_415.25,
 }
 
 MONTH_NAMES = {
@@ -285,74 +288,68 @@ def compute_it_m3_fact_monthly(
     cfo_keys: list[bytes] | None = None,
     dept_keys: list[bytes] | None = None,
 ) -> dict[str, Any]:
-    """Сумма фактических оплат IT-M3 за календарный месяц (руб.)."""
+    """Сумма списаний ДС по статьям группы «СА» за календарный месяц (руб.)."""
+    del cfo_keys, dept_keys
     sql = sql or SqlConnection()
     p_start, p_end = _sql_period_bounds(year, month)
-    counts = {
-        "register_rows_matched": 0,
-        "requests_matched": 0,
-        "rows_counted": 0,
-    }
-    meta: dict[str, Any] = {}
+    org_ph = ",".join("?" * len(ORG_BINS))
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
-        if cfo_keys is None or dept_keys is None:
-            cfo_keys, dept_keys, meta = _resolve_filter_keys(cur)
-
-        org_ph = ",".join("?" * len(ORG_BINS))
-        cfo_ph = ",".join("?" * len(cfo_keys))
-        dept_ph = ",".join("?" * len(dept_keys))
         cur.execute(
             f"""
-            SELECT r.[{COL_PAY}], r.[{COL_OVER}], r.[{COL_REQ}]
-            FROM [{REG}] r WITH (NOLOCK)
-            INNER JOIN [{DOC}] d WITH (NOLOCK)
-                    ON d._IDRRef = r.[{COL_REQ}]
-            WHERE r._Period >= ? AND r._Period < ?
-              AND r._Active = 0x01
-              AND r.[{COL_ORG}] IN ({org_ph})
-              AND r.[{COL_REQ}] <> ?
-              AND d.[{COL_DOC_CFO}] IN ({cfo_ph})
-              AND d.[{COL_DOC_DEPT}] IN ({dept_ph})
+            SELECT a._Description, SUM(vt.[{COL_WO_SUM}])
+            FROM dbo.[{WRITEOFF}] d WITH (NOLOCK)
+            INNER JOIN dbo.[{WRITEOFF_VT}] vt WITH (NOLOCK)
+                    ON vt.[{WRITEOFF}_IDRRef] = d._IDRRef
+            INNER JOIN dbo.[{ART_CAT}] a WITH (NOLOCK)
+                    ON a._IDRRef = vt.[{COL_WO_ART}]
+            INNER JOIN dbo.[{ART_CAT}] p WITH (NOLOCK)
+                    ON p._IDRRef = a._ParentIDRRef
+            WHERE d._Date_Time >= ? AND d._Date_Time < ?
+              AND d._Posted = 0x01
+              AND d._Marked = 0x00
+              AND d.[{COL_WO_ORG}] IN ({org_ph})
+              AND p._Description = ?
+            GROUP BY a._Description
             """,
-            [p_start, p_end, *ORG_BINS, EMPTY_BIN, *cfo_keys, *dept_keys],
+            [p_start, p_end, *ORG_BINS, ARTICLE_GROUP],
         )
-        rows = cur.fetchall()
+        grouped = cur.fetchall()
 
+    articles: dict[str, float] = {}
     total = 0.0
-    reqs: set[bytes] = set()
-    counts["register_rows_matched"] = len(rows)
-    for pay, over, req in rows:
-        net = _as_float(pay) - _as_float(over)
-        if net == 0:
+    for name, amount in grouped:
+        value = round(_as_float(amount), 2)
+        if value == 0:
             continue
-        total += net
-        counts["rows_counted"] += 1
-        if req:
-            reqs.add(bytes(req))
-    counts["requests_matched"] = len(reqs)
+        articles[name or ""] = value
+        total += value
 
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_NAMES[month],
         "total_fact": round(total, 2),
-        "counts": counts,
+        "articles": articles,
+        "counts": {
+            "lines_counted": len(grouped),
+            "articles_matched": len(articles),
+            "requests_matched": len(articles),
+        },
         "debug": {
             "status": "ok",
             "kpi_id": "IT-M3-FACT",
-            "register": REG,
-            "document": DOC,
+            "document": WRITEOFF,
+            "table": WRITEOFF_VT,
+            "article_group": ARTICLE_GROUP,
             "period_start": p_start.isoformat(sep="T"),
             "period_end": p_end.isoformat(sep="T"),
-            "required_td_cfo": IT_M3_TD_CFO_LABEL,
-            "required_department": IT_M3_DEPARTMENT_LABEL,
-            "filter_meta": meta,
+            "articles": articles,
             "rule": (
-                "fact = sum(СуммаОплаты - СуммаКВыплатеСверхЛимита) "
-                "for ТД_ЦФО=Служба автоматизации AND Подразделение=ОИТ"
+                "fact = sum(Сумма) of posted bank write-offs "
+                "whose DDS article is in group СА"
             ),
         },
     }
@@ -400,10 +397,9 @@ def build_monthly_report(
 def format_report(rows: list[dict[str, Any]]) -> str:
     lines = [
         "IT-M3 — бюджет (SQL)",
-        f"Источник: {REG} + {DOC} + {CFO_CAT}/{STRUCT}",
-        f"ТД_ЦФО: {IT_M3_TD_CFO_LABEL}",
-        f"Подразделение: {IT_M3_DEPARTMENT_LABEL}",
-        "Факт: Σ (СуммаОплаты − СверхЛимита) по оплатам в месяце",
+        f"Источник: {WRITEOFF} / {WRITEOFF_VT}",
+        f"Статья ДДС в группе: {ARTICLE_GROUP}",
+        "Факт: Σ Сумма проведённых списаний безналичных ДС",
         "",
         f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Заявок':>8}",
         f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8} {'-' * 8}",
@@ -494,28 +490,20 @@ def build_it_m3_payload(year: int | None = None, month: int | None = None) -> di
             "kpi_id": "IT-M3",
             "source": "autoit.it_m3.sql",
             "plan_source": "IT_M3_PLAN_BY_MONTH_2026",
-            "fact_source": f"{REG} / {DOC}",
-            "required_td_cfo": IT_M3_TD_CFO_LABEL,
-            "required_department": IT_M3_DEPARTMENT_LABEL,
+            "fact_source": f"{WRITEOFF}.{COL_WO_SUM}, article group {ARTICLE_GROUP}",
+            "article_group": ARTICLE_GROUP,
         },
     }
 
 
 def run_check() -> int:
-    print("Сверка IT-M3 факт · 2026 (REFERENCE / НПО)")
+    print("Сверка IT-M3 факт · 2026 (списания ДС, группа СА)")
     sql = SqlConnection()
-    with sql.connect_ctx() as conn:
-        conn.timeout = 0
-        cur = conn.cursor()
-        cfo_keys, dept_keys, meta = _resolve_filter_keys(cur)
-    print(f"  ЦФО: {', '.join(meta.get('cfo_names') or [])}")
-    print(f"  Подразделение: {', '.join(meta.get('dept_names') or [])}")
+    print(f"  Группа статей: {ARTICLE_GROUP}")
 
     all_ok = True
     for month, ref in sorted(REFERENCE_FACT_2026.items()):
-        snap = compute_it_m3_fact_monthly(
-            2026, month, sql, cfo_keys=cfo_keys, dept_keys=dept_keys
-        )
+        snap = compute_it_m3_fact_monthly(2026, month, sql)
         fact = float(snap["total_fact"] or 0)
         ok = abs(fact - ref) <= ROUND_TOLERANCE
         if not ok:

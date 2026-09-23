@@ -3,11 +3,11 @@
 
 Эталон (OData): DashboardBack/gspp/ol_gspp_monthly.py
 
-Логика:
+Логика (как шапка Word «Заказы клиента»):
   План — число ОЛ (Recorder), у которых ДатаЗавершенияПлан попала в месяц
   и точка этапа = «ПроверкаОпросногоЛистаДиспетчеромГСПП».
-  Не в срок — факт-дата строго позже плановой (время не учитывается).
-  Факт = План − Не в срок.
+  Факт — сколько из этих ОЛ имеют закрытый этап «Расчет МЦР ОЛ (Ручной расчет)».
+  Не в срок = План − Факт.
 
   Один ОЛ — одна строка: берётся запись с максимальной ДатаЗавершенияПлан.
 
@@ -56,6 +56,10 @@ STAGE_PDN = "ПроверкаОпросногоЛистаДиспетчером�
 STAGE_DESCRIPTION = "Проверка опросного листа диспетчером ГСПП"
 # OData Ref_Key 5dc2ef78-738a-11ec-87c7-ac1f6b05524d в 1C binary
 STAGE_BIN = bytes.fromhex("87c7ac1f6b05524d11ec738a5dc2ef78")
+
+FACT_STAGE_DESCRIPTION = "Расчет МЦР ОЛ (Ручной расчет)"
+# OData/SQL: 875bac1f6b05524d11ec478b14bb75b1
+FACT_STAGE_BIN = bytes.fromhex("875bac1f6b05524d11ec478b14bb75b1")
 
 YEAR_OFFSET = 2000
 EMPTY_SQL_YEAR = 2001  # 0001 + YEAR_OFFSET
@@ -153,8 +157,12 @@ def normalize_text(value: str | None) -> str:
     return " ".join("".join(ch if ch.isalnum() else " " for ch in value).split())
 
 
-def resolve_stage_point(cur) -> tuple[bytes, str]:
-    """Найти точку этапа в _Reference100508 по описанию / известному binary."""
+def resolve_named_stage(
+    cur,
+    stage_bin: bytes,
+    description: str,
+    like_pattern: str | None = None,
+) -> tuple[bytes, str]:
     cur.execute(
         f"""
         SELECT _IDRRef, _Description
@@ -162,31 +170,62 @@ def resolve_stage_point(cur) -> tuple[bytes, str]:
         WHERE _IDRRef = ?
            OR _Description = ?
         """,
-        STAGE_BIN,
-        STAGE_DESCRIPTION,
+        stage_bin,
+        description,
     )
     row = cur.fetchone()
     if row:
-        return bytes(row[0]), row[1] or STAGE_DESCRIPTION
+        return bytes(row[0]), row[1] or description
 
+    if like_pattern:
+        cur.execute(
+            f"""
+            SELECT _IDRRef, _Description
+            FROM [{STAGE_TABLE}] WITH (NOLOCK)
+            WHERE _Description LIKE ?
+            """,
+            like_pattern,
+        )
+        for idr, name in cur.fetchall():
+            if normalize_text(name) == normalize_text(description):
+                return bytes(idr), name or description
+
+    raise RuntimeError(f"Не найдена точка этапа: {description}")
+
+
+def resolve_stage_point(cur) -> tuple[bytes, str]:
+    """Точка плана: проверка ОЛ диспетчером ГСПП."""
+    return resolve_named_stage(
+        cur,
+        STAGE_BIN,
+        STAGE_DESCRIPTION,
+        "%Проверка%опросн%диспетчер%ГСПП%",
+    )
+
+
+def resolve_fact_stage(cur) -> tuple[bytes, str]:
+    """Точка факта Word: закрытый расчёт МЦР."""
+    return resolve_named_stage(
+        cur,
+        FACT_STAGE_BIN,
+        FACT_STAGE_DESCRIPTION,
+        "Расчет%МЦР%ОЛ%",
+    )
+
+
+def load_completed_recorders(cur, stage_bin: bytes) -> set[bytes]:
     cur.execute(
         f"""
-        SELECT _IDRRef, _Description
-        FROM [{STAGE_TABLE}] WITH (NOLOCK)
-        WHERE _Description LIKE N'%Проверка%опросн%диспетчер%ГСПП%'
-        """
+        SELECT DISTINCT [{COL_RECORDER}]
+        FROM [{REGISTER_TABLE}] WITH (NOLOCK)
+        WHERE [{COL_STAGE}] = ?
+          AND [{COL_FACT}] IS NOT NULL
+          AND YEAR([{COL_FACT}]) > ?
+        """,
+        stage_bin,
+        EMPTY_SQL_YEAR,
     )
-    for idr, description in cur.fetchall():
-        if normalize_text(description) == normalize_text(STAGE_DESCRIPTION):
-            return bytes(idr), description or STAGE_DESCRIPTION
-
-    raise RuntimeError(f"Не найдена точка этапа: {STAGE_PDN}")
-
-
-def is_late(plan_dt: datetime | None, fact_dt: datetime | None) -> bool:
-    if plan_dt is None or fact_dt is None:
-        return False
-    return fact_dt.date() > plan_dt.date()
+    return {bytes(row[0]) for row in cur.fetchall() if row[0]}
 
 
 def kpi_pct(fact: int, plan: int) -> float | None:
@@ -248,6 +287,7 @@ def build_monthly_report(
         conn.timeout = 0
         cur = conn.cursor()
         stage_bin, stage_name = resolve_stage_point(cur)
+        fact_bin, fact_stage_name = resolve_fact_stage(cur)
         rows = dedupe_by_recorder(
             load_register_rows(
                 cur,
@@ -256,13 +296,15 @@ def build_monthly_report(
                 month_end(*end_period),
             )
         )
+        done_mcr = load_completed_recorders(cur, fact_bin)
 
     stats: dict[str, dict[str, int]] = defaultdict(lambda: {"plan": 0, "late": 0})
-    for _recorder, plan_dt, fact_dt in rows:
+    for recorder, plan_dt, _fact_dt in rows:
         month_key = f"{plan_dt.year:04d}-{plan_dt.month:02d}"
         stats[month_key]["plan"] += 1
-        if is_late(plan_dt, fact_dt):
+        if recorder not in done_mcr:
             stats[month_key]["late"] += 1
+    stage_name = f"{stage_name} → факт: {fact_stage_name}"
 
     report_rows: list[dict[str, Any]] = []
     for month_key in iter_months(start_period, end_period):
@@ -282,8 +324,8 @@ def build_monthly_report(
 
 def format_report(point_name: str, rows: list[dict[str, Any]]) -> str:
     lines = [
-        "ОЛ ГСПП, запущенные в производство без срыва срока (ГСП-M2 / SQL)",
-        f"Точка этапа: {point_name}",
+        "ОЛ ГСПП / заказы клиента (ГСП-M2 / SQL, как в Word)",
+        f"Этапы: {point_name}",
         f"Источник: {REGISTER_TABLE} + {STAGE_TABLE}",
         "",
         f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'Не в срок':>10} {'KPI %':>8}",
@@ -383,6 +425,7 @@ def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> 
             "status": "ok",
             "source": "gspp.ol_gspp_monthly.sql",
             "stage_point": point_name,
+            "fact_stage": FACT_STAGE_DESCRIPTION,
             "tables": {
                 "stage_catalog": STAGE_TABLE,
                 "register": REGISTER_TABLE,
@@ -391,9 +434,9 @@ def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> 
                 "fact_col": COL_FACT,
             },
             "rule": (
-                "plan = rows with planned completion in month; "
-                "late = fact date strictly after plan date (time ignored); "
-                "fact = plan - late"
+                "plan = unique OL with dispatcher stage planned in month; "
+                "fact = those OL with completed stage «Расчет МЦР ОЛ (Ручной расчет)» "
+                "(Word «Заказы клиента»); late = plan - fact"
             ),
             "rows_by_month": rows,
         },
@@ -424,7 +467,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 GSPP_M2_CACHE_PREFIX = "gspp_m2_ol_monthly"
 GSPP_M2_DISK_TAG = "gspp_m2_sql_payload_v1"
-GSPP_M2_DISK_VERSION = 1
+GSPP_M2_DISK_VERSION = 3
 
 
 def gspp_m2_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

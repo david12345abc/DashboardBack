@@ -1,8 +1,12 @@
 """
-Подключение к SQL Server (erp_pm) на 192.168.1.157:1433.
+Подключение к SQL Server (erp_pm) на ii1 (192.168.1.157:1433).
 
 Windows Auth от учётки TURBO-DON\\testii через LogonUser + impersonation
 (текущий процесс — a.komarkova, поэтому Trusted_Connection «как есть» не подходит).
+
+Hostname ``ii1``, не сырой IP: Trusted Connection по IP даёт 18452.
+У Driver 17 нельзя писать Encrypt=no — драйвер ругается на атрибут
+и игнорирует Connection Timeout (падает в 15 с).
 """
 
 from __future__ import annotations
@@ -20,10 +24,10 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv()
 
-DEFAULT_SERVER = "192.168.1.157,1433"
+DEFAULT_SERVER = "ii1"
 DEFAULT_DATABASE = "erp_pm"
 DEFAULT_USER = r"TURBO-DON\testii"
-DEFAULT_DRIVER = "ODBC Driver 17 for SQL Server"
+DEFAULT_DRIVER = "ODBC Driver 18 for SQL Server"
 
 
 def _parse_domain_user(user: str) -> tuple[str, str]:
@@ -83,33 +87,60 @@ class SqlConnection:
     user: str = field(default_factory=lambda: os.getenv("SQL_USER", DEFAULT_USER))
     password: str = field(default_factory=lambda: os.getenv("SQL_PASSWORD", ""))
     driver: str = field(default_factory=lambda: os.getenv("SQL_DRIVER", DEFAULT_DRIVER))
-    timeout: int = 15
+    timeout: int = 45
+
+    def _login_timeout(self) -> int:
+        try:
+            return max(15, int(self.timeout or 45))
+        except (TypeError, ValueError):
+            return 45
+
+    def _resolve_driver(self) -> str:
+        configured = (self.driver or "").strip()
+        available = {name.casefold(): name for name in pyodbc.drivers()}
+        if configured and configured.casefold() in available:
+            return available[configured.casefold()]
+        for candidate in (
+            "ODBC Driver 18 for SQL Server",
+            "ODBC Driver 17 for SQL Server",
+            "SQL Server",
+        ):
+            key = candidate.casefold()
+            if key in available:
+                return available[key]
+        return configured or "SQL Server"
 
     def connection_string(self) -> str:
-        return (
-            f"DRIVER={{{self.driver}}};"
-            f"SERVER={self.server};"
-            f"DATABASE={self.database};"
-            "Trusted_Connection=yes;"
-            "TrustServerCertificate=yes;"
-            "Encrypt=no;"
-            f"Connection Timeout={self.timeout};"
-        )
+        driver = self._resolve_driver()
+        timeout = self._login_timeout()
+        parts = [
+            f"DRIVER={{{driver}}}",
+            f"SERVER={self.server}",
+            f"DATABASE={self.database}",
+            f"Connection Timeout={timeout}",
+            "Trusted_Connection=yes",
+        ]
+        # Driver 17 отвергает Encrypt=no и тогда игнорирует Timeout.
+        # Driver 18 по умолчанию Encrypt=yes — его надо задать явно.
+        if "odbc driver 18" in driver.casefold():
+            parts.append("Encrypt=no")
+            parts.append("TrustServerCertificate=yes")
+        return ";".join(parts) + ";"
 
     def connect(self) -> pyodbc.Connection:
         if not self.password:
             raise RuntimeError("SQL_PASSWORD не задан в .env")
-        # Impersonation держим на время connect+work через connect_ctx().
-        # Здесь — короткий connect под impersonation.
+        timeout = self._login_timeout()
         with windows_impersonation(self.user, self.password):
-            return pyodbc.connect(self.connection_string())
+            return pyodbc.connect(self.connection_string(), timeout=timeout)
 
     @contextmanager
     def connect_ctx(self) -> Iterator[pyodbc.Connection]:
         if not self.password:
             raise RuntimeError("SQL_PASSWORD не задан в .env")
+        timeout = self._login_timeout()
         with windows_impersonation(self.user, self.password):
-            conn = pyodbc.connect(self.connection_string())
+            conn = pyodbc.connect(self.connection_string(), timeout=timeout)
             try:
                 yield conn
             finally:

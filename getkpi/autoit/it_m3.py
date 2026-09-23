@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "autoit_it_m3"
 CACHE_SOURCE_TAG = "autoit_it_m3_ytd_sql_v1"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 
 MONTHLY_CACHE_PREFIX = "autoit_it_m3_fact_monthly"
 MONTHLY_SOURCE_TAG = "autoit_it_m3_fact_monthly_sql_v1"
-MONTHLY_CACHE_VERSION = 2
+MONTHLY_CACHE_VERSION = 3
 
 
 def _plan_for_month(year: int, month: int) -> float | None:
@@ -141,7 +141,7 @@ def _build_it_m3_payload(year: int | None = None, month: int | None = None) -> d
             "status": "ok" if with_plan else "no_data",
             "kpi_id": "IT-M3",
             "plan_source": "getkpi/autoit/it_m3_plan.py (сумма 11 строк × месяц)",
-            "fact_source": "getkpi/autoit/it_m3_core.py (SQL _AccumRg51416)",
+            "fact_source": "getkpi/autoit/it_m3_core.py (списания ДС, группа статей СА)",
             "monthly_cache_prefix": MONTHLY_CACHE_PREFIX,
             "monthly_cache_version": MONTHLY_CACHE_VERSION,
             "monthly_debug": monthly_debug,
