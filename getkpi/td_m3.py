@@ -276,6 +276,56 @@ def resolve_techdir_department_map(cur) -> tuple[dict[bytes, str], dict[str, str
     return id_to_group, labels, group_order
 
 
+def guid_to_1c_binary(guid: str) -> bytes:
+    b = bytes.fromhex(guid.replace("-", ""))
+    return b[8:10] + b[10:16] + b[6:8] + b[4:6] + b[0:4]
+
+
+def resolve_td_article_map(cur) -> tuple[dict[bytes, str], list[str]]:
+    """Статьи ДДС из поддерева «Технический директор» (без самого корня)."""
+    cur.execute(
+        f"""
+        SELECT _IDRRef, _Description, _ParentIDRRef, _Marked
+        FROM dbo.[{ART_CAT}] WITH (NOLOCK)
+        """
+    )
+    rows = []
+    for idr, desc, parent, marked in cur.fetchall():
+        parent_b = bytes(parent) if parent is not None else EMPTY
+        rows.append(
+            {
+                "id": bytes(idr),
+                "desc": (desc or "").strip(),
+                "parent": None if parent_b == EMPTY else parent_b,
+                "marked": bytes(marked) != b"\x00" if marked is not None else False,
+            }
+        )
+    by_parent: dict[bytes | None, list[dict[str, Any]]] = {}
+    root = None
+    for row in rows:
+        by_parent.setdefault(row["parent"], []).append(row)
+        if normalize_name(row["desc"]) == normalize_name(ARTICLE_GROUP):
+            root = row
+    if root is None:
+        raise RuntimeError(f"Группа статей не найдена в {ART_CAT}: {ARTICLE_GROUP}")
+
+    id_to_name: dict[bytes, str] = {}
+    stack = [root["id"]]
+    seen: set[bytes] = set()
+    while stack:
+        cur_id = stack.pop()
+        if cur_id in seen:
+            continue
+        seen.add(cur_id)
+        for child in by_parent.get(cur_id, []):
+            stack.append(child["id"])
+            if child["marked"] or child["id"] == root["id"]:
+                continue
+            id_to_name[child["id"]] = child["desc"] or child["id"].hex()
+    order = sorted(set(id_to_name.values()), key=normalize_name)
+    return id_to_name, order
+
+
 def compute_td_m3_fact_monthly(
     year: int,
     month: int,
@@ -285,71 +335,76 @@ def compute_td_m3_fact_monthly(
     labels: dict[str, str] | None = None,
     group_order: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Σ СуммаДокумента заявок ДС по поддереву ТЕХНИЧЕСКИЙ ДИРЕКТОР."""
+    """Σ списаний ДС по статьям группы «Технический директор»."""
+    del id_to_group, labels, group_order
     sql = sql or SqlConnection()
     p_start, p_end = sql_period_bounds(year, month)
+    org_bins = [guid_to_1c_binary(g) for g in ORG_GUIDS]
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
-        if id_to_group is None or labels is None or group_order is None:
-            id_to_group, labels, group_order = resolve_techdir_department_map(cur)
-
-        dept_ids = list(id_to_group.keys())
-        if not dept_ids:
-            raise RuntimeError("Не найдены подразделения контура техдирекции")
+        id_to_name, article_order = resolve_td_article_map(cur)
+        article_ids = list(id_to_name.keys())
+        if not article_ids:
+            raise RuntimeError("Не найдены статьи группы «Технический директор»")
 
         cur.execute(
             f"""
-            SELECT d.[{COL_DEPT}], d.[{COL_SUM}], d._Number
-            FROM dbo.[{DOC}] d WITH (NOLOCK)
+            SELECT vt.[{COL_WO_ART}], SUM(vt.[{COL_WO_SUM}]), COUNT(*)
+            FROM dbo.[{WRITEOFF_VT}] vt WITH (NOLOCK)
+            INNER JOIN dbo.[{WRITEOFF}] d WITH (NOLOCK)
+                ON d._IDRRef = vt._Document980_IDRRef
             WHERE d._Date_Time >= ? AND d._Date_Time < ?
               AND d._Marked = 0x00
               AND d._Posted = 0x01
-              AND d.[{COL_DEPT}] IN ({",".join("?" * len(dept_ids))})
+              AND d.[{COL_WO_ORG}] IN ({",".join("?" * len(org_bins))})
+              AND vt.[{COL_WO_ART}] IN ({",".join("?" * len(article_ids))})
+            GROUP BY vt.[{COL_WO_ART}]
             """,
-            [p_start, p_end, *dept_ids],
+            [p_start, p_end, *org_bins, *article_ids],
         )
         rows = cur.fetchall()
 
-    groups_out: dict[str, dict[str, float | int]] = {
-        name: {"fact_total": 0.0, "docs": 0} for name in group_order
-    }
+    groups_out: dict[str, dict[str, float | int]] = {}
     total_fact = 0.0
-    for dept_id, amount, _number in rows:
-        group = id_to_group.get(bytes(dept_id))
-        if not group:
+    line_count = 0
+    for art_id, amount, cnt in rows:
+        name = id_to_name.get(bytes(art_id))
+        if not name:
             continue
-        amt = _as_float(amount)
+        amt = round(_as_float(amount), 2)
+        n = int(cnt or 0)
         total_fact += amt
-        bucket = groups_out.setdefault(group, {"fact_total": 0.0, "docs": 0})
+        line_count += n
+        bucket = groups_out.setdefault(name, {"fact_total": 0.0, "docs": 0})
         bucket["fact_total"] = round(float(bucket["fact_total"]) + amt, 2)
-        bucket["docs"] = int(bucket["docs"]) + 1
+        bucket["docs"] = int(bucket["docs"]) + n
 
     total_fact = round(total_fact, 2)
+    used_order = [name for name in article_order if name in groups_out]
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_NAMES[month],
         "total_fact": total_fact,
         "groups": groups_out,
-        "group_order": group_order,
+        "group_order": used_order,
         "counts": {
-            "docs_included": len(rows),
-            "department_nodes": len(id_to_group),
+            "docs_included": line_count,
+            "article_nodes": len(id_to_name),
         },
         "debug": {
             "status": "ok",
             "kpi_id": "TD-M3-FACT",
-            "document": DOC,
-            "sum_field": COL_SUM,
+            "document": WRITEOFF,
+            "sum_field": COL_WO_SUM,
             "period_start": p_start,
             "period_end": p_end,
-            "structure_labels": labels,
-            "root": labels.get(TD_BUDGET_ROOT, TD_BUDGET_ROOT),
+            "root": ARTICLE_GROUP,
             "rule": (
-                "fact = sum(СуммаДокумента) for Posted requests "
-                "in subtree of ТЕХНИЧЕСКИЙ ДИРЕКТОР"
+                "fact = sum(Сумма) of posted bank write-offs "
+                "whose DDS article is in subtree of Технический директор"
             ),
         },
     }
@@ -360,21 +415,9 @@ def build_monthly_report(
     end_period: tuple[int, int],
 ) -> list[dict[str, Any]]:
     sql = SqlConnection()
-    with sql.connect_ctx() as conn:
-        conn.timeout = 0
-        cur = conn.cursor()
-        id_to_group, labels, group_order = resolve_techdir_department_map(cur)
-
     report: list[dict[str, Any]] = []
     for year, month in iter_months(start_period, end_period):
-        fact_payload = compute_td_m3_fact_monthly(
-            year,
-            month,
-            sql,
-            id_to_group=id_to_group,
-            labels=labels,
-            group_order=group_order,
-        )
+        fact_payload = compute_td_m3_fact_monthly(year, month, sql)
         plan = plan_for_month(year, month)
         fact = float(fact_payload["total_fact"] or 0)
         report.append(
@@ -385,12 +428,11 @@ def build_monthly_report(
                 "plan": plan,
                 "fact": fact,
                 "kpi_pct": kpi_pct(plan, fact),
-                "has_data": plan is not None,
+                "has_data": True,
                 "values_unit": "руб.",
                 "groups": fact_payload.get("groups") or {},
-                "group_order": group_order,
+                "group_order": fact_payload.get("group_order") or [],
                 "counts": fact_payload.get("counts") or {},
-                "structure_labels": labels,
             }
         )
     return report
@@ -399,11 +441,11 @@ def build_monthly_report(
 def format_report(rows: list[dict[str, Any]]) -> str:
     lines = [
         "TD-M3 — бюджет затрат техдирекции (SQL)",
-        f"Источник: {DOC}.{COL_SUM} (СуммаДокумента), Posted",
-        f"Контур: поддерево «{TD_BUDGET_ROOT}»",
+        f"Источник: {WRITEOFF} / {WRITEOFF_VT}.{COL_WO_SUM}, Posted",
+        f"Контур: статьи ДДС, группа «{ARTICLE_GROUP}»",
         "KPI % = MIN(100; Факт/План·100)",
         "",
-        f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Заявок':>8}",
+        f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Строк':>8}",
         f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8} {'-' * 8}",
     ]
     for row in rows:
@@ -434,7 +476,7 @@ def format_report(rows: list[dict[str, Any]]) -> str:
 
     ref = rows[-1] if rows else None
     if ref and ref.get("groups"):
-        lines.append(f"По подразделениям ({ref['year']:04d}-{ref['month']:02d}):")
+        lines.append(f"По статьям ДДС ({ref['year']:04d}-{ref['month']:02d}):")
         order = ref.get("group_order") or sorted(ref["groups"].keys())
         for name in order:
             bucket = ref["groups"].get(name) or {}
@@ -442,7 +484,7 @@ def format_report(rows: list[dict[str, Any]]) -> str:
             docs = int(bucket.get("docs") or 0)
             if total == 0 and docs == 0:
                 continue
-            lines.append(f"  {money(total):>14}  {name} (заявок={docs})")
+            lines.append(f"  {money(total):>14}  {name} (строк={docs})")
         lines.append("")
     return "\n".join(lines)
 
@@ -513,33 +555,22 @@ def build_td_m3_payload(year: int | None = None, month: int | None = None) -> di
             "source": "techdir.td_m3.sql",
             "plan_source": "TD_M3_PLAN_BY_MONTH_2026",
             "fact_source": (
-                f"{DOC}.{COL_SUM} Posted requests, subtree of {TD_BUDGET_ROOT}"
+                f"{WRITEOFF}.{COL_WO_SUM} posted write-offs, "
+                f"DDS subtree of {ARTICLE_GROUP}"
             ),
-            "root": TD_BUDGET_ROOT,
+            "root": ARTICLE_GROUP,
         },
     }
 
 
 def run_check() -> int:
-    print("Сверка TD-M3 факт · 2026 (REFERENCE / экран 1С)")
+    print("Сверка TD-M3 факт · 2026 (списания по группе статей)")
     all_ok = True
     sql = SqlConnection()
-    with sql.connect_ctx() as conn:
-        conn.timeout = 0
-        cur = conn.cursor()
-        id_to_group, labels, group_order = resolve_techdir_department_map(cur)
-    print(f"  Корень: {labels.get(TD_BUDGET_ROOT, TD_BUDGET_ROOT)}")
-    print(f"  Узлов в поддереве: {len(id_to_group)}")
+    print(f"  Группа статей: {ARTICLE_GROUP}")
 
     for month, ref in sorted(REFERENCE_FACT_2026.items()):
-        snap = compute_td_m3_fact_monthly(
-            2026,
-            month,
-            sql,
-            id_to_group=id_to_group,
-            labels=labels,
-            group_order=group_order,
-        )
+        snap = compute_td_m3_fact_monthly(2026, month, sql)
         fact = float(snap["total_fact"] or 0)
         ok = abs(fact - ref) <= ROUND_TOLERANCE
         if not ok:
