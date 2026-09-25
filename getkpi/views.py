@@ -335,6 +335,63 @@ def _find_immediate_children(tree, target: str) -> tuple[str, list[str]] | None:
     return None
 
 
+# Коды KPI, для которых есть живой расчёт (не синтетика plan=100 из Excel-импорта).
+# SRV-*, FD-* и прочие «каталожные» должности сюда не входят.
+_IMPLEMENTED_KPI_PREFIXES = (
+    'FND-', 'MRK-', 'KD-', 'OD-', 'PD-', 'QD-', 'TD-', 'SH-', 'LOG-',
+    'HRD-', 'METD-', 'MET-', 'GK-', 'RD-', 'GSP-', 'GSPP-', 'IT-',
+    '1C-', 'C1-',
+)
+
+
+def _kpi_id_is_implemented(kpi_id: object) -> bool:
+    kid = _normalize_dashboard_kpi_id(kpi_id)
+    if not kid:
+        return False
+    return kid.startswith(_IMPLEMENTED_KPI_PREFIXES)
+
+
+def _department_has_implemented_tiles(dept: str) -> bool:
+    """Есть ли у должности хотя бы одна реализованная плитка.
+
+    Импорт KPI из Excel сам по себе не считается реализацией: без живого
+    расчёта API рисует заглушку (plan=100), как у «Заместителя тех. директора по сервису».
+    """
+    name = str(dept or '').strip()
+    if not name:
+        return False
+    catalog = _lookup_kpi_data(name) or []
+    catalog_ids = [
+        _normalize_dashboard_kpi_id(row.get('kpi_id'))
+        for row in catalog
+        if row.get('kpi_id')
+    ]
+    if catalog_ids and all(kid.startswith('SRV-') for kid in catalog_ids):
+        return False
+    if (
+        chairman_data.is_chairman_department(name)
+        or _is_komdir_department(name)
+        or _is_qualdir_department(name)
+        or _is_devdir_department(name)
+        or _is_prod_deputy_department(name)
+        or _is_chief_constructor_department(name)
+        or _is_chief_metrolog_department(name)
+        or _is_chief_accountant_department(name)
+        or logistics_views.is_logistics_head_department(name)
+        or _servhead_kpi_views.is_servhead_department(name)
+    ):
+        return True
+    if isinstance(commercial_kpi_key(name), str):
+        return True
+    if not catalog:
+        return False
+    return any(_kpi_id_is_implemented(kid) for kid in catalog_ids)
+
+
+def _filter_implemented_child_departments(children: list[str]) -> list[str]:
+    return [name for name in children if _department_has_implemented_tiles(name)]
+
+
 def _is_komdir_department(dept: str) -> bool:
     d = dept.strip().lower()
     return 'коммерческий' in d and 'директор' in d
@@ -6311,6 +6368,9 @@ def get_immediate_subordinates(request):
     GET ?department=<название>[&for=<блок>] — непосредственные дочерние подразделения
     (только один уровень вниз по structure.json).
 
+    В список не входят должности без реализованных плиток: у них в каталоге
+    могут быть импортированные KPI, но расчёта нет, и фронт показывает заглушку.
+
     Если запрос пришёл от ПСД и указан виртуальный блок `for` (например, commerce),
     возвращаем детей соответствующего «реального» подразделения (коммерческого директора),
     а не самого ПСД: именно эту ветку ПСД сейчас просматривает.
@@ -6335,11 +6395,12 @@ def get_immediate_subordinates(request):
         )
 
     canonical, children = found
+    visible = _filter_implemented_child_departments(children)
     return JsonResponse(
         {
             'department': canonical,
-            'immediate_children': children,
-            'count': len(children),
+            'immediate_children': visible,
+            'count': len(visible),
             'for': chairman_data.normalize_chairman_for_param(for_raw) if for_raw else None,
         },
         json_dumps_params={'ensure_ascii': False},

@@ -2,7 +2,11 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from User.views import login_required
-from getkpi.views import get_structure_data, _find_subordinates
+from getkpi.views import (
+    get_structure_data,
+    _department_has_implemented_tiles,
+    _find_subordinates,
+)
 
 from . import embeddings
 
@@ -28,5 +32,10 @@ def search_departments(request):
         allowed = {department}
 
     results = embeddings.search(query, allowed, top_k=top_k)
+    results = [
+        row
+        for row in results
+        if _department_has_implemented_tiles(row.get("department") or "")
+    ]
 
     return JsonResponse({"query": query, "results": results})
