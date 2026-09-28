@@ -52,7 +52,7 @@ DEPARTMENTS = {
 }
 DEPT_SET = frozenset(DEPARTMENTS.keys())
 OPBO_DEPT = "7587c178-92f6-11f0-96f9-6cb31113810e"
-CACHE_VERSION = 9
+CACHE_VERSION = 10
 
 EXCLUDE_PARTNER_NAMES = {
     "АЛМАЗ ООО (рабочий)",
@@ -498,6 +498,78 @@ def _is_customer_order_type(obj_type: str | None) -> bool:
     return "заказклиента" in t
 
 
+def _is_realization_type(obj_type: str | None) -> bool:
+    """Оплата села на реализацию, а отчёт относит её к заказу клиента."""
+    return "реализациятоваровуслуг" in (obj_type or "").lower()
+
+
+def _batch_load_realization_order_keys(
+    session: requests.Session,
+    realization_keys: set[str],
+) -> dict[str, str]:
+    """Документ реализации → заказ клиента."""
+    result: dict[str, str] = {}
+    keys = sorted(k for k in realization_keys if k and k != EMPTY)
+    select = quote("Ref_Key,ЗаказКлиента,ЗаказКлиента_Type", safe=",_")
+    for i in range(0, len(keys), BATCH):
+        batch = keys[i:i + BATCH]
+        flt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in batch), safe="")
+        url = (
+            f"{BASE}/Document_РеализацияТоваровУслуг?$format=json"
+            f"&$filter={flt}&$select={select}&$top={len(batch)}"
+        )
+        r = request_with_retry(session, url, timeout=30, retries=3, label="DS/RealizationOrder")
+        if r is None or not r.ok:
+            continue
+        try:
+            for item in r.json().get("value", []):
+                if "ЗаказКлиента" not in str(item.get("ЗаказКлиента_Type") or ""):
+                    continue
+                order_key = item.get("ЗаказКлиента") or ""
+                if _is_empty_ref(order_key):
+                    continue
+                result[item["Ref_Key"]] = order_key
+        except Exception:
+            pass
+    return result
+
+
+def _link_realization_orders(
+    session: requests.Session,
+    catalog: dict[str, dict],
+    orders_by_obj: dict[str, list[dict]],
+) -> None:
+    """Подложить заказ под объект расчётов реализации.
+
+    Поступление на реализацию (Газпром комплектация, Нижегородский ЦСМ)
+    в отчёте «План-факт» стоит на заказе. Прямой поиск заказа по объекту
+    реализации ничего не находит, и ветка оплат такую строку выбрасывает.
+    """
+    real_to_catalog: dict[str, list[str]] = {}
+    for cat_key, cat in catalog.items():
+        if not _is_realization_type(cat.get("obj_type")):
+            continue
+        real_key = cat.get("obj") or ""
+        if _is_empty_ref(real_key):
+            continue
+        real_to_catalog.setdefault(real_key, []).append(cat_key)
+    if not real_to_catalog:
+        return
+
+    order_by_real = _batch_load_realization_order_keys(session, set(real_to_catalog))
+    orders = _batch_load_orders(session, set(order_by_real.values()))
+    for real_key, order_key in order_by_real.items():
+        order = orders.get(order_key)
+        if not order:
+            continue
+        linked = dict(order)
+        linked["ref"] = order_key
+        for cat_key in real_to_catalog.get(real_key, []):
+            bucket = orders_by_obj.setdefault(str(cat_key).lower(), [])
+            if not any(existing.get("ref") == order_key for existing in bucket):
+                bucket.append(linked)
+
+
 def _resolve_order_for_object(
     orders_by_obj: dict[str, list[dict]],
     obj_key: str,
@@ -520,16 +592,24 @@ def _resolve_order_for_payment(
     orders_by_obj: dict[str, list[dict]],
     obj_key: str,
     partner_key: str | None,
+    *,
+    allow_realization: bool = False,
 ) -> dict | None:
-    """Заказ только если объект расчётов — заказ клиента.
+    """Заказ, если объект расчётов — заказ клиента.
 
     Для договора/прочего SQL делает LEFT JOIN и получает NULL: оплату берём
     по отделу без флагов заказа. Обратный поиск заказов по ОбъектРасчетов_Key
     на договоре комиссионера цепляет чужие заказы и ошибочно режет факт.
+
+    Реализация — отдельный случай: оплата висит на документе отгрузки,
+    а отчёт показывает её на связанном заказе. Только ветка клиентских оплат.
     """
-    if not _is_customer_order_type(catalog_obj.get("obj_type")):
-        return None
-    return _resolve_order_for_object(orders_by_obj, obj_key, partner_key)
+    obj_type = catalog_obj.get("obj_type")
+    if _is_customer_order_type(obj_type):
+        return _resolve_order_for_object(orders_by_obj, obj_key, partner_key)
+    if allow_realization and _is_realization_type(obj_type):
+        return _resolve_order_for_object(orders_by_obj, obj_key, partner_key)
+    return None
 
 
 def _payment_dept_if_passes_plan_fact(
@@ -639,6 +719,7 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict,
             continue
         order = _resolve_order_for_payment(
             catalog_obj, orders_by_obj, obj_key, row.get("Партнер_Key"),
+            allow_realization=True,
         )
         effective_dept = _payment_dept_if_passes_plan_fact(
             catalog_obj, order, excl_full, excl_no_mgs, opbo_mgs_exception=True,
@@ -895,6 +976,7 @@ def get_dengi_monthly(year: int | None = None,
 
     catalog = _batch_load_catalog(session, obj_keys)
     orders_by_obj = _scan_orders_by_object_keys(session, obj_keys)
+    _link_realization_orders(session, catalog, orders_by_obj)
 
     all_partner_keys: set[str] = set()
     for x in ds_rows:

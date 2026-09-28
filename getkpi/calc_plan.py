@@ -1278,10 +1278,10 @@ def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str
             calc_obj = calc_objects.get(obj_key)
             if not calc_obj or ORDER_TYPE_MARKER not in (calc_obj.get("obj_type") or ""):
                 continue
+            order = orders[order_key]
             bal = balances.get(obj_key, 0.0)
             if bal <= 0:
                 continue
-            order = orders[order_key]
             open_bal = opening.get(obj_key, 0.0)
             stage_sum = stage_sums.get(order_key, {}).get(month, 0.0)
             if (
