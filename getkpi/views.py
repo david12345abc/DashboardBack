@@ -594,6 +594,32 @@ def _rag_td_m4_limit(pct: float | None) -> str:
     return 'red'
 
 
+def _paint_td_m4_limit_row(row: dict) -> dict:
+    """Цвет месяца «в пределах лимита» на самой строке, не только на плитке.
+
+    Без ``color`` клиент красит любой факт выше плана красным и теряет жёлтую
+    полосу 100–110 %.
+    """
+    if not isinstance(row, dict):
+        return row
+    try:
+        plan = float(row['plan']) if row.get('plan') is not None else None
+        fact = float(row['fact']) if row.get('fact') is not None else None
+    except (TypeError, ValueError):
+        plan, fact = None, None
+    pct = None
+    if plan is not None and fact is not None and plan > 0:
+        pct = round(fact / plan * 100, 1)
+    elif row.get('kpi_pct') is not None:
+        try:
+            pct = float(row['kpi_pct'])
+        except (TypeError, ValueError):
+            pct = None
+    if pct is None:
+        return row
+    return {**row, 'kpi_pct': pct, 'color': _rag_td_m4_limit(pct)}
+
+
 def _budget_fact_div_plan_pct(entry: dict) -> float | None:
     row = entry.get('last_full_month_row') or {}
     if not isinstance(row, dict):
@@ -1065,6 +1091,8 @@ def _build_tile_item(
                         'kpi_pct': pct_lfr,
                         'color': _devdir_kpi_views.rag_devdir_plan_fact_pct(pct_lfr),
                     }
+            elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+                lfr = _paint_td_m4_limit_row(lfr)
             elif _kid_gspp in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:
                 lfr = _qualdir_kpi_views.enrich_qualdir_plan_fact_row(lfr)
         tile['last_full_month_row'] = _public_unit_row(lfr)
@@ -1161,6 +1189,11 @@ def _build_tile_item(
                 }
                 if isinstance(row, dict)
                 else row
+                for row in raw_rows
+            ]
+        elif _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+            raw_rows = [
+                _paint_td_m4_limit_row(row) if isinstance(row, dict) else row
                 for row in raw_rows
             ]
         elif _kid_gspp in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
@@ -1984,8 +2017,8 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        # v12: план ГСП-Q4 — вехи с finish_date в месяце, без baseline из другого месяца.
-        gspp_memo_key = f"gspp_dashboard:v12:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v13: ГСП-M3/M5 — color на строке месяца (≤100 / ≤110 / >110), не «факт > план = красный».
+        gspp_memo_key = f"gspp_dashboard:v13:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -1996,24 +2029,26 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        # v6: полный сброс кэша qualdir.
-        qualdir_memo_key = f"qualdir_dashboard:v6:{ref_y}:{ref_m:02d}"
+        # v7: формы 03-17/18/19 — актуальный порядок статусов, иначе план/факт 0.
+        qualdir_memo_key = f"qualdir_dashboard:v7:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v30: HRD-M9 — employees/vacancies для дроби на обороте.
-        sup_memo_key = f"sup_dashboard:v30:{ref_y}:{ref_m:02d}"
+        # v35: HRD-M3 август = строка подразделения в отчёте списаний, 38 950.
+        sup_memo_key = f"sup_dashboard:v35:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_autoit_department(dept) and not include_debug:
-        autoit_memo_key = f"autoit_dashboard:v7:{ref_y}:{ref_m:02d}"
+        # v8: сброс снимка, чтобы плитка взяла факт ИТ-M4, а не утренний кэш.
+        autoit_memo_key = f"autoit_dashboard:v8:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(autoit_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_c1auto_department(dept) and not include_debug:
-        c1auto_memo_key = f"c1auto_dashboard:v4:{ref_y}:{ref_m:02d}"
+        # v5: 1С-M3 факт = заявки ДС по статьям 4.22 и 1С, не оплаты подразделения.
+        c1auto_memo_key = f"c1auto_dashboard:v5:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(c1auto_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2024,8 +2059,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_devdir_department(dept) and not include_debug:
-        # v6: таблица отклонений RD-M3-1 режется по выбранному месяцу
-        devdir_memo_key = f"devdir_dashboard:v6:{ref_y}:{ref_m:02d}"
+        # v8: RD-M3 факт = списания ДС группы статей «Директор по развитию»
+        devdir_memo_key = f"devdir_dashboard:v8:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
         if cached_payload is not None:
             logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
@@ -2035,28 +2070,28 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v12_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v13_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
             dashboard_disk_key = f"techdir_v3_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v5_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v30_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v35_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
-            dashboard_disk_key = f"autoit_v7_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"autoit_v8_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = autoit_memo_key
         elif c1auto_memo_key:
-            dashboard_disk_key = f"c1auto_v4_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"c1auto_v5_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
             dashboard_disk_key = f"servhead_v8_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
-            dashboard_disk_key = f"devdir_v2_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"devdir_v8_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = devdir_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
@@ -2272,6 +2307,15 @@ def _build_universal_payload(
                         trimmed_md.append(row_out)
                     if trimmed_md:
                         tile['monthly_data'] = trimmed_md
+            if _is_gspp_m3_tile(kpi) or _is_gspp_m5_tile(kpi):
+                painted = _paint_td_m4_limit_row(lm if isinstance(lm, dict) else {})
+                if painted.get('kpi_pct') is not None:
+                    tile['kpi_pct'] = painted['kpi_pct']
+                if painted.get('color'):
+                    tile['color'] = painted['color']
+                    tile['status_color'] = painted['color']
+                tile['pct_lower_is_better'] = True
+                tile['rag_direction'] = 'lower_better'
             if kpi.get('kpi_id') in _qualdir_kpi_views.OTK_INCOMING_TILE_IDS:
                 for extra_key in ('in_work_today', 'rejected_items_count'):
                     if extra_key in lm:

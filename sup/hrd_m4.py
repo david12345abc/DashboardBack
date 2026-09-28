@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 SHEET_NAME = "Текучесть"
 CACHE_PREFIX = "sup_hrd_m4_turnover"
-CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v9_latest_year_file"
-CACHE_VERSION = 9
+CACHE_SOURCE_TAG = "sup_hrd_m4_turnover_payload_v10_monthly_subdir"
+CACHE_VERSION = 10
 
 FACT_ROW = 10
 PLAN_ROW = 11

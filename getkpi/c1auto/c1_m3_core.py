@@ -7,14 +7,15 @@
   (оплаты из AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент)
 
 Логика факта:
-  Факт = Σ (СуммаОплаты − СуммаКВыплатеСверхЛимита)
-  по активным движениям регистра ДДС за календарный месяц,
-  с привязкой к заявке на расход ДС, у которой одновременно:
-    • ТД_ЦФО = «Служба автоматизации»
-    • Подразделение = «Отдел сопровождения 1С»
+  Факт = Σ сумма расшифровки проведённых заявок на расходование ДС
+  за календарный месяц (дата заявки), организация НПО / Турбулентность-Дон,
+  статья ДДС:
+    • Консультационно-информационные услуги_2_СА_СБ_IT_4.22
+    • Лицензии_2_СА_ИД_1С_4.20
+    • Услуги сторонних организаций_2_СА_ИД_1С_4.15
 
-  Суммы в SQL уже со знаком (сторно отрицательное).
-  Здесь только СуммаОплаты − СверхЛимита (как IT-M3 / QD-M3).
+  Берём заявку, а не списание: в отчёте за сентябрь есть неоплаченные
+  36 227,52, без них итог статьи 4.22 не сходится (92 747,52).
 
 План 2026 — константы из c1_m3_plan.py (сумма 2 строк × месяц).
 
@@ -99,15 +100,30 @@ C1_M3_DEPARTMENT_ALIASES: tuple[str, ...] = (
     "сопровождения 1с",
 )
 
-# Эталон факта из кэша DashboardBack c1auto_c1_m3_2026_07.json (может отставать).
+REQ_VT = "_Document726_VT22852"
+COL_DOC_ORG = "_Fld22778RRef"
+COL_LINE_SUM = "_Fld22856"
+COL_LINE_ART = "_Fld22861RRef"
+ART_CAT = "_Reference503"
+
+# Статьи расшифровки, с которой сверяется плитка.
+C1_M3_ARTICLES: tuple[str, ...] = (
+    "Консультационно-информационные услуги_2_СА_СБ_IT_4.22.",
+    "Лицензии_2_СА_ИД_1С_4.20.",
+    "Услуги сторонних организаций_2_СА_ИД_1С_4.15.",
+)
+
+# Заявки на расход ДС по этим статьям, 2026.
 REFERENCE_FACT_2026: dict[int, float] = {
-    1: 0.0,
-    2: 0.0,
-    3: 0.0,
-    4: 0.0,
-    5: 0.0,
-    6: 45_160.0,
-    7: 0.0,
+    1: 36_227.52,
+    2: 142_267.52,
+    3: 36_227.52,
+    4: 142_267.52,
+    5: 89_247.52,
+    6: 134_407.52,
+    7: 89_247.52,
+    8: 89_247.52,
+    9: 92_747.52,
 }
 
 MONTH_NAMES = {
@@ -284,74 +300,72 @@ def compute_c1_m3_fact_monthly(
     cfo_keys: list[bytes] | None = None,
     dept_keys: list[bytes] | None = None,
 ) -> dict[str, Any]:
-    """Сумма фактических оплат 1С-M3 за календарный месяц (руб.)."""
+    """Сумма заявок на расход ДС по статьям 1С-M3 за календарный месяц (руб.)."""
+    del cfo_keys, dept_keys
     sql = sql or SqlConnection()
     p_start, p_end = _sql_period_bounds(year, month)
-    counts = {
-        "register_rows_matched": 0,
-        "requests_matched": 0,
-        "rows_counted": 0,
-    }
-    meta: dict[str, Any] = {}
+    org_ph = ",".join("?" * len(ORG_BINS))
+    art_ph = ",".join("?" * len(C1_M3_ARTICLES))
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
-        if cfo_keys is None or dept_keys is None:
-            cfo_keys, dept_keys, meta = _resolve_filter_keys(cur)
-
-        org_ph = ",".join("?" * len(ORG_BINS))
-        cfo_ph = ",".join("?" * len(cfo_keys))
-        dept_ph = ",".join("?" * len(dept_keys))
         cur.execute(
             f"""
-            SELECT r.[{COL_PAY}], r.[{COL_OVER}], r.[{COL_REQ}]
-            FROM [{REG}] r WITH (NOLOCK)
-            INNER JOIN [{DOC}] d WITH (NOLOCK)
-                    ON d._IDRRef = r.[{COL_REQ}]
-            WHERE r._Period >= ? AND r._Period < ?
-              AND r._Active = 0x01
-              AND r.[{COL_ORG}] IN ({org_ph})
-              AND r.[{COL_REQ}] <> ?
-              AND d.[{COL_DOC_CFO}] IN ({cfo_ph})
-              AND d.[{COL_DOC_DEPT}] IN ({dept_ph})
+            SELECT d._IDRRef, a._Description, vt.[{COL_LINE_SUM}]
+            FROM [{DOC}] d WITH (NOLOCK)
+            INNER JOIN [{REQ_VT}] vt WITH (NOLOCK)
+                    ON vt.[{DOC}_IDRRef] = d._IDRRef
+            INNER JOIN [{ART_CAT}] a WITH (NOLOCK)
+                    ON a._IDRRef = vt.[{COL_LINE_ART}]
+            WHERE d._Date_Time >= ? AND d._Date_Time < ?
+              AND d._Posted = 0x01
+              AND d._Marked = 0x00
+              AND d.[{COL_DOC_ORG}] IN ({org_ph})
+              AND a._Description IN ({art_ph})
             """,
-            [p_start, p_end, *ORG_BINS, EMPTY_BIN, *cfo_keys, *dept_keys],
+            [p_start, p_end, *ORG_BINS, *C1_M3_ARTICLES],
         )
         rows = cur.fetchall()
 
     total = 0.0
     reqs: set[bytes] = set()
-    counts["register_rows_matched"] = len(rows)
-    for pay, over, req in rows:
-        net = _as_float(pay) - _as_float(over)
-        if net == 0:
+    articles: dict[str, float] = {}
+    counted = 0
+    for req, article, amount in rows:
+        value = _as_float(amount)
+        if value == 0:
             continue
-        total += net
-        counts["rows_counted"] += 1
+        total += value
+        counted += 1
+        name = article or ""
+        articles[name] = round(articles.get(name, 0.0) + value, 2)
         if req:
             reqs.add(bytes(req))
-    counts["requests_matched"] = len(reqs)
 
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_NAMES[month],
         "total_fact": round(total, 2),
-        "counts": counts,
+        "articles": articles,
+        "counts": {
+            "register_rows_matched": len(rows),
+            "requests_matched": len(reqs),
+            "rows_counted": counted,
+        },
         "debug": {
             "status": "ok",
             "kpi_id": "1C-M3-FACT",
-            "register": REG,
             "document": DOC,
+            "table": REQ_VT,
             "period_start": p_start.isoformat(sep="T"),
             "period_end": p_end.isoformat(sep="T"),
-            "required_td_cfo": C1_M3_TD_CFO_LABEL,
-            "required_department": C1_M3_DEPARTMENT_LABEL,
-            "filter_meta": meta,
+            "articles": list(C1_M3_ARTICLES),
+            "article_totals": articles,
             "rule": (
-                "fact = sum(СуммаОплаты - СуммаКВыплатеСверхЛимита) "
-                "for ТД_ЦФО=Служба автоматизации AND Подразделение=Отдел сопровождения 1С"
+                "fact = sum of posted expense-request lines "
+                "for DDS articles 4.22 / 1C 4.20 / 1C 4.15"
             ),
         },
     }
@@ -399,10 +413,8 @@ def build_monthly_report(
 def format_report(rows: list[dict[str, Any]]) -> str:
     lines = [
         "1С-M3 — бюджет (SQL)",
-        f"Источник: {REG} + {DOC} + {CFO_CAT}/{STRUCT}",
-        f"ТД_ЦФО: {C1_M3_TD_CFO_LABEL}",
-        f"Подразделение: {C1_M3_DEPARTMENT_LABEL}",
-        "Факт: Σ (СуммаОплаты − СверхЛимита) по оплатам в месяце",
+        f"Источник: {DOC} + {REQ_VT} + {ART_CAT}",
+        "Факт: Σ заявок на расход ДС по статьям 4.22 / 1С 4.20 / 1С 4.15",
         "",
         f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Заявок':>8}",
         f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8} {'-' * 8}",
@@ -493,7 +505,7 @@ def build_c1_m3_payload(year: int | None = None, month: int | None = None) -> di
             "kpi_id": "1C-M3",
             "source": "1cauto.1c_m3.sql",
             "plan_source": "C1_M3_PLAN_BY_MONTH_2026",
-            "fact_source": f"{REG} / {DOC}",
+            "fact_source": f"{DOC}.{COL_LINE_SUM}, articles 4.22 / 1C 4.20 / 1C 4.15",
             "required_td_cfo": C1_M3_TD_CFO_LABEL,
             "required_department": C1_M3_DEPARTMENT_LABEL,
         },

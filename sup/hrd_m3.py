@@ -6,23 +6,19 @@ HRD-M3 — бюджет службы управления персоналом �
   → getkpi.budget_request_fact.compute_budget_request_fact_monthly
   (оплаты из AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент)
 
-Логика факта:
-  Факт = Σ (СуммаОплаты − СуммаКВыплатеСверхЛимита)
-  по активным движениям регистра ДДС за календарный месяц,
-  с привязкой к заявке на расход ДС, у которой одновременно:
-    • ТД_ЦФО = «Директор НПО»
-    • Подразделение = «Служба управления персоналом»
-
-  Суммы в SQL уже со знаком (сторно отрицательное).
-  Здесь только СуммаОплаты − СверхЛимита (как HRD-M3 / IT-M3).
+Логика факта — тот же отчёт «Списание ДС по статьям ДДС»:
+  Факт = Σ Сумма расшифровки проведённых документов
+  «Списание безналичных денежных средств» за календарный месяц,
+  организация НПО, статья ДДС с «_СУП_» в названии,
+  заявка с ЦФО «Директор НПО» и подразделением «Служба управления персоналом».
 
 План 2026 — константы из hrd_m3_budget_plan.py (сумма 15 строк × месяц).
 
 SQL (erp_pm):
-  AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент → dbo._AccumRg51416
+  Document_СписаниеБезналичныхДенежныхСредств            → dbo._Document980
+  РасшифровкаПлатежа                                     → dbo._Document980_VT37251
   Document_ЗаявкаНаРасходованиеДенежныхСредств           → dbo._Document726
-  Catalog ТД_ЦФО                                         → dbo._Reference127708
-  Catalog_СтруктураПредприятия                           → dbo._Reference513
+  Catalog_СтатьиДвиженияДенежныхСредств                  → dbo._Reference503
 
 Период в SQL = календарный год + 2000.
 
@@ -53,19 +49,19 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 YEAR_OFFSET = 2000
 ROUND_TOLERANCE = 0.01
 
-REG = "_AccumRg51416"
 DOC = "_Document726"
 STRUCT = "_Reference513"
 CFO_CAT = "_Reference127708"
+WRITEOFF = "_Document980"
+WRITEOFF_VT = "_Document980_VT37251"
+ART_CAT = "_Reference503"
 
-COL_ORG = "_Fld51418RRef"
-COL_REQ = "_Fld140229RRef"
-COL_PAY = "_Fld51433"
-COL_OVER = "_Fld51443"
+COL_WO_SUM = "_Fld37256"
+COL_WO_ART = "_Fld37254RRef"
+COL_WO_ORG = "_Fld37189RRef"
+COL_WO_REQ = "_Fld37264_RRRef"
 COL_DOC_CFO = "_Fld127709RRef"
 COL_DOC_DEPT = "_Fld22796RRef"
-
-EMPTY_BIN = b"\x00" * 16
 
 ORG_GUIDS = (
     "fbca2148-6cfd-11e7-812d-001e67112509",  # ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО
@@ -96,16 +92,17 @@ HRD_M3_DEPARTMENT_ALIASES: tuple[str, ...] = (
     "служба управления персоналом",
 )
 
-# Эталон факта: янв–май = кэш DashboardBack sup_hrd_m3_budget_2026_07.json;
-# июнь–июль — live SQL (кэш отстаёт: было 1_590_412 / 7_250).
+# Списания ДС, НПО, статьи *_СУП_*, подразделение службы.
 REFERENCE_FACT_2026: dict[int, float] = {
     1: 898_839.33,
     2: 47_300.0,
-    3: 330_965.0,
-    4: 298_217.0,
+    3: 365_965.0,
+    4: 308_312.0,
     5: 40_474.0,
-    6: 2_423_628.0,
-    7: 126_015.0,
+    6: 2_450_636.56,
+    7: 146_143.61,
+    8: 38_950.0,
+    9: 199_925.0,
 }
 
 MONTH_NAMES = {
@@ -282,15 +279,16 @@ def compute_hrd_m3_fact_monthly(
     cfo_keys: list[bytes] | None = None,
     dept_keys: list[bytes] | None = None,
 ) -> dict[str, Any]:
-    """Сумма фактических оплат HRD-M3 за календарный месяц (руб.)."""
+    """Сумма списаний службы по статьям *_СУП_* за календарный месяц (руб.)."""
     sql = sql or SqlConnection()
     p_start, p_end = _sql_period_bounds(year, month)
     counts = {
-        "register_rows_matched": 0,
+        "lines_counted": 0,
         "requests_matched": 0,
         "rows_counted": 0,
     }
     meta: dict[str, Any] = {}
+    npo_bin = ORG_BINS[0]
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
@@ -298,37 +296,41 @@ def compute_hrd_m3_fact_monthly(
         if cfo_keys is None or dept_keys is None:
             cfo_keys, dept_keys, meta = _resolve_filter_keys(cur)
 
-        org_ph = ",".join("?" * len(ORG_BINS))
         cfo_ph = ",".join("?" * len(cfo_keys))
         dept_ph = ",".join("?" * len(dept_keys))
         cur.execute(
             f"""
-            SELECT r.[{COL_PAY}], r.[{COL_OVER}], r.[{COL_REQ}]
-            FROM [{REG}] r WITH (NOLOCK)
-            INNER JOIN [{DOC}] d WITH (NOLOCK)
-                    ON d._IDRRef = r.[{COL_REQ}]
-            WHERE r._Period >= ? AND r._Period < ?
-              AND r._Active = 0x01
-              AND r.[{COL_ORG}] IN ({org_ph})
-              AND r.[{COL_REQ}] <> ?
-              AND d.[{COL_DOC_CFO}] IN ({cfo_ph})
-              AND d.[{COL_DOC_DEPT}] IN ({dept_ph})
+            SELECT vt.[{COL_WO_SUM}], z._IDRRef
+            FROM dbo.[{WRITEOFF}] d WITH (NOLOCK)
+            INNER JOIN dbo.[{WRITEOFF_VT}] vt WITH (NOLOCK)
+                    ON vt.[{WRITEOFF}_IDRRef] = d._IDRRef
+            INNER JOIN dbo.[{ART_CAT}] a WITH (NOLOCK)
+                    ON a._IDRRef = vt.[{COL_WO_ART}]
+            INNER JOIN dbo.[{DOC}] z WITH (NOLOCK)
+                    ON z._IDRRef = vt.[{COL_WO_REQ}]
+            WHERE d._Date_Time >= ? AND d._Date_Time < ?
+              AND d._Posted = 0x01
+              AND d._Marked = 0x00
+              AND d.[{COL_WO_ORG}] = ?
+              AND a._Description LIKE N'%[_]СУП[_]%'
+              AND z.[{COL_DOC_CFO}] IN ({cfo_ph})
+              AND z.[{COL_DOC_DEPT}] IN ({dept_ph})
             """,
-            [p_start, p_end, *ORG_BINS, EMPTY_BIN, *cfo_keys, *dept_keys],
+            [p_start, p_end, npo_bin, *cfo_keys, *dept_keys],
         )
         rows = cur.fetchall()
 
     total = 0.0
     reqs: set[bytes] = set()
-    counts["register_rows_matched"] = len(rows)
-    for pay, over, req in rows:
-        net = _as_float(pay) - _as_float(over)
+    for amount, req in rows:
+        net = _as_float(amount)
         if net == 0:
             continue
         total += net
         counts["rows_counted"] += 1
         if req:
             reqs.add(bytes(req))
+    counts["lines_counted"] = counts["rows_counted"]
     counts["requests_matched"] = len(reqs)
 
     return {
@@ -340,16 +342,17 @@ def compute_hrd_m3_fact_monthly(
         "debug": {
             "status": "ok",
             "kpi_id": "HRD-M3-FACT",
-            "register": REG,
-            "document": DOC,
+            "document": WRITEOFF,
+            "table": WRITEOFF_VT,
             "period_start": p_start.isoformat(sep="T"),
             "period_end": p_end.isoformat(sep="T"),
             "required_td_cfo": HRD_M3_TD_CFO_LABEL,
             "required_department": HRD_M3_DEPARTMENT_LABEL,
             "filter_meta": meta,
             "rule": (
-                "fact = sum(СуммаОплаты - СуммаКВыплатеСверхЛимита) "
-                "for ТД_ЦФО=Директор НПО AND Подразделение=Служба управления персоналом"
+                "fact = sum(Сумма) of posted bank write-offs, org NPO, "
+                "DDS article *_СУП_*, ТД_ЦФО=Директор НПО, "
+                "Подразделение=Служба управления персоналом"
             ),
         },
     }
@@ -397,10 +400,10 @@ def build_monthly_report(
 def format_report(rows: list[dict[str, Any]]) -> str:
     lines = [
         "HRD-M3 — бюджет (SQL)",
-        f"Источник: {REG} + {DOC} + {CFO_CAT}/{STRUCT}",
+        f"Источник: {WRITEOFF} / {WRITEOFF_VT}, статьи *_СУП_*, подразделение службы",
         f"ТД_ЦФО: {HRD_M3_TD_CFO_LABEL}",
         f"Подразделение: {HRD_M3_DEPARTMENT_LABEL}",
-        "Факт: Σ (СуммаОплаты − СверхЛимита) по оплатам в месяце",
+        "Факт: Σ Сумма проведённых списаний безналичных ДС",
         "",
         f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Заявок':>8}",
         f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8} {'-' * 8}",
@@ -453,11 +456,6 @@ def build_hrd_m3_payload(year: int | None = None, month: int | None = None) -> d
         year = year or ref_y
         month = month or ref_m
 
-    from getkpi.autoit.it_monthly_period import (
-        pick_fot_display_row,
-        trim_monthly_rows_to_display,
-    )
-
     rows = build_monthly_report((year, 1), (year, month))
     monthly_rows = [
         {
@@ -472,15 +470,24 @@ def build_hrd_m3_payload(year: int | None = None, month: int | None = None) -> d
         }
         for r in rows
     ]
-    display_row = pick_fot_display_row(monthly_rows, month, ref_year=year)
-    monthly_rows = trim_monthly_rows_to_display(monthly_rows, display_row)
+    # Незакрытый месяц остаётся своим: сентябрь не подменяется августом.
+    display_row = next(
+        (
+            r for r in monthly_rows
+            if r.get("month") == month and r.get("year") == year
+        ),
+        None,
+    )
+    if display_row is None and monthly_rows:
+        display_row = monthly_rows[-1]
     display_m = int(display_row["month"]) if display_row and display_row.get("month") else month
+    open_month = year == today.year and display_m == today.month
     return {
         "data_granularity": "monthly",
         "monthly_data": monthly_rows,
         "last_full_month_row": dict(display_row) if display_row else None,
         "kpi_period": {
-            "type": "last_full_month",
+            "type": "current_month" if open_month else "last_full_month",
             "year": year,
             "month": display_m,
             "month_name": MONTH_NAMES[display_m],
@@ -498,7 +505,7 @@ def build_hrd_m3_payload(year: int | None = None, month: int | None = None) -> d
             "kpi_id": "HRD-M3",
             "source": "sup.hrd_m3.sql",
             "plan_source": "HRD_M3_PLAN_BY_MONTH_2026",
-            "fact_source": f"{REG} / {DOC}",
+            "fact_source": f"{WRITEOFF}.{COL_WO_SUM}, articles *_СУП_*, department",
             "required_td_cfo": HRD_M3_TD_CFO_LABEL,
             "required_department": HRD_M3_DEPARTMENT_LABEL,
         },
@@ -562,10 +569,10 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 HRD_M3_YTD_CACHE_PREFIX = "sup_hrd_m3_budget"
 HRD_M3_YTD_DISK_TAG = "sup_hrd_m3_budget_sql_payload_v1"
-HRD_M3_YTD_DISK_VERSION = 3
+HRD_M3_YTD_DISK_VERSION = 7
 HRD_M3_MONTHLY_CACHE_PREFIX = "sup_hrd_m3_budget_fact_sql_monthly"
-HRD_M3_MONTHLY_SOURCE_TAG = "sup_hrd_m3_budget_fact_sql_monthly_v1"
-HRD_M3_MONTHLY_CACHE_VERSION = 1
+HRD_M3_MONTHLY_SOURCE_TAG = "sup_hrd_m3_budget_fact_sql_monthly_v4"
+HRD_M3_MONTHLY_CACHE_VERSION = 4
 
 
 def monthly_cache_path(year: int, month: int) -> _Path:

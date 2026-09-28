@@ -35,10 +35,10 @@ INTERNAL_BRAK_ENTITY = "Document_ТД_Форма0318"
 FORM_0317_ENTITY = "Document_ТД_Форма0317"
 
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
-# v8 — переход с OData на SQL-источник строк.
-TABLE_MONTH_CACHE_VERSION = 9
-TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v9"
-TABLE_YTD_DISK_VERSION = 9
+# v10 — статусы форм по актуальному _EnumOrder (иначе сентябрьские строки пустые).
+TABLE_MONTH_CACHE_VERSION = 10
+TABLE_YTD_DISK_TAG = "qualdir_brak_table_ytd_v10"
+TABLE_YTD_DISK_VERSION = 10
 
 
 def _month_pairs(year: int, ref_month: int) -> list[tuple[int, int]]:

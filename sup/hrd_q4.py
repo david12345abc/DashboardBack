@@ -30,8 +30,8 @@ HC_SHEET_NAME = "Текучесть"
 HC_FACT_COLUMN = 3  # D
 
 CACHE_PREFIX = "sup_hrd_q4_adaptation"
-CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v8_prev_month"
-CACHE_VERSION = 8
+CACHE_SOURCE_TAG = "sup_hrd_q4_adaptation_payload_v9_monthly_subdir"
+CACHE_VERSION = 9
 
 # Накопительный план с января: месяц × 1,5 п.п.
 PLAN_PCT_PER_MONTH = 1.5

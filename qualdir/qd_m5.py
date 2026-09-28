@@ -22,8 +22,8 @@ SQL (erp_pm):
     _Fld148649RRef               — ПодразделениеПоставщика → _Reference513
   Catalog_СтруктураПредприятия   → dbo._Reference513
   Enum статусов формы            → dbo._Enum100559
-    0 Подготовлен, 1 НаСогласовании, 2 НеСогласовано,
-    3 РазработкаКМ, 4 ИсполнениеКМ, 5 Выполнено, 6 Отменена
+    порядок — qualdir.form_status.STATUS_BY_ORDER
+    (после расширения перечисления «Выполнено» = order 12, не 5)
 
 Даты в SQL хранятся со смещением YEAR_OFFSET = 2000
 (2026-03-01 → 4026-03-01).
@@ -46,6 +46,8 @@ from typing import Any
 
 from sql_connection import SqlConnection
 
+from qualdir.form_status import STATUS_BY_ORDER
+
 DOC_TABLE = "_Document148564X1"
 DEPT_TABLE = "_Reference513"
 ENUM_TABLE = "_Enum100559"
@@ -56,16 +58,6 @@ COL_STATUS = "_Fld148654RRef"
 COL_SIGNIFICANT = "_Fld185471"
 COL_DEPT = "_Fld148649RRef"
 
-# _Enum100559._EnumOrder (тот же, что у формы 0319)
-STATUS_BY_ORDER: dict[int, str] = {
-    0: "Подготовлен",
-    1: "НаСогласовании",
-    2: "НеСогласовано",
-    3: "РазработкаКМ",
-    4: "ИсполнениеКМ",
-    5: "Выполнено",
-    6: "Отменена",
-}
 EXECUTED_STATUS = "Выполнено"
 PLAN_EXCLUDED_STATUSES = frozenset(
     {
@@ -500,7 +492,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
 QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_sql_v1"
-QD_M5_YTD_DISK_VERSION = 21
+QD_M5_YTD_DISK_VERSION = 23
 
 
 def internal_brak_month_cache_path(year: int, month: int) -> _Path:
