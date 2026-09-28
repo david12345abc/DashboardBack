@@ -1,13 +1,14 @@
 """
 ГСП-Q4 — вехи проектов TurboProject, где РП совпадает с актуальным «Руководителем отдела» ГСПП.
 
-**Когорта месяца (план):** все «живые» вехи опорного месяца — плановая дата (baseline и др.)
-попадает в месяц **или** дата окончания в графике (``finish_date``) попадает в месяц.
+**Когорта месяца (план):** вехи, у которых на графике Turbo окончание (``finish_date``)
+попадает в месяц. Baseline в план не входит: иначе в сентябрь попадают вехи,
+которые на графике уже стоят в следующем месяце.
 
 **Отклонение:** веха из когорты, у которой к дате расчёта
 (конец месяца для закрытых периодов, сегодня для текущего месяца):
-  - не выполнена (``percent_complete`` < 100%%), а срок не позже даты расчёта
-    (берётся baseline, иначе ``finish_date`` как текущий срок); или
+  - не выполнена (``percent_complete`` < 100%%), а дата на графике (``finish_date``)
+    уже наступила; или
   - выполнена, но фактическое окончание позже baseline (если baseline нет —
     завершённая веха не считается отклонившейся, см. ``debug.milestones_without_baseline``).
 
@@ -73,12 +74,12 @@ STATUS_COMPLETED = frozenset({"завершен", "закрыт"})
 PROJECT_NAME_SUBSTR = "номенклатур"
 
 GSPP_Q4_CACHE_PREFIX = "gspp_q4_ytd"
-GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v12"
-GSPP_Q4_DISK_VERSION = 12
+GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v13"
+GSPP_Q4_DISK_VERSION = 13
 
 GSPP_Q4_DEVIATION_CACHE_PREFIX = "gspp_q4_deviation_tables"
-GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v7"
-GSPP_Q4_DEVIATION_DISK_VERSION = 7
+GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v9"
+GSPP_Q4_DEVIATION_DISK_VERSION = 9
 
 _MANAGER_PROJECTS_TTL = 3600
 _MANAGER_PROJECTS_DISK_TAG = "gspp_manager_projects_v1"
@@ -328,7 +329,7 @@ def _milestone_deviated(
             return False
         return act_d > base_d
 
-    due_d = base_d if base_d is not None else act_d
+    due_d = act_d if act_d is not None else base_d
     if due_d is None:
         return False
     return due_d <= as_of_date
@@ -337,7 +338,15 @@ def _milestone_deviated(
 def _gspp_delay_days_for_deviated(
     task: dict[str, Any], ref_y: int, ref_m: int, as_of_date: date,
 ) -> int:
-    """Дни отклонения для строки таблицы: просрочка к ``as_of_date`` или срыв относительно baseline."""
+    """Календарные дни от даты в колонке «Окончание» до даты расчёта.
+
+    Дата расчёта — сегодня для текущего месяца, конец месяца для закрытого.
+    Невыполненная веха считается от той же даты, что показана в «Окончание»
+    (график Turbo; если веха попала в месяц по baseline — плановая дата этого месяца).
+    Скрытый baseline, которого нет в колонке, в дни не входит: иначе рядом
+    с окончанием 09.09 получается просрочка от июля.
+    Выполненная веха — насколько факт позже baseline.
+    """
     completed = _milestone_completed(task)
     act_d = _calendar_date_from_field(task.get("finish_date"))
     base_raw = _task_baseline_finish(task)
@@ -348,10 +357,11 @@ def _gspp_delay_days_for_deviated(
             return max(0, (act_d - base_d).days)
         return 0
 
-    due_d = base_d if base_d is not None else act_d
+    _, shown_finish, _ = _display_dates_for_month(task, ref_y, ref_m)
+    due_d = _calendar_date_from_field(shown_finish)
     if due_d is None:
-        return 0
-    if due_d > as_of_date:
+        due_d = act_d if act_d is not None else base_d
+    if due_d is None or due_d > as_of_date:
         return 0
     return max(0, (as_of_date - due_d).days)
 
@@ -425,17 +435,14 @@ def _gspp_milestone_deviation_details(
 
 
 def _milestone_in_reference_month(task: dict[str, Any], ref_y: int, ref_m: int) -> bool:
-    """Веха в опорном месяце: плановая дата (baseline) в месяце **или** фактическое окончание в месяце.
+    """Веха в опорном месяце, если на графике Turbo окончание попадает в этот месяц.
 
-    Иначе при пустом/нестандартном baseline в JSON все вехи выпадали из месяца → план и факт 0.
+    Считаем только ``finish_date`` — ту дату, которая стоит в колонках графика.
+    Baseline не подмешиваем: веха с планом на 25.09 и графиком на 26.10 не является
+    сентябрьской.
     """
-    base_d = _calendar_date_from_field(_task_baseline_finish(task))
-    if base_d is not None and base_d.year == ref_y and base_d.month == ref_m:
-        return True
     finish_d = _calendar_date_from_field(task.get("finish_date"))
-    if finish_d is not None and finish_d.year == ref_y and finish_d.month == ref_m:
-        return True
-    return False
+    return finish_d is not None and finish_d.year == ref_y and finish_d.month == ref_m
 
 
 def _count_zero_duration_milestones(tasks: list[dict[str, Any]]) -> int:

@@ -1984,13 +1984,14 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        # v10: ГСП-Q4 — просрочка по finish_date (график Turbo), не по baseline.
-        gspp_memo_key = f"gspp_dashboard:v10:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v12: план ГСП-Q4 — вехи с finish_date в месяце, без baseline из другого месяца.
+        gspp_memo_key = f"gspp_dashboard:v12:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
     if techdir_dashboard.is_techdir_department(dept) and not include_debug:
-        techdir_memo_key = f"techdir_dashboard:v1:{ref_y}:{ref_m:02d}"
+        # v3: нулевой отбор TD-M1/M5/M6/Q1 — has_data, сброс memo после v1.
+        techdir_memo_key = f"techdir_dashboard:v3:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(techdir_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2023,8 +2024,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_devdir_department(dept) and not include_debug:
-        # v2: сброс memo после ручной инвалидации RD-M3-1 / SQL-планов текучести
-        devdir_memo_key = f"devdir_dashboard:v3:{ref_y}:{ref_m:02d}"
+        # v6: таблица отклонений RD-M3-1 режется по выбранному месяцу
+        devdir_memo_key = f"devdir_dashboard:v6:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
         if cached_payload is not None:
             logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
@@ -2034,10 +2035,10 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v10_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v12_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
-            dashboard_disk_key = f"techdir_v1_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"techdir_v3_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
             dashboard_disk_key = f"qualdir_v5_{ref_y}_{ref_m:02d}"
@@ -2463,17 +2464,19 @@ def _build_universal_payload(
     if _is_devdir_department(dept):
         try:
             rd_m3_1_period = (entries_by_id.get('RD-M3-1') or {}).get('kpi_period') or {}
-            table_y, table_m = ref_y, ref_m
+            through_m = ref_m
             if (
                 isinstance(rd_m3_1_period, dict)
                 and rd_m3_1_period.get('year') is not None
+                and int(rd_m3_1_period['year']) == ref_y
                 and rd_m3_1_period.get('month') is not None
             ):
-                table_y = int(rd_m3_1_period['year'])
-                table_m = max(1, min(12, int(rd_m3_1_period['month'])))
-            devdir_table = _devdir_turboproject_projects.get_projects_deviation_table(
-                year=table_y,
-                month=table_m,
+                through_m = max(through_m, max(1, min(12, int(rd_m3_1_period['month']))))
+            devdir_table = _devdir_turboproject_projects.with_monthly_deviation_history(
+                _devdir_turboproject_projects.get_projects_deviation_table,
+                ref_y,
+                through_m,
+                display_month=ref_m,
             )
         except Exception:
             devdir_table = None

@@ -317,8 +317,10 @@ def compute_td_fot_plan_monthly_budget(
     year: int, month: int, article_mode: str = "payroll"
 ) -> dict:
     """Плановый ФОТ по 19 п/п из оборотов бюджетов (сценарий ЦФО) за календарный месяц."""
-    if year == 2026 and month in PLANNED_FOT_TARGET_2026:
-        total_plan = float(PLANNED_FOT_TARGET_2026[month])
+    from .td_m4 import TD_M4_FOT_PLAN_BY_MONTH_2026
+
+    if year == 2026 and month in TD_M4_FOT_PLAN_BY_MONTH_2026:
+        total_plan = float(TD_M4_FOT_PLAN_BY_MONTH_2026[month])
         groups_out = {
             name: {"plan_salary": 0.0, "plan_insurance": 0.0, "plan_total": 0.0}
             for name in fts.FOT_GROUP_ORDER
@@ -332,7 +334,7 @@ def compute_td_fot_plan_monthly_budget(
             "article_mode": article_mode,
             "debug": {
                 "status": "ok",
-                "plan_source": "monthly_constants_from_screenshot",
+                "plan_source": "TD_M4_FOT_PLAN_BY_MONTH_2026",
                 "year": year,
                 "month": month,
             },

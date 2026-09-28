@@ -38,7 +38,6 @@ from .techdir_projects import (
     TECHDIR_OWNER_POSITION,
     _month_pairs_until,
     _normalize_ref_period,
-    _project_is_alive_in_month,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +45,7 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
 FACT_CACHE_DIR = techdir_m5_fact_cache.CACHE_DIR
 SOURCE_TAG = "techdir_m5_ytd_v1"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 def ytd_cache_path(year: int, month: int) -> Path:
@@ -128,11 +127,11 @@ def _merge_period_row(
     plan_val = float(plan) if plan is not None else 0.0
     fact_val = float(fact) if fact is not None else 0.0
     merged = dict(plan_row)
-    merged["fact"] = fact if has_data else None
-    merged["plan"] = plan if has_data else None
+    merged["fact"] = fact if fact is not None else (fact_val if has_data else None)
+    merged["plan"] = plan if plan is not None else (plan_val if has_data else None)
     merged["has_data"] = has_data
     merged["kpi_pct"] = (
-        plan_fact_kpi_pct(plan_val, fact_val) if has_data else None
+        plan_fact_kpi_pct(plan_val, fact_val) if has_data and plan_val else None
     )
     merged["aggregation_strategy"] = (
         f"{plan_row.get('aggregation_strategy', '')};"
@@ -193,33 +192,17 @@ def build_td_m5_budget_payload(
             m,
             cache_stats=cache_stats,
         )
-        alive_count = sum(
-            1
-            for project in target_projects
-            if _project_is_alive_in_month(project, y, m)
-        )
-        has_data = alive_count > 0
-        if has_data:
-            row = {
-                "month": m,
-                "year": y,
-                "month_name": MONTH_NAMES[m],
-                "plan": plan_sum,
-                "fact": fact_sum,
-                "kpi_pct": plan_fact_kpi_pct(plan_sum, fact_sum),
-                "has_data": True,
-                "values_unit": "руб.",
-            }
-        else:
-            row = {
-                "month": m,
-                "year": y,
-                "month_name": MONTH_NAMES[m],
-                "plan": None,
-                "fact": None,
-                "kpi_pct": None,
-                "has_data": False,
-            }
+        # Пустой отбор — посчитанные нули, не «нет данных из источника».
+        row = {
+            "month": m,
+            "year": y,
+            "month_name": MONTH_NAMES[m],
+            "plan": plan_sum,
+            "fact": fact_sum,
+            "kpi_pct": plan_fact_kpi_pct(plan_sum, fact_sum) if plan_sum else None,
+            "has_data": True,
+            "values_unit": "руб.",
+        }
         monthly_rows.append(row)
         if (y, m) == (ref_y, ref_m):
             ref_row = row

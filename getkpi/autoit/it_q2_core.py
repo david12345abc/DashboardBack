@@ -87,7 +87,7 @@ def build_it_q2_payload(year: int | None = None, month: int | None = None) -> di
         year,
         month,
         plan_for_month=plan_for_month,
-        plan_source="getkpi.autoit.it_q2_tekuchest_plan",
+        plan_source="Document_ТД_ТекучестьПерсонала (SQL _Document185058, подразделение 00-000057)",
     )
 
 

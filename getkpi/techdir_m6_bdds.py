@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 MONTH_NAMES = tp.MONTH_NAMES
 TD_M6_SOURCE_TAG = "techdir_m6_ytd_v1"
-TD_M6_CACHE_VERSION = 1
+TD_M6_CACHE_VERSION = 2
 
 # --- OData / БДДС (ранее calc_bdds_project_costs.py) ---------------------------------
 
@@ -482,6 +482,7 @@ def _month_row_td_m6(
     fact_sum: float,
     alive_n: int,
     credited_n: int,
+    calculated: bool = True,
 ) -> dict[str, Any]:
     plan_val = round(float(plan_sum), 2)
     fact_val = round(float(fact_sum), 2)
@@ -494,7 +495,7 @@ def _month_row_td_m6(
         "plan": plan_val,
         "fact": fact_val,
         "kpi_pct": kpi_pct_val,
-        "has_data": has_alive,
+        "has_data": calculated,
         "values_unit": "руб.",
         "alive_projects_count": alive_n,
         "bdds_projects_with_month_row": credited_n if has_alive else 0,
@@ -507,7 +508,9 @@ def _zero_payload_for_period(ref_y: int, ref_m: int) -> dict[str, Any]:
     monthly_rows: list[dict[str, Any]] = []
     ref_row: dict[str, Any] | None = None
     for y, m in pairs:
-        row = _month_row_td_m6(y, m, plan_sum=0.0, fact_sum=0.0, alive_n=0, credited_n=0)
+        row = _month_row_td_m6(
+            y, m, plan_sum=0.0, fact_sum=0.0, alive_n=0, credited_n=0, calculated=False,
+        )
         monthly_rows.append(row)
         if (y, m) == (ref_y, ref_m):
             ref_row = row
