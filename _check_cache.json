@@ -1,0 +1,121 @@
+{
+  "cache_meta": {
+    "source": "comdir_kd_m2_ytd_sql_expected_v1",
+    "version": 15,
+    "date": "2026-09-08",
+    "months_in_file": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  "fresh_jan_vs_cache": {
+    "fresh_fact": 35298901.56,
+    "cache_fact": 35298901.56,
+    "fresh_plan": 34916156.0
+  },
+  "fresh_sep_vs_cache": {
+    "fresh_fact": 5975816.0,
+    "cache_fact": 5975816.0,
+    "fresh_plan": 465492673.0,
+    "fresh_expected": 64925251.89
+  },
+  "by_month": [
+    {
+      "month": 1,
+      "cache_fact": 35298901.56,
+      "dump_fact_6": 35298901.56,
+      "d_cache_vs_dump": 0.0,
+      "dump_raw_orders": 39462311.69,
+      "live_raw_orders": 39462311.69,
+      "live_minus_dump_raw": 0.0,
+      "live_rows": 320
+    },
+    {
+      "month": 2,
+      "cache_fact": 149417181.16,
+      "dump_fact_6": 147838713.16,
+      "d_cache_vs_dump": 1578468.0,
+      "dump_raw_orders": 191109171.73,
+      "live_raw_orders": 191109171.73,
+      "live_minus_dump_raw": 0.0,
+      "live_rows": 514
+    },
+    {
+      "month": 3,
+      "cache_fact": 153280556.57,
+      "dump_fact_6": 153280556.57,
+      "d_cache_vs_dump": 0.0,
+      "dump_raw_orders": 189466986.65,
+      "live_raw_orders": 189466986.65,
+      "live_minus_dump_raw": 0.0,
+      "live_rows": 536
+    },
+    {
+      "month": 4,
+      "cache_fact": 185563935.87,
+      "dump_fact_6": 185563935.87,
+      "d_cache_vs_dump": 0.0,
+      "dump_raw_orders": 241105185.58,
+      "live_raw_orders": 241105185.58,
+      "live_minus_dump_raw": 0.0,
+      "live_rows": 539
+    },
+    {
+      "month": 5,
+      "cache_fact": 172303531.01,
+      "dump_fact_6": 172303531.01,
+      "d_cache_vs_dump": 0.0,
+      "dump_raw_orders": 199934007.92,
+      "live_raw_orders": 199934007.92,
+      "live_minus_dump_raw": 0.0,
+      "live_rows": 498
+    },
+    {
+      "month": 6,
+      "cache_fact": 144911792.87,
+      "dump_fact_6": 144911792.87,
+      "d_cache_vs_dump": 0.0,
+      "dump_raw_orders": 166675203.32,
+      "live_raw_orders": 166675203.32,
+      "live_minus_dump_raw": 0.0,
+      "live_rows": 529
+    },
+    {
+      "month": 7,
+      "cache_fact": 95618748.23,
+      "dump_fact_6": 95618748.23,
+      "d_cache_vs_dump": 0.0,
+      "dump_raw_orders": 143031199.33,
+      "live_raw_orders": 143031199.33,
+      "live_minus_dump_raw": 0.0,
+      "live_rows": 646
+    },
+    {
+      "month": 8,
+      "cache_fact": 490558898.93,
+      "dump_fact_6": 490558898.93,
+      "d_cache_vs_dump": 0.0,
+      "dump_raw_orders": 544370635.21,
+      "live_raw_orders": 544370635.13,
+      "live_minus_dump_raw": -0.08,
+      "live_rows": 528
+    },
+    {
+      "month": 9,
+      "cache_fact": 5975816.0,
+      "dump_fact_6": 5975816.0,
+      "d_cache_vs_dump": 0.0,
+      "dump_raw_orders": 14242724.43,
+      "live_raw_orders": 18204017.23,
+      "live_minus_dump_raw": 3961292.8,
+      "live_rows": 85
+    }
+  ]
+}
