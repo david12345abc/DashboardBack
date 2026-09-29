@@ -10,7 +10,9 @@ IT-M3 — бюджет службы автоматизации / ОИТ в пр�
   Факт = Σ Сумма расшифровки платежа проведённых документов
   «Списание безналичных денежных средств» за календарный месяц,
   организация НПО / Турбулентность-Дон, статья ДДС в группе «СА»
-  (статьи *_СА_СБ_IT_*). Это тот же отчёт «Списания ДС по статьям ДДС».
+  (статьи *_СА_СБ_IT_*), кроме статей бюджета 1С (C1_M3_ARTICLES).
+  Строка 4.22 в отчёте «Списания ДС по статьям ДДС» — это 1С,
+  остальные строки группы «СА» — ИТ.
 
 План 2026 — константы из it_m3_plan.py (сумма 11 строк × месяц).
 
@@ -41,6 +43,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from getkpi.c1auto.c1_m3_core import C1_M3_ARTICLES
 from sql_connection import SqlConnection
 
 log = _logging.getLogger(__name__).info
@@ -101,17 +104,17 @@ IT_M3_DEPARTMENT_ALIASES: tuple[str, ...] = (
     "оит",
 )
 
-# Эталон: списания ДС по статьям группы «СА», НПО + Турбулентность-Дон.
+# Эталон: списания ДС по группе «СА» без статей 1С, НПО + Турбулентность-Дон.
 REFERENCE_FACT_2026: dict[int, float] = {
-    1: 1_022_934.00,
-    2: 425_432.24,
-    3: 489_694.11,
-    4: 913_895.66,
-    5: 487_467.89,
-    6: 350_436.41,
-    7: 801_298.50,
-    8: 462_692.90,
-    9: 563_415.25,
+    1: 986_706.48,
+    2: 336_184.72,
+    3: 400_446.59,
+    4: 771_628.14,
+    5: 398_220.37,
+    6: 216_028.89,
+    7: 712_050.98,
+    8: 373_445.38,
+    9: 506_895.25,
 }
 
 MONTH_NAMES = {
@@ -288,11 +291,12 @@ def compute_it_m3_fact_monthly(
     cfo_keys: list[bytes] | None = None,
     dept_keys: list[bytes] | None = None,
 ) -> dict[str, Any]:
-    """Сумма списаний ДС по статьям группы «СА» за календарный месяц (руб.)."""
+    """Сумма списаний ДС по группе «СА» без статей бюджета 1С (руб.)."""
     del cfo_keys, dept_keys
     sql = sql or SqlConnection()
     p_start, p_end = _sql_period_bounds(year, month)
     org_ph = ",".join("?" * len(ORG_BINS))
+    c1_ph = ",".join("?" * len(C1_M3_ARTICLES))
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
@@ -312,9 +316,10 @@ def compute_it_m3_fact_monthly(
               AND d._Marked = 0x00
               AND d.[{COL_WO_ORG}] IN ({org_ph})
               AND p._Description = ?
+              AND a._Description NOT IN ({c1_ph})
             GROUP BY a._Description
             """,
-            [p_start, p_end, *ORG_BINS, ARTICLE_GROUP],
+            [p_start, p_end, *ORG_BINS, ARTICLE_GROUP, *C1_M3_ARTICLES],
         )
         grouped = cur.fetchall()
 
@@ -347,9 +352,10 @@ def compute_it_m3_fact_monthly(
             "period_start": p_start.isoformat(sep="T"),
             "period_end": p_end.isoformat(sep="T"),
             "articles": articles,
+            "excluded_articles": list(C1_M3_ARTICLES),
             "rule": (
                 "fact = sum(Сумма) of posted bank write-offs "
-                "whose DDS article is in group СА"
+                "whose DDS article is in group СА, excluding 1C budget articles"
             ),
         },
     }
@@ -398,7 +404,7 @@ def format_report(rows: list[dict[str, Any]]) -> str:
     lines = [
         "IT-M3 — бюджет (SQL)",
         f"Источник: {WRITEOFF} / {WRITEOFF_VT}",
-        f"Статья ДДС в группе: {ARTICLE_GROUP}",
+        f"Статья ДДС в группе: {ARTICLE_GROUP}, без статей 1С",
         "Факт: Σ Сумма проведённых списаний безналичных ДС",
         "",
         f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Заявок':>8}",
@@ -490,7 +496,10 @@ def build_it_m3_payload(year: int | None = None, month: int | None = None) -> di
             "kpi_id": "IT-M3",
             "source": "autoit.it_m3.sql",
             "plan_source": "IT_M3_PLAN_BY_MONTH_2026",
-            "fact_source": f"{WRITEOFF}.{COL_WO_SUM}, article group {ARTICLE_GROUP}",
+            "fact_source": (
+                f"{WRITEOFF}.{COL_WO_SUM}, article group {ARTICLE_GROUP}, "
+                "excluding 1C budget articles"
+            ),
             "article_group": ARTICLE_GROUP,
         },
     }

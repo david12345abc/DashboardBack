@@ -27,7 +27,10 @@ DASHBOARD_PAYLOAD_MEM_TTL = 3600  # 1 час — повторные запрос
 # v2: после восстановления plan на SQL-плитках текучести — сброс stale aggregate.
 DASHBOARD_DISK_VERSION = 2
 
-_locks: dict[str, threading.Lock] = {}
+# RLock: warm/HTTP берут locked_call(get_*), а get_* внутри снова берёт тот же ключ.
+# У _thread.RLock нет locked(), поэтому глубина хранится отдельно.
+_locks: dict[str, threading.RLock] = {}
+_hold_depth: dict[str, int] = {}
 _meta = threading.Lock()
 _warming = False
 _bg_pending: set[str] = set()
@@ -36,15 +39,16 @@ _payload_mem_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _payload_mem_lock = threading.Lock()
 
 
-def _get_lock(key: str) -> threading.Lock:
+def _get_lock(key: str) -> threading.RLock:
     with _meta:
         if key not in _locks:
-            _locks[key] = threading.Lock()
+            _locks[key] = threading.RLock()
         return _locks[key]
 
 
 def is_computing(key: str) -> bool:
-    return _get_lock(key).locked()
+    with _meta:
+        return _hold_depth.get(key, 0) > 0
 
 
 def is_cache_fresh(path: Path | str) -> bool:
@@ -59,9 +63,22 @@ def locked_call(key: str, fn, *args, **kwargs):
 
     Если другой поток уже вычисляет тот же key — текущий поток
     ждёт завершения, после чего вызывает fn (который прочитает свежий кэш).
+    Повторный вызов из того же потока замок не берёт заново.
     """
-    with _get_lock(key):
+    lock = _get_lock(key)
+    lock.acquire()
+    with _meta:
+        _hold_depth[key] = _hold_depth.get(key, 0) + 1
+    try:
         return fn(*args, **kwargs)
+    finally:
+        with _meta:
+            depth = _hold_depth.get(key, 1) - 1
+            if depth <= 0:
+                _hold_depth.pop(key, None)
+            else:
+                _hold_depth[key] = depth
+        lock.release()
 
 
 def schedule_background_refresh(key: str, fn, *args, **kwargs) -> None:
@@ -121,7 +138,16 @@ def stale_while_revalidate(key: str, load_fresh, load_stale, compute):
 
     logger.info("cache_manager: [%s] no cache file, synchronous compute", key)
     t0 = time.monotonic()
-    result = locked_call(key, compute)
+
+    def _compute_once():
+        # Пока ждали замок, другой поток мог уже записать кэш.
+        fresh_now = load_fresh()
+        if fresh_now is not None:
+            logger.info("cache_manager: [%s] cache appeared while waiting, skip compute", key)
+            return fresh_now
+        return compute()
+
+    result = locked_call(key, _compute_once)
     logger.info(
         "cache_manager: [%s] synchronous compute done in %.1fs",
         key,
