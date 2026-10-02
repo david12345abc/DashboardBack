@@ -14,7 +14,7 @@ from . import rd_m3, ytd_json_cache
 
 CACHE_FILE_PREFIX = "devdir_rd_m3_budget"
 CACHE_SOURCE_TAG = "devdir_rd_m3_budget_ytd_sql_v2"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 
 
 def _build_rd_m3_budget_monthly_payload(year: int, month: int) -> dict[str, Any]:

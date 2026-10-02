@@ -41,3 +41,8 @@ dashboard/*.json
 getkpi/*_cache.json
 getkpi/**/*_cache.json
 getkpi/dds_articles_cache.json
+
+# cache backups and report dumps (python -m <module> ГГГГ-ММ ГГГГ-ММ)
+backups/*/
+*_20[0-9][0-9]-[0-9][0-9].json
+*_20[0-9][0-9]-[0-9][0-9].txt

@@ -1,30 +1,27 @@
 """
-RD-M1 — Обработка инициатив / ЗПР в срок.
+RD-M1 — Обработка инициатив / ЗПР.
 
 Источник: Document_ТД_ЗаявкаОПотребностиРынка → dbo._Document76753 (SQL-бэкап).
 
-План — все ЗПР с ДатаПриемаВРазработку в месяце, DeletionMark=false
-  (включая статусы «ВРаботе» / «ВРаботеУСмежногоПодразделения» / «Закрыта»).
+План — все ЗПР с датой документа в месяце, DeletionMark=false,
+  кроме созданных «Роботом регламентных заданий» (автогенерация из карт заказа UFG/TFG).
+  Аннулированные остаются в плане: в 1С их аннулируют уже после расчёта премии,
+  и в премии они учтены как «Новая».
 
-Факт — из плана, без срыва срока отработки:
-  СрокОтработкиФакт пустой ИЛИ дата(СрокОтработкиФакт) ≤ дата(СрокОтработки).
+Факт — из плана, кроме статусов «Новая» и «Аннулирована».
+  Сверено с премией НП00-000084 (сентябрь 52/50) и НП00-000071 (август 37/36).
 
 KPI % = факт / план × 100 (до 1 знака).
 
 SQL (erp_pm):
   Document_ТД_ЗаявкаОПотребностиРынка → dbo._Document76753
-    _Fld76769  — ДатаПриемаВРазработку
-    _Fld76770  — СрокОтработки
-    _Fld86492  — СрокОтработкиФакт (пусто = 2001-01-01)
+    _Date_Time     — дата документа
+    _Fld76768RRef  — Статус (Перечисление.ТД_СтатусыЗаявокОПотребностиРынка)
+    _Fld109518RRef — Автор
   Период в SQL = календарный год + 2000.
-
-Эталон (премия мотивацииТД, Соломичева С.В., Служба развития):
-  июнь 2026 — 61 / 43 / 70.49%
-  июль 2026 — 35 / 33 / 94.29% (бэкап за вчера может дать 33/32).
 
 Использование:
   python devdir/rd_m1.py
-  python devdir/rd_m1.py --check
   python devdir/rd_m1.py 2026
   python devdir/rd_m1.py 2026-04
   python devdir/rd_m1.py 2026-01 2026-07
@@ -50,18 +47,18 @@ print = functools.partial(print, flush=True)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 YEAR_OFFSET = 2000
-EMPTY_SQL_YEAR = 2001
 
 DOC = "_Document76753"
-COL_ACCEPTED = "_Fld76769"
-COL_DEADLINE_PLAN = "_Fld76770"
-COL_DEADLINE_FACT = "_Fld86492"
+COL_DATE = "_Date_Time"
+COL_STATUS = "_Fld76768RRef"
+COL_AUTHOR = "_Fld109518RRef"
 
-# Эталон: премия мотивацииТД (Соломичева С.В., Служба развития).
-REFERENCE_2026: dict[int, tuple[float, float]] = {
-    6: (61.0, 43.0),
-    7: (35.0, 33.0),
-}
+# «Робот регламентных заданий» (Ref_Key eeb3b4f9-8418-11e8-827b-ac1f6b05524d).
+ROBOT_AUTHOR = "0x827BAC1F6B05524D11E88418EEB3B4F9"
+
+# Значения перечисления статусов ЗПР (_IDRRef), сверены с OData по Ref_Key.
+STATUS_NEW = "0xB2F06A31776558BB41E7EED098E4F5EB"
+STATUS_ANNULLED = "0x89BBE1E521D9BDBD45194C74B2E45B53"
 
 MONTH_NAMES = {
     1: "Январь",
@@ -165,23 +162,14 @@ def compute_month(
             SELECT
                 COUNT(*) AS plan_cnt,
                 SUM(
-                    CASE
-                        WHEN d.[{COL_DEADLINE_FACT}] IS NULL
-                          OR YEAR(d.[{COL_DEADLINE_FACT}]) <= {EMPTY_SQL_YEAR}
-                        THEN 1
-                        WHEN d.[{COL_DEADLINE_PLAN}] IS NULL
-                          OR YEAR(d.[{COL_DEADLINE_PLAN}]) <= {EMPTY_SQL_YEAR}
-                        THEN 1
-                        WHEN CAST(d.[{COL_DEADLINE_FACT}] AS date)
-                             <= CAST(d.[{COL_DEADLINE_PLAN}] AS date)
-                        THEN 1
-                        ELSE 0
-                    END
+                    CASE WHEN d.[{COL_STATUS}] NOT IN ({STATUS_NEW}, {STATUS_ANNULLED})
+                         THEN 1 ELSE 0 END
                 ) AS fact_cnt
             FROM dbo.[{DOC}] d WITH (NOLOCK)
-            WHERE d.[{COL_ACCEPTED}] >= ?
-              AND d.[{COL_ACCEPTED}] < ?
+            WHERE d.[{COL_DATE}] >= ?
+              AND d.[{COL_DATE}] < ?
               AND d._Marked = 0x00
+              AND d.[{COL_AUTHOR}] <> {ROBOT_AUTHOR}
             """,
             [p_start, p_end],
         )
@@ -226,10 +214,10 @@ def build_monthly_report(
 def format_report(payload: dict[str, Any]) -> str:
     rows = payload["months"]
     lines = [
-        "RD-M1 — Обработка инициатив / ЗПР в срок (SQL)",
+        "RD-M1 — Обработка инициатив / ЗПР (SQL)",
         f"Источник: {DOC}",
-        f"План: {COL_ACCEPTED} (ДатаПриемаВРазработку) в месяце",
-        f"Факт: {COL_DEADLINE_FACT} ≤ {COL_DEADLINE_PLAN} (пустой факт = ок)",
+        f"План: {COL_DATE} (дата документа) в месяце, кроме автора-робота",
+        "Факт: все статусы кроме «Новая» и «Аннулирована»",
         "",
         f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'KPI %':>8}",
         f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 8}",
@@ -315,42 +303,17 @@ def build_rd_m1_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "source": "devdir.rd_m1.sql",
             "document": DOC,
-            "plan_source": f"{COL_ACCEPTED} (ДатаПриемаВРазработку), все статусы",
-            "fact_source": (
-                f"{COL_DEADLINE_FACT} ≤ {COL_DEADLINE_PLAN} (пустой = в срок)"
+            "plan_source": (
+                f"{COL_DATE} (дата документа) в месяце, автор ≠ Робот регламентных заданий"
             ),
-            "reference": "премия мотивацииТД: июнь 61/43, июль 35/33",
+            "fact_source": "статус ∉ {Новая, Аннулирована}",
         },
     }
 
 
-def run_check() -> int:
-    print("Сверка RD-M1 · 2026 (премия мотивацииТД / SQL-бэкап)")
-    all_ok = True
-    sql = SqlConnection()
-    for month, (ref_plan, ref_fact) in sorted(REFERENCE_2026.items()):
-        row = compute_month(2026, month, sql=sql)
-        plan, fact = float(row["plan"]), float(row["fact"])
-        ok = plan == ref_plan and fact == ref_fact
-        # Июль: бэкап/live может отличаться на 1–2 документа.
-        near = month == 7 and abs(plan - ref_plan) <= 2 and abs(fact - ref_fact) <= 1
-        mark = "OK" if ok else ("OK~" if near else "РАСХОЖДЕНИЕ")
-        if not ok and not near:
-            all_ok = False
-        print(
-            f"  {MONTH_NAMES[month]}: plan={int(plan)}/{int(ref_plan)} "
-            f"fact={int(fact)}/{int(ref_fact)} %={row['kpi_pct']} ({mark})"
-        )
-    return 0 if all_ok else 2
-
-
 def main() -> None:
     try:
-        argv = sys.argv[1:]
-        if "--check" in argv:
-            sys.exit(run_check())
-
-        start, end, slug = parse_period_args(argv)
+        start, end, slug = parse_period_args(sys.argv[1:])
         report = build_monthly_report(start, end)
         text = format_report(report)
         print(text)

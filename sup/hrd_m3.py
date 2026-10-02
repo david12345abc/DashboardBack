@@ -59,6 +59,8 @@ ART_CAT = "_Reference503"
 COL_WO_SUM = "_Fld37256"
 COL_WO_ART = "_Fld37254RRef"
 COL_WO_ORG = "_Fld37189RRef"
+# Организация строки расшифровки — по ней фильтрует отчёт 1С «Списание ДС».
+COL_WO_LINE_ORG = "_Fld37276RRef"
 COL_WO_REQ = "_Fld37264_RRRef"
 COL_DOC_CFO = "_Fld127709RRef"
 COL_DOC_DEPT = "_Fld22796RRef"
@@ -96,13 +98,13 @@ HRD_M3_DEPARTMENT_ALIASES: tuple[str, ...] = (
 REFERENCE_FACT_2026: dict[int, float] = {
     1: 898_839.33,
     2: 47_300.0,
-    3: 365_965.0,
-    4: 308_312.0,
+    3: 330_965.0,
+    4: 298_217.0,
     5: 40_474.0,
-    6: 2_450_636.56,
-    7: 146_143.61,
+    6: 2_423_628.0,
+    7: 144_715.0,
     8: 38_950.0,
-    9: 199_925.0,
+    9: 202_350.0,
 }
 
 MONTH_NAMES = {
@@ -311,7 +313,7 @@ def compute_hrd_m3_fact_monthly(
             WHERE d._Date_Time >= ? AND d._Date_Time < ?
               AND d._Posted = 0x01
               AND d._Marked = 0x00
-              AND d.[{COL_WO_ORG}] = ?
+              AND vt.[{COL_WO_LINE_ORG}] = ?
               AND a._Description LIKE N'%[_]СУП[_]%'
               AND z.[{COL_DOC_CFO}] IN ({cfo_ph})
               AND z.[{COL_DOC_DEPT}] IN ({dept_ph})
@@ -569,10 +571,10 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 HRD_M3_YTD_CACHE_PREFIX = "sup_hrd_m3_budget"
 HRD_M3_YTD_DISK_TAG = "sup_hrd_m3_budget_sql_payload_v1"
-HRD_M3_YTD_DISK_VERSION = 7
+HRD_M3_YTD_DISK_VERSION = 8
 HRD_M3_MONTHLY_CACHE_PREFIX = "sup_hrd_m3_budget_fact_sql_monthly"
-HRD_M3_MONTHLY_SOURCE_TAG = "sup_hrd_m3_budget_fact_sql_monthly_v4"
-HRD_M3_MONTHLY_CACHE_VERSION = 4
+HRD_M3_MONTHLY_SOURCE_TAG = "sup_hrd_m3_budget_fact_sql_monthly_v5"
+HRD_M3_MONTHLY_CACHE_VERSION = 5
 
 
 def monthly_cache_path(year: int, month: int) -> _Path:

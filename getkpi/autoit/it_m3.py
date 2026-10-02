@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "autoit_it_m3"
 CACHE_SOURCE_TAG = "autoit_it_m3_ytd_sql_v2"
-CACHE_VERSION = 6
+CACHE_VERSION = 8
 
 MONTHLY_CACHE_PREFIX = "autoit_it_m3_fact_monthly"
-MONTHLY_SOURCE_TAG = "autoit_it_m3_fact_monthly_sql_v2"
-MONTHLY_CACHE_VERSION = 4
+MONTHLY_SOURCE_TAG = "autoit_it_m3_fact_monthly_sql_v4"
+MONTHLY_CACHE_VERSION = 6
 
 
 def _plan_for_month(year: int, month: int) -> float | None:

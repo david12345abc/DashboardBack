@@ -1,21 +1,28 @@
 """
 QD-M3 — бюджет блока в пределах лимита (факт из MSSQL-дампа 1С).
 
-Логика факта (сверка со списком заявок в 1С):
-  Факт = Σ СуммаДокумента (_Fld22781)
-  по Document_ЗаявкаНаРасходованиеДенежныхСредств за календарный месяц,
-  где:
+Логика факта (как RD-M3 / TD-M3 — оплаченные списания):
+  Факт = Σ Сумма расшифровки платежа
+  по Document_СписаниеБезналичныхДенежныхСредств за календарный месяц
+  (по дате списания), где:
     • DeletionMark = false, Posted = true
-    • Дата документа (дата заявки) попадает в месяц
-    • Подразделение ∈ контур качества (7 п/п QD-M4)
-      или ТД_ЦФО ∈ метки качества
-      (плюс потомки п/п — маппинг к ближайшей карточке)
+    • Организация — НПО или Турбулентность-Дон
+    • Статья ДДС ∈ поддерево группы «Технический директор»
+      и в названии есть метка качества (_ТС_ОТК_ / _ТС_СМК_)
+    • Заявка в строке расшифровки: Подразделение ∈ контур качества
+      (7 п/п QD-M4 и потомки) или ТД_ЦФО ∈ метки качества
+  Эталон 1С: «Списание ДС по статьям ДДС», группа «Технический директор»,
+  организация НПО, строки подразделений контура качества.
 
 План 2026 — константы из DashboardBack/qualdir/qd_m3.py.
 
 SQL (erp_pm):
+  Document_СписаниеБезналичныхДенежныхСредств → dbo._Document980
+  РасшифровкаПлатежа                          → dbo._Document980_VT37251
+    _Fld37256      = Сумма
+    _Fld37254RRef  = Статья ДДС → _Reference503
+    _Fld37264_RRRef = Заявка → _Document726
   Document_ЗаявкаНаРасходованиеДенежныхСредств → dbo._Document726
-    _Fld22781      = СуммаДокумента
     _Fld22796RRef  = Подразделение → _Reference513
     _Fld127709RRef = ТД_ЦФО → _Reference127708
   Catalog_СтруктураПредприятия → dbo._Reference513
@@ -52,6 +59,22 @@ COL_SUM = "_Fld22781"
 COL_DEPT = "_Fld22796RRef"
 COL_CFO = "_Fld127709RRef"
 EMPTY = b"\x00" * 16
+WRITEOFF = "_Document980"
+WRITEOFF_VT = "_Document980_VT37251"
+ART_CAT = "_Reference503"
+COL_WO_SUM = "_Fld37256"
+COL_WO_ART = "_Fld37254RRef"
+COL_WO_ORG = "_Fld37189RRef"
+# Организация строки расшифровки — по ней фильтрует отчёт 1С «Списание ДС».
+COL_WO_LINE_ORG = "_Fld37276RRef"
+COL_WO_REQ = "_Fld37264_RRRef"
+ARTICLE_GROUP = "Технический директор"
+# Из группы берутся только статьи качества (по метке в названии).
+QUALITY_ARTICLE_MARKERS: tuple[str, ...] = ("_ТС_ОТК_", "_ТС_СМК_")
+ORG_GUIDS = (
+    "fbca2148-6cfd-11e7-812d-001e67112509",  # ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО
+    "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
+)
 
 # План 2026, руб./мес. (DashboardBack/qualdir/qd_m3.py).
 QD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
@@ -68,6 +91,21 @@ QD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
     11: 217_450,
     12: 221_300,
 }
+
+# Эталон: отчёт «Списание ДС» по группе «Технический директор», НПО,
+# подразделения контура качества (сверено 02.10.2026).
+REFERENCE_FACT_2026: dict[int, float] = {
+    1: 0.00,
+    2: 0.00,
+    3: 91_350.00,
+    4: 569_069.00,
+    5: 139_300.00,
+    6: 0.00,
+    7: 0.00,
+    8: 67_600.00,
+    9: 188_025.00,
+}
+ROUND_TOLERANCE = 0.01
 
 # ЦФО: эталон + фактическое имя в _Reference127708.
 QD_M3_CFO_LABELS: tuple[str, ...] = (
@@ -299,6 +337,44 @@ def resolve_quality_department_map(cur) -> tuple[dict[bytes, str], dict[str, str
     return id_to_group, labels
 
 
+def _guid_to_1c_binary(guid: str) -> bytes:
+    raw = bytes.fromhex(guid.replace("-", ""))
+    return raw[8:10] + raw[10:16] + raw[6:8] + raw[4:6] + raw[0:4]
+
+
+def _load_article_map(cur) -> dict[bytes, str]:
+    """Статьи качества (QUALITY_ARTICLE_MARKERS) из поддерева «Технический директор»."""
+    cur.execute(f"SELECT _IDRRef, _Description, _ParentIDRRef, _Marked FROM dbo.[{ART_CAT}] WITH (NOLOCK)")
+    by_parent: dict[bytes, list[tuple[bytes, str, bool]]] = {}
+    root: bytes | None = None
+    for idr, desc, parent, marked in cur.fetchall():
+        rid = bytes(idr)
+        name = (desc or "").strip()
+        is_marked = marked is not None and bytes(marked) != b"\x00"
+        by_parent.setdefault(bytes(parent) if parent is not None else EMPTY, []).append(
+            (rid, name, is_marked)
+        )
+        if normalize_name(name) == normalize_name(ARTICLE_GROUP) and not is_marked:
+            root = rid
+    if root is None:
+        raise RuntimeError(f"Группа статей не найдена в {ART_CAT}: {ARTICLE_GROUP}")
+    markers = tuple(m.upper() for m in QUALITY_ARTICLE_MARKERS)
+    out: dict[bytes, str] = {}
+    stack, seen = [root], set()
+    while stack:
+        cur_id = stack.pop()
+        if cur_id in seen:
+            continue
+        seen.add(cur_id)
+        for child_id, name, is_marked in by_parent.get(cur_id, []):
+            stack.append(child_id)
+            if not is_marked and any(m in name.upper() for m in markers):
+                out[child_id] = name
+    if not out:
+        raise RuntimeError(f"Не найдены статьи качества в группе «{ARTICLE_GROUP}»")
+    return out
+
+
 def _load_cfo_ids(cur) -> dict[bytes, str]:
     cur.execute(f"SELECT _IDRRef, _Description FROM dbo.[{CFO_CAT}] WITH (NOLOCK)")
     out: dict[bytes, str] = {}
@@ -317,9 +393,10 @@ def compute_qd_m3_fact_monthly(
     labels: dict[str, str] | None = None,
     cfo_ids: dict[bytes, str] | None = None,
 ) -> dict[str, Any]:
-    """Σ СуммаДокумента заявок ДС контура качества за месяц (по дате заявки)."""
+    """Σ оплаченных списаний ДС по заявкам контура качества за месяц (по дате списания)."""
     sql = sql or SqlConnection()
     p_start, p_end = sql_period_bounds(year, month)
+    org_bins = [_guid_to_1c_binary(g) for g in ORG_GUIDS]
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
@@ -335,23 +412,33 @@ def compute_qd_m3_fact_monthly(
             raise RuntimeError("Не найден контур качества (п/п / ЦФО)")
 
         # Подразделение ∈ контур ИЛИ ТД_ЦФО ∈ метки качества.
+        article_map = _load_article_map(cur)
+        article_ids = list(article_map)
         clauses: list[str] = []
-        params: list[Any] = [p_start, p_end]
+        params: list[Any] = [p_start, p_end, *org_bins, *article_ids]
         if dept_ids:
-            clauses.append(f"d.[{COL_DEPT}] IN ({','.join('?' * len(dept_ids))})")
+            clauses.append(f"r.[{COL_DEPT}] IN ({','.join('?' * len(dept_ids))})")
             params.extend(dept_ids)
         if cfo_id_list:
-            clauses.append(f"d.[{COL_CFO}] IN ({','.join('?' * len(cfo_id_list))})")
+            clauses.append(f"r.[{COL_CFO}] IN ({','.join('?' * len(cfo_id_list))})")
             params.extend(cfo_id_list)
         where_contour = "(" + " OR ".join(clauses) + ")"
 
         cur.execute(
             f"""
-            SELECT d.[{COL_DEPT}], d.[{COL_CFO}], d.[{COL_SUM}], d._Number
-            FROM dbo.[{DOC}] d WITH (NOLOCK)
-            WHERE d._Date_Time >= ? AND d._Date_Time < ?
-              AND d._Marked = 0x00
-              AND d._Posted = 0x01
+            SELECT r.[{COL_DEPT}], vt.[{COL_WO_SUM}], r._Number, a._Description
+            FROM dbo.[{WRITEOFF_VT}] vt WITH (NOLOCK)
+            INNER JOIN dbo.[{WRITEOFF}] wo WITH (NOLOCK)
+                ON wo._IDRRef = vt._Document980_IDRRef
+            INNER JOIN dbo.[{DOC}] r WITH (NOLOCK)
+                ON r._IDRRef = vt.[{COL_WO_REQ}]
+            LEFT JOIN dbo.[{ART_CAT}] a WITH (NOLOCK)
+                ON a._IDRRef = vt.[{COL_WO_ART}]
+            WHERE wo._Date_Time >= ? AND wo._Date_Time < ?
+              AND wo._Marked = 0x00
+              AND wo._Posted = 0x01
+              AND vt.[{COL_WO_LINE_ORG}] IN ({','.join('?' * len(org_bins))})
+              AND vt.[{COL_WO_ART}] IN ({','.join('?' * len(article_ids))})
               AND {where_contour}
             """,
             params,
@@ -361,11 +448,16 @@ def compute_qd_m3_fact_monthly(
     groups_out: dict[str, dict[str, float | int]] = {
         name: {"fact_total": 0.0, "docs": 0} for name in QD_GROUP_ORDER
     }
+    articles_out: dict[str, float] = {}
     by_cfo_only = 0.0
     total_fact = 0.0
-    for dept_id, cfo_id, amount, _number in rows:
+    request_numbers: set[str] = set()
+    for dept_id, amount, number, article in rows:
         amt = _as_float(amount)
         total_fact += amt
+        request_numbers.add((number or "").strip())
+        art_name = (article or "").strip() or "—"
+        articles_out[art_name] = round(articles_out.get(art_name, 0.0) + amt, 2)
         group = id_to_group.get(bytes(dept_id)) if dept_id else None
         if group:
             bucket = groups_out[group]
@@ -381,8 +473,10 @@ def compute_qd_m3_fact_monthly(
         "month_name": MONTH_NAMES[month],
         "total_fact": total_fact,
         "groups": groups_out,
+        "articles": dict(sorted(articles_out.items(), key=lambda kv: -kv[1])),
         "counts": {
-            "docs_included": len(rows),
+            "docs_included": len(request_numbers),
+            "writeoff_lines": len(rows),
             "department_nodes": len(id_to_group),
             "cfo_nodes": len(cfo_ids),
             "by_cfo_only_amount": by_cfo_only,
@@ -390,15 +484,18 @@ def compute_qd_m3_fact_monthly(
         "debug": {
             "status": "ok",
             "kpi_id": "QD-M3-FACT",
-            "document": DOC,
-            "sum_field": COL_SUM,
+            "document": WRITEOFF,
+            "sum_field": COL_WO_SUM,
             "period_start": p_start,
             "period_end": p_end,
             "structure_labels": labels,
             "cfo_labels": list(QD_M3_CFO_LABELS),
+            "articles_in_scope": sorted(article_map.values(), key=normalize_name),
             "rule": (
-                "fact = sum(СуммаДокумента) by request Date for Posted docs "
-                "in quality departments or quality ТД_ЦФО"
+                "fact = sum(Сумма) of posted bank write-offs by write-off Date, "
+                f"DDS article in subtree of {ARTICLE_GROUP} "
+                f"with markers {', '.join(QUALITY_ARTICLE_MARKERS)}, "
+                "request in quality departments or quality ТД_ЦФО"
             ),
         },
     }
@@ -438,6 +535,7 @@ def build_monthly_report(
                 "has_data": plan is not None,
                 "values_unit": "руб.",
                 "groups": fact_payload.get("groups") or {},
+                "articles": fact_payload.get("articles") or {},
                 "counts": fact_payload.get("counts") or {},
                 "structure_labels": labels,
             }
@@ -448,7 +546,8 @@ def build_monthly_report(
 def format_report(rows: list[dict[str, Any]]) -> str:
     lines = [
         "QD-M3 — бюджет блока в пределах лимита (SQL)",
-        f"Источник: {DOC}.{COL_SUM} (СуммаДокумента), дата заявки, Posted, контур качества",
+        f"Источник: {WRITEOFF} / {WRITEOFF_VT}.{COL_WO_SUM}, дата списания, Posted, "
+        "заявки контура качества",
         "",
         f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Заявок':>8}",
         f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8} {'-' * 8}",
@@ -490,7 +589,12 @@ def format_report(rows: list[dict[str, Any]]) -> str:
                 amt = float(g.get("fact_total") or 0)
                 n = int(g.get("docs") or 0)
                 if amt or n:
-                    lines.append(f"  {amt:>14,.2f}  {name} (заявок={n})")
+                    lines.append(f"  {amt:>14,.2f}  {name} (строк={n})")
+            articles = last.get("articles") or {}
+            if articles:
+                lines.extend(["", f"По статьям ДДС ({last['year']:04d}-{last['month']:02d}):"])
+                for name, amt in articles.items():
+                    lines.append(f"  {amt:>14,.2f}  {name}")
     lines.append("")
     return "\n".join(lines)
 
@@ -543,11 +647,13 @@ def build_qd_m3_payload(year: int | None = None, month: int | None = None) -> di
             "kpi_id": "QD-M3",
             "source": "qualdir.qd_m3.sql",
             "plan_source": "QD_M3_PLAN_BY_MONTH_2026",
-            "fact_source": f"{DOC}.{COL_SUM} by request Date",
+            "fact_source": f"{WRITEOFF_VT}.{COL_WO_SUM} posted write-offs by write-off Date",
             "etalon_fixes": [
-                "fact = Σ СуммаДокумента по дате заявки (не регистр ДДС)",
-                "контур: 7 п/п качества или ТД_ЦФО качества",
-                "Posted=true, DeletionMark=false",
+                "fact = Σ Сумма списаний ДС по дате списания (как RD-M3 / TD-M3)",
+                f"статьи ДДС: группа «{ARTICLE_GROUP}», только "
+                f"{' / '.join(QUALITY_ARTICLE_MARKERS)}",
+                "контур: заявка списания из 7 п/п качества или ТД_ЦФО качества",
+                "Posted=true, DeletionMark=false, организации НПО / Турбулентность-Дон",
             ],
             "monthly_counts": [
                 {"year": r["year"], "month": r["month"], "counts": r.get("counts")}
@@ -557,13 +663,34 @@ def build_qd_m3_payload(year: int | None = None, month: int | None = None) -> di
     }
 
 
+def run_check() -> int:
+    print("Сверка QD-M3 факт · 2026 (списания по заявкам контура качества)")
+    rows = build_monthly_report((2026, 1), (2026, max(REFERENCE_FACT_2026)))
+    all_ok = True
+    for row in rows:
+        ref = REFERENCE_FACT_2026.get(row["month"])
+        if ref is None:
+            continue
+        fact = float(row["fact"] or 0)
+        ok = abs(fact - ref) <= ROUND_TOLERANCE
+        all_ok = all_ok and ok
+        print(
+            f"  {row['month_name']}: {fact:,.2f} / {ref:,.2f} "
+            f"(d {fact - ref:,.2f}) ({'OK' if ok else 'РАСХОЖДЕНИЕ'})"
+        )
+    return 0 if all_ok else 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="QD-M3: бюджет блока (факт SQL).")
     parser.add_argument("period", nargs="*", help="ГГГГ | ГГГГ-ММ | ГГГГ-ММ ГГГГ-ММ")
     parser.add_argument("--json", action="store_true", help="JSON payload")
+    parser.add_argument("--check", action="store_true", help="Сверка с REFERENCE_FACT_2026")
     args = parser.parse_args()
 
     try:
+        if args.check:
+            return run_check()
         if args.json and not args.period:
             payload = build_qd_m3_payload()
             print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -600,8 +727,8 @@ from pathlib import Path as _Path
 from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 QD_M3_YTD_CACHE_PREFIX = "qualdir_qd_m3_ytd"
-QD_M3_YTD_DISK_TAG = "qualdir_qd_m3_ytd_payload_sql_v3"
-QD_M3_YTD_DISK_VERSION = 12
+QD_M3_YTD_DISK_TAG = "qualdir_qd_m3_ytd_payload_sql_v6"
+QD_M3_YTD_DISK_VERSION = 16
 
 
 def qd_m3_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:
