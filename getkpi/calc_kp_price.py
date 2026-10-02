@@ -3,9 +3,9 @@ calc_kp_price.py — Плитка «Цена фактическая / Цена �
 
 Источник: Document_КоммерческоеПредложениеКлиенту
 
-Цена фактическая = реквизит СуммаДокумента (если 0, то СуммаДокументаТКП)
-Цена расчетная    = СуммаДокументаТКП + СуммаСкидкиТКП × (−1)
-                    («Всего по ТКП» + итоговая скидка/наценка, скидка в 1С отрицательная)
+Цена фактическая = СуммаДокумента
+Цена расчетная   = СуммаДокумента + |СуммаСкидкиТКП|
+Отбор: статус Действует или Исполнено
 
 Фильтр: дата в заданном периоде, DeletionMark=false, статус:
   • «Действует» или «Исполнено»;
@@ -58,7 +58,7 @@ MONTH_RU = {
 }
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-KP_PRICE_FORMULA_VERSION = 3
+KP_PRICE_FORMULA_VERSION = 4
 
 
 def _last_full_month(today: date) -> tuple[int, int]:
@@ -125,8 +125,7 @@ def _fetch_docs_for_month(session: requests.Session,
         f"Date ge datetime'{p_start}'"
         f" and Date lt datetime'{p_end}'"
         f" and DeletionMark eq false"
-        f" and (Статус eq 'Действует' or Статус eq 'Исполнено'"
-        f" or (Статус eq 'Согласовано' and СогласованоСКлиентом eq true))"
+        f" and (Статус eq 'Действует' or Статус eq 'Исполнено')"
     )
     sel = (
         "Ref_Key,Date,СуммаДокумента,СуммаДокументаТКП,"
@@ -193,10 +192,10 @@ def _resolve_manager_depts(session: requests.Session,
 
 
 def _calc_price_from_doc(doc: dict) -> float:
-    """Расчётная цена: «Всего по ТКП» + итоговая скидка/наценка × (−1)."""
-    sum_tkp = float(doc.get("СуммаДокументаТКП") or 0)
+    """Расчётная цена: СуммаДокумента + |СуммаСкидкиТКП|."""
+    amount = float(doc.get("СуммаДокумента") or 0)
     discount = float(doc.get("СуммаСкидкиТКП") or 0)
-    return round(sum_tkp + (-1) * discount, 2)
+    return round(amount + abs(discount), 2)
 
 
 def _aggregate_docs(docs: list[dict],
@@ -211,9 +210,7 @@ def _aggregate_docs(docs: list[dict],
         mgr_key = doc.get("Менеджер_Key", EMPTY)
         dept_key = mgr_to_dept.get(mgr_key, EMPTY)
 
-        sum_doc = doc.get("СуммаДокумента", 0) or 0
-        sum_tkp = doc.get("СуммаДокументаТКП", 0) or 0
-        fact_price = sum_doc if sum_doc != 0 else sum_tkp
+        fact_price = float(doc.get("СуммаДокумента") or 0)
         calc_price = _calc_price_from_doc(doc)
 
         total_fact += fact_price

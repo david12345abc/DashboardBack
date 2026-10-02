@@ -9,12 +9,13 @@
 Отбор КП:
   • Date в месяце
   • DeletionMark = false
-  • статус Действует / Исполнено,
-    либо Согласовано и СогласованоСКлиентом = true
+  • статус Действует или Исполнено
+    (как в запросе 1С; поле SQL _Fld25044 для части документов расходится
+     со статусом, который видит запрос, поэтому отбор идёт через OData)
 
 Формулы:
-  Цена фактическая = СуммаДокумента; если 0 → СуммаДокументаТКП
-  Цена расчётная   = СуммаДокументаТКП + СуммаСкидкиТКП × (−1)
+  Цена фактическая = СуммаДокумента
+  Цена расчётная   = СуммаДокумента + |СуммаСкидкиТКП|
 
 Запуск:
   python calc_plan_fact_cena.py 2026-07
@@ -25,8 +26,11 @@ from __future__ import annotations
 import argparse
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import pyodbc
+import requests
+from requests.auth import HTTPBasicAuth
 
 YEAR_OFFSET = 2000
 EMPTY16 = bytes(16)
@@ -110,33 +114,122 @@ def parse_month(s: str) -> tuple[int, int]:
     return int(y), int(m)
 
 
+ODATA_BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
+ODATA_ENTITY = "Document_КоммерческоеПредложениеКлиенту"
+ODATA_AUTH = HTTPBasicAuth("odata.user", "npo852456")
+ACTIVE_STATUSES = ("Действует", "Исполнено")
+
+
 def fact_expr() -> str:
-    return f"""
-    CASE WHEN ISNULL(kp.[{KP_SUM}], 0) = 0
-         THEN ISNULL(kp.[{KP_SUM_TKP}], 0)
-         ELSE kp.[{KP_SUM}]
-    END
-    """
+    return f"ISNULL(kp.[{KP_SUM}], 0)"
 
 
 def calc_expr() -> str:
-    return f"ISNULL(kp.[{KP_SUM_TKP}], 0) + ISNULL(kp.[{KP_DISC_TKP}], 0) * (-1)"
+    return f"ISNULL(kp.[{KP_SUM}], 0) + ABS(ISNULL(kp.[{KP_DISC_TKP}], 0))"
 
 
 def status_filter_sql() -> str:
-    return f"""
-      AND (
-            kp.[{KP_STATUS}] IN (?, ?)
-            OR (kp.[{KP_STATUS}] = ? AND ISNULL(kp.[{KP_AGREED_CLIENT}], 0x00) = 0x01)
-          )
-    """
+    return f"AND kp.[{KP_STATUS}] IN (?, ?)"
 
 
 def status_params() -> list[bytes]:
-    return [ST_ACTIVE, ST_DONE, ST_AGREED]
+    return [ST_ACTIVE, ST_DONE]
+
+
+def _odata_guid_to_sql(guid: str) -> bytes:
+    g = guid.replace("-", "")
+    return bytes.fromhex(g[16:20] + g[20:32] + g[12:16] + g[8:12] + g[0:8])
+
+
+def _sql_to_odata_guid(raw: bytes) -> str:
+    h = raw.hex()
+    return f"{h[24:32]}-{h[20:24]}-{h[16:20]}-{h[0:4]}-{h[4:16]}"
+
+
+def _calendar_dt(dt: datetime) -> datetime:
+    return dt.replace(year=dt.year - YEAR_OFFSET)
+
+
+def _fetch_kp(start: datetime, end: datetime) -> list[dict]:
+    """КП за календарный период со статусом Действует или Исполнено."""
+    flt = (
+        f"Date ge datetime'{start:%Y-%m-%dT%H:%M:%S}'"
+        f" and Date lt datetime'{end:%Y-%m-%dT%H:%M:%S}'"
+        f" and DeletionMark eq false"
+        f" and (Статус eq 'Действует' or Статус eq 'Исполнено')"
+    )
+    sel = "Ref_Key,СуммаДокумента,СуммаСкидкиТКП,Менеджер_Key"
+    session = requests.Session()
+    session.auth = ODATA_AUTH
+    docs: list[dict] = []
+    skip = 0
+    while True:
+        url = (
+            f"{ODATA_BASE}/{quote(ODATA_ENTITY)}?$format=json"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select={quote(sel, safe=',')}"
+            f"&$top=300&$skip={skip}&$orderby=Ref_Key"
+        )
+        response = session.get(url, timeout=120)
+        response.raise_for_status()
+        batch = response.json().get("value") or []
+        docs.extend(batch)
+        if len(batch) < 300:
+            return docs
+        skip += len(batch)
+
+
+def _manager_depts(cur, manager_guids: set[str]) -> dict[str, bytes]:
+    ids: list[bytes] = []
+    for guid in manager_guids:
+        if not guid or guid.startswith("00000000"):
+            continue
+        try:
+            ids.append(_odata_guid_to_sql(guid))
+        except ValueError:
+            continue
+    out: dict[str, bytes] = {}
+    for offset in range(0, len(ids), 80):
+        chunk = ids[offset:offset + 80]
+        marks = ",".join("?" for _ in chunk)
+        cur.execute(
+            f"""
+            SELECT _IDRRef, [{USER_DEPT}]
+            FROM _Reference366 WITH (NOLOCK)
+            WHERE _IDRRef IN ({marks})
+            """,
+            *chunk,
+        )
+        for user_id, dept in cur.fetchall():
+            if not dept or bytes(dept) == EMPTY16:
+                continue
+            out[_sql_to_odata_guid(bytes(user_id))] = bytes(dept)
+    return out
+
+
+def _accumulate(docs: list[dict], dept_of: dict[str, bytes]) -> dict[bytes, tuple[float, float, int]]:
+    acc: dict[bytes, list[float]] = {}
+    for doc in docs:
+        dept = dept_of.get(doc.get("Менеджер_Key") or "")
+        if not dept:
+            continue
+        fact = float(doc.get("СуммаДокумента") or 0)
+        calc = fact + abs(float(doc.get("СуммаСкидкиТКП") or 0))
+        bucket = acc.setdefault(dept, [0.0, 0.0, 0.0])
+        bucket[0] += fact
+        bucket[1] += calc
+        bucket[2] += 1
+    return {dept: (fact, calc, int(count)) for dept, (fact, calc, count) in acc.items()}
 
 
 def calc_by_dept(cur, p0: datetime, p_next: datetime) -> dict[bytes, tuple[float, float, int]]:
+    start, end = _calendar_dt(p0), _calendar_dt(p_next)
+    docs = _fetch_kp(start, end)
+    depts = _manager_depts(cur, {d.get("Менеджер_Key") or "" for d in docs})
+    return _accumulate(docs, depts)
+
+
+def _calc_by_dept_sql(cur, p0: datetime, p_next: datetime) -> dict[bytes, tuple[float, float, int]]:
     cur.execute(
         f"""
         SELECT u.[{USER_DEPT}] AS Dept,
@@ -169,26 +262,7 @@ def calc_by_dept(cur, p0: datetime, p_next: datetime) -> dict[bytes, tuple[float
 def calc_for_dept(
     cur, p0: datetime, p_next: datetime, dept: bytes
 ) -> tuple[float, float, int]:
-    cur.execute(
-        f"""
-        SELECT SUM({fact_expr()}) AS FactPrice,
-               SUM({calc_expr()}) AS CalcPrice,
-               COUNT(*) AS N
-        FROM _Document770 kp WITH (NOLOCK)
-        INNER JOIN _Reference366 u WITH (NOLOCK)
-          ON u._IDRRef = kp.[{KP_MANAGER}]
-        WHERE kp._Date_Time >= ? AND kp._Date_Time < ?
-          AND kp._Marked = 0x00
-          {status_filter_sql()}
-          AND u.[{USER_DEPT}] = ?
-        """,
-        p0,
-        p_next,
-        *status_params(),
-        dept,
-    )
-    row = cur.fetchone()
-    return float(row[0] or 0), float(row[1] or 0), int(row[2] or 0)
+    return calc_by_dept(cur, p0, p_next).get(dept, (0.0, 0.0, 0))
 
 
 def dept_name(cur, dept_id: bytes) -> str:
@@ -221,10 +295,9 @@ def main(argv: list[str] | None = None) -> int:
     lines: list[str] = [
         f"Цена фактическая / расчётная по КП за {y}-{m:02d}",
         "Источник: КоммерческоеПредложениеКлиенту; подразделение = Пользователи.Подразделение (менеджер КП)",
-        "Отбор: Date в месяце, DeletionMark=false,",
-        "       статус Действует/Исполнено либо Согласовано+СогласованоСКлиентом",
-        "Цена факт = СуммаДокумента (если 0 → СуммаДокументаТКП)",
-        "Цена расч = СуммаДокументаТКП + СуммаСкидкиТКП×(−1)",
+        "Отбор: Date в месяце, DeletionMark=false, статус Действует или Исполнено",
+        "Цена факт = СуммаДокумента",
+        "Цена расч = СуммаДокумента + |СуммаСкидкиТКП|",
         "",
     ]
 

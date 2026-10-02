@@ -3569,7 +3569,7 @@ def _build_universal_payload(
         elif _kid_tile == 'METD-Q2':
             tile['unit'] = '%'
         elif kpi.get('kpi_id') == 'KD-M11':
-            tile['unit'] = 'чел.'
+            tile['unit'] = '%'
         elif kpi.get('kpi_id') in {'OD-Q2', 'PD-Q2.1', 'PD-Q2.2'}:
             tile['unit'] = 'чел.'
         elif _kid_tile == 'TD-Q2':

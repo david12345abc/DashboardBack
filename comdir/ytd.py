@@ -23,9 +23,9 @@ from comdir import (  # noqa: E402
     calc_plan_fact_fot as fot_mod,
     calc_plan_fact_otgruzki as otg_mod,
     calc_plan_fact_rashody as rash_mod,
-    calc_plan_fact_tkp_sla as sla_mod,
     calc_plan_fact_vp as vp_mod,
 )
+from comdir.tkp_sla_report import compute_tkp_sla_months  # noqa: E402
 from comdir.common import (  # noqa: E402
     MONTH_RU,
     aggregate_by_odata_bytes,
@@ -36,7 +36,7 @@ from comdir.common import (  # noqa: E402
     slice_months_by_dept,
 )
 from comdir.sql_tile_cache import get_ytd_via_cache, normalize_period  # noqa: E402
-from getkpi.calc_fot import get_fot_plan  # noqa: E402
+from getkpi.calc_fot import KOMDIR_OWN_PLAN, get_fot_plan  # noqa: E402
 from getkpi.calc_rashody import get_rashody_plan  # noqa: E402
 from getkpi.valovaya_pribyl import vp_plan_for_month  # noqa: E402
 
@@ -686,20 +686,16 @@ def compute_rashody_month(year: int, month: int) -> dict[str, Any]:
     with connect_ctx() as cn:
         cur = cn.cursor()
         cur.execute("SET NOCOUNT ON")
-        non_vrt = rash_mod.calc_44_by_dept(cur, p0, p_next, rash_mod.ARTS_44_NON_VRT)
-        vrt = rash_mod.calc_44_by_dept(cur, p0, p_next, rash_mod.ARTS_44_VRT)
-        sds = rash_mod.calc_sds_by_dept(cur, p0, p_next)
-        dt51 = rash_mod.calc_dt51_by_dept(cur, p0, p_next)
-        bal71 = rash_mod.calc_71_debit_balance(cur, p_next)
-    by_name: dict[str, float] = {}
-    names = set(non_vrt) | set(vrt) | set(sds) | set(dt51) | set(bal71)
-    for name in names:
-        a = non_vrt.get(name, 0.0)
-        b = vrt.get(name, 0.0)
-        c = sds.get(name, 0.0)
-        d = dt51.get(name, 0.0)
-        e = bal71.get(name, 0.0)
-        by_name[name] = a + max(b, c) + d + e
+        # Копия erp_pm отстаёт от живой 1С. Закрытый месяц берём из копии
+        # (август с ней совпадает), открытый — из OData.
+        if rash_mod.dump_covers_through(cur, p_next):
+            by_name = rash_mod.calc_ks_writeoff_by_dept(cur, p0, p_next)
+        else:
+            try:
+                by_name = rash_mod.calc_ks_writeoff_live(cur, p0, p_next)
+            except Exception:
+                logger.exception("KD-M7: живая 1С недоступна, факт из локальной копии")
+                by_name = rash_mod.calc_ks_writeoff_by_dept(cur, p0, p_next)
     fact_map = aggregate_by_odata_name(by_name)
     plan_map = {
         g: float(get_rashody_plan(month, g)) for g in fact_map
@@ -731,7 +727,7 @@ def get_rashody_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m7_ytd",
-        source_tag="comdir_kd_m7_ytd_sql_v1",
+        source_tag="comdir_kd_m7_ytd_ks_writeoff_v1",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m7",
         compute_fn=build_rashody_payload,
@@ -760,6 +756,14 @@ def compute_fot_month(year: int, month: int) -> dict[str, Any]:
         by_name = fot_mod.calc_fot_by_dept(cur, p0, p_next)
     fact_map = aggregate_by_odata_name(by_name)
     plan_map = {g: float(get_fot_plan(month, g)) for g in fact_map}
+    # План самого подразделения «КОММЕРЧЕСКИЙ ДИРЕКТОР» уже входит в get_fot_plan(None)
+    # отдельной константой и не лежит в FOT_PLAN, иначе итог задвоится.
+    idx = month - 1
+    if 0 <= idx < len(KOMDIR_OWN_PLAN):
+        own_plan = float(KOMDIR_OWN_PLAN[idx])
+        for guid in fact_map:
+            if str(guid).lower() == "4668a582-6eb1-11e2-afce-001e67112509":
+                plan_map[guid] = own_plan
     plan_total = float(get_fot_plan(month, None))
     guids = set(fact_map) | set(plan_map)
     by_dept = _merge_by_dept_maps(guids, fact_map=fact_map, plan_map=plan_map)
@@ -844,7 +848,7 @@ def get_cena_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m9_ytd",
-        source_tag="comdir_kd_m9_ytd_sql_v1",
+        source_tag="comdir_kd_m9_ytd_odata_status_v2",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m9",
         compute_fn=build_cena_payload,
@@ -871,37 +875,12 @@ get_kp_price_ytd = get_cena_ytd
 # ── KD-M10 ТКП SLA ────────────────────────────────────────────
 
 def compute_tkp_sla_month(year: int, month: int) -> dict[str, Any]:
-    p0, p_next = period_bounds(year, month)
-    with connect_ctx() as cn:
-        cur = cn.cursor()
-        cur.execute("SET NOCOUNT ON")
-        by_name = sla_mod.calc_by_dept(cur, p0, p_next)
-    plan_map: dict[str, float] = {}
-    fact_map: dict[str, float] = {}
-    for name, (plan_v, fact_v) in by_name.items():
-        from comdir.common import name_to_odata
-        g = name_to_odata(name)
-        if not g:
-            continue
-        plan_map[g] = plan_map.get(g, 0) + float(plan_v or 0)
-        fact_map[g] = fact_map.get(g, 0) + float(fact_v or 0)
-    guids = set(plan_map) | set(fact_map)
-    by_dept = _merge_by_dept_maps(guids, fact_map=fact_map, plan_map=plan_map)
-    plan_total = sum(plan_map.values())
-    fact_total = sum(fact_map.values())
-    pct = round(fact_total / plan_total * 100, 1) if plan_total else None
-    return {
-        "year": year,
-        "month": month,
-        "fact": fact_total,
-        "plan": plan_total,
-        "pct": pct,
-        "by_dept": by_dept,
-    }
+    rows = compute_tkp_sla_months(year, month)
+    return rows[-1]
 
 
 def build_tkp_sla_payload(year: int, month: int) -> dict[str, Any]:
-    months = [compute_tkp_sla_month(year, m) for m in range(1, month + 1)]
+    months = compute_tkp_sla_months(year, month)
     return _build_ytd_payload(year, month, months, kpi_id="KD-M10")
 
 
@@ -914,7 +893,7 @@ def get_tkp_sla_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m10_ytd",
-        source_tag="comdir_kd_m10_ytd_sql_v1",
+        source_tag="comdir_kd_m10_ytd_report_version_sla_v1",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m10",
         compute_fn=build_tkp_sla_payload,

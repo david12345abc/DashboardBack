@@ -1,15 +1,12 @@
 """
-calc_tekuchest.py — Текучесть персонала: План / Факт по подразделениям.
+Текучесть персонала коммерческой службы.
 
-Источник: Document_ТД_ТекучестьПерсонала.
-  - ВидДокумента = '0' → план (колонка «План» в ТЧ)
-  - ВидДокумента = '1' → факт (колонка «Факт» в ТЧ)
-  - Табличная часть «Текучесть» (inline): Месяц, План, Факт
+Факт, % = уволенные за месяц / штатные единицы на последний день месяца × 100.
 
-API:
-  from getkpi.calc_tekuchest import get_tekuchest_monthly
-  data = get_tekuchest_monthly(2026, 3)                # агрегат всех отделов
-  data = get_tekuchest_monthly(2026, 3, dept_guid='…') # только один отдел
+Штат — прямые подразделения «Коммерческой службы» в справочнике
+подразделений организаций. Увольнение — событие «Увольнение» в кадровой
+истории. Сотрудник с признаком «не учитывать при текучести» не входит.
+Один сотрудник в одном подразделении считается один раз.
 """
 from __future__ import annotations
 
@@ -17,32 +14,56 @@ import json
 import logging
 import sys
 import time
-from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-import requests
-from requests.auth import HTTPBasicAuth
-from urllib.parse import quote
+from hr_turnover_sql import (
+    DeptSpec,
+    SqlConnection,
+    bin_to_guid,
+    build_report,
+    guid_to_1c,
+    turnover_percent,
+)
+from hr_turnover_sql import ORG_TABLE
 
 from . import cache_manager
-from .odata_http import request_with_retry
 
 logger = logging.getLogger(__name__)
 
-BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
-AUTH = HTTPBasicAuth("odata.user", "npo852456")
-EMPTY = "00000000-0000-0000-0000-000000000000"
+# _Reference358 «Коммерческая служба» — родитель отделов, по которым
+# проходят увольнения коммерческого блока.
+COMMERCIAL_ORG_ROOT = "bcbf8217-32aa-11ea-82ed-ac1f6b05524d"
 
-DEPARTMENTS = {
-    "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел ВЭД",
-    "34497ef7-810f-11e4-80d6-001e67112509": "Отдел продаж эталонного оборуд. и услуг",
-    "9edaa7d4-37a5-11ee-93d3-6cb31113810e": "Отдел продаж БМИ",
-    "639ec87b-67b6-11eb-8523-ac1f6b05524d": "Отдел по работе с ключевыми клиентами",
-    "7587c178-92f6-11f0-96f9-6cb31113810e": "Отдел дилерских продаж",
-    "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО Газпром",
+# Подписи и GUID как в structure.json, чтобы разворот открывал отдел.
+STRUCTURE_BY_LABEL = {
+    "ОДП": "7587c178-92f6-11f0-96f9-6cb31113810e",
+    "Отдел ВЭД": "49480c10-e401-11e8-8283-ac1f6b05524d",
+    "Отдел ОПЭОиУ": "34497ef7-810f-11e4-80d6-001e67112509",
+    "Отдел продаж БМИ": "9edaa7d4-37a5-11ee-93d3-6cb31113810e",
+    "Отдел по работе с ключевыми клиентами": "639ec87b-67b6-11eb-8523-ac1f6b05524d",
+    "Отдел по работе с ПАО «Газпром»": "bd7b5184-9f9c-11e4-80da-001e67112509",
+    "Тендерный офис": "1c9f9419-d91b-11e0-8129-cd2988c3db2d",
+    "Сектор рекламы и PR": "95dfd1c6-37a4-11ee-93d3-6cb31113810e",
 }
-DEPT_SET = frozenset(DEPARTMENTS.keys())
+NAVIGABLE_LABELS = frozenset({
+    "ОДП",
+    "Отдел ВЭД",
+    "Отдел ОПЭОиУ",
+    "Отдел продаж БМИ",
+    "Отдел по работе с ключевыми клиентами",
+    "Отдел по работе с ПАО «Газпром»",
+})
+DISPLAY_ORDER = [
+    "ОДП",
+    "Отдел ВЭД",
+    "Отдел ОПЭОиУ",
+    "Отдел по работе с ключевыми клиентами",
+    "Отдел по работе с ПАО «Газпром»",
+    "Отдел продаж БМИ",
+    "Тендерный офис",
+    "Сектор рекламы и PR",
+]
 
 MONTH_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -50,10 +71,29 @@ MONTH_RU = {
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
 
-ENTITY = "Document_ТД_ТекучестьПерсонала"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-CACHE_SOURCE_TAG = "tekuchest_monthly_v2"
-CACHE_VERSION = 2
+CACHE_SOURCE_TAG = "tekuchest_hr_sql_v1"
+CACHE_VERSION = 3
+
+KD_M11_SOURCE = (
+    "1С: кадровая история и штатное расписание, "
+    "подразделения «Коммерческой службы»"
+)
+KD_M11_FORMULA = (
+    "уволенные за месяц / штатные единицы на последний день месяца × 100"
+)
+KD_M11_DESCRIPTION = (
+    "Факт:\n"
+    "Текучесть, % = уволенные за месяц / штатные единицы "
+    "на последний день месяца × 100.\n\n"
+    "Штат — утверждённые позиции штатного расписания, которые на дату среза "
+    "ещё не закрыты. Если по позиции есть история использования, берётся "
+    "количество ставок из последней записи на эту дату.\n\n"
+    "Увольнение — событие «Увольнение» в кадровой истории за календарный месяц. "
+    "Один сотрудник в одном подразделении считается один раз. "
+    "Сотрудники с признаком «не учитывать при текучести» не входят.\n\n"
+    "На развороте — отделы коммерческой службы: процент и сколько уволено из штата."
+)
 
 
 def _last_full_month(today: date) -> tuple[int, int]:
@@ -117,100 +157,175 @@ def _save_cache(year: int, ref_month: int, payload: dict) -> None:
         pass
 
 
-def _fetch_documents(session: requests.Session) -> list[dict]:
-    """Загружает все не-удалённые документы Document_ТД_ТекучестьПерсонала."""
-    flt = quote("DeletionMark eq false", safe="")
-    docs: list[dict] = []
-    skip = 0
-    PAGE = 500
-    while True:
-        url = (
-            f"{BASE}/{quote(ENTITY)}"
-            f"?$format=json"
-            f"&$filter={flt}"
-            f"&$orderby=Ref_Key"
-            f"&$top={PAGE}&$skip={skip}"
+def _label_for_org(name: str) -> str | None:
+    folded = name.casefold().replace("ё", "е")
+    if "дилер" in folded:
+        return "ОДП"
+    if "внешнеэконом" in folded:
+        return "Отдел ВЭД"
+    if "ключев" in folded:
+        return "Отдел по работе с ключевыми клиентами"
+    if "газпром" in folded:
+        return "Отдел по работе с ПАО «Газпром»"
+    if "эталон" in folded:
+        return "Отдел ОПЭОиУ"
+    if "бми" in folded and "продаж" in folded:
+        return "Отдел продаж БМИ"
+    if "тендер" in folded:
+        return "Тендерный офис"
+    if "реклам" in folded:
+        return "Сектор рекламы и PR"
+    return None
+
+
+def _commercial_org_children(sql: SqlConnection) -> list[tuple[str, str]]:
+    with sql.connect_ctx() as conn:
+        conn.timeout = 0
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT _IDRRef, _Description
+            FROM dbo.[{ORG_TABLE}] WITH (NOLOCK)
+            WHERE _Marked = 0x00 AND _ParentIDRRef = ?
+            """,
+            [guid_to_1c(COMMERCIAL_ORG_ROOT)],
         )
-        r = request_with_retry(session, url, timeout=60, retries=4, label="Tekuchest")
-        if r is None:
-            logger.error("Tekuchest: request dropped after retries")
-            break
-        if not r.ok:
-            logger.error("Tekuchest HTTP %d: %s", r.status_code, r.text[:300])
-            break
-        batch = r.json().get("value", [])
-        if not batch:
-            break
-        docs.extend(batch)
-        skip += len(batch)
-        if len(batch) < PAGE:
-            break
-    return docs
+        rows = []
+        for ref, desc in cur.fetchall():
+            name = str(desc or "").strip()
+            if not name:
+                continue
+            rows.append((bin_to_guid(bytes(ref)), name))
+    return rows
 
 
-def _calc_monthly(docs: list[dict], year: int, ref_month: int) -> dict:
-    """
-    Агрегировать план/факт по месяцам и подразделениям.
-    Возвращает {month: {"plan": total, "fact": total,
-                        "by_dept": {guid: {"plan": ..., "fact": ...}}}}
-    """
-    docs_dept = [d for d in docs
-                 if d.get("Подразделение_Key", EMPTY) in DEPT_SET]
+def _rows_for_month(month_payload: dict) -> list[dict]:
+    buckets: dict[str, dict] = {}
+    for row in month_payload.get("rows") or []:
+        org_name = str(row.get("org_name") or row.get("note") or "").strip()
+        label = _label_for_org(org_name) or org_name
+        if not label:
+            continue
+        staff = float(row.get("staff_units") or 0)
+        dismissed = int(row.get("dismissed") or 0)
+        bucket = buckets.get(label)
+        if bucket is None:
+            bucket = {"name": label, "staff": 0.0, "dismissed": 0}
+            buckets[label] = bucket
+        bucket["staff"] += staff
+        bucket["dismissed"] += dismissed
 
-    result: dict[int, dict] = {}
-    for m in range(1, ref_month + 1):
-        result[m] = {
-            "plan": 0.0, "fact": 0.0,
-            "by_dept": {d: {"plan": 0.0, "fact": 0.0} for d in DEPT_SET},
+    for label in DISPLAY_ORDER:
+        buckets.setdefault(label, {"name": label, "staff": 0.0, "dismissed": 0})
+
+    def sort_key(item: dict) -> tuple:
+        name = item["name"]
+        if name in DISPLAY_ORDER:
+            return (0, DISPLAY_ORDER.index(name), name)
+        return (1, 0, name)
+
+    out = []
+    for item in sorted(buckets.values(), key=sort_key):
+        staff = round(float(item["staff"]), 2)
+        dismissed = int(item["dismissed"])
+        if item["name"] not in DISPLAY_ORDER and staff <= 0 and dismissed <= 0:
+            continue
+        out.append({
+            "name": item["name"],
+            "staff": staff,
+            "dismissed": dismissed,
+            "fact": turnover_percent(staff, dismissed),
+            "navigable": item["name"] in NAVIGABLE_LABELS,
+            "structure_guid": STRUCTURE_BY_LABEL.get(item["name"], ""),
+        })
+    return out
+
+
+def _month_record(year: int, month: int, month_payload: dict) -> dict:
+    rows = _rows_for_month(month_payload)
+    staff = round(sum(row["staff"] for row in rows), 2)
+    dismissed = sum(row["dismissed"] for row in rows)
+    by_dept = {}
+    for row in rows:
+        guid = str(row.get("structure_guid") or "").lower()
+        if not guid:
+            continue
+        by_dept[guid] = {
+            "plan": None,
+            "fact": row["fact"],
+            "staff_units": row["staff"],
+            "dismissed": row["dismissed"],
         }
+    return {
+        "year": year,
+        "month": month,
+        "plan": None,
+        "fact": turnover_percent(staff, dismissed),
+        "staff_units": staff,
+        "dismissed": dismissed,
+        "turnover_rows": rows,
+        "by_dept": by_dept,
+    }
 
-    for doc in docs_dept:
-        dept_key = doc.get("Подразделение_Key", EMPTY)
-        vid = str(doc.get("ВидДокумента", ""))
-        rows = doc.get("Текучесть", [])
 
-        for row in rows:
-            mes = row.get("Месяц", "")
-            if not mes or mes[:4] != str(year):
-                continue
-            try:
-                m = int(mes[5:7])
-            except (ValueError, IndexError):
-                continue
-            if m < 1 or m > ref_month:
-                continue
-
-            if vid == "0":
-                plan_val = float(row.get("План", 0) or 0)
-                result[m]["plan"] += plan_val
-                result[m]["by_dept"][dept_key]["plan"] += plan_val
-            elif vid == "1":
-                fact_val = float(row.get("Факт", 0) or 0)
-                result[m]["fact"] += fact_val
-                result[m]["by_dept"][dept_key]["fact"] += fact_val
-
-    for m in result:
-        result[m]["plan"] = round(result[m]["plan"], 2)
-        result[m]["fact"] = round(result[m]["fact"], 2)
-        for d in result[m]["by_dept"]:
-            result[m]["by_dept"][d]["plan"] = round(result[m]["by_dept"][d]["plan"], 2)
-            result[m]["by_dept"][d]["fact"] = round(result[m]["by_dept"][d]["fact"], 2)
-
-    return result
+def _calc_year(year: int, ref_month: int) -> list[dict]:
+    sql = SqlConnection()
+    children = _commercial_org_children(sql)
+    specs = [
+        DeptSpec(
+            group=org_key,
+            org_key=org_key,
+            structure_name=_label_for_org(org_name) or org_name,
+            note=org_name,
+        )
+        for org_key, org_name in children
+    ]
+    report = build_report(
+        specs,
+        (year, 1),
+        (year, ref_month),
+        sql=sql,
+        hierarchy_mode="listed_only_no_auto_children",
+        kpi_label="KD-M11",
+    )
+    by_month = {row["month"]: row for row in report.get("months") or []}
+    return [
+        _month_record(year, month, by_month.get(month) or {"rows": []})
+        for month in range(1, ref_month + 1)
+    ]
 
 
 def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
-    """Полный агрегат или срез по одному подразделению."""
-    if dept_guid is None:
+    if not dept_guid:
         return payload
+    wanted = str(dept_guid).strip().lower()
     sliced = []
-    for row in payload.get("months", []):
-        bd = row.get("by_dept", {}).get(dept_guid, {})
+    for row in payload.get("months") or []:
+        match = None
+        for item in row.get("turnover_rows") or []:
+            if str(item.get("structure_guid") or "").lower() == wanted:
+                match = item
+                break
+        if match is None:
+            bucket = (row.get("by_dept") or {}).get(wanted) or {}
+            sliced.append({
+                "year": row.get("year"),
+                "month": row.get("month"),
+                "plan": None,
+                "fact": bucket.get("fact", 0),
+                "staff_units": bucket.get("staff_units", 0),
+                "dismissed": bucket.get("dismissed", 0),
+                "turnover_rows": [],
+            })
+            continue
         sliced.append({
-            "year": row["year"],
-            "month": row["month"],
-            "plan": bd.get("plan", 0),
-            "fact": bd.get("fact", 0),
+            "year": row.get("year"),
+            "month": row.get("month"),
+            "plan": None,
+            "fact": match.get("fact", 0),
+            "staff_units": match.get("staff", 0),
+            "dismissed": match.get("dismissed", 0),
+            "turnover_rows": [match],
         })
     return {
         "cache_date": payload.get("cache_date"),
@@ -224,17 +339,7 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
 def get_tekuchest_monthly(year: int | None = None,
                           month: int | None = None,
                           dept_guid: str | None = None) -> dict:
-    """
-    Помесячная текучесть (январь..ref_month).
-
-    dept_guid=None  — сумма по всем подразделениям (коммерческий директор).
-    dept_guid='…'   — только указанное подразделение.
-
-    Возвращает:
-      {"year": …, "ref_month": …, "months": [
-          {"year": …, "month": …, "plan": …, "fact": …, "by_dept": {…}},
-      ]}
-    """
+    """Помесячная текучесть коммерческой службы, январь..месяц."""
     today = date.today()
     ref_y, ref_m = _last_full_month(today)
     if year is not None and month is not None:
@@ -251,24 +356,8 @@ def get_tekuchest_monthly(year: int | None = None,
             stale["cache_refresh_status"] = "running"
             return _slice_payload(stale, dept_guid)
 
-    session = requests.Session()
-    session.auth = AUTH
-
-    logger.info("calc_tekuchest: loading documents for %d months 1-%d", ref_y, ref_m)
-    docs = _fetch_documents(session)
-    computed = _calc_monthly(docs, ref_y, ref_m)
-
-    out_months = []
-    for m in range(1, ref_m + 1):
-        cm = computed[m]
-        out_months.append({
-            "year": ref_y,
-            "month": m,
-            "plan": cm["plan"],
-            "fact": cm["fact"],
-            "by_dept": cm["by_dept"],
-        })
-
+    logger.info("calc_tekuchest: HR SQL %s-%02d", ref_y, ref_m)
+    out_months = _calc_year(ref_y, ref_m)
     payload = {
         "cache_date": today.isoformat(),
         "year": ref_y,
@@ -292,28 +381,34 @@ if __name__ == "__main__":
         y, m = _last_full_month(today)
 
     _print(f"\n{'═' * 60}")
-    _print(f"  ТЕКУЧЕСТЬ ПЕРСОНАЛА")
+    _print("  ТЕКУЧЕСТЬ ПЕРСОНАЛА")
     _print(f"  Период: январь – {MONTH_RU[m]} {y}")
     _print(f"{'═' * 60}")
 
     t0 = time.time()
     data = get_tekuchest_monthly(y, m)
 
-    _print(f"\n  {'Месяц':<12s} {'План':>10s} {'Факт':>10s}")
-    _print(f"  {'─' * 34}")
+    _print(f"\n  {'Месяц':<12s} {'%':>8s} {'Увол.':>8s} {'Штат':>8s}")
+    _print(f"  {'─' * 40}")
     for row in data.get("months", []):
-        _print(f"  {MONTH_RU[row['month']]:<12s} "
-               f"{row['plan']:>10.2f} "
-               f"{row['fact']:>10.2f}")
+        _print(
+            f"  {MONTH_RU[row['month']]:<12s} "
+            f"{float(row['fact']):>8.1f} "
+            f"{int(row['dismissed']):>8d} "
+            f"{float(row['staff_units']):>8.1f}"
+        )
 
     _print(f"\n  По подразделениям ({MONTH_RU[m]} {y}):")
     _print(f"  {'─' * 55}")
     for row in data.get("months", []):
         if row["month"] != m:
             continue
-        for dk, dv in (row.get("by_dept") or {}).items():
-            name = DEPARTMENTS.get(dk, dk)
-            _print(f"    {name:<40s} п={dv['plan']:>7.2f}  ф={dv['fact']:>7.2f}")
+        for item in row.get("turnover_rows") or []:
+            _print(
+                f"    {item['name']:<42s} "
+                f"{float(item['fact']):>6.1f}%  "
+                f"{int(item['dismissed'])} из {item['staff']}"
+            )
 
     _print(f"\n  Время: {time.time() - t0:.1f}с")
     _print(f"{'═' * 60}")

@@ -34,7 +34,7 @@ DEPT_TO_KPI_KEY: dict[str, str | None] = {
 
 KOMDIR_TILE_IDS = (
     'KD-M1', 'KD-M2', 'KD-M3', 'KD-M4', 'KD-M5',
-    'KD-M6', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M10',
+    'KD-M7', 'KD-M8', 'KD-M9', 'KD-M10',
 )
 
 TILE_ORDER_BY_KPI_KEY: dict[str, tuple[str, ...]] = {

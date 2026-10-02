@@ -5,10 +5,10 @@
 Источник: регистр бухгалтерии Хозрасчётный (_AccRg2005).
 
 Формула (по каждому отделу):
-  Расходы = (44 без ВРТ)
-          + max(44-ВРТ, СДС)
-          + Дт 51 (2 статьи ДДС)
-          + max(дебетовое сальдо 71.01, 0)
+  Расходы = сумма проведённых «Списание безналичных денежных средств»
+            по статьям ДДС группы «КС»,
+            подразделение — из заявки на расходование.
+  Бухгалтерия и подразделения вне 8 коммерческих отделов не входят.
 
 Где:
   • 44 / 44.01 / 44.02 — дебетовый оборот по 8 статьям затрат (ValueDt1 → _Chrc1945)
@@ -29,10 +29,14 @@ from __future__ import annotations
 import argparse
 import calendar
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import pyodbc
+import requests
+from requests.auth import HTTPBasicAuth
 
 YEAR_OFFSET = 2000
 
@@ -251,6 +255,186 @@ def calc_dt51_by_dept(cur, p0: datetime, p1: datetime) -> dict[str, float]:
     for name, amt in cur.fetchall():
         out[name] = float(amt or 0)
     return out
+
+
+# Группа статей ДДС «КС» (_Reference503). Факт плитки — списания безналичных
+# по этим статьям, подразделение берётся из заявки на расходование.
+KS_DDS_GROUP = "84F3AC1F6B05524D11EB533E680B2130"
+WRITEOFF_DOC = "_Document980"
+WRITEOFF_LINES = "_Document980_VT37251"
+REQUEST_DOC = "_Document726"
+DEPT_CATALOG = "_Reference513"
+
+
+def calc_ks_writeoff_by_dept(cur, p0: datetime, p1: datetime) -> dict[str, float]:
+    """Сумма проведённых списаний безналичных ДС по статьям группы «КС».
+
+    Сумма строки — _Fld37256 (колонка «Сумма» отчёта «Списания ДС по статьям ДДС»).
+    Подразделение — заявка на расходование (_Document726._Fld22796RRef).
+    В словарь попадают только 8 коммерческих отделов; бухгалтерия и прочие нет.
+    """
+    ks = bytes.fromhex(KS_DDS_GROUP)
+    cur.execute(
+        f"""
+        WITH tree AS (
+            SELECT _IDRRef
+            FROM _Reference503 WITH (NOLOCK)
+            WHERE _IDRRef = ?
+            UNION ALL
+            SELECT c._IDRRef
+            FROM _Reference503 c WITH (NOLOCK)
+            INNER JOIN tree t ON c._ParentIDRRef = t._IDRRef
+            WHERE c._Marked = 0x00
+        )
+        SELECT CAST(dep._Description AS nvarchar(200)) AS dept,
+               SUM(CAST(v._Fld37256 AS float)) AS amt
+        FROM {WRITEOFF_LINES} v WITH (NOLOCK)
+        INNER JOIN {WRITEOFF_DOC} d WITH (NOLOCK)
+            ON d._IDRRef = v._Document980_IDRRef
+        INNER JOIN tree a ON a._IDRRef = v._Fld37254RRef
+        INNER JOIN {REQUEST_DOC} z WITH (NOLOCK)
+            ON z._IDRRef = v._Fld37264_RRRef
+           AND v._Fld37264_RTRef = 726
+        INNER JOIN {DEPT_CATALOG} dep WITH (NOLOCK)
+            ON dep._IDRRef = z._Fld22796RRef
+        WHERE d._Date_Time >= ? AND d._Date_Time < ?
+          AND d._Posted = 0x01
+          AND d._Marked = 0x00
+          AND a._IDRRef <> ?
+        GROUP BY dep._Description
+        """,
+        ks,
+        p0,
+        p1,
+        ks,
+    )
+    out = zero_by_dept()
+    for name, amt in cur.fetchall():
+        name = str(name or "").strip()
+        if name in out:
+            out[name] = float(amt or 0)
+    return out
+
+
+ODATA_BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
+ODATA_AUTH = HTTPBasicAuth("odata.user", "npo852456")
+ORG_NPO = "fbca2148-6cfd-11e7-812d-001e67112509"
+EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
+
+
+def _hex_to_odata(hx: str) -> str:
+    h = hx.lower()
+    return f"{h[24:32]}-{h[20:24]}-{h[16:20]}-{h[0:4]}-{h[4:16]}"
+
+
+def dump_covers_through(cur, p_next: datetime) -> bool:
+    """Локальная копия закрывает месяц, если в ней есть проводки не раньше его конца."""
+    cur.execute(
+        """
+        SELECT MAX(_Date_Time)
+        FROM _Document980 WITH (NOLOCK)
+        WHERE _Posted = 0x01 AND _Marked = 0x00
+        """
+    )
+    row = cur.fetchone()
+    mx = row[0] if row else None
+    return mx is not None and mx >= p_next
+
+
+def _ks_article_guids(cur) -> set[str]:
+    ks = bytes.fromhex(KS_DDS_GROUP)
+    cur.execute(
+        """
+        WITH tree AS (
+            SELECT _IDRRef
+            FROM _Reference503 WITH (NOLOCK)
+            WHERE _IDRRef = ?
+            UNION ALL
+            SELECT c._IDRRef
+            FROM _Reference503 c WITH (NOLOCK)
+            INNER JOIN tree t ON c._ParentIDRRef = t._IDRRef
+            WHERE c._Marked = 0x00
+        )
+        SELECT CONVERT(varchar(32), _IDRRef, 2) FROM tree
+        """,
+        ks,
+    )
+    group = _hex_to_odata(KS_DDS_GROUP)
+    return {_hex_to_odata(r[0]) for r in cur.fetchall()} - {group}
+
+
+def calc_ks_writeoff_live(cur, p0: datetime, p1: datetime) -> dict[str, float]:
+    """Тот же отбор, что у calc_ks_writeoff_by_dept, по живой 1С (OData).
+
+    Локальный erp_pm — копия. Пока она отстаёт от конца месяца, сентябрьские
+    списания после даты копии в неё не попадают.
+    """
+    articles = _ks_article_guids(cur)
+    name_by_guid = {_hex_to_odata(hx): name for name, hx in DEPTS}
+    start = f"{p0.year - YEAR_OFFSET:04d}-{p0.month:02d}-{p0.day:02d}T00:00:00"
+    end = f"{p1.year - YEAR_OFFSET:04d}-{p1.month:02d}-{p1.day:02d}T00:00:00"
+    flt = (
+        f"Date ge datetime'{start}' and Date lt datetime'{end}'"
+        f" and Posted eq true and DeletionMark eq false"
+        f" and Организация_Key eq guid'{ORG_NPO}'"
+    )
+    session = requests.Session()
+    session.auth = ODATA_AUTH
+    docs: list[dict] = []
+    skip = 0
+    while True:
+        url = (
+            f"{ODATA_BASE}/Document_СписаниеБезналичныхДенежныхСредств"
+            f"?$format=json&$top=80&$skip={skip}"
+            f"&$filter={quote(flt, safe='')}"
+            f"&$select={quote('Ref_Key,РасшифровкаПлатежа', safe=',')}"
+        )
+        resp = None
+        for attempt in range(4):
+            resp = session.get(url, timeout=180)
+            if resp.status_code < 500:
+                break
+            time.sleep(1.5 * (attempt + 1))
+        resp.raise_for_status()
+        batch = resp.json().get("value") or []
+        docs.extend(batch)
+        if len(batch) < 80:
+            break
+        skip += 80
+
+    by_req: dict[str, float] = {}
+    for doc in docs:
+        for row in doc.get("РасшифровкаПлатежа") or []:
+            art = (row.get("СтатьяДвиженияДенежныхСредств_Key") or "").lower()
+            if art not in articles:
+                continue
+            raw = row.get("ЗаявкаНаРасходованиеДенежныхСредств")
+            if not isinstance(raw, str) or not raw or raw.lower() == EMPTY_GUID:
+                continue
+            by_req[raw.lower()] = by_req.get(raw.lower(), 0.0) + float(row.get("Сумма") or 0)
+
+    dept_of: dict[str, str] = {}
+    keys = list(by_req)
+    for i in range(0, len(keys), 15):
+        batch = keys[i:i + 15]
+        req_flt = " or ".join(f"Ref_Key eq guid'{g}'" for g in batch)
+        url = (
+            f"{ODATA_BASE}/Document_ЗаявкаНаРасходованиеДенежныхСредств"
+            f"?$format=json&$top=15"
+            f"&$filter={quote(req_flt, safe='')}"
+            f"&$select={quote('Ref_Key,Подразделение_Key', safe=',')}"
+        )
+        resp = session.get(url, timeout=120)
+        resp.raise_for_status()
+        for item in resp.json().get("value") or []:
+            dept_of[item["Ref_Key"].lower()] = (item.get("Подразделение_Key") or "").lower()
+
+    out = zero_by_dept()
+    for req, amt in by_req.items():
+        name = name_by_guid.get(dept_of.get(req, ""))
+        if name in out:
+            out[name] += amt
+    return {name: round(amt, 2) for name, amt in out.items()}
 
 
 def calc_71_debit_balance(cur, asof_exclusive: datetime) -> dict[str, float]:

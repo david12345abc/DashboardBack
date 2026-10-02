@@ -1,0 +1,45 @@
+komdir_payload_all_2026_09.json
+  cache_date 2026-09-29
+  fact=4868986.87
+  plan=7825744.0
+  kpi_pct=62.2
+  color=green
+  kpi_pct=62.2
+  color=green
+  period=ежемесячно
+  plan=7825744.0
+  fact=4868986.87
+  expected_plan=None
+  plan_fact_period_label=Август 2026
+  months 9
+   month=1 fact=5249254.9 plan=7041209.0 kpi_pct=74.6
+   month=2 fact=5883952.21 plan=7213977.0 kpi_pct=81.6
+   month=3 fact=6072895.54 plan=7969918.0 kpi_pct=76.2
+   month=4 fact=6285106.82 plan=7603709.0 kpi_pct=82.7
+   month=5 fact=5923952.9 plan=7244700.0 kpi_pct=81.8
+   month=6 fact=6508238.89 plan=8101993.0 kpi_pct=80.3
+   month=7 fact=6394099.96 plan=7743599.0 kpi_pct=82.6
+   month=8 fact=4868986.87 plan=7825744.0 kpi_pct=62.2
+   month=9 fact=0 plan=7832165.33 kpi_pct=0.0
+komdir_payload_all_2026_08.json
+  cache_date 2026-09-28
+  fact=4868986.87
+  plan=7825744.0
+  kpi_pct=62.2
+  color=green
+  kpi_pct=62.2
+  color=green
+  period=ежемесячно
+  plan=7825744.0
+  fact=4868986.87
+  expected_plan=None
+  plan_fact_period_label=Август 2026
+  months 8
+   month=1 fact=5249254.9 plan=7041209.0 kpi_pct=74.6
+   month=2 fact=5883952.21 plan=7213977.0 kpi_pct=81.6
+   month=3 fact=6072895.54 plan=7969918.0 kpi_pct=76.2
+   month=4 fact=6285106.82 plan=7603709.0 kpi_pct=82.7
+   month=5 fact=5923952.9 plan=7244700.0 kpi_pct=81.8
+   month=6 fact=6508238.89 plan=8101993.0 kpi_pct=80.3
+   month=7 fact=6394099.96 plan=7743599.0 kpi_pct=82.6
+   month=8 fact=4868986.87 plan=7825744.0 kpi_pct=62.2

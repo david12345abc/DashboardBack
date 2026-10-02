@@ -13,7 +13,7 @@
   KD-M8  ФОТ (Факт/лимит)
   KD-M9  Скидка / МЦР (Факт/норма)
   KD-M10 ТКП в SLA (Факт/норма)
-  KD-M11 Текучесть персонала (План/Факт) — комдир: сумма всех отделов; дети: свои
+  KD-M11 Текучесть персонала, % — комдир: вся коммерческая служба; дети: свой отдел
 
 Графики:
   KD-C1  Линейный: по месяцам Деньги, Отгрузки, Договоры (факт)
@@ -73,10 +73,61 @@ MONTH_NAMES_RU = {
 LOWER_IS_BETTER_IDS = frozenset({'KD-M4', 'KD-M5', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M11'})
 HIGHER_IS_BETTER_IDS = frozenset({'KD-M1', 'KD-M2', 'KD-M3', 'KD-M6', 'KD-M10'})
 
+# Имена как в structure.json у коммерческого директора — по ним кликается разворот.
+SLA_DEPT_LABELS = {
+    "7587c178-92f6-11f0-96f9-6cb31113810e": "ОДП",
+    "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел ВЭД",
+    "34497ef7-810f-11e4-80d6-001e67112509": "Отдел ОПЭОиУ",
+    "9edaa7d4-37a5-11ee-93d3-6cb31113810e": "Отдел продаж БМИ",
+    "639ec87b-67b6-11eb-8523-ac1f6b05524d": "Отдел по работе с ключевыми клиентами",
+    "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО «Газпром»",
+}
+
+
+def _sla_count(value) -> int:
+    number = float(value or 0)
+    return int(number) if number.is_integer() else int(round(number))
+
+
+def sla_named_counts(by_dept: dict | None, only_guid: str | None = None) -> tuple[dict, dict]:
+    """План/факт ТКП по подписям отделов. Чужие GUID складываются в «Прочие»."""
+    wanted = str(only_guid).lower() if only_guid else None
+    if wanted and wanted in SLA_DEPT_LABELS:
+        plan = {SLA_DEPT_LABELS[wanted]: 0}
+        fact = {SLA_DEPT_LABELS[wanted]: 0}
+    elif wanted:
+        plan, fact = {}, {}
+    else:
+        plan = {label: 0 for label in SLA_DEPT_LABELS.values()}
+        fact = {label: 0 for label in SLA_DEPT_LABELS.values()}
+    other_plan = 0
+    other_fact = 0
+    for raw_guid, bucket in (by_dept or {}).items():
+        guid = str(raw_guid).lower()
+        if wanted and guid != wanted:
+            continue
+        if isinstance(bucket, dict):
+            plan_value = _sla_count(bucket.get("plan"))
+            fact_value = _sla_count(bucket.get("fact"))
+        else:
+            plan_value, fact_value = 0, _sla_count(bucket)
+        label = SLA_DEPT_LABELS.get(guid)
+        if label:
+            plan[label] = plan.get(label, 0) + plan_value
+            fact[label] = fact.get(label, 0) + fact_value
+        else:
+            other_plan += plan_value
+            other_fact += fact_value
+    if other_plan or other_fact:
+        plan["Прочие подразделения"] = other_plan
+        fact["Прочие подразделения"] = other_fact
+    return plan, fact
+
 # Единицы измерения в ответе build_komdir_payload (плитки коммерческого директора / дочерних отделов).
 KOMDIR_TILE_UNITS: dict[str, str] = {
     'KD-M9': 'руб.',  # цена фактическая / цена расчётная
     'KD-M10': 'шт',   # ТКП в SLA
+    'KD-M11': '%',    # текучесть: уволенные / штат × 100
 }
 KOMDIR_PAYLOAD_CACHE_VERSION = 17
 
@@ -520,24 +571,29 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             calc_tekuchest.get_tekuchest_monthly,
             year=ref_y, month=series_m, dept_guid=dept_guid,
         )
-        raw_months = tek.get('months', [])
+        raw_months = tek.get('months', []) if isinstance(tek, dict) else []
         months = []
         ref_row = None
         for row in raw_months:
             m = row.get('month')
             y = row.get('year', ref_y)
-            p, plan_full = _plan_values(row.get('plan'), y, m)
-            f = row.get('fact')
-            pct = round(f / p * 100, 1) if p and f is not None else None
+            fact = row.get('fact')
+            try:
+                fact_value = round(float(fact), 1) if fact is not None else None
+            except (TypeError, ValueError):
+                fact_value = None
             mrow = {
                 'month': m,
                 'year': y,
                 'month_name': MONTH_NAMES_RU.get(m, ''),
-                'plan': p,
-                'plan_full': plan_full,
-                'fact': f,
-                'kpi_pct': pct,
-                'has_data': f is not None and f != 0 or p is not None and p != 0,
+                'plan': None,
+                'plan_full': None,
+                'fact': fact_value,
+                'kpi_pct': fact_value,
+                'staff_units': row.get('staff_units'),
+                'dismissed': row.get('dismissed'),
+                'turnover_rows': row.get('turnover_rows') or [],
+                'has_data': fact_value is not None,
             }
             months.append(mrow)
             if row.get('year') == ref_y and m == ref_m:
@@ -548,8 +604,8 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             'monthly_data': months,
             'last_full_month_row': dict(ref_row) if ref_row else None,
             'ytd': {
-                'total_plan': ref_row['plan'] if ref_row else 0,
-                'total_fact': ref_row['fact'] if ref_row else 0,
+                'total_plan': None,
+                'total_fact': ref_row['fact'] if ref_row else None,
                 'kpi_pct': ref_row['kpi_pct'] if ref_row else None,
                 'months_with_data': len(with_data),
                 'months_total': len(months),
@@ -670,6 +726,12 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
             plan_val = row.get('plan', 0)
             fact_val = row.get('fact', 0)
             pct = row.get('pct')
+            if pct is None and not plan_val:
+                pct = 0.0
+            by_dept = row.get('by_dept')
+            if not by_dept and dept_guid:
+                by_dept = {str(dept_guid).lower(): {'plan': plan_val, 'fact': fact_val}}
+            plan_by_dept, fact_by_dept = sla_named_counts(by_dept, dept_guid)
             mrow = {
                 'month': m,
                 'year': row.get('year'),
@@ -677,7 +739,9 @@ def _get_tile_data(kpi_id: str, pairs: list[tuple[int, int]],
                 'plan': plan_val,
                 'fact': fact_val,
                 'kpi_pct': pct,
-                'has_data': plan_val > 0 or fact_val > 0,
+                'has_data': bool(plan_val or fact_val or pct == 0),
+                'plan_by_dept': plan_by_dept,
+                'fact_by_dept': fact_by_dept,
             }
             months.append(mrow)
             if row.get('year') == ref_y and m == ref_m:
@@ -1651,6 +1715,15 @@ def _patch_payload_tile(payload: dict, kpi_id: str, tile_data: dict, ref_y: int,
             tile["plan_fact_period_label"] = _plan_fact_period_label(period_y, period_m)
         tile["cache_updated_at"] = datetime.now().isoformat(timespec="seconds")
         tile.pop("cache_refresh_status", None)
+        if kpi_id == "KD-M11":
+            tile["unit"] = "%"
+            tile["plan"] = None
+            tile["formula"] = calc_tekuchest.KD_M11_FORMULA
+            tile["source"] = calc_tekuchest.KD_M11_SOURCE
+            tile["description"] = calc_tekuchest.KD_M11_DESCRIPTION
+            tile["turnover_rows"] = lm.get("turnover_rows") or []
+            tile["staff_units"] = lm.get("staff_units")
+            tile["dismissed"] = lm.get("dismissed")
         break
 
 
@@ -1727,7 +1800,7 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
     tile_ids = [
         kid for kid in [
             'KD-M1', 'KD-M2', 'KD-M3', 'KD-M4', 'KD-M5',
-            'KD-M6', 'KD-M7', 'KD-M8', 'KD-M9', 'KD-M10', 'KD-M11',
+            'KD-M7', 'KD-M8', 'KD-M9', 'KD-M10', 'KD-M11',
         ]
         if kid in by_id
     ]
@@ -1803,6 +1876,24 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
             "cache_updated_at": _tile_cache_updated_at(kid, ref_y, series_m),
             "monthly_data": monthly_data,
         }
+        if kid == "KD-M7":
+            tile_item["source"] = (
+                "1С: документ «Списание безналичных денежных средств», "
+                "статьи ДДС группы «КС», подразделение заявки на расходование"
+            )
+            tile_item["description"] = (
+                "План:\n"
+                "Лимит расходов коммерческого блока на месяц.\n\n"
+                "Факт:\n"
+                "Сумма проведённых списаний безналичных денежных средств за месяц "
+                "по статьям движения денежных средств из группы «КС». "
+                "Подразделение берётся из заявки на расходование денежных средств.\n"
+                "В итог коммерческого директора входят коммерческие отделы. "
+                "Бухгалтерия и прочие подразделения не входят.\n\n"
+                "Отчёт 1С: «Списания ДС по статьям ДДС за период», "
+                "документ «Списание безналичных денежных средств», "
+                "статья в группе «КС»."
+            )
         if kid == "KD-M2":
             tile_item["source"] = (
                 "1С OData: отчёт «Валовая прибыль предприятия», колонка «Выручка» / строка «Итого»"
@@ -1816,6 +1907,36 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
                 "(блок «По подразделениям», колонка «Выручка», валюта упр. учёта с НДС).\n"
                 "Источник: OData AccumulationRegister_ВыручкаИСебестоимостьПродаж_RecordType.СуммаВыручки. "
                 "Кроме продаж между собственными юр. лицами и контрагентов из отбора отчёта."
+            )
+            if lm:
+                if isinstance(lm.get("fact_by_dept"), dict):
+                    tile_item["fact_by_dept"] = lm["fact_by_dept"]
+                if isinstance(lm.get("plan_by_dept"), dict):
+                    tile_item["plan_by_dept"] = lm["plan_by_dept"]
+        if kid == "KD-M11":
+            tile_item["unit"] = "%"
+            tile_item["plan"] = None
+            tile_item["formula"] = calc_tekuchest.KD_M11_FORMULA
+            tile_item["source"] = calc_tekuchest.KD_M11_SOURCE
+            tile_item["description"] = calc_tekuchest.KD_M11_DESCRIPTION
+            if lm:
+                tile_item["turnover_rows"] = lm.get("turnover_rows") or []
+                tile_item["staff_units"] = lm.get("staff_units")
+                tile_item["dismissed"] = lm.get("dismissed")
+        if kid == "KD-M10":
+            tile_item["source"] = (
+                "1С OData: отчёт «Отработка ОЛ за период», "
+                "дата начала — первая версия объекта"
+            )
+            tile_item["description"] = (
+                "План:\n"
+                "Опросные листы, у которых дата первой версии в ERP попадает в месяц. "
+                "В план входят и уже отработанные, и ещё открытые.\n\n"
+                "Факт:\n"
+                "Отработанные в срок по календарю «Пятидневка». "
+                "Обычный ОЛ — до 3 рабочих дней включительно. "
+                "Спецзаказ — до 5 рабочих дней включительно.\n\n"
+                "На развороте по отделам: план / факт, шт, и доля факта к плану."
             )
             if lm:
                 if isinstance(lm.get("fact_by_dept"), dict):
