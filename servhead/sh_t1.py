@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 TABLE_ID = "SH-T1"
 CACHE_PREFIX = "servhead_sh_t1_clients"
-CACHE_SOURCE_TAG = "servhead_sh_t1_clients_payload_v2_sql"
-CACHE_VERSION = 2
+CACHE_SOURCE_TAG = "servhead_sh_t1_clients_payload_v3_sql"
+CACHE_VERSION = 3
 
 TABLE_COLUMNS = [
     "Клиент",

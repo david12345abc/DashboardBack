@@ -94,7 +94,6 @@ def period_plan_row(
             plan_sum += pv
 
     plan_sum = round(plan_sum, 2)
-    has_data = bool(seen_projects)
     return {
         "period_type": period_type,
         "year": year,
@@ -106,10 +105,10 @@ def period_plan_row(
         ],
         "selected_quarters": selected_quarters,
         "label": label,
-        "plan": plan_sum if has_data else None,
+        "plan": plan_sum,
         "fact": None,
         "kpi_pct": None,
-        "has_data": has_data,
+        "has_data": True,
         "project_count": len(seen_projects),
         "values_unit": "руб.",
         "aggregation_strategy": "unique_projects_alive_in_period_plan",

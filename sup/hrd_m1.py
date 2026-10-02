@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 SHEET_NAME = "Вакансии"
 CACHE_PREFIX = "sup_hrd_m1_vacancies"
-CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v9_table_by_month"
-CACHE_VERSION = 11
+CACHE_SOURCE_TAG = "sup_hrd_m1_vacancies_payload_v12_monthly_subdir"
+CACHE_VERSION = 12
 
 MONTH_NAME_TO_NUM: dict[str, int] = {
     "январь": 1,

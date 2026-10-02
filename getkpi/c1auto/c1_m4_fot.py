@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "c1auto_c1_m4_fot"
 CACHE_SOURCE_TAG = "c1auto_c1_m4_fot_ytd_sql_v1"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 
 
 def _plan_for_month(year: int, month: int) -> float | None:

@@ -1,0 +1,227 @@
+[
+  {
+    "year": 2026,
+    "month": 1,
+    "month_name": "Январь",
+    "plan": 1582504.0,
+    "fact": 898839.33,
+    "kpi_pct": 56.8,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 24,
+      "requests_matched": 9,
+      "rows_counted": 9
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  },
+  {
+    "year": 2026,
+    "month": 2,
+    "month_name": "Февраль",
+    "plan": 1082835.0,
+    "fact": 47300.0,
+    "kpi_pct": 4.4,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 8,
+      "requests_matched": 3,
+      "rows_counted": 3
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  },
+  {
+    "year": 2026,
+    "month": 3,
+    "month_name": "Март",
+    "plan": 1616114.0,
+    "fact": 330965.0,
+    "kpi_pct": 20.5,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 11,
+      "requests_matched": 5,
+      "rows_counted": 5
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  },
+  {
+    "year": 2026,
+    "month": 4,
+    "month_name": "Апрель",
+    "plan": 2503381.0,
+    "fact": 298217.0,
+    "kpi_pct": 11.9,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 14,
+      "requests_matched": 5,
+      "rows_counted": 5
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  },
+  {
+    "year": 2026,
+    "month": 5,
+    "month_name": "Май",
+    "plan": 1786718.0,
+    "fact": 40474.0,
+    "kpi_pct": 2.3,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 11,
+      "requests_matched": 5,
+      "rows_counted": 5
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  },
+  {
+    "year": 2026,
+    "month": 6,
+    "month_name": "Июнь",
+    "plan": 1888955.0,
+    "fact": 2423628.0,
+    "kpi_pct": 128.3,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 38,
+      "requests_matched": 14,
+      "rows_counted": 17
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  },
+  {
+    "year": 2026,
+    "month": 7,
+    "month_name": "Июль",
+    "plan": 1169276.0,
+    "fact": 144715.0,
+    "kpi_pct": 12.4,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 16,
+      "requests_matched": 7,
+      "rows_counted": 7
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  },
+  {
+    "year": 2026,
+    "month": 8,
+    "month_name": "Август",
+    "plan": 838255.0,
+    "fact": 38950.0,
+    "kpi_pct": 4.6,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 2,
+      "requests_matched": 1,
+      "rows_counted": 1
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  },
+  {
+    "year": 2026,
+    "month": 9,
+    "month_name": "Сентябрь",
+    "plan": 1040987.0,
+    "fact": 179925.0,
+    "kpi_pct": 17.3,
+    "has_data": true,
+    "values_unit": "руб.",
+    "counts": {
+      "register_rows_matched": 18,
+      "requests_matched": 6,
+      "rows_counted": 6
+    },
+    "filter_meta": {
+      "cfo_names": [
+        "Директор НПО"
+      ],
+      "dept_names": [
+        "Служба управления персоналом"
+      ],
+      "cfo_keys_count": 1,
+      "dept_keys_count": 1
+    }
+  }
+]

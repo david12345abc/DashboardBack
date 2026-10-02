@@ -1,23 +1,24 @@
 """
 RD-M3 — бюджет контура директора по развитию в пределах лимита.
 
+Эталон экрана 1С: «Списание ДС по статьям ДДС за период»,
+группа статей «Директор по развитию», организация НПО, колонка «Сумма».
+
 Логика факта (SQL, бэкап erp_pm):
-  Факт = Σ СуммаДокумента (_Fld22781)
-  по Document_ЗаявкаНаРасходованиеДенежныхСредств за календарный месяц,
+  Факт = Σ Сумма расшифровки платежа
+  по Document_СписаниеБезналичныхДенежныхСредств за календарный месяц,
   где:
-    • DeletionMark = false
-    • Date документа попадает в календарный месяц
-    • Подразделение ∈ «ДИРЕКТОР ПО РАЗВИТИЮ» и поддерево
-      (Служба развития, новые продукты, ИИ, обучение)
+    • DeletionMark = false, Posted = true
+    • Организация — ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО
+    • Статья ДДС ∈ поддерево «Директор по развитию»
 
 План 2026 — константы RD_M3_BUDGET_PLAN_BY_MONTH_2026.
 KPI % = факт / план × 100 (до 1 знака).
 
 SQL (erp_pm):
-  Document_ЗаявкаНаРасходованиеДенежныхСредств → dbo._Document726
-    _Fld22781      = СуммаДокумента
-    _Fld22796RRef  = Подразделение → _Reference513
-  Catalog_СтруктураПредприятия → dbo._Reference513
+  Document_СписаниеБезналичныхДенежныхСредств → dbo._Document980
+  РасшифровкаПлатежа                          → dbo._Document980_VT37251
+  Catalog_СтатьиДвиженияДенежныхСредств       → dbo._Reference503
   Период в SQL = календарный год + 2000.
 
 Использование:
@@ -52,15 +53,16 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 YEAR_OFFSET = 2000
 ROUND_TOLERANCE = 0.01
 
-DOC = "_Document726"
-STRUCT = "_Reference513"
-COL_SUM = "_Fld22781"
-COL_DEPT = "_Fld22796RRef"
-
-DEPARTMENT_ROOT = "ДИРЕКТОР ПО РАЗВИТИЮ"
-DEPARTMENT_ROOT_ALIASES: tuple[str, ...] = (
-    "директор по развитию",
-)
+WRITEOFF = "_Document980"
+WRITEOFF_VT = "_Document980_VT37251"
+ART_CAT = "_Reference503"
+COL_WO_SUM = "_Fld37256"
+COL_WO_ART = "_Fld37254RRef"
+COL_WO_ORG = "_Fld37189RRef"
+ARTICLE_GROUP = "Директор по развитию"
+# Отчёт 1С сверяется по организации НПО.
+ORG_NPO = "fbca2148-6cfd-11e7-812d-001e67112509"
+EMPTY = b"\x00" * 16
 
 # План 2026, руб./мес. (DashboardBack/devdir/rd_m3_budget_plan.py).
 RD_M3_BUDGET_PLAN_BY_MONTH_2026: dict[int, float] = {
@@ -78,10 +80,10 @@ RD_M3_BUDGET_PLAN_BY_MONTH_2026: dict[int, float] = {
     12: 139_000,
 }
 
-# Эталон факта из OData-отчёта TestKPIDump (июнь–июль 2026).
+# Эталон: колонка «Сумма» отчёта «Списание ДС», группа «Директор по развитию», НПО.
 REFERENCE_FACT_2026: dict[int, float] = {
-    6: 182_910.00,
-    7: 314_818.84,
+    8: 290_880.00,
+    9: 161_880.00,
 }
 
 MONTH_NAMES = {
@@ -204,63 +206,61 @@ def _pick_best(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
     )[0]
 
 
-def resolve_devdir_department_map(cur) -> tuple[dict[bytes, str], dict[str, str], list[str]]:
-    """Поддерево корня «ДИРЕКТОР ПО РАЗВИТИЮ»: id → имя узла."""
+def guid_to_1c_binary(guid: str) -> bytes:
+    raw = bytes.fromhex(guid.replace("-", ""))
+    return raw[8:10] + raw[10:16] + raw[6:8] + raw[4:6] + raw[0:4]
+
+
+def resolve_article_map(cur) -> tuple[dict[bytes, str], dict[str, str], list[str]]:
+    """Статьи ДДС из поддерева «Директор по развитию» (без самого корня)."""
     cur.execute(
         f"""
         SELECT _IDRRef, _Description, _ParentIDRRef, _Marked
-        FROM dbo.[{STRUCT}] WITH (NOLOCK)
+        FROM dbo.[{ART_CAT}] WITH (NOLOCK)
         """
     )
     rows: list[dict[str, Any]] = []
     for idr, desc, parent, marked in cur.fetchall():
+        parent_b = bytes(parent) if parent is not None else EMPTY
         mb = bytes(marked) if marked is not None else b"\x00"
         rows.append(
             {
                 "id": bytes(idr),
-                "desc": desc or "",
-                "parent": bytes(parent) if parent else None,
+                "desc": (desc or "").strip(),
+                "parent": None if parent_b == EMPTY else parent_b,
                 "marked": mb != b"\x00",
             }
         )
 
     by_norm: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        by_norm.setdefault(normalize_name(row["desc"]), []).append(row)
     by_parent: dict[bytes | None, list[dict[str, Any]]] = {}
     for row in rows:
+        by_norm.setdefault(normalize_name(row["desc"]), []).append(row)
         by_parent.setdefault(row["parent"], []).append(row)
 
-    found = None
-    for alias in (DEPARTMENT_ROOT,) + DEPARTMENT_ROOT_ALIASES:
-        found = _pick_best(by_norm.get(normalize_name(alias), []))
-        if found:
-            break
+    found = _pick_best(by_norm.get(normalize_name(ARTICLE_GROUP), []))
     if not found:
-        raise RuntimeError(f"Корень не найден в {STRUCT}: {DEPARTMENT_ROOT}")
+        raise RuntimeError(f"Группа статей не найдена в {ART_CAT}: {ARTICLE_GROUP}")
 
-    subtree: set[bytes] = set()
+    id_to_name: dict[bytes, str] = {}
     stack = [found["id"]]
+    seen: set[bytes] = set()
     while stack:
         cur_id = stack.pop()
-        if cur_id in subtree:
+        if cur_id in seen:
             continue
-        subtree.add(cur_id)
+        seen.add(cur_id)
         for child in by_parent.get(cur_id, []):
             stack.append(child["id"])
+            if child["marked"] or child["id"] == found["id"]:
+                continue
+            id_to_name[child["id"]] = child["desc"] or child["id"].hex()
 
-    id_to_group: dict[bytes, str] = {}
-    labels: dict[str, str] = {DEPARTMENT_ROOT: found["desc"]}
-    group_order: list[str] = []
-    for row in rows:
-        if row["id"] not in subtree or row["marked"]:
-            continue
-        name = row["desc"] or row["id"].hex()
-        id_to_group[row["id"]] = name
+    labels = {ARTICLE_GROUP: found["desc"]}
+    group_order = sorted(set(id_to_name.values()), key=normalize_name)
+    for name in group_order:
         labels[name] = name
-        group_order.append(name)
-    group_order = sorted(group_order, key=lambda s: normalize_name(s))
-    return id_to_group, labels, group_order
+    return id_to_name, labels, group_order
 
 
 def compute_rd_m3_fact_monthly(
@@ -272,71 +272,78 @@ def compute_rd_m3_fact_monthly(
     labels: dict[str, str] | None = None,
     group_order: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Σ СуммаДокумента заявок ДС по поддереву ДИРЕКТОР ПО РАЗВИТИЮ."""
+    """Σ списаний ДС по статьям группы «Директор по развитию»."""
     sql = sql or SqlConnection()
     p_start, p_end = sql_period_bounds(year, month)
+    org_bin = guid_to_1c_binary(ORG_NPO)
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
         if id_to_group is None or labels is None or group_order is None:
-            id_to_group, labels, group_order = resolve_devdir_department_map(cur)
+            id_to_group, labels, group_order = resolve_article_map(cur)
 
-        dept_ids = list(id_to_group.keys())
-        if not dept_ids:
-            raise RuntimeError("Не найдены подразделения контура развития")
+        article_ids = list(id_to_group.keys())
+        if not article_ids:
+            raise RuntimeError("Не найдены статьи группы «Директор по развитию»")
 
-        # Как в OData-эталоне: без фильтра Posted — только не помеченные на удаление.
         cur.execute(
             f"""
-            SELECT d.[{COL_DEPT}], d.[{COL_SUM}], d._Number
-            FROM dbo.[{DOC}] d WITH (NOLOCK)
+            SELECT vt.[{COL_WO_ART}], SUM(vt.[{COL_WO_SUM}]), COUNT(*)
+            FROM dbo.[{WRITEOFF_VT}] vt WITH (NOLOCK)
+            INNER JOIN dbo.[{WRITEOFF}] d WITH (NOLOCK)
+                ON d._IDRRef = vt._Document980_IDRRef
             WHERE d._Date_Time >= ? AND d._Date_Time < ?
               AND d._Marked = 0x00
-              AND d.[{COL_DEPT}] IN ({",".join("?" * len(dept_ids))})
+              AND d._Posted = 0x01
+              AND d.[{COL_WO_ORG}] = ?
+              AND vt.[{COL_WO_ART}] IN ({",".join("?" * len(article_ids))})
+            GROUP BY vt.[{COL_WO_ART}]
             """,
-            [p_start, p_end, *dept_ids],
+            [p_start, p_end, org_bin, *article_ids],
         )
         rows = cur.fetchall()
 
-    groups_out: dict[str, dict[str, float | int]] = {
-        name: {"fact_total": 0.0, "docs": 0} for name in group_order
-    }
+    groups_out: dict[str, dict[str, float | int]] = {}
     total_fact = 0.0
-    for dept_id, amount, _number in rows:
-        group = id_to_group.get(bytes(dept_id))
-        if not group:
+    line_count = 0
+    for art_id, amount, cnt in rows:
+        name = id_to_group.get(bytes(art_id))
+        if not name:
             continue
-        amt = _as_float(amount)
+        amt = round(_as_float(amount), 2)
+        n = int(cnt or 0)
         total_fact += amt
-        bucket = groups_out.setdefault(group, {"fact_total": 0.0, "docs": 0})
+        line_count += n
+        bucket = groups_out.setdefault(name, {"fact_total": 0.0, "docs": 0})
         bucket["fact_total"] = round(float(bucket["fact_total"]) + amt, 2)
-        bucket["docs"] = int(bucket["docs"]) + 1
+        bucket["docs"] = int(bucket["docs"]) + n
 
     total_fact = round(total_fact, 2)
+    used_order = [name for name in (group_order or []) if name in groups_out]
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_NAMES[month],
         "total_fact": total_fact,
         "groups": groups_out,
-        "group_order": group_order,
+        "group_order": used_order,
         "counts": {
-            "docs_included": len(rows),
+            "docs_included": line_count,
             "department_nodes": len(id_to_group),
         },
         "debug": {
             "status": "ok",
             "kpi_id": "RD-M3-FACT",
-            "document": DOC,
-            "sum_field": COL_SUM,
+            "document": WRITEOFF,
+            "sum_field": COL_WO_SUM,
             "period_start": p_start,
             "period_end": p_end,
             "structure_labels": labels,
-            "root": labels.get(DEPARTMENT_ROOT, DEPARTMENT_ROOT),
+            "root": ARTICLE_GROUP,
             "rule": (
-                "fact = sum(СуммаДокумента) for unmarked requests "
-                "in subtree of ДИРЕКТОР ПО РАЗВИТИЮ"
+                "fact = sum(Сумма) of posted bank write-offs "
+                "whose DDS article is in subtree of Директор по развитию, org NPO"
             ),
         },
     }
@@ -350,7 +357,7 @@ def build_monthly_report(
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
-        id_to_group, labels, group_order = resolve_devdir_department_map(cur)
+        id_to_group, labels, group_order = resolve_article_map(cur)
 
     report: list[dict[str, Any]] = []
     for year, month in iter_months(start_period, end_period):
@@ -385,15 +392,15 @@ def build_monthly_report(
 
 def format_report(rows: list[dict[str, Any]]) -> str:
     labels = (rows[-1].get("structure_labels") or {}) if rows else {}
-    root_label = labels.get(DEPARTMENT_ROOT, DEPARTMENT_ROOT)
+    root_label = labels.get(ARTICLE_GROUP, ARTICLE_GROUP)
     group_order = (rows[-1].get("group_order") or []) if rows else []
     lines = [
         "RD-M3 — бюджет контура директора по развитию (SQL)",
-        f"Корень: {root_label}",
-        f"Поддерево ({len(group_order)}): {', '.join(group_order)}",
-        f"Источник: {DOC}.{COL_SUM} (СуммаДокумента), дата документа, без Posted",
+        f"Группа статей: {root_label}",
+        f"Статьи с фактом ({len(group_order)}): {', '.join(group_order)}",
+        f"Источник: {WRITEOFF} / {WRITEOFF_VT}.{COL_WO_SUM}, Posted, НПО",
         "",
-        f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Заявок':>8}",
+        f"{'Месяц':<10} {'План':>14} {'Факт':>14} {'KPI %':>8} {'Строк':>8}",
         f"{'-' * 10} {'-' * 14} {'-' * 14} {'-' * 8} {'-' * 8}",
     ]
     for row in rows:
@@ -432,7 +439,7 @@ def format_report(rows: list[dict[str, Any]]) -> str:
             docs = int(bucket.get("docs") or 0)
             if total == 0 and docs == 0:
                 continue
-            lines.append(f"  {money(total):>14}  {name} (заявок={docs})")
+            lines.append(f"  {money(total):>14}  {name} (строк={docs})")
         lines.append("")
     return "\n".join(lines)
 
@@ -503,24 +510,25 @@ def build_rd_m3_payload(year: int | None = None, month: int | None = None) -> di
             "source": "devdir.rd_m3.sql",
             "plan_source": "RD_M3_BUDGET_PLAN_BY_MONTH_2026",
             "fact_source": (
-                f"{DOC}.{COL_SUM} unmarked requests, subtree of {DEPARTMENT_ROOT}"
+                f"{WRITEOFF}.{COL_WO_SUM} posted write-offs, "
+                f"DDS group {ARTICLE_GROUP}, org NPO"
             ),
-            "root": DEPARTMENT_ROOT,
+            "root": ARTICLE_GROUP,
         },
     }
 
 
 def run_check() -> int:
-    print("Сверка RD-M3 факт · 2026 (REFERENCE / OData-эталон)")
+    print("Сверка RD-M3 факт · 2026 (отчёт «Списание ДС», группа статей)")
     all_ok = True
     sql = SqlConnection()
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
-        id_to_group, labels, group_order = resolve_devdir_department_map(cur)
-    print(f"  Корень: {labels.get(DEPARTMENT_ROOT, DEPARTMENT_ROOT)}")
-    print(f"  Узлов в поддереве: {len(id_to_group)}")
-    print(f"  Поддерево: {', '.join(group_order)}")
+        id_to_group, labels, group_order = resolve_article_map(cur)
+    print(f"  Группа: {labels.get(ARTICLE_GROUP, ARTICLE_GROUP)}")
+    print(f"  Статей в группе: {len(id_to_group)}")
+    print(f"  Статьи: {', '.join(group_order)}")
 
     for month, ref in sorted(REFERENCE_FACT_2026.items()):
         snap = compute_rd_m3_fact_monthly(

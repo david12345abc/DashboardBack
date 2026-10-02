@@ -41,13 +41,40 @@ def _monthly_cache_is_perpetual(year: int, month: int) -> bool:
     return ytd_json_cache.is_ref_period_fully_past(year, month)
 
 
+def _fact_payload_failed(payload: dict | None) -> bool:
+    """Пустой факт из-за обрыва SQL нельзя класть в вечный кэш закрытого месяца."""
+    if not isinstance(payload, dict):
+        return True
+    debug = payload.get("debug")
+    return isinstance(debug, dict) and debug.get("status") == "error"
+
+
+def _drop_failed_monthly_cache(path: Path) -> None:
+    stale = ytd_json_cache.load_stale_payload(
+        path,
+        source_tag=MONTHLY_SOURCE_TAG,
+        version=MONTHLY_CACHE_VERSION,
+    )
+    if not isinstance(stale, dict) or not _fact_payload_failed(stale):
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("ИТ-M4: не удалось сбросить битый кэш %s", path)
+
+
 def get_it_m4_fot_fact_monthly(year: int, month: int) -> dict[str, Any]:
     """Факт ФОТ за один месяц с дисковым кэшем."""
     path = monthly_cache_path(year, month)
     perpetual = _monthly_cache_is_perpetual(year, month)
+    _drop_failed_monthly_cache(path)
 
     def _compute_and_save() -> dict[str, Any]:
         payload = compute_it_m4_fot_fact_monthly(year, month)
+        if _fact_payload_failed(payload):
+            debug = payload.get("debug") if isinstance(payload, dict) else {}
+            error = debug.get("error") if isinstance(debug, dict) else None
+            raise RuntimeError(error or f"ИТ-M4: факт за {year}-{month:02d} не посчитан")
         ytd_json_cache.save_payload(
             path,
             payload,

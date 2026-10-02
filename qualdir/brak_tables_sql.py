@@ -13,7 +13,7 @@
     _Date_Time      — Date (+2000 лет)
     _Marked         — DeletionMark (0x00 = нет)
     _Number         — Номер документа
-    <status>RRef    — Статус                 → _Enum100559 (STATUS_BY_ORDER)
+    <status>RRef    — Статус                 → _Enum100559 (qualdir.form_status.STATUS_BY_ORDER)
     <significant>   — ФормаЯвляетсяЗначимой   (0x01 = да)
     <dept>RRef      — ПодразделениеПоставщика → _Reference513._Description
     <product>RRef   — НаименованиеИзделия     → _Enum87024 (PRODUCT_NAME_BY_ORDER)
@@ -38,6 +38,8 @@ from typing import Any
 
 from sql_connection import SqlConnection
 
+from qualdir.form_status import STATUS_BY_ORDER
+
 logger = logging.getLogger(__name__)
 
 YEAR_OFFSET = 2000
@@ -47,17 +49,7 @@ PRODUCT_ENUM_TABLE = "_Enum87024"
 DEPT_TABLE = "_Reference513"
 KIND_TABLE = "_Reference100536"
 
-# _Enum100559._EnumOrder → имя статуса формы (сверка OData↔SQL янв–авг 2026).
-# После расширения перечисления «Выполнено» стало 12, не 5.
-STATUS_BY_ORDER: dict[int, str] = {
-    0: "Подготовлен",
-    1: "НаСогласовании",
-    7: "РазработкаКМ",
-    9: "ИсполнениеКМ",
-    11: "НеСогласовано",
-    12: "Выполнено",
-    13: "Отменена",
-}
+# _Enum100559._EnumOrder → имя статуса формы (qualdir.form_status).
 
 # _Enum87024._EnumOrder → НаименованиеИзделия (перечисление «Изделие»).
 # Построено по документам форм 0317/0318/0319 за 2021–2026 (OData ↔ SQL).

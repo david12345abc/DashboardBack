@@ -9,9 +9,9 @@
     И ТочкаЭтапа = СогласованиеАнализОЛГруппойГСПП
 
   План  = Количество() строк результата
-  Не в срок = НачалоДня(Факт) > НачалоДня(План)
-  Факт  = План − Не в срок
-  %     = 100 − НеВСрок / План × 100
+  Не в срок = нет факта ИЛИ НачалоДня(Факт) > НачалоДня(План)
+  Факт  = План − Не в срок   (только закрытые в срок; пустая дата не в факте)
+  %     = Факт / План × 100
 
 SQL (erp_pm):
   Catalog_ТД_ТочкиЭтапов → _Reference100508
@@ -176,9 +176,11 @@ def resolve_stage_point(cur) -> tuple[bytes, str]:
 
 
 def is_late(plan_dt: datetime | None, fact_dt: datetime | None) -> bool:
-    """Как в 1С: НачалоДня(Факт) > НачалоДня(План). Пустой факт — не просрочка."""
-    if plan_dt is None or fact_dt is None:
+    """Не в факте: нет даты факта или НачалоДня(Факт) > НачалоДня(План)."""
+    if plan_dt is None:
         return False
+    if fact_dt is None:
+        return True
     return fact_dt.date() > plan_dt.date()
 
 
@@ -266,7 +268,7 @@ def format_report(point_name: str, rows: list[dict[str, Any]]) -> str:
         "ТКП выставлены в срок (ГСП-M1 / SQL)",
         f"Точка этапа: {point_name} ({STAGE_PREDEFINED})",
         f"Источник: {REGISTER_TABLE} + {STAGE_TABLE}",
-        "Критерий: НачалоДня(Факт) > НачалоДня(План) → не в срок",
+        "Критерий: нет факта или НачалоДня(Факт) > НачалоДня(План) → не в факт",
         "",
         f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'Не в срок':>10} {'KPI %':>8}",
         f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 10} {'-' * 8}",
@@ -369,8 +371,8 @@ def build_gspp_m1_payload(year: int | None = None, month: int | None = None) -> 
             "rule": (
                 "plan = register rows with planned completion in month "
                 "(stage = Анализ ОЛ группой ГСПП); "
-                "late = fact date strictly after plan date (time ignored); "
-                "fact = plan - late"
+                "late = empty fact or fact date strictly after plan date (time ignored); "
+                "fact = plan - late (completed on time only)"
             ),
             "rows_by_month": rows,
         },
@@ -403,7 +405,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 GSPP_M1_CACHE_PREFIX = "gspp_m1_ytd"
 GSPP_M1_DISK_TAG = "gspp_m1_sql_payload_v1"
-GSPP_M1_DISK_VERSION = 1
+GSPP_M1_DISK_VERSION = 2
 
 
 def gspp_m1_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

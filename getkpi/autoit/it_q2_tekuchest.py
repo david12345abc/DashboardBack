@@ -44,5 +44,5 @@ def get_it_q2_tekuchest_ytd(year: int | None = None, month: int | None = None) -
         ref_y,
         ref_m,
         plan_for_month=plan_for_month,
-        plan_source="getkpi.autoit.it_q2_tekuchest_plan",
+        plan_source="Document_ТД_ТекучестьПерсонала (SQL _Document185058, подразделение 00-000057)",
     )

@@ -21,9 +21,9 @@ SQL (erp_pm):
     _Fld185472                   — ФормаЯвляетсяЗначимой (0x01 = да)
     _Fld100569RRef               — ПодразделениеПоставщика → _Reference513
   Catalog_СтруктураПредприятия   → dbo._Reference513
-  Enum статусов формы            → dbo._Enum100559 (ТД_СтатусыФормы0319, 14 значений)
-    0 Подготовлен, 1 НаСогласовании, 7 РазработкаКМ,
-    9 ИсполнениеКМ, 11 НеСогласовано, 12 Выполнено, 13 Отменена
+  Enum статусов формы            → dbo._Enum100559
+    порядок — qualdir.form_status.STATUS_BY_ORDER
+    (после расширения перечисления «Выполнено» = order 12, не 5)
 
 Даты в SQL хранятся со смещением YEAR_OFFSET = 2000
 (2026-03-01 → 4026-03-01).
@@ -46,6 +46,8 @@ from typing import Any
 
 from sql_connection import SqlConnection
 
+from qualdir.form_status import STATUS_BY_ORDER
+
 DOC_TABLE = "_Document100537X1"
 DEPT_TABLE = "_Reference513"
 ENUM_TABLE = "_Enum100559"
@@ -56,17 +58,6 @@ COL_STATUS = "_Fld100562RRef"
 COL_SIGNIFICANT = "_Fld185472"
 COL_DEPT = "_Fld100569RRef"
 
-# _Enum100559._EnumOrder — сверка OData↔SQL янв–авг 2026.
-# После расширения перечисления «Выполнено» стало 12, не 5.
-STATUS_BY_ORDER: dict[int, str] = {
-    0: "Подготовлен",
-    1: "НаСогласовании",
-    7: "РазработкаКМ",
-    9: "ИсполнениеКМ",
-    11: "НеСогласовано",
-    12: "Выполнено",
-    13: "Отменена",
-}
 EXECUTED_STATUS = "Выполнено"
 PLAN_EXCLUDED_STATUSES = frozenset(
     {
@@ -465,7 +456,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M1_YTD_CACHE_PREFIX = "qualdir_qd_m1_ytd"
 QD_M1_YTD_DISK_TAG = "qualdir_qd_m1_ytd_payload_sql_v1"
-QD_M1_YTD_DISK_VERSION = 22
+QD_M1_YTD_DISK_VERSION = 23
 
 
 def external_brak_month_cache_path(year: int, month: int) -> _Path:

@@ -934,9 +934,11 @@ def compute_td_m3_costs_monthly(year: int, month: int) -> dict[str, Any]:
 
     subtrees = load_budget_group_subtrees(session)
     subtree_keys = subtrees.get("Технический директор") or set()
-    if year == 2026 and month in TD_M3_PLAN_TARGET_2026:
-        total_plan = float(TD_M3_PLAN_TARGET_2026[month])
-        plan_source = "monthly_constants_from_screenshot"
+    from .td_m3 import TD_M3_PLAN_BY_MONTH_2026
+
+    if year == 2026 and month in TD_M3_PLAN_BY_MONTH_2026:
+        total_plan = float(TD_M3_PLAN_BY_MONTH_2026[month])
+        plan_source = "TD_M3_PLAN_BY_MONTH_2026"
     else:
         total_plan = _sum_turnover_for_scenario(
             rows, subtree_keys, scenario_names, bdg.load_budget_articles(session), BUDGET_SCENARIO_NAME

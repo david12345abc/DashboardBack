@@ -665,7 +665,12 @@ def _build_monthly_payload_impl(
         plan_count = len(month_projects)
         overdue_count = len(delayed_projects)
         on_time_count = max(plan_count - overdue_count, 0)
-        has_data = plan_count > 0 or overdue_count > 0
+        # TD-M1 / TD-Q1: 0 проектов — результат отбора, расчёт выполнен.
+        # OD/PD по-прежнему помечают пустой месяц как отсутствие данных.
+        if project_type in {TARGET_PROJECT_TYPE_TD_M1, TARGET_PROJECT_TYPE_TD_Q1}:
+            has_data = True
+        else:
+            has_data = plan_count > 0 or overdue_count > 0
         kpi_pct = round(on_time_count / plan_count * 100, 1) if plan_count else None
 
         row = {

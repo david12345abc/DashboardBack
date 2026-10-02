@@ -12,7 +12,7 @@ from . import td_m4
 
 CACHE_FILE_PREFIX = "techdir_m4_ytd"
 CACHE_SOURCE_TAG = "techdir_m4_ytd_sql_v1"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 
 MONTH_NAMES = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",

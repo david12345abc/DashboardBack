@@ -52,8 +52,10 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
-# План ФОТ 2026: янв–май — PLANNED_FOT_TARGET_2026 (fot_techdir_plan),
-# июнь–июль — кэш techdir_m4_monthly_2026_*.json.
+# План ФОТ 2026, руб./мес.
+# янв–май — скрин (PLANNED_FOT_TARGET_2026);
+# июнь–декабрь — обороты бюджетов, сценарий «Плановые данные - ЦФО»,
+# 19 п/п, статьи ФОТ (dbo._AccumRg52742 / СуммаСценария).
 TD_M4_FOT_PLAN_BY_MONTH_2026: dict[int, float] = {
     1: 8_426_198,
     2: 8_555_629,
@@ -62,6 +64,11 @@ TD_M4_FOT_PLAN_BY_MONTH_2026: dict[int, float] = {
     5: 9_899_562,
     6: 10_292_249.02,
     7: 10_175_176.74,
+    8: 9_825_014.55,
+    9: 9_982_276.52,
+    10: 9_863_003.39,
+    11: 9_376_109.50,
+    12: 10_172_432.23,
 }
 
 # Статьи со скринов ОСВ (сч. 26 АУП/ГАРАНТИИ + сч. 25 НПО/АЛМАЗ).

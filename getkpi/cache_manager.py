@@ -31,7 +31,11 @@ LOCK_WAIT_TIMEOUT_SECONDS = float(os.getenv('CACHE_LOCK_WAIT_TIMEOUT_SECONDS', '
 DASHBOARD_DISK_VERSION = 2
 
 class _TrackableRLock:
-    """RLock с ``locked()`` — в стандартной библиотеке он есть только с Python 3.14."""
+    """RLock с ``locked()`` — в стандартной библиотеке он есть только с Python 3.14.
+
+    Повторный ``locked_call`` того же ключа из этого потока не должен
+    вставать в очередь: warm и HTTP вызывают get_*, а те снова берут тот же ключ.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -97,7 +101,9 @@ def _get_lock(key: str) -> _TrackableRLock:
 
 
 def is_computing(key: str) -> bool:
-    return _get_lock(key).locked()
+    with _meta:
+        lock = _locks.get(key)
+        return bool(lock and lock.locked())
 
 
 def _register_cache_path(key: str, path: Path | str) -> None:
@@ -236,6 +242,7 @@ def locked_call(key: str, fn, *args, **kwargs):
 
     Если старый файловый кэш есть, но он устарел или уже пересчитывается,
     запрос получает старый JSON сразу, а обновление продолжается в фоне.
+    Повторный вызов из того же потока замок берёт повторно (RLock).
     """
     lock = _get_lock(key)
     cache_path = _known_cache_path(key)
@@ -373,7 +380,16 @@ def stale_while_revalidate(key: str, load_fresh, load_stale, compute):
 
     logger.info("cache_manager: [%s] no cache file, synchronous compute", key)
     t0 = time.monotonic()
-    result = locked_call(key, compute)
+
+    def _compute_once():
+        # Пока ждали замок, другой поток мог уже записать кэш.
+        fresh_now = load_fresh()
+        if fresh_now is not None:
+            logger.info("cache_manager: [%s] cache appeared while waiting, skip compute", key)
+            return fresh_now
+        return compute()
+
+    result = locked_call(key, _compute_once)
     logger.info(
         "cache_manager: [%s] synchronous compute done in %.1fs",
         key,

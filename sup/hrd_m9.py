@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 
 KPI_ID = "HRD-M9"
 CACHE_PREFIX = "sup_hrd_m9_staffing"
-CACHE_SOURCE_TAG = "sup_hrd_m9_staffing_payload_v1"
-CACHE_VERSION = 1
+CACHE_SOURCE_TAG = "sup_hrd_m9_staffing_payload_v2_monthly_subdir"
+CACHE_VERSION = 2
 VALUES_UNIT = "%"
 
 # Точное имя компании в HC_сводный (лист Вакансии).

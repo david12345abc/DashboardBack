@@ -8,8 +8,8 @@
   дебет сч. 26, Сумма, сторно инвертируется.
 
 План — константы C1_M4_FOT_PLAN_BY_MONTH_2026 (руб./мес.).
-Факт — Σ дебетовых оборотов сч. 26 по 2 статьям АУП по
-«Отдел сопровождения 1С» и узлам в его поддереве
+Факт — Σ дебетовых оборотов сч. 26 по 4 статьям (АУП и пр-во ПРОЕКТЫ)
+по «Отдел сопровождения 1С» и узлам в его поддереве
 (маппинг к ближайшей карточке из списка).
 
 SQL (erp_pm):
@@ -66,9 +66,11 @@ C1_M4_FOT_PLAN_BY_MONTH_2026: dict[int, int] = {
 
 FOT_SPEC_ARTICLES: tuple[str, ...] = (
     "Оплата труда (26 сч) НПО АУП!",
+    "Оплата труда (26 сч) пр-во ПРОЕКТЫ!",
     "Страховые взносы (26 сч) НПО АУП!",
+    "Страховые взносы (26 сч) НПО пр-во ПРОЕКТЫ!",
 )
-SALARY_ARTICLE = FOT_SPEC_ARTICLES[0]
+SALARY_ARTICLES = frozenset(a for a in FOT_SPEC_ARTICLES if a.startswith("Оплата труда"))
 
 # Как C1AUTO_FOT_SPEC в c1_m4_fot_fact.py
 C1AUTO_FOT_SPEC: list[tuple[str, tuple[str, ...]]] = [
@@ -371,7 +373,7 @@ def calc_c1_m4_fot_month(
         total_fact += amt
         by_article[article] = round(by_article.get(article, 0.0) + amt, 2)
         bucket = groups_out[group]
-        if article == SALARY_ARTICLE:
+        if article in SALARY_ARTICLES:
             bucket["fact_salary"] = round(bucket["fact_salary"] + amt, 2)
             total_salary += amt
         else:

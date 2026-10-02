@@ -85,3 +85,5 @@ getkpi/dashboard/**/*.json
 getkpi/*_cache.json
 getkpi/**/*_cache.json
 getkpi/dds_articles_cache.json
+getkpi/dashboard/.kpi_definitions_version
+getkpi/dashboard/**/*.stamp

@@ -3,7 +3,8 @@
 Отбор проектов:
   - организация «ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО»;
   - РП (``rukovoditel``) или куратор (``kurator``) = действующий «Директор по развитию» из 1С;
-  - исключаются проекты с типом «ОПЭ».
+  - исключаются проекты с типом «ОПЭ»;
+  - исключаются номера из ``EXCLUDED_PROJECT_CODES``.
 
 План = все подходящие «живые» проекты в месяце.
 Факт = проекты без отклонения ≥10 р.д. по вехам (отклонение < 10 р.д. или нет отклонений).
@@ -44,13 +45,18 @@ CACHE_DIR = Path(__file__).resolve().parent.parent / "dashboard"
 CACHE_PATH = CACHE_DIR / "devdir_turboproject_projects_by_resources_snapshot.json"
 CACHE_VERSION = 7
 TABLE_CACHE_PREFIX = "devdir_turboproject_projects_by_resources_deviations"
-TABLE_CACHE_VERSION = 11
+TABLE_CACHE_VERSION = 12
 TILE_CACHE_PREFIX = "devdir_rd_m3_1_turboproject_projects_by_resources"
 TILE_CACHE_SOURCE_TAG = "devdir_rd_m3_1_turboproject_projects_by_resources_ytd_v2"
-TILE_CACHE_VERSION = 10
+TILE_CACHE_VERSION = 11
 
 # Факт: максимальное отклонение по вехам строго меньше порога (как «без отклонения >10 р.д.»).
 MAX_FACT_DEVIATION_WORKDAYS = 10
+
+# Не входят ни в план, ни в факт RD-M3-1.
+EXCLUDED_PROJECT_CODES = frozenset({
+    "НПО/СР/2026/47",  # Реорганизация службы развития
+})
 
 EMPTY = "00000000-0000-0000-0000-000000000000"
 
@@ -82,9 +88,25 @@ def devdir_project_owner_labels() -> set[str]:
     }
 
 
+def project_code_key(value: Any) -> str:
+    return " ".join(str(value or "").replace("\xa0", " ").strip().split()).casefold()
+
+
+_EXCLUDED_PROJECT_CODE_KEYS = frozenset(
+    project_code_key(code) for code in EXCLUDED_PROJECT_CODES
+)
+
+
+def is_excluded_rd_m3_1_project(value: Any) -> bool:
+    key = project_code_key(value)
+    return bool(key) and key in _EXCLUDED_PROJECT_CODE_KEYS
+
+
 def is_target_devdir_project(data_1c: dict[str, Any]) -> bool:
-    """Проект директора по развитию: РП/куратор из 1С, без типа ОПЭ."""
+    """Проект директора по развитию: РП/куратор из 1С, без типа ОПЭ и без исключений."""
     if data_1c.get("organizatsiya") != TARGET_ORGANIZATION:
+        return False
+    if is_excluded_rd_m3_1_project(data_1c.get("nomer_proekta")):
         return False
     tip = str(data_1c.get("tip_proekta") or "").strip()
     if _is_ope_project_type(tip):
@@ -251,6 +273,8 @@ def _actual_milestone_indexes(tasks: list[dict[str, Any]]) -> tuple[set[str], se
     ids: set[str] = set()
     keys: set[tuple[str, str, str]] = set()
     for task in tasks:
+        if task.get("is_active") is False:
+            continue
         if not _is_zero_duration_milestone(task):
             continue
         ids.update(_row_ref_ids(task))
@@ -323,6 +347,9 @@ def _overdue_milestone_rows(
     milestone_ids, milestone_keys = _actual_milestone_indexes(tasks)
     rows: list[dict[str, Any]] = []
     for milestone in source_rows:
+        # Неактивные вехи TurboProject не входят в текущий план.
+        if milestone.get("is_active") is False:
+            continue
         if not _is_actual_milestone(milestone, milestone_ids, milestone_keys):
             continue
         if not _milestone_is_zero_percent_complete(milestone.get("percent_complete")):
@@ -676,7 +703,8 @@ def _build_projects_monthly_payload(
             "devdir_owner_position": DEVDIR_OWNER_POSITION,
             "devdir_project_owners": list(devdir_project_owners()),
             "excluded_project_types": ["ОПЭ"],
-            "filter": "rukovoditel or kurator == devdir owner from 1C; tip_proekta != ОПЭ",
+            "excluded_project_codes": sorted(EXCLUDED_PROJECT_CODES),
+            "filter": "rukovoditel or kurator == devdir owner from 1C; tip_proekta != ОПЭ; project code not excluded",
             "target_projects_count": len(projects),
             "kpi_route": TILE_CACHE_PREFIX,
         },
@@ -871,13 +899,15 @@ def _compute_projects_snapshot() -> dict:
             "devdir_owner_position": DEVDIR_OWNER_POSITION,
             "devdir_project_owners": list(devdir_project_owners()),
             "excluded_project_types": ["ОПЭ"],
+            "excluded_project_codes": sorted(EXCLUDED_PROJECT_CODES),
         },
         "debug": {
             "target_organization": TARGET_ORGANIZATION,
             "devdir_owner_position": DEVDIR_OWNER_POSITION,
             "devdir_project_owners": list(devdir_project_owners()),
             "excluded_project_types": ["ОПЭ"],
-            "filter": "rukovoditel or kurator == devdir owner from 1C; tip_proekta != ОПЭ",
+            "excluded_project_codes": sorted(EXCLUDED_PROJECT_CODES),
+            "filter": "rukovoditel or kurator == devdir owner from 1C; tip_proekta != ОПЭ; project code not excluded",
             "target_projects_count": len(target_projects),
             "fact_projects_count": len(fact_projects),
             "cache_path": str(CACHE_PATH),
@@ -888,8 +918,46 @@ def _compute_projects_snapshot() -> dict:
     return payload
 
 
+def _drop_excluded_projects(snapshot: dict) -> dict:
+    """Снимок с диска мог быть собран до исключения — убираем проекты на чтении."""
+    projects = snapshot.get("projects")
+    if not isinstance(projects, list):
+        return snapshot
+    kept = [
+        project
+        for project in projects
+        if not is_excluded_rd_m3_1_project(project.get("project_code"))
+    ]
+    if len(kept) == len(projects):
+        return snapshot
+    updated = dict(snapshot)
+    updated["projects"] = kept
+    fact_count = sum(1 for project in kept if project.get("is_fact"))
+    summary = dict(updated.get("summary") or {})
+    summary["plan"] = len(kept)
+    summary["fact"] = fact_count
+    summary["kpi_pct"] = round(fact_count / len(kept) * 100, 1) if kept else None
+    summary["excluded_project_codes"] = sorted(EXCLUDED_PROJECT_CODES)
+    updated["summary"] = summary
+    debug = updated.get("debug")
+    if isinstance(debug, dict):
+        debug = dict(debug)
+        nested = debug.get("projects")
+        if isinstance(nested, list):
+            debug["projects"] = [
+                project
+                for project in nested
+                if not is_excluded_rd_m3_1_project(project.get("project_code"))
+            ]
+        debug["excluded_project_codes"] = sorted(EXCLUDED_PROJECT_CODES)
+        debug["target_projects_count"] = len(kept)
+        debug["fact_projects_count"] = fact_count
+        updated["debug"] = debug
+    return updated
+
+
 def get_projects_snapshot() -> dict:
-    return _compute_projects_snapshot()
+    return _drop_excluded_projects(_compute_projects_snapshot())
 
 
 def _load_table_cache_stale(path: Path) -> dict | None:
@@ -903,6 +971,35 @@ def _load_table_cache_stale(path: Path) -> dict | None:
         return None
     payload = data.get("payload")
     return payload if isinstance(payload, dict) else None
+
+
+def with_monthly_deviation_history(
+    fetch_table,
+    year: int,
+    through_month: int,
+    *,
+    display_month: int | None = None,
+) -> dict[str, Any]:
+    """Плоский срез за display_month и помесячные rows, чтобы фронт не обнулял таблицу при смене месяца."""
+    through_month = max(1, min(12, int(through_month)))
+    shown_month = max(1, min(through_month, int(display_month or through_month)))
+    current = fetch_table(year=year, month=shown_month) or {}
+    monthly: list[dict[str, Any]] = []
+    for month in range(1, through_month + 1):
+        month_table = current if month == shown_month else (fetch_table(year=year, month=month) or {})
+        period = month_table.get("period") if isinstance(month_table.get("period"), dict) else {}
+        monthly.append({
+            "year": int(period.get("year") or year),
+            "month": month,
+            "month_name": period.get("month_name") or MONTH_NAMES[month],
+            "rows": month_table.get("rows") or [],
+            "columns": month_table.get("columns") or current.get("columns"),
+            "summary": month_table.get("summary"),
+        })
+    merged = dict(current)
+    merged["monthly_data"] = monthly
+    merged["data_granularity"] = "monthly"
+    return merged
 
 
 def get_projects_deviation_table(year: int | None = None, month: int | None = None) -> dict[str, Any]:

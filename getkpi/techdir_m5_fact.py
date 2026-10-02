@@ -111,10 +111,6 @@ def period_fact_row(
         month_numbers,
         cache_stats=cache_stats,
     )
-    has_alive = any(
-        alive_project_names(target_projects, year, m) for m in month_numbers
-    )
-    has_data = has_alive or fact_sum > 0
     return {
         "period_type": period_type,
         "year": year,
@@ -127,9 +123,9 @@ def period_fact_row(
         "selected_quarters": selected_quarters,
         "label": label,
         "plan": None,
-        "fact": fact_sum if has_data else None,
+        "fact": fact_sum,
         "kpi_pct": None,
-        "has_data": has_data,
+        "has_data": True,
         "values_unit": "руб.",
         "aggregation_strategy": "sum_monthly_payments_ext_budj_fact",
     }

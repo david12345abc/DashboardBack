@@ -1,4 +1,8 @@
-"""Общие пути и чтение HR-отчётов ``HC_сводный_{year}_{Month}.xls[x]``."""
+"""Общие пути и чтение HR-отчётов ``HC_сводный_{year}_{Month}.xls[x]``.
+
+Файлы ищутся в корне каталога отчётов и в подпапке «Сводные отчеты по месяцам».
+Если один и тот же месяц лежит в обоих местах, берётся более новый файл.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +13,9 @@ import xlrd
 HC_REPORTS_DIR = Path(
     r"\\192.168.1.198\Files\16.Отдел персонала\Отдел\Отчеты",
 )
+# С 2026 HR кладёт помесячные своды сюда; корень остаётся запасным источником.
+HC_REPORTS_MONTHLY_DIR = HC_REPORTS_DIR / "Сводные отчеты по месяцам"
+HC_REPORTS_DIRS: tuple[Path, ...] = (HC_REPORTS_DIR, HC_REPORTS_MONTHLY_DIR)
 
 HC_FILE_MONTH_TITLES: dict[int, str] = {
     1: "Январь",
@@ -33,13 +40,14 @@ def hc_report_path(year: int, month: int) -> Path:
     title = HC_FILE_MONTH_TITLES[month]
     stem = f"HC_сводный_{year}_{title}"
     existing: list[Path] = []
-    for suffix in _HC_SUFFIXES:
-        path = HC_REPORTS_DIR / f"{stem}{suffix}"
-        try:
-            if path.exists():
-                existing.append(path)
-        except OSError:
-            continue
+    for directory in HC_REPORTS_DIRS:
+        for suffix in _HC_SUFFIXES:
+            path = directory / f"{stem}{suffix}"
+            try:
+                if path.exists():
+                    existing.append(path)
+            except OSError:
+                continue
     if not existing:
         return HC_REPORTS_DIR / f"{stem}.xls"
     if len(existing) == 1:
