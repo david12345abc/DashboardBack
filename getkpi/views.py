@@ -2131,6 +2131,10 @@ def _plan_fact_period_label_from_kpi_period(period: dict | None) -> str | None:
         label = period.get('label')
         if label:
             return str(label)
+    if ptype == 'document_total':
+        label = period.get('label')
+        if label:
+            return str(label)
     if ptype == 'ytd' and year is not None:
         month = period.get('month')
         if month:
@@ -2412,7 +2416,10 @@ def _build_prod_deputy_charts(entries_by_id: dict[str, dict], ref_y: int, ref_m:
                     ],
                     "plan": [p.get("plan") for p in points],
                     "fact": [p.get("fact") for p in points],
-                    "points": points,
+                    "points": [
+                        {key: value for key, value in point.items() if key != "periods"}
+                        for point in points
+                    ],
                     "unit": unit,
                     "x_axis_title": "Месяцы",
                     "y_axis_title": unit or "Значение",
@@ -4486,8 +4493,18 @@ def _adapt_prod_deputy_payload_to_period(payload: dict, ref_y: int, ref_m: int) 
             items.append(tile)
             continue
         next_tile = dict(tile)
+        kid = str(next_tile.get('kpi_id') or '').strip()
         monthly = [row for row in (next_tile.get('monthly_data') or []) if isinstance(row, dict)]
         exact = pick_monthly_row_for_period(monthly, ref_y, ref_m)
+        if kid in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID and not exact:
+            # Нет документа выбранного месяца: не подставлять план прошлого месяца.
+            next_tile['plan'] = None
+            next_tile['fact'] = None
+            next_tile['kpi_pct'] = None
+            next_tile['has_data'] = False
+            next_tile['plan_fact_period_label'] = f"{MONTH_NAMES.get(ref_m, str(ref_m)).capitalize()} {ref_y}"
+            items.append(next_tile)
+            continue
         source = exact or (
             next_tile.get('last_full_month_row')
             if isinstance(next_tile.get('last_full_month_row'), dict)
@@ -4529,6 +4546,70 @@ def _adapt_prod_deputy_payload_to_period(payload: dict, ref_y: int, ref_m: int) 
     return next_payload
 
 
+def _apply_prod_plan_view(tile: dict, view: dict) -> None:
+    row = view.get('last_full_month_row') if isinstance(view.get('last_full_month_row'), dict) else {}
+    months = view.get('monthly_data') or view.get('months') or []
+    tile['monthly_data'] = months
+    tile['plan'] = row.get('plan')
+    tile['fact'] = row.get('fact')
+    tile['kpi_pct'] = row.get('kpi_pct')
+    tile['has_data'] = bool(row.get('has_data'))
+    tile['last_full_month_row'] = dict(row) if row else None
+    period = view.get('kpi_period') if isinstance(view.get('kpi_period'), dict) else None
+    if period:
+        tile['kpi_period'] = period
+        if period.get('label'):
+            tile['plan_fact_period_label'] = period.get('label')
+    for key in ('plan_by_dept', 'fact_by_dept', 'production_plan_rows'):
+        if row.get('has_data') and key in row:
+            tile[key] = row.get(key)
+        elif not row.get('has_data'):
+            tile.pop(key, None)
+
+
+def _overlay_prod_plan_tiles(payload: dict, ref_y: int, ref_m: int) -> dict:
+    """Неделя, месяц и итого — колонки документа выбранного месяца, не прошлый snapshot."""
+    if not isinstance(payload, dict):
+        return payload
+    from . import calc_prod_deputy_output
+
+    monthly_by_shop: dict[str, dict] = {}
+    next_payload = dict(payload)
+    tiles_block = dict(next_payload.get('Плитки') or {})
+    items: list = []
+    for tile in tiles_block.get('items') or []:
+        if not isinstance(tile, dict):
+            items.append(tile)
+            continue
+        next_tile = dict(tile)
+        kid = str(next_tile.get('kpi_id') or '').strip()
+        spec = PROD_DEPUTY_OUTPUT_PERIOD_BY_ID.get(kid)
+        if not spec:
+            items.append(next_tile)
+            continue
+        shop, period = spec
+        try:
+            data = monthly_by_shop.get(shop)
+            if data is None:
+                data = calc_prod_deputy_output.get_prod_deputy_output_monthly(shop, year=ref_y, month=ref_m)
+                monthly_by_shop[shop] = data or {}
+            view = calc_prod_deputy_output.as_period(data, period)
+        except Exception:
+            logger.exception("Не удалось наложить %s из производственного плана", kid)
+            items.append(next_tile)
+            continue
+        _apply_prod_plan_view(next_tile, view)
+        updated_at = _tile_cache_updated_at(kid, ref_y, ref_m)
+        if updated_at:
+            next_tile['cache_updated_at'] = updated_at
+        items.append(next_tile)
+    tiles_block['items'] = items
+    if items:
+        tiles_block['count'] = len(items)
+    next_payload['Плитки'] = tiles_block
+    return next_payload
+
+
 def _overlay_prod_deputy_payload_from_source_caches(payload: dict, ref_y: int, ref_m: int) -> dict:
     """Подставить живые сентябрьские JSON (OTIF/бюджет/ФОТ/проекты), не трогая ERP."""
     if not isinstance(payload, dict):
@@ -4536,6 +4617,8 @@ def _overlay_prod_deputy_payload_from_source_caches(payload: dict, ref_y: int, r
     from . import calc_prod_deputy_projects
     from . import calc_prod_deputy_turnover
     from .calc_prod_deputy_pc_common import cache_path as pc_cache_path
+
+    from . import calc_prod_deputy_output
 
     loaders: dict[str, dict | None] = {
         'PD-M2.1': _prod_deputy_read_json(calc_otif_vypusk_zam_proizvodstva.cache_path('pc1', ref_y, ref_m)),
@@ -4576,7 +4659,7 @@ def _overlay_prod_deputy_payload_from_source_caches(payload: dict, ref_y: int, r
         items.append(next_tile)
     tiles_block['items'] = items
     next_payload['Плитки'] = tiles_block
-    return next_payload
+    return _overlay_prod_plan_tiles(next_payload, ref_y, ref_m)
 
 
 def _prepare_stale_prod_deputy_payload(payload: dict, ref_y: int, ref_m: int) -> dict:
@@ -4758,7 +4841,7 @@ def _build_prod_deputy_payload(
     if not cache_manager.is_force_compute_context():
         cached_payload = _load_fresh_prod_deputy_payload_cache(ref_y, ref_m)
         if cached_payload is not None:
-            return cached_payload
+            return _overlay_prod_plan_tiles(cached_payload, ref_y, ref_m)
         stale_payload = _load_stale_prod_deputy_payload_cache(ref_y, ref_m)
         cache_manager.schedule_background_refresh(
             cache_key,
@@ -5507,14 +5590,17 @@ def _build_kpi_entry(
         else:
             today = date.today()
             ref_y, ref_m = today.year, today.month
+        # Ключ кэша — месячный файл. Срезать колонку недели/итого нужно после
+        # чтения: иначе устаревший файл отдаёт всем трём плиткам колонку месяца.
         data = cache_manager.locked_call(
             f'pd_m1_output_{shop}_{ref_y}_{ref_m}',
-            calc_prod_deputy_output.get_prod_deputy_output_period,
+            calc_prod_deputy_output.get_prod_deputy_output_monthly,
             shop,
-            output_period,
             year=ref_y,
             month=ref_m,
         )
+        if data is not None:
+            data = calc_prod_deputy_output.as_period(data, output_period)
         if data is not None:
             entry['data_granularity'] = 'fixed_period' if kpi_id in PROD_DEPUTY_OUTPUT_PERIOD_BY_ID else 'monthly'
             entry['monthly_data'] = data.get('monthly_data') if 'monthly_data' in data else data.get('months') or []

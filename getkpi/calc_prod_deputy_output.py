@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""PD-M1.1.* — выполнение/факт производственного плана из MSSQL (erp_pm).
+"""PD-M1.1.* / PD-M1.2.* — выполнение производственного плана.
 
-Источник: Document.ТД_ПроизводственныйПлан
-  header  _Document185292
-  tabular _Document185292_VT185297 (ВыполнениеПроизводственногоПлана)
+Источник: OData Document_ТД_ПроизводственныйПлан, табличная часть
+ВыполнениеПроизводственногоПлана. Неделя, месяц и итого — разные колонки
+одной строки, не одна серия.
 """
 from __future__ import annotations
 
@@ -11,42 +11,27 @@ import json
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
+from urllib.parse import quote
 
-from comdir.common import connect, to_1c_dt, uuid_to_1c_bytes
+import requests
+
+from comdir.common import to_1c_dt
 
 from .cache_manager import CACHE_DIR
 from .calc_fot_management import MONTH_RU, _normalize_period
+from .calc_plan import AUTH, BASE
+from .odata_http import request_with_retry
 
 ShopKey = Literal["pc1", "pc2"]
 OutputPeriod = Literal["month", "week", "total"]
 
-SOURCE_TAG = "prod_deputy_output_production_plan_mssql_v13_fallback"
+SOURCE_TAG = "prod_deputy_output_production_plan_odata_v15"
 DOC_ENTITY = "Document_ТД_ПроизводственныйПлан"
 TABULAR_FIELD = "ВыполнениеПроизводственногоПлана"
 
-DOC_TABLE = "_Document185292"
-VT_TABLE = "_Document185292_VT185297"
-PRODUCT_CATALOG = "_Reference184258"
-FLD_PERIOD_FROM = "_Fld185293"  # ПериодС
-FLD_PERIOD_TO = "_Fld185294"  # ПериодПо
-FLD_DEPT = "_Fld185296RRef"  # Подразделение
-
-# VT numeric fields ↔ logical OData names (kept for PERIOD_FIELDS / breakdown).
-VT_FIELD_MAP: dict[str, str] = {
-    "ПланШт": "_Fld185300",
-    "ПланРуб": "_Fld185301",
-    "ФактШт": "_Fld185302",
-    "ФактРуб": "_Fld185303",
-    "ПланШтМесяц": "_Fld185323",
-    "ПланРубМесяц": "_Fld185324",
-    "ФактШтМесяц": "_Fld185325",
-    "ФактРубМесяц": "_Fld185326",
-    "ПланШтИтого": "_Fld185327",
-    "ПланРубИтого": "_Fld185328",
-    "ФактШтИтого": "_Fld185329",
-    "ФактРубИтого": "_Fld185330",
-}
+FLD_PERIOD_FROM = "ПериодС"
+FLD_PERIOD_TO = "ПериодПо"
 
 PRODUCTION_DEPT_KEY: dict[ShopKey, str] = {
     "pc1": "3a9ac2d6-214f-11e0-b91c-00248c26ee57",  # ПРОИЗВОДСТВО НПО
@@ -267,10 +252,6 @@ def _instrument_breakdown(
     return detail_rows, plan_by_product, fact_by_product
 
 
-def _dept_bin(shop: ShopKey) -> bytes:
-    return uuid_to_1c_bytes(PRODUCTION_DEPT_KEY[shop])
-
-
 def _period_dt_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     p0 = to_1c_dt(date(year, month, 1))
     if month == 12:
@@ -278,6 +259,88 @@ def _period_dt_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     else:
         p_next = to_1c_dt(date(year, month + 1, 1))
     return p0, p_next
+
+
+def _as_real_datetime(value: datetime) -> datetime:
+    if value.year >= 4000:
+        return value.replace(year=value.year - 2000)
+    return value
+
+
+def _odata_datetime_literal(value: datetime) -> str:
+    real = _as_real_datetime(value)
+    return f"datetime'{real.strftime('%Y-%m-%dT%H:%M:%S')}'"
+
+
+def _parse_odata_datetime(value) -> datetime | None:
+    if value in (None, ""):
+        return None
+    text = str(value).replace("Z", "")[:19]
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+_PRODUCT_NAMES: dict[str, str] | None = None
+
+
+def _product_name_map() -> dict[str, str]:
+    """Catalog_ТД_ВидПродукцииДляМП: в строке плана ГруппаПродукции приходит как guid."""
+    global _PRODUCT_NAMES
+    if _PRODUCT_NAMES is not None:
+        return _PRODUCT_NAMES
+    url = (
+        f"{BASE}/{quote('Catalog_ТД_ВидПродукцииДляМП')}"
+        f"?$format=json&$top=500&$select={quote('Ref_Key,Description', safe=',')}"
+    )
+    session = requests.Session()
+    session.auth = AUTH
+    names: dict[str, str] = {}
+    for _page in range(10):
+        response = request_with_retry(session, url, timeout=60, label="prod_plan_products")
+        if response is None or not response.ok:
+            status = None if response is None else response.status_code
+            body = "" if response is None else response.text[:300]
+            raise RuntimeError(f"OData Catalog_ТД_ВидПродукцииДляМП HTTP {status}: {body}")
+        payload = response.json()
+        for row in payload.get("value") or []:
+            key = str(row.get("Ref_Key") or "").strip().lower()
+            title = str(row.get("Description") or "").strip()
+            if key and title:
+                names[key] = title
+        url = str(payload.get("odata.nextLink") or "")
+        if not url:
+            break
+    _PRODUCT_NAMES = names
+    return names
+
+
+def _odata_values(filter_expr: str) -> list[dict]:
+    select = (
+        "Ref_Key,Number,Date,Posted,DeletionMark,ПериодС,ПериодПо,"
+        "Подразделение_Key,ВыполнениеПроизводственногоПлана"
+    )
+    url = (
+        f"{BASE}/{quote(DOC_ENTITY)}?$format=json&$top=100"
+        f"&$select={quote(select, safe=',')}"
+        f"&$filter={quote(filter_expr)}"
+    )
+    session = requests.Session()
+    session.auth = AUTH
+    rows: list[dict] = []
+    for _page in range(20):
+        response = request_with_retry(session, url, timeout=120, label="prod_plan")
+        if response is None or not response.ok:
+            status = None if response is None else response.status_code
+            body = "" if response is None else response.text[:300]
+            raise RuntimeError(f"OData {DOC_ENTITY} HTTP {status}: {body}")
+        payload = response.json()
+        rows.extend(payload.get("value") or [])
+        url = str(payload.get("odata.nextLink") or "")
+        if not url:
+            break
+    return rows
 
 
 def _load_docs_between(
@@ -290,78 +353,47 @@ def _load_docs_between(
     contained: bool = False,
     filter_department: bool = True,
 ) -> list[dict]:
-    """Загрузить документы с табличной частью; ключи — как в OData для совместимости."""
-    if contained:
-        period_sql = f"d.[{FLD_PERIOD_FROM}] >= ? AND d.[{FLD_PERIOD_TO}] < ?"
-        period_params: list[Any] = [p_start, p_end]
-    else:
-        period_sql = f"d.[{date_field}] >= ? AND d.[{date_field}] < ?"
-        period_params = [p_start, p_end]
-
-    dept_sql = ""
-    params: list[Any] = list(period_params)
+    """Проведённые документы с табличной частью из OData."""
+    del cur
+    start = _odata_datetime_literal(p_start)
+    end = _odata_datetime_literal(p_end)
+    field = "ПериодПо" if date_field in {FLD_PERIOD_TO, "ПериодПо"} else "ПериодС"
+    parts = ["Posted eq true", "DeletionMark eq false"]
     if filter_department:
-        dept_sql = f" AND d.[{FLD_DEPT}] = ?"
-        params.append(_dept_bin(shop))
+        parts.append(f"Подразделение_Key eq guid'{PRODUCTION_DEPT_KEY[shop]}'")
+    if contained:
+        parts.append(f"ПериодС ge {start}")
+        parts.append(f"ПериодПо lt {end}")
+    else:
+        parts.append(f"{field} ge {start}")
+        parts.append(f"{field} lt {end}")
 
-    cur.execute(
-        f"""
-        SELECT d._IDRRef, d._Number, d._Date_Time,
-               d.[{FLD_PERIOD_FROM}], d.[{FLD_PERIOD_TO}], d.[{FLD_DEPT}]
-        FROM [{DOC_TABLE}] d WITH (NOLOCK)
-        WHERE d._Posted = 0x01
-          AND d._Marked = 0x00
-          AND {period_sql}
-          {dept_sql}
-        ORDER BY d.[{FLD_PERIOD_TO}] DESC, d._Date_Time DESC, d._Number DESC
-        """,
-        *params,
-    )
-    headers = cur.fetchall()
-    if not headers:
-        return []
-
-    refs = [r[0] for r in headers]
-    # Load VT lines for all selected docs
-    placeholders = ",".join("?" for _ in refs)
-    vt_cols = ", ".join(f"v.[{col}] AS [{name}]" for name, col in VT_FIELD_MAP.items())
-    cur.execute(
-        f"""
-        SELECT v.[{DOC_TABLE}_IDRRef] AS doc_ref,
-               v._LineNo185298 AS LineNumber,
-               ISNULL(p._Description, N'') AS ГруппаПродукции,
-               v._Fld185304 AS Комментарий,
-               {vt_cols}
-        FROM [{VT_TABLE}] v WITH (NOLOCK)
-        LEFT JOIN [{PRODUCT_CATALOG}] p WITH (NOLOCK)
-          ON p._IDRRef = v._Fld185299_RRRef
-        WHERE v.[{DOC_TABLE}_IDRRef] IN ({placeholders})
-        ORDER BY v.[{DOC_TABLE}_IDRRef], v._LineNo185298
-        """,
-        *refs,
-    )
-    vt_rows = cur.fetchall()
-    vt_colnames = [d[0] for d in cur.description]
-    by_ref: dict[bytes, list[dict]] = {r: [] for r in refs}
-    for row in vt_rows:
-        item = dict(zip(vt_colnames, row))
-        doc_ref = item.pop("doc_ref")
-        by_ref.setdefault(doc_ref, []).append(item)
-
+    product_names = _product_name_map()
     docs: list[dict] = []
-    for ref, number, dt, p_from, p_to, dept in headers:
+    for raw in _odata_values(" and ".join(parts)):
+        period_from = _parse_odata_datetime(raw.get("ПериодС"))
+        period_to = _parse_odata_datetime(raw.get("ПериодПо"))
+        doc_date = _parse_odata_datetime(raw.get("Date"))
+        lines = []
+        for line in raw.get(TABULAR_FIELD) or []:
+            if not isinstance(line, dict):
+                continue
+            raw_name = str(line.get("ГруппаПродукции") or "").strip()
+            title = product_names.get(raw_name.lower())
+            if title:
+                line["ГруппаПродукции"] = title
+            lines.append(line)
         docs.append({
-            "Ref_Key": ref.hex() if isinstance(ref, (bytes, bytearray)) else str(ref),
-            "Number": number,
-            "Date": _iso_date(dt),
-            "ПериодС": _iso_date(p_from),
-            "ПериодПо": _iso_date(p_to),
-            "Подразделение_Key": PRODUCTION_DEPT_KEY[shop],
-            TABULAR_FIELD: by_ref.get(ref, []),
-            "_ref": ref,
-            "_period_from_dt": p_from,
-            "_period_to_dt": p_to,
-            "_date_dt": dt,
+            "Ref_Key": raw.get("Ref_Key"),
+            "Number": str(raw.get("Number") or "").strip(),
+            "Date": _iso_date(doc_date),
+            "ПериодС": _iso_date(period_from),
+            "ПериодПо": _iso_date(period_to),
+            "Подразделение_Key": raw.get("Подразделение_Key") or PRODUCTION_DEPT_KEY[shop],
+            TABULAR_FIELD: lines,
+            "_period_from_dt": period_from or datetime.min,
+            "_period_to_dt": period_to or datetime.min,
+            "_date_dt": doc_date or datetime.min,
         })
     return docs
 
@@ -408,7 +440,7 @@ def _select_production_plan_doc(
         "selected_date": selected.get("Date") if selected else None,
         "selected_period_from": selected_start.isoformat() if selected_start else None,
         "selected_period_to": selected_end.isoformat() if selected_end else None,
-        "sql_table": DOC_TABLE,
+        "source_entity": DOC_ENTITY,
     }
 
 
@@ -453,7 +485,7 @@ def _select_production_plan_doc_with_fallback(
         "effective_month": None,
         "production_dept_key": PRODUCTION_DEPT_KEY[shop],
         "production_dept_name": PRODUCTION_DEPT_NAME[shop],
-        "sql_table": DOC_TABLE,
+        "source_entity": DOC_ENTITY,
     }
     return None, empty_debug, ref_year, ref_month
 
@@ -490,9 +522,12 @@ def _row_from_document(
     week_start = doc_start
     week_end = doc_end
     if output_period == "week":
-        week_start = target_start
-        week_end = target_end
-        label = f"{target_start.strftime('%d.%m')}–{target_end.strftime('%d.%m.%Y')}"
+        # «Текущая неделя» на форме — период документа, не расчётный Пн–Пт.
+        if not (week_start and week_end):
+            week_start = target_start
+            week_end = target_end
+        if week_start and week_end:
+            label = f"{week_start.strftime('%d.%m')}–{week_end.strftime('%d.%m.%Y')}"
     elif output_period == "total":
         label = f"Итого за {MONTH_RU[ref_month].lower()} {ref_year}"
 
@@ -527,7 +562,7 @@ def _row_from_document(
         "plan": plan,
         "fact": fact,
         "fields": fields_debug,
-        "sql_table": DOC_TABLE,
+        "source_entity": DOC_ENTITY,
     }
     return row, debug
 
@@ -710,6 +745,139 @@ def _aggregate_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     )
 
 
+_PERIOD_SNAPSHOT_KEYS = (
+    "plan",
+    "fact",
+    "kpi_pct",
+    "has_data",
+    "label",
+    "week_start",
+    "week_end",
+    "plan_by_dept",
+    "fact_by_dept",
+    "production_plan_rows",
+    "values_unit",
+)
+
+
+def _period_snapshot(row: dict | None) -> dict:
+    if not isinstance(row, dict):
+        return {}
+    return {key: row.get(key) for key in _PERIOD_SNAPSHOT_KEYS if key in row}
+
+
+def _same_year_month(left: dict, right: dict) -> bool:
+    try:
+        return int(left.get("year") or 0) == int(right.get("year") or -1) and int(left.get("month") or 0) == int(
+            right.get("month") or -1
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def as_period(data: dict | None, period: str) -> dict:
+    """Копия месячного кэша, где plan/fact — колонка недели, месяца или итого.
+
+    Кэш на диске хранит колонку «текущий месяц» в plan/fact и все три колонки
+    в ``periods``. Плитки недели и итого не должны читать месячную серию.
+    """
+    period = period if period in {"month", "week", "total"} else "month"
+    if not isinstance(data, dict):
+        return {"months": [], "monthly_data": [], "last_full_month_row": None, "period_type": period}
+
+    ref_year = int(data.get("year") or 0)
+    ref_month = int(data.get("ref_month") or 0)
+    fallback = None
+    if period == "week":
+        fallback = data.get("last_week_row")
+    elif period == "total":
+        fallback = data.get("last_total_row")
+    elif period == "month":
+        fallback = data.get("last_full_month_row")
+
+    months: list[dict] = []
+    for src in data.get("months") or []:
+        if not isinstance(src, dict):
+            continue
+        row = dict(src)
+        periods = row.get("periods") if isinstance(row.get("periods"), dict) else {}
+        snap = periods.get(period) if period != "month" else None
+        if isinstance(snap, dict) and snap:
+            row.update(snap)
+        elif (
+            period != "month"
+            and isinstance(fallback, dict)
+            and _same_year_month(row, fallback)
+        ):
+            row.update(_period_snapshot(fallback))
+        row.pop("periods", None)
+        months.append(row)
+
+    ref = next(
+        (
+            row
+            for row in months
+            if int(row.get("year") or 0) == ref_year and int(row.get("month") or 0) == ref_month
+        ),
+        None,
+    )
+    if ref is None and isinstance(fallback, dict) and fallback.get("has_data") and _same_year_month(
+        fallback, {"year": ref_year, "month": ref_month}
+    ):
+        ref = dict(fallback)
+        ref.update(_period_snapshot(fallback))
+    elif ref is None:
+        ref = {
+            "year": ref_year,
+            "month": ref_month,
+            "month_name": MONTH_RU.get(ref_month, str(ref_month)).lower() if ref_month else "",
+            "plan": None,
+            "fact": None,
+            "kpi_pct": None,
+            "has_data": False,
+        }
+
+    out = dict(data)
+    out["months"] = months
+    out["monthly_data"] = months
+    out["last_full_month_row"] = dict(ref) if isinstance(ref, dict) else None
+    out["selected_row"] = out["last_full_month_row"]
+    out["period_type"] = period
+    if isinstance(ref, dict):
+        out["ytd"] = {
+            "total_plan": ref.get("plan"),
+            "total_fact": ref.get("fact"),
+            "kpi_pct": ref.get("kpi_pct"),
+            "months_with_data": 1 if ref.get("has_data") else 0,
+            "months_total": 1,
+            "values_unit": ref.get("values_unit") or (data.get("ytd") or {}).get("values_unit"),
+        }
+        month_name = str(ref.get("month_name") or (MONTH_RU.get(ref_month, "") if ref_month else ""))
+        year_label = ref.get("year") or ref_year
+        if ref.get("has_data") and period == "week" and ref.get("label"):
+            period_label = str(ref.get("label"))
+            period_type = "last_week"
+        elif ref.get("has_data") and period == "total":
+            period_label = f"Итого за {month_name} {year_label}".strip()
+            period_type = "document_total"
+        else:
+            pretty = f"{month_name[:1].upper()}{month_name[1:]} {year_label}".strip() if month_name else ""
+            period_label = pretty
+            period_type = "current_month"
+        out["kpi_period"] = {
+            "type": period_type,
+            "year": ref.get("year") or ref_year,
+            "month": ref.get("month") or ref_month,
+            "month_name": month_name,
+            "requested_year": ref_year,
+            "requested_month": ref_month,
+            "label": period_label,
+            "week_start": ref.get("week_start"),
+            "week_end": ref.get("week_end"),
+        }
+    return out
+
+
 def get_prod_deputy_output_monthly(
     shop: ShopKey,
     year: int | None = None,
@@ -730,10 +898,8 @@ def get_prod_deputy_output_monthly(
     unit = VALUES_UNIT[shop]
     rows = []
     debug_by_month: dict[str, dict] = {}
-    cn = connect()
     try:
-        cur = cn.cursor()
-        cur.execute("SET NOCOUNT ON")
+        cur = None
         for mm in range(1, ref_month + 1):
             selected_doc, selection_debug = _select_production_plan_doc(cur, shop, ref_year, mm)
             row, row_debug = _row_from_document(
@@ -744,9 +910,32 @@ def get_prod_deputy_output_monthly(
                 ref_month=mm,
                 unit=unit,
             )
+            week_variant, _week_variant_debug = _row_from_document(
+                selected_doc,
+                shop,
+                "week",
+                ref_year=ref_year,
+                ref_month=mm,
+                unit=unit,
+            )
+            total_variant, _total_variant_debug = _row_from_document(
+                selected_doc,
+                shop,
+                "total",
+                ref_year=ref_year,
+                ref_month=mm,
+                unit=unit,
+            )
+            row["periods"] = {
+                "month": _period_snapshot(row),
+                "week": _period_snapshot(week_variant),
+                "total": _period_snapshot(total_variant),
+            }
             debug_by_month[f"{ref_year}-{mm:02d}"] = {
                 "selected_document": selection_debug,
                 "selected_row": row_debug,
+                "week": {"plan": week_variant.get("plan"), "fact": week_variant.get("fact")},
+                "total": {"plan": total_variant.get("plan"), "fact": total_variant.get("fact")},
             }
             rows.append(row)
 
@@ -784,12 +973,18 @@ def get_prod_deputy_output_monthly(
             ref_month=month_m,
             unit=unit,
         )
+        total_row, total_debug = _row_from_document(
+            month_doc,
+            shop,
+            "total",
+            ref_year=month_y,
+            ref_month=month_m,
+            unit=unit,
+        )
     except Exception:
         if cached is not None:
             return cached
         raise
-    finally:
-        cn.close()
 
     last_data_row = next((r for r in reversed(rows) if r.get("has_data")), None)
     display_month_row = month_tile_row if month_tile_row.get("has_data") else (
@@ -806,6 +1001,7 @@ def get_prod_deputy_output_monthly(
         "ref_month": ref_month,
         "months": rows,
         "last_week_row": week_row,
+        "last_total_row": total_row,
         "weekly_cumulative": weekly_cumulative,
         "quarterly_data": quarterly_data,
         "yearly_data": yearly_data,
@@ -828,8 +1024,6 @@ def get_prod_deputy_output_monthly(
         },
         "debug": {
             "source": DOC_ENTITY,
-            "sql_table": DOC_TABLE,
-            "sql_vt": VT_TABLE,
             "tabular_field": TABULAR_FIELD,
             "production_dept_key": PRODUCTION_DEPT_KEY[shop],
             "months": debug_by_month,
@@ -840,6 +1034,10 @@ def get_prod_deputy_output_monthly(
             "display_month": {
                 "selected_document": month_sel_debug,
                 "selected_row": month_tile_debug,
+            },
+            "last_total": {
+                "selected_document": month_sel_debug,
+                "selected_row": total_debug,
             },
             "weekly_cumulative": weekly_cumulative_debug,
         },
@@ -856,83 +1054,8 @@ def get_prod_deputy_output_period(
 ) -> dict:
     period = period if period in {"month", "week", "total"} else "month"
     ref_year, ref_month = _normalize_period(year, month)
-    unit = VALUES_UNIT[shop]
-
     data = get_prod_deputy_output_monthly(shop, year=ref_year, month=ref_month)
-    cn = connect()
-    try:
-        cur = cn.cursor()
-        cur.execute("SET NOCOUNT ON")
-        selected_doc, selection_debug, eff_y, eff_m = _select_production_plan_doc_with_fallback(
-            cur, shop, ref_year, ref_month
-        )
-        row, row_debug = _row_from_document(
-            selected_doc,
-            shop,
-            period,
-            ref_year=eff_y,
-            ref_month=eff_m,
-            unit=unit,
-        )
-    except Exception:
-        selected_doc = None
-        selection_debug = {"selection_source": "cached_fallback_after_sql_error"}
-        eff_y, eff_m = ref_year, ref_month
-        if period == "week":
-            row = dict(data.get("last_week_row") or data.get("last_full_month_row") or {})
-        elif period == "total":
-            row = dict(data.get("last_full_month_row") or {})
-            if not row.get("has_data"):
-                row = dict((data.get("yearly_data") or [{}])[-1] or {})
-            row.setdefault("month", (row.get("month") or ref_month))
-            row.setdefault("month_name", MONTH_RU[int(row.get("month") or ref_month)].lower())
-            row["label"] = f"Итого за {row.get('month_name')} {row.get('year') or ref_year}"
-        else:
-            row = dict(data.get("last_full_month_row") or {})
-        row_debug = {"source": "cached_fallback_after_sql_error"}
-        if row.get("year") and row.get("month"):
-            eff_y, eff_m = int(row["year"]), int(row["month"])
-    finally:
-        cn.close()
-
-    used_fallback = (eff_y, eff_m) != (ref_year, ref_month)
-    period_type = (
-        "last_week" if period == "week" else ("ytd" if period == "total" else "current_month")
-    )
-    if used_fallback:
-        period_type = "last_available_month"
-    kpi_period = {
-        "type": period_type,
-        "year": eff_y,
-        "month": eff_m,
-        "month_name": MONTH_RU[eff_m].lower(),
-        "requested_year": ref_year,
-        "requested_month": ref_month,
-        "label": row.get("label"),
-        "week_start": row.get("week_start"),
-        "week_end": row.get("week_end"),
-    }
-
-    return {
-        **data,
-        "period_type": period,
-        "selected_row": row,
-        "last_full_month_row": row,
-        "ytd": {
-            "total_plan": row.get("plan"),
-            "total_fact": row.get("fact"),
-            "kpi_pct": row.get("kpi_pct"),
-            "months_with_data": 1 if row.get("has_data") else 0,
-            "months_total": 1,
-            "values_unit": unit,
-        },
-        "kpi_period": kpi_period,
-        "debug": {
-            **(data.get("debug") or {}),
-            "selected_document": selection_debug,
-            "selected_row": row_debug,
-        },
-    }
+    return as_period(data, period)
 
 
 __all__ = [
@@ -940,6 +1063,7 @@ __all__ = [
     "OutputPeriod",
     "VALUES_UNIT",
     "cache_path",
+    "as_period",
     "get_prod_deputy_output_monthly",
     "get_prod_deputy_output_period",
 ]
