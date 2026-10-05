@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # Тег источника в debug плитки и в JSON-кэше (getkpi/dashboard).
 SOURCE_TAG = "qualdir_qd_q1_mpp_v1"
-QD_Q1_TILE_CACHE_VERSION = 1
+QD_Q1_TILE_CACHE_VERSION = 2
 _CACHE_ROOT = Path(__file__).resolve().parent.parent / "getkpi" / "dashboard"
 
 
@@ -254,18 +254,63 @@ def is_year_value(value: str, year: int) -> bool:
     return str(year) in YEAR_PATTERN.findall(value)
 
 
+def _parse_number(value: str) -> float | None:
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        return float(stripped.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def sum_leaf_fact_rounded_up(
+    summary_task: tasks.Task,
+    fact_field_id: int,
+) -> tuple[float, list[dict[str, Any]]]:
+    """
+    Факт месяца по конечным задачам: дробное значение в (0; 1) засчитывается как 1
+    (частично выполненная задача считается выполненной). Возвращает сумму и список
+    скорректированных задач для debug.
+    """
+    total = 0.0
+    adjusted: list[dict[str, Any]] = []
+    for task, _level in iter_child_tasks(summary_task):
+        if task.is_summary:
+            continue
+        raw = _parse_number(get_table_field_value(task, fact_field_id))
+        if raw is None or raw <= 0:
+            continue
+        value = 1.0 if raw < 1 else raw
+        if value != raw:
+            adjusted.append({
+                "uid": int(task.uid),
+                "name": normalize_value(task.name).strip(),
+                "parent": normalize_value(task.parent_task.name).strip()
+                if task.parent_task is not None
+                else "",
+                "raw_fact": raw,
+                "counted_as": value,
+            })
+        total += value
+    return total, adjusted
+
+
 def build_summary_task_row(
     task: tasks.Task,
     row_number: int,
     plan_field_id: int,
     fact_field_id: int,
-) -> dict[str, str | int]:
+) -> dict[str, Any]:
     plan = normalize_number_value(get_table_field_value(task, plan_field_id))
-    fact = normalize_number_value(get_table_field_value(task, fact_field_id))
+    fact_raw = normalize_number_value(get_table_field_value(task, fact_field_id))
+    fact_total, adjusted = sum_leaf_fact_rounded_up(task, fact_field_id)
     return {
         "row": row_number,
         "plan": plan,
-        "fact": fact,
+        "fact": normalize_number_value(str(fact_total)),
+        "fact_raw": fact_raw,
+        "fact_adjusted_tasks": adjusted,
     }
 
 
@@ -429,6 +474,8 @@ def read_qd_q1_plan_fact_for_month(
                     "start_row": sr,
                     "field_id": field_id,
                     "summary_row": summary.get("row"),
+                    "fact_raw": summary.get("fact_raw"),
+                    "fact_adjusted_tasks": summary.get("fact_adjusted_tasks") or [],
                 },
             }
     except Exception as exc:
