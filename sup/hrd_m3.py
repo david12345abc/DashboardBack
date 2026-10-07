@@ -12,7 +12,7 @@ HRD-M3 — бюджет службы управления персоналом �
   организация НПО, статья ДДС с «_СУП_» в названии,
   заявка с ЦФО «Директор НПО» и подразделением «Служба управления персоналом».
 
-План 2026 — константы из hrd_m3_budget_plan.py (сумма 15 строк × месяц).
+План — «Бюджет план» из Документ.ЭкземплярБюджета (все статьи, кроме ФОТ и ЦФО).
 
 SQL (erp_pm):
   Document_СписаниеБезналичныхДенежныхСредств            → dbo._Document980
@@ -70,21 +70,7 @@ ORG_GUIDS = (
     "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
 )
 
-# План 2026, руб./мес. (DashboardBack/sup/hrd_m3_budget_plan.py).
-HRD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 1_582_504,
-    2: 1_082_835,
-    3: 1_616_114,
-    4: 2_503_381,
-    5: 1_786_718,
-    6: 1_888_955,
-    7: 1_169_276,
-    8: 838_255,
-    9: 1_040_987,
-    10: 1_566_296,
-    11: 608_639,
-    12: 536_682,
-}
+# План бюджета — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 HRD_M3_TD_CFO_LABEL = "Директор НПО"
 HRD_M3_TD_CFO_ALIASES: tuple[str, ...] = ("директор нпо",)
@@ -155,9 +141,15 @@ def _sql_period_bounds(year: int, month: int) -> tuple[datetime, datetime]:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in HRD_M3_PLAN_BY_MONTH_2026:
-        return float(HRD_M3_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        [HRD_M3_DEPARTMENT_LABEL],
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -506,7 +498,7 @@ def build_hrd_m3_payload(year: int | None = None, month: int | None = None) -> d
             "status": "ok",
             "kpi_id": "HRD-M3",
             "source": "sup.hrd_m3.sql",
-            "plan_source": "HRD_M3_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": f"{WRITEOFF}.{COL_WO_SUM}, articles *_СУП_*, department",
             "required_td_cfo": HRD_M3_TD_CFO_LABEL,
             "required_department": HRD_M3_DEPARTMENT_LABEL,

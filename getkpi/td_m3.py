@@ -14,7 +14,7 @@ TD-M3 — бюджет затрат блока техдирекции в пре�
 
 KPI % = MIN(100; Факт/План·100).
 
-План 2026: янв–май — скрин; июнь–декабрь — обороты бюджетов (сценарий ЦФО).
+План — «Бюджет план» из Документ.ЭкземплярБюджета по карточкам контура.
 
 SQL (erp_pm):
   Document_СписаниеБезналичныхДенежныхСредств → dbo._Document980
@@ -74,24 +74,7 @@ ORG_GUIDS = (
     "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
 )
 
-# План бюджета 2026, руб./мес.
-# янв–май — скрин (calc_budget_techdir_m3.TD_M3_PLAN_TARGET_2026);
-# июнь–декабрь — обороты бюджетов, сценарий «Плановые данные - ЦФО»,
-# поддерево «ТЕХНИЧЕСКИЙ ДИРЕКТОР» (20 узлов), все статьи.
-TD_M3_PLAN_BY_MONTH_2026: dict[int, float] = {
-    1: 6_227_199,
-    2: 6_208_765,
-    3: 7_557_205,
-    4: 7_805_028,
-    5: 7_363_581,
-    6: 21_406_993.27,
-    7: 23_651_044.73,
-    8: 22_595_121.94,
-    9: 23_669_227.15,
-    10: 22_358_358.04,
-    11: 21_230_815.56,
-    12: 24_758_547.21,
-}
+# План бюджета — Документ.ЭкземплярБюджета по карточкам контура техдиректора.
 
 TD_BUDGET_ROOT = "ТЕХНИЧЕСКИЙ ДИРЕКТОР"
 TD_BUDGET_ROOT_ALIASES: tuple[str, ...] = (
@@ -154,9 +137,16 @@ def sql_period_bounds(year: int, month: int) -> tuple[str, str]:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in TD_M3_PLAN_BY_MONTH_2026:
-        return float(TD_M3_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+    from getkpi.td_m4 import TECHDIR_GROUP_ORDER
+
+    return indicator_for_month(
+        list(TECHDIR_GROUP_ORDER),
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -572,7 +562,7 @@ def build_td_m3_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "TD-M3",
             "source": "techdir.td_m3.sql",
-            "plan_source": "TD_M3_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": (
                 f"{WRITEOFF}.{COL_WO_SUM} posted write-offs, "
                 f"DDS subtree of {ARTICLE_GROUP}"

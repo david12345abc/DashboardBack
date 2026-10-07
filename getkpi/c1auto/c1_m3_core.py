@@ -15,7 +15,7 @@
     • Лицензии_2_СА_ИД_1С_4.20
     • Услуги сторонних организаций_2_СА_ИД_1С_4.15
 
-План 2026 — константы из c1_m3_plan.py (сумма 2 строк × месяц).
+План — «Бюджет план» из Документ.ЭкземплярБюджета.
 
 SQL (erp_pm):
   AccumulationRegister_ДвиженияДенежныеСредстваКонтрагент → dbo._AccumRg51416
@@ -72,21 +72,7 @@ ORG_GUIDS = (
     "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
 )
 
-# План 2026, руб./мес. (DashboardBack/getkpi/c1auto/c1_m3_plan.py).
-C1_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 61_667,
-    2: 31_667,
-    3: 31_667,
-    4: 61_667,
-    5: 118_867,
-    6: 81_867,
-    7: 105_267,
-    8: 31_667,
-    9: 31_667,
-    10: 117_500,
-    11: 27_500,
-    12: 27_500,
-}
+# План бюджета — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 C1_M3_TD_CFO_LABEL = "Служба автоматизации"
 C1_M3_TD_CFO_ALIASES: tuple[str, ...] = ("служба автоматизации",)
@@ -186,9 +172,15 @@ def _sql_period_bounds(year: int, month: int) -> tuple[datetime, datetime]:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in C1_M3_PLAN_BY_MONTH_2026:
-        return float(C1_M3_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        [C1_M3_DEPARTMENT_LABEL],
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -524,7 +516,7 @@ def build_c1_m3_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "1C-M3",
             "source": "1cauto.1c_m3.sql",
-            "plan_source": "C1_M3_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": f"{DOC}.{COL_LINE_SUM}, articles 4.22 / 1C 4.20 / 1C 4.15",
             "required_td_cfo": C1_M3_TD_CFO_LABEL,
             "required_department": C1_M3_DEPARTMENT_LABEL,

@@ -1,4 +1,4 @@
-"""KPI ИТ-M3 / IT-M3 (бюджет): план из it_m3_plan, факт из it_m3_fact.
+"""KPI ИТ-M3 / IT-M3 (бюджет): план из ЭкземплярБюджета, факт из it_m3_fact.
 
 Кэш:
   • помесячно — ``getkpi/dashboard/autoit_it_m3_fact_monthly_<год>_<месяц>.json``;
@@ -14,8 +14,8 @@ from typing import Any
 from devdir import ytd_json_cache
 from qualdir.turnover import _qd_q2_kpi_pct
 
+from .it_m3_core import plan_for_month as _plan_for_month
 from .it_m3_fact import compute_it_m3_fact_monthly
-from .it_m3_plan import IT_M3_PLAN_BY_MONTH_2026
 from .it_monthly_period import MONTH_NAMES, normalize_it_tile_period
 
 logger = logging.getLogger(__name__)
@@ -27,12 +27,6 @@ CACHE_VERSION = 8
 MONTHLY_CACHE_PREFIX = "autoit_it_m3_fact_monthly"
 MONTHLY_SOURCE_TAG = "autoit_it_m3_fact_monthly_sql_v4"
 MONTHLY_CACHE_VERSION = 6
-
-
-def _plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in IT_M3_PLAN_BY_MONTH_2026:
-        return float(IT_M3_PLAN_BY_MONTH_2026[month])
-    return None
 
 
 def monthly_cache_path(year: int, month: int) -> Path:
@@ -140,7 +134,7 @@ def _build_it_m3_payload(year: int | None = None, month: int | None = None) -> d
         "debug": {
             "status": "ok" if with_plan else "no_data",
             "kpi_id": "IT-M3",
-            "plan_source": "getkpi/autoit/it_m3_plan.py (сумма 11 строк × месяц)",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": "getkpi/autoit/it_m3_core.py (списания ДС, группа СА без статей 1С)",
             "monthly_cache_prefix": MONTHLY_CACHE_PREFIX,
             "monthly_cache_version": MONTHLY_CACHE_VERSION,

@@ -118,12 +118,12 @@ def _fetch_all(session: requests.Session, url: str, page: int = 5000) -> list[di
     return rows
 
 
-def _get_plan_total(month: int) -> float:
+def _get_plan_total(year: int, month: int) -> float | None:
     try:
         from . import calc_fot
     except ImportError:
         import calc_fot
-    return float(calc_fot.get_fot_plan(month) or 0.0)
+    return calc_fot.get_fot_plan(month, year=year)
 
 
 def _prorate_if_current(plan: float | None, year: int, month: int) -> float | None:
@@ -330,7 +330,7 @@ def calc_fact(session: requests.Session, year: int, month: int) -> dict:
 def calc_month(session: requests.Session, year: int, month: int) -> dict:
     t = time.time()
     fact = calc_fact(session, year, month)
-    plan_total = _get_plan_total(month)
+    plan_total = _get_plan_total(year, month)
     return {
         "year": year,
         "month": month,

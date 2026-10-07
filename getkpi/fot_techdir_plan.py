@@ -316,59 +316,42 @@ def _last_full_month() -> tuple[int, int]:
 def compute_td_fot_plan_monthly_budget(
     year: int, month: int, article_mode: str = "payroll"
 ) -> dict:
-    """Плановый ФОТ по 19 п/п из оборотов бюджетов (сценарий ЦФО) за календарный месяц."""
-    from .td_m4 import TD_M4_FOT_PLAN_BY_MONTH_2026
+    """Плановый ФОТ контура из Документ.ЭкземплярБюджета за календарный месяц."""
+    from .budget_instance_plan import PLAN_SCENARIO_NAME, calculate, month_bounds
+    from .td_m4 import TECHDIR_GROUP_ORDER
 
-    if year == 2026 and month in TD_M4_FOT_PLAN_BY_MONTH_2026:
-        total_plan = float(TD_M4_FOT_PLAN_BY_MONTH_2026[month])
-        groups_out = {
-            name: {"plan_salary": 0.0, "plan_insurance": 0.0, "plan_total": 0.0}
-            for name in fts.FOT_GROUP_ORDER
-        }
-        return {
-            "year": year,
-            "month": month,
-            "month_name": MONTH_RU.get(month, str(month)),
-            "groups": groups_out,
-            "total_plan": round(total_plan, 2),
-            "article_mode": article_mode,
-            "debug": {
-                "status": "ok",
-                "plan_source": "TD_M4_FOT_PLAN_BY_MONTH_2026",
-                "year": year,
-                "month": month,
-            },
-        }
-
-    session = requests.Session()
-    session.auth = AUTH
-    p0, p1 = period_bounds(year, month)
-    name_to_key, _ = fts.load_fot_spec_structure_map(session)
-    _rows, by_key, _by_parent, _ = fts.load_structure(session)
-    struct_key_to_group = build_struct_key_to_fot_group(name_to_key, by_key)
-    totals, _ = calc_plan_fot_19(
-        session, p0, p1, name_to_key, article_mode, struct_key_to_group
+    period_start, period_end = month_bounds(year, month)
+    result = calculate(
+        list(TECHDIR_GROUP_ORDER),
+        period_start,
+        period_end,
+        scenario=PLAN_SCENARIO_NAME,
     )
-    groups_out: dict[str, dict[str, float]] = {}
-    total_plan = 0.0
-    for n in fts.FOT_GROUP_ORDER:
-        r = totals.get(n, {})
-        s = float(r.get("plan_salary", 0) or 0)
-        ins = float(r.get("plan_insurance", 0) or 0)
-        t = s + ins
-        total_plan += t
-        groups_out[n] = {
-            "plan_salary": s,
-            "plan_insurance": ins,
-            "plan_total": t,
+    by_name = {row["department"]: row for row in result["departments"]}
+    groups_out = {}
+    for name in fts.FOT_GROUP_ORDER:
+        row = by_name.get(name) or {}
+        amount = row.get("fot_total")
+        groups_out[name] = {
+            "plan_salary": 0.0,
+            "plan_insurance": 0.0,
+            "plan_total": None if amount is None else float(amount),
         }
+    total_plan = result["fot_total"]
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_RU.get(month, str(month)),
         "groups": groups_out,
-        "total_plan": round(total_plan, 2),
+        "total_plan": None if total_plan is None else round(total_plan, 2),
         "article_mode": article_mode,
+        "debug": {
+            "status": "ok" if total_plan is not None else "no_document",
+            "plan_source": "Document_ЭкземплярБюджета",
+            "amount_field": "Сумма",
+            "year": year,
+            "month": month,
+        },
     }
 
 

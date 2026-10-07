@@ -76,21 +76,7 @@ ORG_GUIDS = (
     "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
 )
 
-# План 2026, руб./мес. (DashboardBack/qualdir/qd_m3.py).
-QD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 219_250,
-    2: 161_100,
-    3: 549_950,
-    4: 148_350,
-    5: 198_950,
-    6: 203_950,
-    7: 574_450,
-    8: 387_450,
-    9: 225_950,
-    10: 249_950,
-    11: 217_450,
-    12: 221_300,
-}
+# План бюджета — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 # Эталон: отчёт «Списание ДС» по группе «Технический директор», НПО,
 # подразделения контура качества (сверено 02.10.2026).
@@ -185,9 +171,15 @@ def sql_period_bounds(year: int, month: int) -> tuple[str, str]:
 
 
 def _plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in QD_M3_PLAN_BY_MONTH_2026:
-        return float(QD_M3_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        list(QD_GROUP_ORDER),
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -646,7 +638,7 @@ def build_qd_m3_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "QD-M3",
             "source": "qualdir.qd_m3.sql",
-            "plan_source": "QD_M3_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": f"{WRITEOFF_VT}.{COL_WO_SUM} posted write-offs by write-off Date",
             "etalon_fixes": [
                 "fact = Σ Сумма списаний ДС по дате списания (как RD-M3 / TD-M3)",

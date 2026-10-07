@@ -7,7 +7,7 @@
   AccountingRegister_Хозрасчетный / RecordsWithExtDimensions
   дебет сч. 26, Сумма, сторно инвертируется.
 
-План — константы C1_M4_FOT_PLAN_BY_MONTH_2026 (руб./мес.).
+План — ФОТ из Документ.ЭкземплярБюджета.
 Факт — Σ дебетовых оборотов сч. 26 по 4 статьям (АУП и пр-во ПРОЕКТЫ)
 по «Отдел сопровождения 1С» и узлам в его поддереве
 (маппинг к ближайшей карточке из списка).
@@ -48,21 +48,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
-# План ФОТ 2026, руб./мес. (DashboardBack/getkpi/c1auto/c1_m4_fot_plan.py).
-C1_M4_FOT_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 815_468,
-    2: 809_486,
-    3: 811_668,
-    4: 817_925,
-    5: 829_228,
-    6: 810_450,
-    7: 819_685,
-    8: 820_395,
-    9: 815_468,
-    10: 827_121,
-    11: 817_922,
-    12: 814_207,
-}
+# План ФОТ — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 FOT_SPEC_ARTICLES: tuple[str, ...] = (
     "Оплата труда (26 сч) НПО АУП!",
@@ -208,9 +194,15 @@ def money(value: float | None) -> str:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in C1_M4_FOT_PLAN_BY_MONTH_2026:
-        return float(C1_M4_FOT_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        list(C1AUTO_GROUP_ORDER),
+        year,
+        month,
+        "fot",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def fetch_account_26(cur) -> bytes:
@@ -547,7 +539,7 @@ def build_c1_m4_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "1C-M4",
             "source": "1cauto.1c_m4.sql",
-            "plan_source": "C1_M4_FOT_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": "Хозрасчётный сч.26, Отдел сопровождения 1С + поддерево, 2 статьи АУП",
             "departments_in_fact_sum": list(C1AUTO_GROUP_ORDER),
         },

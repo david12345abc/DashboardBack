@@ -7,7 +7,7 @@ TD-M4 — ФОТ технического директора в пределах
   • подразделения — карточки контура (вкл. корень «ТЕХНИЧЕСКИЙ ДИРЕКТОР»)
     и узлы, мапящиеся к ближайшей карточке.
 
-План — константы TD_M4_FOT_PLAN_BY_MONTH_2026 (руб./мес.).
+План — ФОТ из Документ.ЭкземплярБюджета по карточкам контура.
 
 SQL (erp_pm):
   _AccRg2005          — движения Хозрасчётный
@@ -52,24 +52,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
-# План ФОТ 2026, руб./мес.
-# янв–май — скрин (PLANNED_FOT_TARGET_2026);
-# июнь–декабрь — обороты бюджетов, сценарий «Плановые данные - ЦФО»,
-# 19 п/п, статьи ФОТ (dbo._AccumRg52742 / СуммаСценария).
-TD_M4_FOT_PLAN_BY_MONTH_2026: dict[int, float] = {
-    1: 8_426_198,
-    2: 8_555_629,
-    3: 9_649_847,
-    4: 10_358_694,
-    5: 9_899_562,
-    6: 10_292_249.02,
-    7: 10_175_176.74,
-    8: 9_825_014.55,
-    9: 9_982_276.52,
-    10: 9_863_003.39,
-    11: 9_376_109.50,
-    12: 10_172_432.23,
-}
+# План ФОТ — Документ.ЭкземплярБюджета по подразделениям TECHDIR_FOT_SPEC.
 
 # Статьи со скринов ОСВ (сч. 26 АУП/ГАРАНТИИ + сч. 25 НПО/АЛМАЗ).
 FOT_SPEC_ARTICLES: tuple[str, ...] = (
@@ -267,9 +250,15 @@ def money(value: float | None) -> str:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in TD_M4_FOT_PLAN_BY_MONTH_2026:
-        return float(TD_M4_FOT_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        list(TECHDIR_GROUP_ORDER),
+        year,
+        month,
+        "fot",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def fetch_accounts(cur) -> dict[str, bytes]:
@@ -611,7 +600,7 @@ def build_td_m4_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "TD-M4",
             "source": "techdir.td_m4.sql",
-            "plan_source": "TD_M4_FOT_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": (
                 "Хозрасчётный сч.25/26, контур техдирекции, "
                 "статьи АУП + ГАРАНТИИ + НПО/АЛМАЗ"
