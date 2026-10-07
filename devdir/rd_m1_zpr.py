@@ -13,8 +13,8 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 from . import rd_m1, ytd_json_cache
 
 CACHE_FILE_PREFIX = "devdir_rd_m1_zpr"
-CACHE_SOURCE_TAG = "devdir_rd_m1_zpr_ytd_sql_v5"
-CACHE_VERSION = 7
+CACHE_SOURCE_TAG = "devdir_rd_m1_zpr_ytd_sql_v6"
+CACHE_VERSION = 8
 
 
 def _build_rd_m1_zpr_monthly_payload(year: int, month: int) -> dict[str, Any]:

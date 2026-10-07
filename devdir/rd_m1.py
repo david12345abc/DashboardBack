@@ -3,15 +3,19 @@ RD-M1 — Обработка инициатив / ЗПР.
 
 Источник: Document_ТД_ЗаявкаОПотребностиРынка → dbo._Document76753 (SQL-бэкап).
 
-План — все ЗПР с датой документа в месяце, DeletionMark=false,
+План — все ЗПР с датой документа в месяце,
   кроме созданных «Роботом регламентных заданий» (автогенерация из карт заказа UFG/TFG).
-  Аннулированные остаются в плане: в 1С их аннулируют уже после расчёта премии,
-  и в премии они учтены как «Новая».
+  Помеченные на удаление остаются: отчёт 1С «ЗПР в срок» их не отсекает
+  (февраль 2026, заявка 000000254).
 
-Факт — из плана, кроме статусов «Новая» и «Аннулирована».
-  Сверено с премией НП00-000084 (сентябрь 52/50) и НП00-000071 (август 37/36).
+Факт («ЗПР в срок») — из плана, кроме статуса «В работе» (ВРаботе).
+  «Новая», «Аннулирована», «Не согласована в работу» и
+  «В работе у смежного подразделения» в факт входят.
+  Срок отработки на долю не влияет.
+  Сверено с отчётом 1С за 01.01.2026–31.10.2026: 443 / 441 / 99,55 %.
 
-KPI % = факт / план × 100 (до 1 знака).
+KPI % = факт / план × 100 (до 2 знаков), как в отчёте:
+  100 − (в работе / всего × 100).
 
 SQL (erp_pm):
   Document_ТД_ЗаявкаОПотребностиРынка → dbo._Document76753
@@ -56,9 +60,8 @@ COL_AUTHOR = "_Fld109518RRef"
 # «Робот регламентных заданий» (Ref_Key eeb3b4f9-8418-11e8-827b-ac1f6b05524d).
 ROBOT_AUTHOR = "0x827BAC1F6B05524D11E88418EEB3B4F9"
 
-# Значения перечисления статусов ЗПР (_IDRRef), сверены с OData по Ref_Key.
-STATUS_NEW = "0xB2F06A31776558BB41E7EED098E4F5EB"
-STATUS_ANNULLED = "0x89BBE1E521D9BDBD45194C74B2E45B53"
+# «В работе» (OData ВРаботе). Сверено по заявкам 000000659 и 000001036.
+STATUS_IN_WORK = "0x8C28A15A875B176E415EBED6C13011EC"
 
 MONTH_NAMES = {
     1: "Январь",
@@ -144,7 +147,7 @@ def sql_period_bounds(year: int, month: int) -> tuple[str, str]:
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
     if plan is None or fact is None or plan <= 0:
         return None
-    return round(fact / plan * 100.0, 1)
+    return round(fact / plan * 100.0, 2)
 
 
 def compute_month(
@@ -162,13 +165,12 @@ def compute_month(
             SELECT
                 COUNT(*) AS plan_cnt,
                 SUM(
-                    CASE WHEN d.[{COL_STATUS}] NOT IN ({STATUS_NEW}, {STATUS_ANNULLED})
-                         THEN 1 ELSE 0 END
+                    CASE WHEN d.[{COL_STATUS}] = {STATUS_IN_WORK}
+                         THEN 0 ELSE 1 END
                 ) AS fact_cnt
             FROM dbo.[{DOC}] d WITH (NOLOCK)
             WHERE d.[{COL_DATE}] >= ?
               AND d.[{COL_DATE}] < ?
-              AND d._Marked = 0x00
               AND d.[{COL_AUTHOR}] <> {ROBOT_AUTHOR}
             """,
             [p_start, p_end],
@@ -217,14 +219,14 @@ def format_report(payload: dict[str, Any]) -> str:
         "RD-M1 — Обработка инициатив / ЗПР (SQL)",
         f"Источник: {DOC}",
         f"План: {COL_DATE} (дата документа) в месяце, кроме автора-робота",
-        "Факт: все статусы кроме «Новая» и «Аннулирована»",
+        "Факт: все статусы кроме «В работе»",
         "",
         f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'KPI %':>8}",
         f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 8}",
     ]
     for row in rows:
         pct = row["kpi_pct"]
-        pct_s = f"{pct:.1f}" if pct is not None else "—"
+        pct_s = f"{pct:.2f}" if pct is not None else "—"
         lines.append(
             f"{row['year']:04d}-{row['month']:02d} "
             f"{int(row['plan']):>8} "
@@ -304,9 +306,10 @@ def build_rd_m1_payload(year: int | None = None, month: int | None = None) -> di
             "source": "devdir.rd_m1.sql",
             "document": DOC,
             "plan_source": (
-                f"{COL_DATE} (дата документа) в месяце, автор ≠ Робот регламентных заданий"
+                f"{COL_DATE} (дата документа) в месяце, автор ≠ Робот регламентных заданий, "
+                "пометка удаления не исключается"
             ),
-            "fact_source": "статус ∉ {Новая, Аннулирована}",
+            "fact_source": "статус ≠ В работе",
         },
     }
 

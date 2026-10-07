@@ -801,7 +801,11 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif kid in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
         ref = entry.get('last_full_month_row') or {}
-        pct = _devdir_kpi_views.kpi_pct_from_plan_fact(ref.get('plan'), ref.get('fact'))
+        pct = _devdir_kpi_views.kpi_pct_from_plan_fact(
+            ref.get('plan'),
+            ref.get('fact'),
+            ndigits=_devdir_kpi_views.piece_kpi_ndigits(kid),
+        )
         if pct is None:
             row_pct = ref.get('kpi_pct')
             if row_pct is not None:
@@ -1096,7 +1100,11 @@ def _build_tile_item(
                         'color': _sup_kpi_views.rag_hrd_m1_pct(float(lfr['kpi_pct'])),
                     }
             elif _kid_gspp in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
-                pct_lfr = _devdir_kpi_views.kpi_pct_from_plan_fact(lfr.get('plan'), lfr.get('fact'))
+                pct_lfr = _devdir_kpi_views.kpi_pct_from_plan_fact(
+                    lfr.get('plan'),
+                    lfr.get('fact'),
+                    ndigits=_devdir_kpi_views.piece_kpi_ndigits(_kid_gspp),
+                )
                 if pct_lfr is None and lfr.get('kpi_pct') is not None:
                     pct_lfr = float(lfr['kpi_pct'])
                 if pct_lfr is not None:
@@ -1218,7 +1226,11 @@ def _build_tile_item(
                 if not isinstance(row, dict):
                     colored_rows.append(row)
                     continue
-                pct = _devdir_kpi_views.kpi_pct_from_plan_fact(row.get('plan'), row.get('fact'))
+                pct = _devdir_kpi_views.kpi_pct_from_plan_fact(
+                    row.get('plan'),
+                    row.get('fact'),
+                    ndigits=_devdir_kpi_views.piece_kpi_ndigits(_kid_gspp),
+                )
                 if pct is None and row.get('kpi_pct') is not None:
                     pct = float(row['kpi_pct'])
                 colored_rows.append({
@@ -2258,7 +2270,9 @@ def _build_universal_payload(
                     tile['color'] = _servhead_kpi_views.rag_servhead_lower_better_pct(float(lm['kpi_pct']))
             elif _kid_tile in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
                 sync_pct = _devdir_kpi_views.kpi_pct_from_plan_fact(
-                    lm.get('plan'), lm.get('fact'),
+                    lm.get('plan'),
+                    lm.get('fact'),
+                    ndigits=_devdir_kpi_views.piece_kpi_ndigits(_kid_tile),
                 )
                 if sync_pct is not None:
                     tile['kpi_pct'] = sync_pct
