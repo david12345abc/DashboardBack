@@ -1665,7 +1665,10 @@ def build_komdir_payload(kpi_list: list[dict],
     if not cache_manager.is_force_compute_context():
         cached_payload = _load_fresh_payload_cache(payload_cache_path)
         if cached_payload is not None:
-            return _payload_with_active_refresh_status(cached_payload, ref_y, ref_m, payload_cache_path)
+            cached_payload = _payload_with_active_refresh_status(
+                cached_payload, ref_y, ref_m, payload_cache_path,
+            )
+            return _attach_future_month_points(cached_payload, ref_y, ref_m, dept_guid)
     raw = cache_manager.locked_call(
         cache_key,
         _build_komdir_payload_fresh,
@@ -1675,7 +1678,47 @@ def build_komdir_payload(kpi_list: list[dict],
         dept_guid=dept_guid,
         cache_path=payload_cache_path,
     )
-    return _unwrap_payload_cache(raw)
+    return _attach_future_month_points(
+        _unwrap_payload_cache(raw), ref_y, ref_m, dept_guid,
+    )
+
+
+def _attach_future_month_points(payload: dict, ref_y: int, ref_m: int, dept_guid: str | None) -> dict:
+    """На сводку коммерческого директора добавить месяцы после сегодня.
+
+    Октябрь и раньше не меняются. Отделы получают свой payload без этих точек.
+    """
+    today = date.today()
+    if dept_guid or not isinstance(payload, dict):
+        return payload
+    if ref_y != today.year or ref_m != today.month:
+        return payload
+    try:
+        from comdir.future_months import rows_for_tile
+    except Exception:
+        logger.exception("future months: модуль не подключился")
+        return payload
+    items = (payload.get("Плитки") or {}).get("items") or []
+    for tile in items:
+        if not isinstance(tile, dict):
+            continue
+        extra = rows_for_tile(str(tile.get("kpi_id") or ""), ref_y, today)
+        if not extra:
+            continue
+        monthly = [row for row in (tile.get("monthly_data") or []) if isinstance(row, dict)]
+        have = {(int(row.get("year") or 0), int(row.get("month") or 0)) for row in monthly}
+        added = False
+        for row in extra:
+            key = (int(row.get("year") or 0), int(row.get("month") or 0))
+            if key in have or key <= (today.year, today.month):
+                continue
+            monthly.append(dict(row))
+            have.add(key)
+            added = True
+        if added:
+            monthly.sort(key=lambda row: (int(row.get("year") or 0), int(row.get("month") or 0)))
+            tile["monthly_data"] = monthly
+    return payload
 
 
 def _plans_payload_from_tile(tile: dict, kpi_id: str) -> dict:
