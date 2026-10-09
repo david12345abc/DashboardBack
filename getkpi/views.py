@@ -730,6 +730,10 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
     if kid in _qualdir_kpi_views.TILE_FACT_ONLY_IDS:
         return None, None
 
+    # SH-M3: счётчик всех обращений, без KPI % и RAG.
+    if _is_servhead_m3_tile(kpi):
+        return None, None
+
     # HRD-M7: плана нет, в kpi_pct — производительность (выручка/ССЧ), не %.
     # Цвет не считаем по порогам % (иначе 12k → ложный green).
     if kid == 'HRD-M7':
@@ -1249,7 +1253,7 @@ def _build_tile_item(
         tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
     if entry.get('yearly_data') is not None:
         tile['yearly_data'] = [_public_unit_row(row) for row in entry.get('yearly_data') or []]
-    if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M8'}:
+    if kpi.get('kpi_id') in {'QD-M1', 'QD-M1W', 'QD-M5', 'QD-M5W', 'QD-M8', 'QD-M8W'}:
         tile['departments'] = entry.get('departments')
         if entry.get('departments_by_month') is not None:
             tile['departments_by_month'] = entry.get('departments_by_month')
@@ -1263,6 +1267,8 @@ def _build_tile_item(
         lfr = tile.get('last_full_month_row') or {}
         if lfr.get('significant') is not None:
             tile['significant'] = lfr.get('significant')
+        if lfr.get('overdue') is not None:
+            tile['overdue'] = lfr.get('overdue')
     if kpi.get('kpi_id') in _qualdir_kpi_views.OTK_INCOMING_TILE_IDS:
         lfr = tile.get('last_full_month_row') or {}
         for extra_key in ('in_work_today', 'rejected_items_count'):
@@ -2062,8 +2068,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        # v8: color на строках месяца у QD-Q2 (текучесть: факт/план, меньше — лучше).
-        qualdir_memo_key = f"qualdir_dashboard:v8:{ref_y}:{ref_m:02d}"
+        # v9: «в работе» форм 03-17/18/19 — только формы месяца, не весь открытый хвост.
+        qualdir_memo_key = f"qualdir_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2086,8 +2092,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return cached_payload
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
-        # v9: color на строках месяца у плиток текучести.
-        servhead_memo_key = f"servhead_dashboard:v9:{ref_y}:{ref_m:02d}"
+        # v10: SH-M3 — одно число, всего обращений за месяц.
+        servhead_memo_key = f"servhead_dashboard:v10:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return cached_payload
@@ -2109,7 +2115,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"techdir_v4_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v7_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v8_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
             dashboard_disk_key = f"sup_v36_{ref_y}_{ref_m:02d}"
@@ -2121,7 +2127,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"c1auto_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
-            dashboard_disk_key = f"servhead_v9_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"servhead_v10_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
             dashboard_disk_key = f"devdir_v9_{ref_y}_{ref_m:02d}"
@@ -2184,7 +2190,7 @@ def _build_universal_payload(
         )
         if not lm:
             lm = entry.get('last_full_month_row') or {}
-        if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10', 'QD-Q1'}:
+        if kpi.get('kpi_id') in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:
             lfr = entry.get('last_full_month_row') or {}
             if lfr.get('plan') is not None and (
                 not lm or (lm.get('plan') is None and lm.get('fact') is not None)
@@ -2208,14 +2214,16 @@ def _build_universal_payload(
                 tile['plan_by_dept'] = lm.get('plan_by_dept')
             if 'fact_by_dept' in lm:
                 tile['fact_by_dept'] = lm.get('fact_by_dept')
-            if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M8'}:
+            if kpi.get('kpi_id') in {'QD-M1', 'QD-M1W', 'QD-M5', 'QD-M5W', 'QD-M8', 'QD-M8W'}:
                 if 'departments' in lm:
                     tile['departments'] = lm.get('departments')
                 if kpi.get('kpi_id') == 'QD-M8' and 'kinds' in lm:
                     tile['kinds'] = lm.get('kinds')
                 if lm.get('significant') is not None:
                     tile['significant'] = lm.get('significant')
-            if kpi.get('kpi_id') in {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10', 'QD-Q1'}:
+                if lm.get('overdue') is not None:
+                    tile['overdue'] = lm.get('overdue')
+            if kpi.get('kpi_id') in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:
                 if lm.get('kpi_pct') is not None:
                     tile['kpi_pct'] = lm.get('kpi_pct')
                     tile['color'] = _qualdir_kpi_views.rag_plan_fact_pct(float(lm['kpi_pct']))
@@ -2390,7 +2398,10 @@ def _build_universal_payload(
                     tile['data_granularity'] = 'monthly'
         elif kpi.get('kpi_id') == 'PD-M2':
             tile['unit'] = 'шт.'
-        elif kpi.get('kpi_id') in {'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1', 'QD-M6', 'QD-M7', 'QD-M8', 'QD-M9', 'QD-M10'}:
+        elif kpi.get('kpi_id') in {
+            'TD-M1', 'TD-M2', 'TD-Q1', 'QD-Q1',
+            'QD-M1', 'QD-M1W', 'QD-M5', 'QD-M5W', 'QD-M6', 'QD-M7', 'QD-M8', 'QD-M8W', 'QD-M9', 'QD-M10',
+        }:
             tile['unit'] = 'шт.'
         elif _gspp_kpi_views.gspp_q4_kpi_id_matches(_kid_tile):
             tile['unit'] = 'шт.'
