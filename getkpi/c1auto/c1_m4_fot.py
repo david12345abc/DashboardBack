@@ -1,4 +1,4 @@
-"""KPI 1С-M4 (ФОТ): план из c1_m4_fot_plan, факт из c1_m4_fot_fact.
+"""KPI 1С-M4 (ФОТ): план из ЭкземплярБюджета, факт из c1_m4_fot_fact.
 
 Кэш: ``getkpi/dashboard/c1auto_c1_m4_fot_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
 """
@@ -18,20 +18,14 @@ from getkpi.autoit.it_monthly_period import (
     trim_monthly_rows_to_display,
 )
 
+from .c1_m4_core import plan_for_month as _plan_for_month
 from .c1_m4_fot_fact import compute_c1_m4_fot_fact_monthly
-from .c1_m4_fot_plan import C1_M4_FOT_PLAN_BY_MONTH_2026
 
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "c1auto_c1_m4_fot"
 CACHE_SOURCE_TAG = "c1auto_c1_m4_fot_ytd_sql_v1"
 CACHE_VERSION = 5
-
-
-def _plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in C1_M4_FOT_PLAN_BY_MONTH_2026:
-        return float(C1_M4_FOT_PLAN_BY_MONTH_2026[month])
-    return None
 
 
 def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -88,7 +82,7 @@ def _build_c1_m4_fot_payload(year: int | None = None, month: int | None = None) 
         "debug": {
             "status": "ok" if with_data else "no_data",
             "kpi_id": "1C-M4",
-            "plan_source": "getkpi/c1auto/c1_m4_fot_plan.py",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": "getkpi/c1auto/c1_m4_core.py (SQL _AccRg2005 сч.26)",
         },
     }

@@ -7,7 +7,7 @@ IT-M4 — ФОТ отдела информационных технологий 
   AccountingRegister_Хозрасчетный / RecordsWithExtDimensions
   дебет сч. 26, Сумма, сторно инвертируется.
 
-План — константы IT_M4_FOT_PLAN_BY_MONTH_2026 (руб./мес.).
+План — ФОТ из Документ.ЭкземплярБюджета.
 Факт — Σ дебетовых оборотов сч. 26 по 2 статьям АУП по
 «Отдел информационных технологий» и узлам в его поддереве
 (маппинг к ближайшей карточке из списка).
@@ -48,20 +48,7 @@ from sql_connection import SqlConnection
 log = _logging.getLogger(__name__).info
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-IT_M4_FOT_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 271_226,
-    2: 271_226,
-    3: 269_463,
-    4: 280_734,
-    5: 271_226,
-    6: 271_226,
-    7: 271_226,
-    8: 282_302,
-    9: 275_805,
-    10: 272_153,
-    11: 269_253,
-    12: 271_226,
-}
+# План ФОТ — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 FOT_SPEC_ARTICLES: tuple[str, ...] = (
     "Оплата труда (26 сч) НПО АУП!",
@@ -205,9 +192,15 @@ def money(value: float | None) -> str:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in IT_M4_FOT_PLAN_BY_MONTH_2026:
-        return float(IT_M4_FOT_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        list(AUTOIT_GROUP_ORDER),
+        year,
+        month,
+        "fot",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def fetch_account_26(cur) -> bytes:
@@ -544,7 +537,7 @@ def build_it_m4_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "IT-M4",
             "source": "autoit.it_m4.sql",
-            "plan_source": "IT_M4_FOT_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": "Хозрасчётный сч.26, Отдел ИТ + поддерево, 2 статьи АУП",
             "departments_in_fact_sum": list(AUTOIT_GROUP_ORDER),
         },

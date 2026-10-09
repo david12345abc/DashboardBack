@@ -1,4 +1,4 @@
-"""KPI ИТ-M4 (ФОТ): план из it_m4_fot_plan, факт из it_m4_fot_fact.
+"""KPI ИТ-M4 (ФОТ): план из ЭкземплярБюджета, факт из it_m4_fot_fact.
 
 Кэш:
   • помесячно — ``getkpi/dashboard/autoit_it_m4_fot_fact_monthly_<год>_<месяц>.json``;
@@ -13,8 +13,8 @@ from typing import Any
 
 from devdir import ytd_json_cache
 
+from .it_m4_core import plan_for_month as _plan_for_month
 from .it_m4_fot_fact import compute_it_m4_fot_fact_monthly
-from .it_m4_fot_plan import IT_M4_FOT_PLAN_BY_MONTH_2026
 from .it_monthly_period import (
     MONTH_NAMES,
     normalize_it_tile_period,
@@ -93,12 +93,6 @@ def get_it_m4_fot_fact_monthly(year: int, month: int) -> dict[str, Any]:
     )
 
 
-def _plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in IT_M4_FOT_PLAN_BY_MONTH_2026:
-        return float(IT_M4_FOT_PLAN_BY_MONTH_2026[month])
-    return None
-
-
 def _kpi_pct(plan: float | None, fact: float | None) -> float | None:
     if plan is None or fact is None or plan <= 0:
         return None
@@ -153,7 +147,7 @@ def _build_it_m4_fot_payload(year: int | None = None, month: int | None = None) 
         "debug": {
             "status": "ok" if with_data else "no_data",
             "kpi_id": "IT-M4",
-            "plan_source": "getkpi/autoit/it_m4_fot_plan.py",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": "getkpi/autoit/it_m4_core.py (SQL сч.26)",
             "monthly_cache_prefix": MONTHLY_CACHE_PREFIX,
             "monthly_cache_version": MONTHLY_CACHE_VERSION,

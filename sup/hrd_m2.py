@@ -2,12 +2,12 @@
 HRD-M2 — ФОТ службы управления персоналом в пределах лимита.
 
 Эталон (OData, может содержать ошибки):
-  DashboardBack/sup/hrd_m2.py + hrd_m2_fot_fact.py + hrd_m2_fot_plan.py
+  DashboardBack/sup/hrd_m2.py + hrd_m2_fot_fact.py
   → getkpi.fot_techdir_fact.calc_techdir_spec_reg_fact
   AccountingRegister_Хозрасчетный / RecordsWithExtDimensions
   дебет сч. 26, Сумма, сторно инвертируется.
 
-План — константы HRD_M2_FOT_PLAN_BY_MONTH_2026 (руб./мес.).
+План — ФОТ из Документ.ЭкземплярБюджета (пять статей оплаты труда).
 Факт — Σ дебетовых оборотов сч. 26 по 2 статьям АУП по
 «Служба управления персоналом» и узлам в её поддереве
 (маппинг к ближайшей карточке из списка).
@@ -47,21 +47,7 @@ from sql_connection import SqlConnection
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
-# План ФОТ 2026, руб./мес. (DashboardBack/sup/hrd_m2_fot_plan.py).
-HRD_M2_FOT_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 971_268,
-    2: 972_836,
-    3: 969_913,
-    4: 1_007_139,
-    5: 976_683,
-    6: 984_140,
-    7: 953_447,
-    8: 1_056_027,
-    9: 973_400,
-    10: 981_302,
-    11: 997_457,
-    12: 979_451,
-}
+# План ФОТ — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 FOT_SPEC_ARTICLES: tuple[str, ...] = (
     "Оплата труда (26 сч) НПО АУП!",
@@ -204,9 +190,15 @@ def money(value: float | None) -> str:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in HRD_M2_FOT_PLAN_BY_MONTH_2026:
-        return float(HRD_M2_FOT_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        [name for name, _aliases in SUP_FOT_SPEC],
+        year,
+        month,
+        "fot",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def fetch_account_26(cur) -> bytes:
@@ -563,7 +555,7 @@ def build_hrd_m2_payload(year: int | None = None, month: int | None = None) -> d
             "status": "ok",
             "kpi_id": "HRD-M2",
             "source": "sup.hrd_m2.sql",
-            "plan_source": "HRD_M2_FOT_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": "Хозрасчётный сч.26, Служба управления персоналом + поддерево, 2 статьи АУП",
             "departments_in_fact_sum": list(SUP_GROUP_ORDER),
         },

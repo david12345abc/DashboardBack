@@ -872,6 +872,20 @@ def _rag_turnover_vs_plan(plan: float | None, fact: float | None) -> str:
     return 'red'
 
 
+def _paint_turnover_row(row: dict) -> dict:
+    """Цвет строки месяца для текучести.
+
+    В строках kpi_pct = сама текучесть (%), а не % выполнения плана; без color
+    фронт красит по kpi_pct (3,7 < 90 → green) даже при факте выше плана.
+    """
+    if row.get('color') or row.get('fact') is None:
+        return row
+    color = _rag_turnover_vs_plan(row.get('plan'), row.get('fact'))
+    if color == 'unknown':
+        return row
+    return {**row, 'color': color}
+
+
 def _normalize_dashboard_kpi_id(raw: object) -> str:
     """Код KPI для веток views: ASCII-дефис, без ZWSP/BOM, латиница вместо «похожей» кириллицы.
 
@@ -1258,7 +1272,11 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_dz_lower_better(pct)
     elif kid in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
         ref = entry.get('last_full_month_row') or {}
-        pct = _devdir_kpi_views.kpi_pct_from_plan_fact(ref.get('plan'), ref.get('fact'))
+        pct = _devdir_kpi_views.kpi_pct_from_plan_fact(
+            ref.get('plan'),
+            ref.get('fact'),
+            ndigits=_devdir_kpi_views.piece_kpi_ndigits(kid),
+        )
         if pct is None:
             row_pct = ref.get('kpi_pct')
             if row_pct is not None:
@@ -1937,7 +1955,11 @@ def _build_tile_item(
                         'color': _sup_kpi_views.rag_hrd_m1_pct(float(lfr['kpi_pct'])),
                     }
             elif _kid_gspp in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
-                pct_lfr = _devdir_kpi_views.kpi_pct_from_plan_fact(lfr.get('plan'), lfr.get('fact'))
+                pct_lfr = _devdir_kpi_views.kpi_pct_from_plan_fact(
+                    lfr.get('plan'),
+                    lfr.get('fact'),
+                    ndigits=_devdir_kpi_views.piece_kpi_ndigits(_kid_gspp),
+                )
                 if pct_lfr is None and lfr.get('kpi_pct') is not None:
                     pct_lfr = float(lfr['kpi_pct'])
                 if pct_lfr is not None:
@@ -1950,6 +1972,8 @@ def _build_tile_item(
                 lfr = _paint_td_m4_limit_row(lfr)
             elif _kid_gspp in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:
                 lfr = _qualdir_kpi_views.enrich_qualdir_plan_fact_row(lfr)
+            elif _is_turnover_style_tile(kpi):
+                lfr = _paint_turnover_row(lfr)
         tile['last_full_month_row'] = _public_unit_row(lfr)
         if isinstance(lfr, dict):
             if 'project_deviation_rows' in lfr:
@@ -2064,7 +2088,11 @@ def _build_tile_item(
                 if not isinstance(row, dict):
                     colored_rows.append(row)
                     continue
-                pct = _devdir_kpi_views.kpi_pct_from_plan_fact(row.get('plan'), row.get('fact'))
+                pct = _devdir_kpi_views.kpi_pct_from_plan_fact(
+                    row.get('plan'),
+                    row.get('fact'),
+                    ndigits=_devdir_kpi_views.piece_kpi_ndigits(_kid_gspp),
+                )
                 if pct is None and row.get('kpi_pct') is not None:
                     pct = float(row['kpi_pct'])
                 colored_rows.append({
@@ -2073,6 +2101,11 @@ def _build_tile_item(
                     **({'color': _devdir_kpi_views.rag_devdir_plan_fact_pct(pct)} if pct is not None else {}),
                 })
             raw_rows = colored_rows
+        elif _is_turnover_style_tile(kpi):
+            raw_rows = [
+                _paint_turnover_row(row) if isinstance(row, dict) else row
+                for row in raw_rows
+            ]
         tile['monthly_data'] = [_public_unit_row(row) for row in raw_rows]
     if entry.get('quarterly_data') is not None:
         tile['quarterly_data'] = [_public_unit_row(row) for row in entry.get('quarterly_data') or []]
@@ -3191,54 +3224,53 @@ def _build_universal_payload(
     devdir_memo_key: str | None = None
     opdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        # v12: ГСП-Q4 — будущая дата в колонке «Окончание» не считается просрочкой.
-        # v13: ГСП-M3/M5 — color на строке месяца (≤100 / ≤110 / >110).
-        # v14: оба правила после merge new_kukuagu.
-        gspp_memo_key = f"gspp_dashboard:v14:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v17: ГСП-Q4 — в таблице отклонений вехи с планом на месяц, которые просрочены.
+        gspp_memo_key = f"gspp_dashboard:v17:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return cached_payload
     if techdir_dashboard.is_techdir_department(dept) and not include_debug:
-        # v3: нулевой отбор TD-M1/M5/M6/Q1 — has_data, сброс memo после v1.
-        techdir_memo_key = f"techdir_dashboard:v3:{ref_y}:{ref_m:02d}"
+        # v4: color на строках месяца у плиток текучести (TD-Q2).
+        techdir_memo_key = f"techdir_dashboard:v4:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(techdir_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        # v7: формы 03-17/18/19 — актуальный порядок статусов, иначе план/факт 0.
-        qualdir_memo_key = f"qualdir_dashboard:v7:{ref_y}:{ref_m:02d}"
+        # v8: color на строках месяца у QD-Q2 (текучесть: факт/план, меньше — лучше).
+        qualdir_memo_key = f"qualdir_dashboard:v8:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_sup_department(dept) and not include_debug:
-        # v30: HRD-M9 — employees/vacancies для дроби на обороте.
         # v35: HRD-M3 август = строка подразделения в отчёте списаний, 38 950.
-        sup_memo_key = f"sup_dashboard:v35:{ref_y}:{ref_m:02d}"
+        # v36: color на строках месяца у плиток текучести.
+        sup_memo_key = f"sup_dashboard:v36:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_autoit_department(dept) and not include_debug:
-        # v8: сброс снимка, чтобы плитка взяла факт ИТ-M4, а не утренний кэш.
-        autoit_memo_key = f"autoit_dashboard:v8:{ref_y}:{ref_m:02d}"
+        # v9: color на строках месяца у плиток текучести (IT-Q2/IT-Q5).
+        autoit_memo_key = f"autoit_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(autoit_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_c1auto_department(dept) and not include_debug:
-        # v5: 1С-M3 факт = заявки ДС по статьям 4.22 и 1С, не оплаты подразделения.
-        c1auto_memo_key = f"c1auto_dashboard:v5:{ref_y}:{ref_m:02d}"
+        # v6: color на строках месяца у плиток текучести (1C-Q5).
+        c1auto_memo_key = f"c1auto_dashboard:v6:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(c1auto_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
         # v8: SH-T1 на SQL (_Reference389 + _Reference328).
-        # v9: не ронять SH-T2 из-за RLock.locked() на Python < 3.14.
+        # v9: не ронять SH-T2 из-за RLock.locked() на Python < 3.14;
+        #     color на строках месяца у плиток текучести.
         servhead_memo_key = f"servhead_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return cached_payload
     if _is_devdir_department(dept) and not include_debug:
-        # v8: RD-M3 факт = списания ДС группы статей «Директор по развитию»
-        devdir_memo_key = f"devdir_dashboard:v8:{ref_y}:{ref_m:02d}"
+        # v9: color на строках месяца у плиток текучести (RD-Q2).
+        devdir_memo_key = f"devdir_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
         if cached_payload is not None:
             logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
@@ -3253,28 +3285,28 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v14_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v17_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
-            dashboard_disk_key = f"techdir_v3_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"techdir_v4_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v6_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v7_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v35_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v36_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
-            dashboard_disk_key = f"autoit_v8_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"autoit_v9_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = autoit_memo_key
         elif c1auto_memo_key:
-            dashboard_disk_key = f"c1auto_v5_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"c1auto_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
-            dashboard_disk_key = f"servhead_v8_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"servhead_v9_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
-            dashboard_disk_key = f"devdir_v8_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"devdir_v9_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = devdir_memo_key
         elif opdir_memo_key:
             dashboard_disk_key = f"opdir_v1_{ref_y}_{ref_m:02d}"
@@ -3475,7 +3507,9 @@ def _build_universal_payload(
                     tile['color'] = _servhead_kpi_views.rag_servhead_lower_better_pct(float(lm['kpi_pct']))
             elif _kid_tile in _devdir_kpi_views.DEVDIR_PLAN_FACT_COLOR_IDS:
                 sync_pct = _devdir_kpi_views.kpi_pct_from_plan_fact(
-                    lm.get('plan'), lm.get('fact'),
+                    lm.get('plan'),
+                    lm.get('fact'),
+                    ndigits=_devdir_kpi_views.piece_kpi_ndigits(_kid_tile),
                 )
                 if sync_pct is not None:
                     tile['kpi_pct'] = sync_pct

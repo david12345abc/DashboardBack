@@ -2,7 +2,7 @@
 TD-M3 — бюджет затрат блока техдирекции в пределах лимита.
 
 Эталон экрана 1С: «Списания ДС по статьям ДДС», группа статей
-«Технический директор», организация НПО, проведённые списания.
+«Технический директор», организации НПО и Турбулентность-Дон, проведённые списания.
 
 Логика факта (SQL):
   Факт = Σ Сумма расшифровки платежа
@@ -14,7 +14,7 @@ TD-M3 — бюджет затрат блока техдирекции в пре�
 
 KPI % = MIN(100; Факт/План·100).
 
-План 2026: янв–май — скрин; июнь–декабрь — обороты бюджетов (сценарий ЦФО).
+План — «Бюджет план» из Документ.ЭкземплярБюджета по карточкам контура.
 
 SQL (erp_pm):
   Document_СписаниеБезналичныхДенежныхСредств → dbo._Document980
@@ -66,30 +66,15 @@ ART_CAT = "_Reference503"
 COL_WO_SUM = "_Fld37256"
 COL_WO_ART = "_Fld37254RRef"
 COL_WO_ORG = "_Fld37189RRef"
+# Организация строки расшифровки — по ней фильтрует отчёт 1С «Списание ДС».
+COL_WO_LINE_ORG = "_Fld37276RRef"
 ARTICLE_GROUP = "Технический директор"
 ORG_GUIDS = (
     "fbca2148-6cfd-11e7-812d-001e67112509",  # ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО
     "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
 )
 
-# План бюджета 2026, руб./мес.
-# янв–май — скрин (calc_budget_techdir_m3.TD_M3_PLAN_TARGET_2026);
-# июнь–декабрь — обороты бюджетов, сценарий «Плановые данные - ЦФО»,
-# поддерево «ТЕХНИЧЕСКИЙ ДИРЕКТОР» (20 узлов), все статьи.
-TD_M3_PLAN_BY_MONTH_2026: dict[int, float] = {
-    1: 6_227_199,
-    2: 6_208_765,
-    3: 7_557_205,
-    4: 7_805_028,
-    5: 7_363_581,
-    6: 21_406_993.27,
-    7: 23_651_044.73,
-    8: 22_595_121.94,
-    9: 23_669_227.15,
-    10: 22_358_358.04,
-    11: 21_230_815.56,
-    12: 24_758_547.21,
-}
+# План бюджета — Документ.ЭкземплярБюджета по карточкам контура техдиректора.
 
 TD_BUDGET_ROOT = "ТЕХНИЧЕСКИЙ ДИРЕКТОР"
 TD_BUDGET_ROOT_ALIASES: tuple[str, ...] = (
@@ -100,14 +85,14 @@ TD_BUDGET_ROOT_ALIASES: tuple[str, ...] = (
 # Эталон: списания ДС по статьям группы «Технический директор».
 REFERENCE_FACT_2026: dict[int, float] = {
     1: 1_911_235.02,
-    2: 1_979_883.69,
+    2: 1_979_729.78,
     3: 3_089_112.67,
     4: 1_768_114.90,
     5: 3_738_792.67,
     6: 2_486_104.10,
     7: 2_956_581.98,
     8: 2_749_946.73,
-    9: 2_107_130.85,
+    9: 3_218_627.29,
 }
 
 MONTH_NAMES = {
@@ -152,9 +137,16 @@ def sql_period_bounds(year: int, month: int) -> tuple[str, str]:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in TD_M3_PLAN_BY_MONTH_2026:
-        return float(TD_M3_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+    from getkpi.td_m4 import TECHDIR_GROUP_ORDER
+
+    return indicator_for_month(
+        list(TECHDIR_GROUP_ORDER),
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -375,7 +367,7 @@ def compute_td_m3_fact_monthly(
             WHERE d._Date_Time >= ? AND d._Date_Time < ?
               AND d._Marked = 0x00
               AND d._Posted = 0x01
-              AND d.[{COL_WO_ORG}] IN ({",".join("?" * len(org_bins))})
+              AND vt.[{COL_WO_LINE_ORG}] IN ({",".join("?" * len(org_bins))})
               AND vt.[{COL_WO_ART}] IN ({",".join("?" * len(article_ids))})
             GROUP BY vt.[{COL_WO_ART}]
             """,
@@ -570,7 +562,7 @@ def build_td_m3_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "TD-M3",
             "source": "techdir.td_m3.sql",
-            "plan_source": "TD_M3_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": (
                 f"{WRITEOFF}.{COL_WO_SUM} posted write-offs, "
                 f"DDS subtree of {ARTICLE_GROUP}"

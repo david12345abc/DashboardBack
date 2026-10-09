@@ -146,15 +146,6 @@ MONTH_NAMES = {
     12: "декабрь",
 }
 
-# Временные плановые значения TD-M3 на 2026 год из согласованной картинки.
-TD_M3_PLAN_TARGET_2026: dict[int, int] = {
-    1: 6_227_199,
-    2: 6_208_765,
-    3: 7_557_205,
-    4: 7_805_028,
-    5: 7_363_581,
-}
-
 TD_M3_FACT_DEPARTMENTS: tuple[str, ...] = (
     "Эксплуатационная служба",
     "Электрик/энергетик",
@@ -928,22 +919,10 @@ def _compute_request_fact_monthly(
 def compute_td_m3_costs_monthly(year: int, month: int) -> dict[str, Any]:
     session = requests.Session()
     session.auth = AUTH
-    scenario_names = bdg.load_budget_scenarios(session)
-    p0, p1 = _month_period_bounds(year, month)
-    rows = bdg.load_budget_turnover_rows(session, p0, p1)
+    from .td_m3 import plan_for_month
 
-    subtrees = load_budget_group_subtrees(session)
-    subtree_keys = subtrees.get("Технический директор") or set()
-    from .td_m3 import TD_M3_PLAN_BY_MONTH_2026
-
-    if year == 2026 and month in TD_M3_PLAN_BY_MONTH_2026:
-        total_plan = float(TD_M3_PLAN_BY_MONTH_2026[month])
-        plan_source = "TD_M3_PLAN_BY_MONTH_2026"
-    else:
-        total_plan = _sum_turnover_for_scenario(
-            rows, subtree_keys, scenario_names, bdg.load_budget_articles(session), BUDGET_SCENARIO_NAME
-        )
-        plan_source = "1c_budget_turnover"
+    total_plan = plan_for_month(year, month)
+    plan_source = "Document_ЭкземплярБюджета"
     fact_payload = _compute_td_m3_fact_monthly(session, year, month)
     total_fact = fact_payload.get("total_fact")
 

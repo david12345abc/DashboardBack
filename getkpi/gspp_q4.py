@@ -14,6 +14,12 @@
   - выполнена, но фактическое окончание позже baseline (если baseline нет —
     завершённая веха не считается отклонившейся, см. ``debug.milestones_without_baseline``).
 
+**Таблица отклонений** (окно «Отклонения по вехам», не плитка): веха месяца —
+та, у которой плановое окончание (baseline) попадает в месяц, дата плана уже
+наступила, а веха не выполнена. Дни просрочки — календарные дни от плановой
+даты до даты расчёта (сегодня либо конец закрытого месяца). В строке проекта
+показывается максимум по этим вехам.
+
 **Факт:** план минус число отклонившихся (остальные — без отклонения за месяц).
 План/факт по плитке — **сумма по всем** подходящим проектам.
 
@@ -80,8 +86,8 @@ GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v13"
 GSPP_Q4_DISK_VERSION = 13
 
 GSPP_Q4_DEVIATION_CACHE_PREFIX = "gspp_q4_deviation_tables"
-GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v10"
-GSPP_Q4_DEVIATION_DISK_VERSION = 10
+GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v12"
+GSPP_Q4_DEVIATION_DISK_VERSION = 12
 
 _MANAGER_PROJECTS_TTL = 3600
 _MANAGER_PROJECTS_DISK_TAG = "gspp_manager_projects_v1"
@@ -339,42 +345,38 @@ def _milestone_deviated(
     return due_d <= as_of_date
 
 
+def _plan_finish_in_month(task: dict[str, Any], ref_y: int, ref_m: int) -> date | None:
+    """Плановое окончание (baseline), если оно попадает в опорный месяц."""
+    base_d = _calendar_date_from_field(_task_baseline_finish(task))
+    if base_d is None or base_d.year != ref_y or base_d.month != ref_m:
+        return None
+    return base_d
+
+
 def _gspp_delay_days_for_deviated(
     task: dict[str, Any], ref_y: int, ref_m: int, as_of_date: date,
 ) -> int:
-    """Календарные дни от даты в колонке «Окончание» до даты расчёта.
+    """Календарные дни от плановой даты до даты расчёта.
 
     Дата расчёта — сегодня для текущего месяца, конец месяца для закрытого.
-    Невыполненная веха считается от той же даты, что показана в «Окончание»
-    (график Turbo; если веха попала в месяц по baseline — плановая дата этого месяца).
-    Скрытый baseline, которого нет в колонке, в дни не входит: иначе рядом
-    с окончанием 09.09 получается просрочка от июля.
-    Выполненная веха — насколько факт позже baseline.
+    План 2 октября и расчёт 27 октября дают 25 дней. В строке проекта берётся
+    максимум по вехам.
     """
-    completed = _milestone_completed(task)
-    act_d = _calendar_date_from_field(task.get("finish_date"))
-    base_raw = _task_baseline_finish(task)
-    base_d = _calendar_date_from_field(base_raw) if base_raw else None
-
-    if completed:
-        if base_d and act_d:
-            return max(0, (act_d - base_d).days)
+    plan_d = _plan_finish_in_month(task, ref_y, ref_m)
+    if plan_d is None or plan_d > as_of_date:
         return 0
-
-    if _ending_date_is_in_the_future(task, ref_y, ref_m, as_of_date):
-        return 0
-    due_d = base_d if base_d is not None else act_d
-    if due_d is None:
-        due_d = act_d if act_d is not None else base_d
-    if due_d is None or due_d > as_of_date:
-        return 0
-    return max(0, (as_of_date - due_d).days)
+    return max(0, (as_of_date - plan_d).days)
 
 
 def _collect_gspp_q4_deviated_milestones(
     tasks: list[dict[str, Any]], ref_y: int, ref_m: int,
 ) -> list[dict[str, Any]]:
-    """Все вехи когорты месяца с отклонением (та же логика, что у плитки ГСП-Q4)."""
+    """Вехи, которые по плану заканчиваются в месяце и к дате расчёта просрочены.
+
+    Просрочена — плановая дата уже наступила, а ``percent_complete`` < 100%.
+    Плитка ГСП-Q4 по-прежнему считает когорту по дате графика.
+    """
+    as_of_date = _deviation_as_of_date(ref_y, ref_m)
     out: list[dict[str, Any]] = []
     for task in tasks:
         if task.get("is_summary"):
@@ -383,9 +385,10 @@ def _collect_gspp_q4_deviated_milestones(
             continue
         if not _gspp_q4_counts_as_milestone(task):
             continue
-        if not _milestone_in_reference_month(task, ref_y, ref_m):
+        plan_d = _plan_finish_in_month(task, ref_y, ref_m)
+        if plan_d is None or plan_d > as_of_date:
             continue
-        if not _milestone_deviated(task, ref_y, ref_m, without_baseline=[]):
+        if _milestone_completed(task):
             continue
         out.append(task)
     return out

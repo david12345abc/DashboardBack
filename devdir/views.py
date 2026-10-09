@@ -79,7 +79,17 @@ def rag_devdir_plan_fact_pct(pct: float | None) -> str:
     return 'red'
 
 
-def kpi_pct_from_plan_fact(plan: object, fact: object) -> float | None:
+def piece_kpi_ndigits(kpi_id: str) -> int:
+    """RD-M1 совпадает с отчётом 1С «ЗПР в срок»: доля до сотых."""
+    return 2 if str(kpi_id or '').strip().upper() == 'RD-M1' else 1
+
+
+def kpi_pct_from_plan_fact(
+    plan: object,
+    fact: object,
+    *,
+    ndigits: int = 1,
+) -> float | None:
     try:
         p = float(plan)
         f = float(fact)
@@ -87,7 +97,7 @@ def kpi_pct_from_plan_fact(plan: object, fact: object) -> float | None:
         return None
     if p <= 0:
         return None
-    return round(f / p * 100, 1)
+    return round(f / p * 100, ndigits)
 
 
 def sync_devdir_piece_tile_color(tile: dict[str, Any]) -> None:
@@ -95,7 +105,11 @@ def sync_devdir_piece_tile_color(tile: dict[str, Any]) -> None:
     kid = str(tile.get('kpi_id') or '').strip().upper()
     if kid not in DEVDIR_PLAN_FACT_COLOR_IDS:
         return
-    pct = kpi_pct_from_plan_fact(tile.get('plan'), tile.get('fact'))
+    pct = kpi_pct_from_plan_fact(
+        tile.get('plan'),
+        tile.get('fact'),
+        ndigits=piece_kpi_ndigits(kid),
+    )
     if pct is None:
         pct = tile.get('kpi_pct')
         if pct is not None:

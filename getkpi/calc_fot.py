@@ -69,62 +69,31 @@ MONTH_RU = {
     9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
 }
 
-# ── План расходов ФОТ на 2026 год (по месяцам 1-12) ──
-FOT_PLAN: dict[str, list[float]] = {
-    "bd7b5184-9f9c-11e4-80da-001e67112509": [  # Газпром
-        577_789, 577_789, 580_349, 615_029, 577_789, 577_789,
-        621_251, 692_784, 577_789, 613_498, 656_252, 802_249,
-    ],
-    "639ec87b-67b6-11eb-8523-ac1f6b05524d": [  # ОРКК
-        922_276, 927_551, 986_010, 1_055_422, 937_222, 922_276,
-        1_051_636, 1_149_762, 977_822, 1_064_818, 969_256, 1_222_426,
-    ],
-    "49480c10-e401-11e8-8283-ac1f6b05524d": [  # ВЭД
-        836_850, 986_850, 986_850, 1_095_243, 1_030_825, 986_850,
-        1_050_739, 1_096_743, 1_113_826, 1_051_723, 1_025_426, 1_270_035,
-    ],
-    "7587c178-92f6-11f0-96f9-6cb31113810e": [  # ОДП
-        1_517_715, 1_517_715, 1_541_130, 1_614_760, 1_517_715, 1_629_485,
-        1_559_889, 1_637_533, 1_589_336, 1_544_183, 1_579_311, 1_690_094,
-    ],
-    "34497ef7-810f-11e4-80d6-001e67112509": [  # ОПЭОиУ
-        897_710, 891_185, 924_207, 924_765, 888_314, 932_112,
-        1_022_207, 906_062, 899_222, 998_444, 935_816, 1_016_310,
-    ],
-    "9edaa7d4-37a5-11ee-93d3-6cb31113810e": [  # БМИ
-        662_288, 674_252, 709_603, 662_288, 670_976, 723_486,
-        685_868, 662_288, 662_288, 706_841, 671_684, 662_288,
-    ],
-    "95dfd1c6-37a4-11ee-93d3-6cb31113810e": [  # PR
-        271_527, 254_803, 255_421, 279_418, 255_421, 255_421,
-        322_149, 259_523, 255_421, 258_624, 255_421, 255_421,
-    ],
-    "1c9f9419-d91b-11e0-8129-cd2988c3db2d": [  # Тендерный отдел
-        341_460, 341_460, 522_529, 367_294, 352_844, 535_252,
-        366_463, 341_460, 522_529, 376_401, 364_705, 522_529,
-    ],
-}
-
-KOMDIR_OWN_PLAN: list[float] = [  # Коммерческий директор (собственные расходы)
-    1_013_594, 1_042_372, 1_463_819, 989_490, 1_013_594, 1_539_322,
-    1_063_397, 1_079_589, 1_504_007, 1_011_476, 1_019_662, 1_816_999,
-]
+# Собственный контур коммерческого директора в Catalog_СтруктураПредприятия.
+COMMERCIAL_DIRECTOR_KEY = "4668a582-6eb1-11e2-afce-001e67112509"
 
 
-def get_fot_plan(month: int, dept_guid: str | None = None) -> float:
-    """План ФОТ для месяца (1-12).
-    dept_guid=None → сумма всех отделов + комдир.
-    dept_guid='…'  → план конкретного отдела.
+def get_fot_plan(month: int, dept_guid: str | None = None, year: int | None = None) -> float | None:
+    """План ФОТ из Документ.ЭкземплярБюджета.
+
+    dept_guid=None — сумма отделов коммерческой службы и коммерческого директора.
+    Нет документа — None, ноль вместо документа не подставляется.
     """
-    idx = month - 1
-    if dept_guid is not None:
-        plan_list = FOT_PLAN.get(dept_guid)
-        return plan_list[idx] if plan_list and 0 <= idx < len(plan_list) else 0
-    total = KOMDIR_OWN_PLAN[idx] if 0 <= idx < 12 else 0
-    for plan_list in FOT_PLAN.values():
-        if 0 <= idx < len(plan_list):
-            total += plan_list[idx]
-    return total
+    from .budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    if year is None:
+        year = date.today().year
+    if dept_guid:
+        departments = [dept_guid]
+    else:
+        departments = [*DEPARTMENTS.keys(), COMMERCIAL_DIRECTOR_KEY]
+    return indicator_for_month(
+        departments,
+        year,
+        month,
+        "fot",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
@@ -271,7 +240,7 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
         sliced.append({
             "year": row["year"],
             "month": m,
-            "plan": get_fot_plan(m, dept_guid),
+            "plan": get_fot_plan(m, dept_guid, year=row["year"]),
             "fact": fact,
         })
     return {

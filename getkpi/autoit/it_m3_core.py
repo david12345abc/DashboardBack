@@ -14,7 +14,7 @@ IT-M3 — бюджет службы автоматизации / ОИТ в пр�
   Строка 4.22 в отчёте «Списания ДС по статьям ДДС» — это 1С,
   остальные строки группы «СА» — ИТ.
 
-План 2026 — константы из it_m3_plan.py (сумма 11 строк × месяц).
+План — «Бюджет план» из Документ.ЭкземплярБюджета.
 
 SQL (erp_pm):
   Document_СписаниеБезналичныхДенежныхСредств            → dbo._Document980
@@ -43,7 +43,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from getkpi.c1auto.c1_m3_core import C1_M3_ARTICLES
+from getkpi.c1auto.c1_m3_core import C1_M3_ARTICLES, SA_REQUEST_DEPARTMENTS
 from sql_connection import SqlConnection
 
 log = _logging.getLogger(__name__).info
@@ -62,6 +62,9 @@ ART_CAT = "_Reference503"
 COL_WO_SUM = "_Fld37256"
 COL_WO_ART = "_Fld37254RRef"
 COL_WO_ORG = "_Fld37189RRef"
+# Организация строки расшифровки — по ней фильтрует отчёт 1С «Списание ДС».
+COL_WO_LINE_ORG = "_Fld37276RRef"
+COL_WO_REQ = "_Fld37264_RRRef"
 ARTICLE_GROUP = "СА"
 
 COL_ORG = "_Fld51418RRef"
@@ -78,21 +81,7 @@ ORG_GUIDS = (
     "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
 )
 
-# План 2026, руб./мес. (DashboardBack/getkpi/autoit/it_m3_plan.py).
-IT_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 603_500,
-    2: 750_500,
-    3: 866_500,
-    4: 924_500,
-    5: 814_000,
-    6: 1_041_100,
-    7: 552_500,
-    8: 801_000,
-    9: 1_370_500,
-    10: 528_500,
-    11: 503_500,
-    12: 1_106_500,
-}
+# План бюджета — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 IT_M3_TD_CFO_LABEL = "Служба автоматизации"
 IT_M3_TD_CFO_ALIASES: tuple[str, ...] = ("служба автоматизации",)
@@ -104,17 +93,18 @@ IT_M3_DEPARTMENT_ALIASES: tuple[str, ...] = (
     "оит",
 )
 
-# Эталон: списания ДС по группе «СА» без статей 1С, НПО + Турбулентность-Дон.
+# Эталон: списания ДС по группе «СА» без статей 1С, подразделения заявки
+# Отдел ИТ / Отдел сопровождения 1С (сверено с отчётом 1С 02.10.2026).
 REFERENCE_FACT_2026: dict[int, float] = {
-    1: 986_706.48,
-    2: 336_184.72,
-    3: 400_446.59,
-    4: 771_628.14,
-    5: 398_220.37,
-    6: 216_028.89,
-    7: 712_050.98,
-    8: 373_445.38,
-    9: 506_895.25,
+    1: 734_329.48,
+    2: 175_742.73,
+    3: 264_450.79,
+    4: 357_656.14,
+    5: 191_303.37,
+    6: 186_509.89,
+    7: 373_684.58,
+    8: 251_945.38,
+    9: 438_875.25,
 }
 
 MONTH_NAMES = {
@@ -165,9 +155,15 @@ def _sql_period_bounds(year: int, month: int) -> tuple[datetime, datetime]:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in IT_M3_PLAN_BY_MONTH_2026:
-        return float(IT_M3_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        [IT_M3_DEPARTMENT_LABEL],
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -297,6 +293,7 @@ def compute_it_m3_fact_monthly(
     p_start, p_end = _sql_period_bounds(year, month)
     org_ph = ",".join("?" * len(ORG_BINS))
     c1_ph = ",".join("?" * len(C1_M3_ARTICLES))
+    dept_ph = ",".join("?" * len(SA_REQUEST_DEPARTMENTS))
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
@@ -311,15 +308,23 @@ def compute_it_m3_fact_monthly(
                     ON a._IDRRef = vt.[{COL_WO_ART}]
             INNER JOIN dbo.[{ART_CAT}] p WITH (NOLOCK)
                     ON p._IDRRef = a._ParentIDRRef
+            INNER JOIN dbo.[{DOC}] r WITH (NOLOCK)
+                    ON r._IDRRef = vt.[{COL_WO_REQ}]
+            INNER JOIN dbo.[{STRUCT}] s WITH (NOLOCK)
+                    ON s._IDRRef = r.[{COL_DOC_DEPT}]
             WHERE d._Date_Time >= ? AND d._Date_Time < ?
               AND d._Posted = 0x01
               AND d._Marked = 0x00
-              AND d.[{COL_WO_ORG}] IN ({org_ph})
+              AND vt.[{COL_WO_LINE_ORG}] IN ({org_ph})
               AND p._Description = ?
               AND a._Description NOT IN ({c1_ph})
+              AND s._Description IN ({dept_ph})
             GROUP BY a._Description
             """,
-            [p_start, p_end, *ORG_BINS, ARTICLE_GROUP, *C1_M3_ARTICLES],
+            [
+                p_start, p_end, *ORG_BINS, ARTICLE_GROUP,
+                *C1_M3_ARTICLES, *SA_REQUEST_DEPARTMENTS,
+            ],
         )
         grouped = cur.fetchall()
 
@@ -353,9 +358,11 @@ def compute_it_m3_fact_monthly(
             "period_end": p_end.isoformat(sep="T"),
             "articles": articles,
             "excluded_articles": list(C1_M3_ARTICLES),
+            "request_departments": list(SA_REQUEST_DEPARTMENTS),
             "rule": (
                 "fact = sum(Сумма) of posted bank write-offs "
-                "whose DDS article is in group СА, excluding 1C budget articles"
+                "whose DDS article is in group СА, excluding 1C budget articles, "
+                "request department in IT / 1C support"
             ),
         },
     }
@@ -495,7 +502,7 @@ def build_it_m3_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "IT-M3",
             "source": "autoit.it_m3.sql",
-            "plan_source": "IT_M3_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": (
                 f"{WRITEOFF}.{COL_WO_SUM}, article group {ARTICLE_GROUP}, "
                 "excluding 1C budget articles"

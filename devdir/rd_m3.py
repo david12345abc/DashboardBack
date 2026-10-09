@@ -12,7 +12,7 @@ RD-M3 — бюджет контура директора по развитию �
     • Организация — ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО
     • Статья ДДС ∈ поддерево «Директор по развитию»
 
-План 2026 — константы RD_M3_BUDGET_PLAN_BY_MONTH_2026.
+План — «Бюджет план» из Документ.ЭкземплярБюджета по подразделениям контура.
 KPI % = факт / план × 100 (до 1 знака).
 
 SQL (erp_pm):
@@ -59,29 +59,24 @@ ART_CAT = "_Reference503"
 COL_WO_SUM = "_Fld37256"
 COL_WO_ART = "_Fld37254RRef"
 COL_WO_ORG = "_Fld37189RRef"
+# Организация строки расшифровки — по ней фильтрует отчёт 1С «Списание ДС».
+COL_WO_LINE_ORG = "_Fld37276RRef"
 ARTICLE_GROUP = "Директор по развитию"
 # Отчёт 1С сверяется по организации НПО.
 ORG_NPO = "fbca2148-6cfd-11e7-812d-001e67112509"
 EMPTY = b"\x00" * 16
 
-# План 2026, руб./мес. (DashboardBack/devdir/rd_m3_budget_plan.py).
-RD_M3_BUDGET_PLAN_BY_MONTH_2026: dict[int, float] = {
-    1: 60_000,
-    2: 50_000,
-    3: 1_065_996,
-    4: 606_320,
-    5: 207_680,
-    6: 384_000,
-    7: 115_000,
-    8: 264_800,
-    9: 289_000,
-    10: 240_000,
-    11: 130_000,
-    12: 139_000,
-}
+# План бюджета — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 # Эталон: колонка «Сумма» отчёта «Списание ДС», группа «Директор по развитию», НПО.
 REFERENCE_FACT_2026: dict[int, float] = {
+    1: 93_500.00,
+    2: 33_690.00,
+    3: 166_082.00,
+    4: 289_745.00,
+    5: 263_180.00,
+    6: 180_260.00,
+    7: 204_517.00,
     8: 290_880.00,
     9: 161_880.00,
 }
@@ -128,9 +123,17 @@ def sql_period_bounds(year: int, month: int) -> tuple[str, str]:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in RD_M3_BUDGET_PLAN_BY_MONTH_2026:
-        return float(RD_M3_BUDGET_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    from .rd_m4 import DEVDIR_GROUP_ORDER
+
+    return indicator_for_month(
+        list(DEVDIR_GROUP_ORDER),
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -296,7 +299,7 @@ def compute_rd_m3_fact_monthly(
             WHERE d._Date_Time >= ? AND d._Date_Time < ?
               AND d._Marked = 0x00
               AND d._Posted = 0x01
-              AND d.[{COL_WO_ORG}] = ?
+              AND vt.[{COL_WO_LINE_ORG}] = ?
               AND vt.[{COL_WO_ART}] IN ({",".join("?" * len(article_ids))})
             GROUP BY vt.[{COL_WO_ART}]
             """,
@@ -508,7 +511,7 @@ def build_rd_m3_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "RD-M3",
             "source": "devdir.rd_m3.sql",
-            "plan_source": "RD_M3_BUDGET_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": (
                 f"{WRITEOFF}.{COL_WO_SUM} posted write-offs, "
                 f"DDS group {ARTICLE_GROUP}, org NPO"

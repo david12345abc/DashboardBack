@@ -1,4 +1,4 @@
-"""KPI 1С-M3 / 1C-M3 (бюджет подразделения): план из c1_m3_plan, факт из c1_m3_fact.
+"""KPI 1С-M3 / 1C-M3 (бюджет подразделения): план из ЭкземплярБюджета, факт из c1_m3_fact.
 
 Кэш: ``getkpi/dashboard/c1auto_c1_m3_<год>_<месяц>.json`` — см. ``ytd_json_cache``.
 """
@@ -13,20 +13,14 @@ from devdir import ytd_json_cache
 from getkpi.autoit.it_monthly_period import MONTH_NAMES, normalize_it_tile_period
 from qualdir.turnover import _qd_q2_kpi_pct
 
+from .c1_m3_core import plan_for_month as _plan_for_month
 from .c1_m3_fact import compute_c1_m3_fact_monthly
-from .c1_m3_plan import C1_M3_PLAN_BY_MONTH_2026
 
 logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "c1auto_c1_m3"
-CACHE_SOURCE_TAG = "c1auto_c1_m3_ytd_sql_v2"
-CACHE_VERSION = 5
-
-
-def _plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in C1_M3_PLAN_BY_MONTH_2026:
-        return float(C1_M3_PLAN_BY_MONTH_2026[month])
-    return None
+CACHE_SOURCE_TAG = "c1auto_c1_m3_ytd_sql_v4"
+CACHE_VERSION = 7
 
 
 def _build_c1_m3_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
@@ -76,7 +70,7 @@ def _build_c1_m3_payload(year: int | None = None, month: int | None = None) -> d
         "debug": {
             "status": "ok" if with_plan else "no_data",
             "kpi_id": "1C-M3",
-            "plan_source": "getkpi/c1auto/c1_m3_plan.py (сумма 2 строк × месяц)",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": "getkpi/c1auto/c1_m3_core.py (заявки ДС, статьи 4.22 / 1С 4.20 / 1С 4.15)",
         },
     }

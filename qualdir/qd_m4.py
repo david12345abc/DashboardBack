@@ -12,7 +12,7 @@ QD-M4 — ФОТ подразделения в пределах лимита (д
 Эталон OData (DashboardBack qd_m4 / register26) учитывал только сч. 26 —
 здесь выборка исправлена по ОСВ 25/26.
 
-План — константы QD_M4_PLAN_BY_MONTH_2026 (руб./мес.).
+План — ФОТ из Документ.ЭкземплярБюджета по семи подразделениям контура.
 Факт — Σ дебетовых оборотов по правилам счёт×статьи×п/п (и поддеревья).
 
 SQL (erp_pm):
@@ -50,21 +50,7 @@ from typing import Any
 
 from sql_connection import SqlConnection
 
-# Плановый ФОТ контура качества, 2026, руб./мес. (сумма трёх строк по столбцу месяца).
-QD_M4_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 511_958 + 507_692 + 61_890,
-    2: 508_161 + 416_331 + 100_169,
-    3: 525_100 + 964_361 + 112_724,
-    4: 649_510 + 1_154_788 + 127_162,
-    5: 532_549 + 1_143_118 + 132_887,
-    6: 570_589 + 1_429_682 + 160_353,
-    7: 549_005 + 1_406_250 + 158_705,
-    8: 634_292 + 1_049_684 + 196_695,
-    9: 537_874 + 1_293_779 + 184_608,
-    10: 525_597 + 1_096_186 + 170_822,
-    11: 522_884 + 919_101 + 112_025,
-    12: 574_639 + 1_446_782 + 95_580,
-}
+# План ФОТ — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 # Статьи оплаты / взносов по методике (организация «вшита» в наименование статьи).
 ARTICLES_26_NPO_AUP: tuple[str, ...] = (
@@ -243,9 +229,15 @@ def as_float(value: Any) -> float:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in QD_M4_PLAN_BY_MONTH_2026:
-        return float(QD_M4_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        [name for name, _aliases in SEVEN_DEPTS_FOT_SPEC],
+        year,
+        month,
+        "fot",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def fetch_accounts(cur) -> dict[str, bytes]:
@@ -593,7 +585,7 @@ def build_qd_m4_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok" if any(item.get("has_data") for item in monthly_rows) else "no_data",
             "kpi_id": "QD-M4",
             "source": "qualdir.qd_m4.sql",
-            "plan_source": "QD_M4_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": (
                 "Хозрасчётный сч.25/26 по правилам п/п (НПО АУП / НПО / АЛМАЗ), "
                 "7 п/п + поддеревья"

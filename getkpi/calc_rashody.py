@@ -115,62 +115,28 @@ ART_SDS_SET = frozenset([
 
 SUBCONTO_TYPE_COST = "fb2bdde9-6250-11e7-812d-001e67112509"
 
-# ── План расходов на 2026 год (по месяцам 1-12) ──
-RASHODY_PLAN: dict[str, list[float]] = {
-    "bd7b5184-9f9c-11e4-80da-001e67112509": [  # Газпром
-        707_789, 757_789, 760_349, 795_029, 757_789, 757_789,
-        801_251, 872_784, 757_789, 843_498, 886_252, 1_032_249,
-    ],
-    "639ec87b-67b6-11eb-8523-ac1f6b05524d": [  # ОРКК
-        1_252_276, 1_397_551, 1_456_010, 1_525_422, 1_407_222, 1_392_276,
-        1_521_636, 1_619_762, 1_447_822, 1_534_818, 1_439_256, 1_692_426,
-    ],
-    "49480c10-e401-11e8-8283-ac1f6b05524d": [  # ВЭД
-        836_850, 986_850, 986_850, 1_095_243, 1_030_825, 986_850,
-        1_050_739, 1_096_743, 1_113_826, 1_051_723, 1_025_426, 1_270_035,
-    ],
-    "7587c178-92f6-11f0-96f9-6cb31113810e": [  # ОДП
-        1_837_715, 2_117_715, 2_141_130, 2_214_760, 2_117_715, 2_229_485,
-        2_159_889, 2_237_533, 2_189_336, 2_144_183, 2_179_311, 2_330_094,
-    ],
-    "34497ef7-810f-11e4-80d6-001e67112509": [  # ОПЭОиУ
-        897_710, 1_041_185, 924_207, 1_074_765, 888_314, 1_082_112,
-        1_022_207, 1_056_062, 899_222, 1_148_444, 935_816, 1_116_310,
-    ],
-    "9edaa7d4-37a5-11ee-93d3-6cb31113810e": [  # БМИ
-        662_288, 874_252, 909_603, 862_288, 870_976, 923_486,
-        885_868, 862_288, 862_288, 906_841, 871_684, 912_288,
-    ],
-    "95dfd1c6-37a4-11ee-93d3-6cb31113810e": [  # PR
-        286_527, 269_803, 335_421, 294_418, 270_421, 405_421,
-        367_149, 274_523, 365_421, 423_624, 270_421, 505_421,
-    ],
-    "1c9f9419-d91b-11e0-8129-cd2988c3db2d": [  # Тендерный отдел
-        1_821_460, 551_460, 642_529, 587_294, 452_844, 665_252,
-        536_463, 491_460, 612_529, 496_401, 574_705, 722_529,
-    ],
-}
+def get_rashody_plan(month: int, dept_guid: str | None = None, year: int | None = None) -> float | None:
+    """Бюджет план из Документ.ЭкземплярБюджета.
 
-KOMDIR_OWN_PLAN: list[float] = [  # Коммерческий директор (собственные расходы)
-    6_477_389, 7_435_133, 19_187_640, 21_962_757, 30_154_158, 34_201_207,
-    30_614_217, 21_193_420, 29_826_045, 20_082_105, 17_803_247, 38_526_888,
-]
-
-
-def get_rashody_plan(month: int, dept_guid: str | None = None) -> float:
-    """План расходов для месяца (1-12).
-    dept_guid=None → сумма всех отделов + комдир.
-    dept_guid='…'  → план конкретного отдела.
+    dept_guid=None — сумма отделов коммерческой службы и коммерческого директора.
+    Нет документа — None, ноль вместо документа не подставляется.
     """
-    idx = month - 1
-    if dept_guid is not None:
-        plan_list = RASHODY_PLAN.get(dept_guid)
-        return plan_list[idx] if plan_list and 0 <= idx < len(plan_list) else 0
-    total = KOMDIR_OWN_PLAN[idx] if 0 <= idx < 12 else 0
-    for plan_list in RASHODY_PLAN.values():
-        if 0 <= idx < len(plan_list):
-            total += plan_list[idx]
-    return total
+    from .budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+    from .calc_fot import COMMERCIAL_DIRECTOR_KEY
+
+    if year is None:
+        year = date.today().year
+    if dept_guid:
+        departments = [dept_guid]
+    else:
+        departments = [*DEPARTMENTS.keys(), COMMERCIAL_DIRECTOR_KEY]
+    return indicator_for_month(
+        departments,
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 MONTH_RU = {
@@ -403,7 +369,7 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
         sliced.append({
             "year": row["year"],
             "month": m,
-            "plan": get_rashody_plan(m, dept_guid),
+            "plan": get_rashody_plan(m, dept_guid, year=row["year"]),
             "fact": fact,
         })
     return {

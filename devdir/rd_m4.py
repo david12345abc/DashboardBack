@@ -7,7 +7,7 @@ RD-M4 — ФОТ подразделения в пределах лимита (д
   AccountingRegister_Хозрасчетный / RecordsWithExtDimensions
   дебет сч. 26, Сумма, сторно инвертируется.
 
-План — константы RD_M4_FOT_PLAN_BY_MONTH_2026 (руб./мес.).
+План — ФОТ из Документ.ЭкземплярБюджета по подразделениям контура.
 Факт — Σ дебетовых оборотов сч. 26 по 2 статьям АУП по пяти п/п
 контура развития; узел относится к ближайшей карточке из списка
 (как build_struct_key_to_fot_group в эталоне).
@@ -50,21 +50,7 @@ from sql_connection import SqlConnection  # noqa: E402
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
-# План ФОТ 2026, руб./мес. (DashboardBack/devdir/rd_m4_fot_plan.py).
-RD_M4_FOT_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 1_474_715,
-    2: 1_589_363,
-    3: 1_557_220,
-    4: 1_618_194,
-    5: 1_561_051,
-    6: 1_584_279,
-    7: 1_555_304,
-    8: 1_505_029,
-    9: 1_648_114,
-    10: 1_557_221,
-    11: 1_564_826,
-    12: 1_571_386,
-}
+# План ФОТ — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 # Две статьи п. 4.2 (FOT_SPEC_ARTICLES в fot_techdir_fact).
 FOT_SPEC_ARTICLES: tuple[str, ...] = (
@@ -222,9 +208,15 @@ def money(value: float | None) -> str:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in RD_M4_FOT_PLAN_BY_MONTH_2026:
-        return float(RD_M4_FOT_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        list(DEVDIR_GROUP_ORDER),
+        year,
+        month,
+        "fot",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def fetch_account_26(cur) -> bytes:
@@ -558,7 +550,7 @@ def build_rd_m4_payload(year: int | None = None, month: int | None = None) -> di
             "status": "ok",
             "kpi_id": "RD-M4",
             "source": "devdir.rd_m4.sql",
-            "plan_source": "RD_M4_FOT_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": "Хозрасчётный сч.26, 5 п/п контура развития, 2 статьи АУП",
             "departments_in_fact_sum": list(DEVDIR_GROUP_ORDER),
         },

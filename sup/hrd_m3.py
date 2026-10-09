@@ -12,7 +12,7 @@ HRD-M3 — бюджет службы управления персоналом �
   организация НПО, статья ДДС с «_СУП_» в названии,
   заявка с ЦФО «Директор НПО» и подразделением «Служба управления персоналом».
 
-План 2026 — константы из hrd_m3_budget_plan.py (сумма 15 строк × месяц).
+План — «Бюджет план» из Документ.ЭкземплярБюджета (все статьи, кроме ФОТ и ЦФО).
 
 SQL (erp_pm):
   Document_СписаниеБезналичныхДенежныхСредств            → dbo._Document980
@@ -59,6 +59,8 @@ ART_CAT = "_Reference503"
 COL_WO_SUM = "_Fld37256"
 COL_WO_ART = "_Fld37254RRef"
 COL_WO_ORG = "_Fld37189RRef"
+# Организация строки расшифровки — по ней фильтрует отчёт 1С «Списание ДС».
+COL_WO_LINE_ORG = "_Fld37276RRef"
 COL_WO_REQ = "_Fld37264_RRRef"
 COL_DOC_CFO = "_Fld127709RRef"
 COL_DOC_DEPT = "_Fld22796RRef"
@@ -68,21 +70,7 @@ ORG_GUIDS = (
     "fbca2143-6cfd-11e7-812d-001e67112509",  # Турбулентность-Дон ООО
 )
 
-# План 2026, руб./мес. (DashboardBack/sup/hrd_m3_budget_plan.py).
-HRD_M3_PLAN_BY_MONTH_2026: dict[int, int] = {
-    1: 1_582_504,
-    2: 1_082_835,
-    3: 1_616_114,
-    4: 2_503_381,
-    5: 1_786_718,
-    6: 1_888_955,
-    7: 1_169_276,
-    8: 838_255,
-    9: 1_040_987,
-    10: 1_566_296,
-    11: 608_639,
-    12: 536_682,
-}
+# План бюджета — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
 HRD_M3_TD_CFO_LABEL = "Директор НПО"
 HRD_M3_TD_CFO_ALIASES: tuple[str, ...] = ("директор нпо",)
@@ -96,13 +84,13 @@ HRD_M3_DEPARTMENT_ALIASES: tuple[str, ...] = (
 REFERENCE_FACT_2026: dict[int, float] = {
     1: 898_839.33,
     2: 47_300.0,
-    3: 365_965.0,
-    4: 308_312.0,
+    3: 330_965.0,
+    4: 298_217.0,
     5: 40_474.0,
-    6: 2_450_636.56,
-    7: 146_143.61,
+    6: 2_423_628.0,
+    7: 144_715.0,
     8: 38_950.0,
-    9: 199_925.0,
+    9: 202_350.0,
 }
 
 MONTH_NAMES = {
@@ -153,9 +141,15 @@ def _sql_period_bounds(year: int, month: int) -> tuple[datetime, datetime]:
 
 
 def plan_for_month(year: int, month: int) -> float | None:
-    if year == 2026 and month in HRD_M3_PLAN_BY_MONTH_2026:
-        return float(HRD_M3_PLAN_BY_MONTH_2026[month])
-    return None
+    from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
+
+    return indicator_for_month(
+        [HRD_M3_DEPARTMENT_LABEL],
+        year,
+        month,
+        "budget_plan",
+        scenario=PLAN_SCENARIO_NAME,
+    )
 
 
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
@@ -311,7 +305,7 @@ def compute_hrd_m3_fact_monthly(
             WHERE d._Date_Time >= ? AND d._Date_Time < ?
               AND d._Posted = 0x01
               AND d._Marked = 0x00
-              AND d.[{COL_WO_ORG}] = ?
+              AND vt.[{COL_WO_LINE_ORG}] = ?
               AND a._Description LIKE N'%[_]СУП[_]%'
               AND z.[{COL_DOC_CFO}] IN ({cfo_ph})
               AND z.[{COL_DOC_DEPT}] IN ({dept_ph})
@@ -505,7 +499,7 @@ def build_hrd_m3_payload(year: int | None = None, month: int | None = None) -> d
             "status": "ok",
             "kpi_id": "HRD-M3",
             "source": "sup.hrd_m3.sql",
-            "plan_source": "HRD_M3_PLAN_BY_MONTH_2026",
+            "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": f"{WRITEOFF}.{COL_WO_SUM}, articles *_СУП_*, department",
             "required_td_cfo": HRD_M3_TD_CFO_LABEL,
             "required_department": HRD_M3_DEPARTMENT_LABEL,
@@ -569,11 +563,11 @@ from pathlib import Path as _Path
 from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normalize_period
 
 HRD_M3_YTD_CACHE_PREFIX = "sup_hrd_m3_budget"
-HRD_M3_YTD_DISK_TAG = "sup_hrd_m3_budget_sql_payload_v7_selected_month"
-HRD_M3_YTD_DISK_VERSION = 7
+HRD_M3_YTD_DISK_TAG = "sup_hrd_m3_budget_sql_payload_v8_selected_month"
+HRD_M3_YTD_DISK_VERSION = 8
 HRD_M3_MONTHLY_CACHE_PREFIX = "sup_hrd_m3_budget_fact_sql_monthly"
-HRD_M3_MONTHLY_SOURCE_TAG = "sup_hrd_m3_budget_fact_sql_monthly_v4"
-HRD_M3_MONTHLY_CACHE_VERSION = 4
+HRD_M3_MONTHLY_SOURCE_TAG = "sup_hrd_m3_budget_fact_sql_monthly_v5"
+HRD_M3_MONTHLY_CACHE_VERSION = 5
 
 
 def monthly_cache_path(year: int, month: int) -> _Path:
