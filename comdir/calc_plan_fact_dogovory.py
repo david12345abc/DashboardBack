@@ -281,7 +281,7 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
         base,
         "Catalog_СоглашенияСКлиентами",
         {r.get("Спецификация_Key") or "" for r in rows},
-        "Ref_Key,Статус",
+        "Ref_Key,Статус,Description,ТД_СчетОферта",
         label="Dog/SpecStatus",
     )
     orders = _odata_batch_by_ref(
@@ -293,8 +293,16 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
             for r in rows
             if r.get("ЗаказКлиента_Key") not in ("", None, _EMPTY_GUID)
         },
-        "Ref_Key,Партнер_Key,Валюта_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи",
+        "Ref_Key,Number,Партнер_Key,Валюта_Key,Соглашение_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи",
         label="Dog/SignedOrders",
+    )
+    order_agreements = _odata_batch_by_ref(
+        session,
+        base,
+        "Catalog_СоглашенияСКлиентами",
+        {o.get("Соглашение_Key") or "" for o in orders.values()},
+        "Ref_Key,Description,ТД_СчетОферта",
+        label="Dog/OrderAgr",
     )
 
     name_by_bin = _dept_name_by_bin()
@@ -323,6 +331,7 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
 
         ok = r.get("ЗаказКлиента_Key") or _EMPTY_GUID
         rate = 1.0
+        od = {}
         if ok != _EMPTY_GUID:
             od = orders.get(ok) or {}
             if od.get("ТД_НеУчитыватьВПланФакте"):
@@ -338,6 +347,33 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
 
         amt = float(r.get("СуммаДоговора") or 0) * rate
         out[dept_name] = out.get(dept_name, 0.0) + amt
+        # Отчёт показывает сумму дважды, когда в регистре ещё счёт-оферта,
+        # а заказ уже переведён на типовой договор.
+        order_agr = od.get("Соглашение_Key") or ""
+        spec = specs.get(r.get("Спецификация_Key") or "") or {}
+        current = order_agreements.get(order_agr) or {}
+        spec_is_offer = bool(spec.get("ТД_СчетОферта")) or "оферт" in (spec.get("Description") or "").lower()
+        current_is_typical = (current.get("Description") or "").lower().startswith("типовое")
+        doubled = bool(
+            order_agr and spec_is_offer and current_is_typical
+            and order_agr != (r.get("Спецификация_Key") or "")
+        )
+        if doubled:
+            out[dept_name] = out.get(dept_name, 0.0) + amt
+        from comdir.plan_fact_sink import note
+
+        number = (od.get("Number") or "").strip()
+        spec_name = (spec.get("Description") or "").strip()
+        document = spec_name or (("Заказ клиента " + number) if number else "Договор")
+        note(
+            "dog",
+            "Факт",
+            amt * (2 if doubled else 1),
+            date=(r.get("ДатаПодписания") or "")[:10],
+            department=dept_name,
+            partner_key=partner,
+            document=document,
+        )
 
     return {k: round(v, 2) for k, v in out.items()}
 
@@ -832,6 +868,16 @@ def calc_fact_offer_live_odata(p0: datetime, p_next: datetime) -> dict[str, floa
         ):
             continue
         out[dept_name] = out.get(dept_name, 0.0) + float(amt or 0)
+        from comdir.plan_fact_sink import note
+
+        note(
+            "dog",
+            "Факт",
+            amt,
+            department=dept_name,
+            partner_key=partner,
+            document="Счёт-оферта",
+        )
     return {k: round(v, 2) for k, v in out.items()}
 
 
@@ -916,7 +962,7 @@ def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
         base,
         "Document_ЗаказКлиента",
         order_keys,
-        "Ref_Key,Date,Posted,Статус,СуммаДокумента,Подразделение_Key,Партнер_Key,"
+        "Ref_Key,Number,Date,Posted,Статус,СуммаДокумента,Подразделение_Key,Партнер_Key,"
         "Соглашение_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи",
         label="Dog/ReorderOrders",
     )
@@ -1019,6 +1065,18 @@ def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
         ):
             continue
         out[dept_name] = out.get(dept_name, 0.0) + float(amt or 0)
+        from comdir.plan_fact_sink import note
+
+        number = (order.get("Number") or "").strip()
+        note(
+            "dog",
+            "Факт",
+            amt,
+            date=(order.get("Date") or "")[:10],
+            department=dept_name,
+            partner_key=partner,
+            document=("Заказ клиента " + number) if number else "Дозаказ",
+        )
     return {k: round(v, 2) for k, v in out.items()}
 
 
@@ -1057,6 +1115,253 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return _merge_fact(_merge_fact(reg, offer), reorder)
 
 
+_DEPT_GUID_TO_NAME = {
+    "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО Газпром",
+    "7587c178-92f6-11f0-96f9-6cb31113810e": "Отдел дилерских продаж",
+    "639ec87b-67b6-11eb-8523-ac1f6b05524d": "Отдел по работе с ключевыми клиентами",
+    "34497ef7-810f-11e4-80d6-001e67112509": "Отдел продаж эталонного оборудования и услуг",
+    "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел внешнеэкономической деятельности",
+    "9edaa7d4-37a5-11ee-93d3-6cb31113810e": "Отдел продаж БМИ",
+}
+_KP_STATUS_BAD = {"Черновик", "НеСогласовано", "Аннулировано", "Отменено", "Не согласовано"}
+_EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
+
+
+def _odata_stamp(dt: datetime) -> str:
+    return f"{dt.year - YEAR_OFFSET:04d}-{dt.month:02d}-{dt.day:02d}T00:00:00"
+
+
+def _odata_get_pages(session, url: str) -> list[dict]:
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        response = session.get(f"{url}&$top=500&$skip={skip}", timeout=120)
+        response.raise_for_status()
+        batch = response.json().get("value") or []
+        rows.extend(batch)
+        if len(batch) < 500:
+            break
+        skip += len(batch)
+    return rows
+
+
+def _odata_batch(session, base: str, entity: str, keys: set[str], select: str) -> dict[str, dict]:
+    from urllib.parse import quote
+
+    out: dict[str, dict] = {}
+    clean = [k for k in keys if k and k != _EMPTY_GUID]
+    for i in range(0, len(clean), 15):
+        part = clean[i:i + 15]
+        flt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in part), safe="")
+        url = (
+            f"{base}/{quote(entity)}?$format=json&$filter={flt}"
+            f"&$select={quote(select, safe=',_')}&$top={len(part)}"
+        )
+        response = session.get(url, timeout=60)
+        response.raise_for_status()
+        for row in response.json().get("value") or []:
+            if row.get("Ref_Key"):
+                out[row["Ref_Key"]] = row
+    return out
+
+
+def _resale_bins():
+    from comdir.resale import _fetch_from_odata
+
+    resale, mgs, opbo = _fetch_from_odata()
+    nomgs = [b for b in resale if b != mgs]
+    return resale, nomgs, opbo
+
+
+def _keep_partner(dept_guid: str, partner_guid: str, sopr: bool, resale, nomgs, opbo) -> bool:
+    from comdir.common import uuid_to_1c_bytes
+
+    try:
+        partner = uuid_to_1c_bytes(partner_guid) if partner_guid else b""
+        dept_bin = uuid_to_1c_bytes(dept_guid) if dept_guid else b""
+    except Exception:
+        return False
+    if opbo and dept_bin == opbo:
+        return partner not in nomgs
+    return not (partner in resale and not sopr)
+
+
+def calc_expected_potential_odata(p0: datetime, p_asof: datetime) -> dict[str, float]:
+    """Потенциальные договоры из живого регистра. SQL-копия отстаёт на новые КП."""
+    from urllib.parse import quote
+
+    import requests
+    from requests.auth import HTTPBasicAuth
+
+    base = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
+    session = requests.Session()
+    session.auth = HTTPBasicAuth("odata.user", "npo852456")
+    resale, nomgs, opbo = _resale_bins()
+    flt = quote(
+        f"ДатаПодписанияПлан ge datetime'{_odata_stamp(p0)}' and "
+        f"ДатаПодписанияПлан lt datetime'{_odata_stamp(p_asof)}'",
+        safe="",
+    )
+    sel = quote(
+        "КоммерческоеПредложение,Подразделение_Key,Партнер_Key,ЗаказКлиента_Key,СуммаДоговора",
+        safe=",_",
+    )
+    rows = _odata_get_pages(
+        session,
+        f"{base}/{quote('InformationRegister_ТД_ДоговорыПотенциальные')}"
+        f"?$format=json&$filter={flt}&$select={sel}",
+    )
+    props = _odata_batch(
+        session,
+        base,
+        "Document_КоммерческоеПредложениеКлиенту",
+        {row.get("КоммерческоеПредложение") or "" for row in rows},
+        "Ref_Key,Number,Статус,ТД_ОсновноеТКПДляБМИ,ТД_СуммаТКПБМИ",
+    )
+    out: dict[str, float] = {}
+    for row in rows:
+        dept = _DEPT_GUID_TO_NAME.get(row.get("Подразделение_Key") or "")
+        if not dept or dept == "Отдел продаж БМИ":
+            continue
+        if (row.get("ЗаказКлиента_Key") or _EMPTY_GUID) != _EMPTY_GUID:
+            continue
+        prop = props.get(row.get("КоммерческоеПредложение") or "")
+        if not prop or prop.get("Статус") in _KP_STATUS_BAD:
+            continue
+        if not _keep_partner(
+            row.get("Подразделение_Key") or "",
+            row.get("Партнер_Key") or "",
+            False,
+            resale,
+            nomgs,
+            opbo,
+        ):
+            continue
+        amount = float(row.get("СуммаДоговора") or 0)
+        if prop.get("ТД_ОсновноеТКПДляБМИ"):
+            amount = float(prop.get("ТД_СуммаТКПБМИ") or 0)
+        out[dept] = out.get(dept, 0.0) + amount
+        from comdir.plan_fact_sink import note
+
+        kp_number = (prop.get("Number") or "").strip()
+        note(
+            "dog",
+            "Ожидаемо",
+            amount,
+            date=(row.get("ДатаПодписанияПлан") or "")[:10],
+            department=dept,
+            partner_key=row.get("Партнер_Key") or "",
+            document=("Коммерческое предложение " + kp_number) if kp_number else "Потенциальный договор",
+        )
+    return {k: round(v, 2) for k, v in out.items()}
+
+
+def calc_expected_offer_live(p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Счёт-оферты, которых ещё нет в SQL-копии (заказ создан в последние дни)."""
+    from urllib.parse import quote
+
+    import requests
+    from requests.auth import HTTPBasicAuth
+
+    base = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
+    session = requests.Session()
+    session.auth = HTTPBasicAuth("odata.user", "npo852456")
+    resale, nomgs, opbo = _resale_bins()
+    dept_filter = " or ".join(
+        f"Подразделение_Key eq guid'{g}'" for g in _DEPT_GUID_TO_NAME if g != "9edaa7d4-37a5-11ee-93d3-6cb31113810e"
+    )
+    flt = quote(
+        f"Date ge datetime'{_odata_stamp(p0)}' and Date lt datetime'{_odata_stamp(p_next)}' "
+        f"and Posted eq true and ({dept_filter})",
+        safe="",
+    )
+    sel = quote(
+        "Ref_Key,Number,СуммаДокумента,Подразделение_Key,Партнер_Key,Соглашение_Key,Статус,"
+        "ТД_ПредполагаемаяДатаАванса,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи",
+        safe=",_",
+    )
+    orders = _odata_get_pages(
+        session,
+        f"{base}/Document_ЗаказКлиента?$format=json&$filter={flt}&$select={sel}",
+    )
+    agreements = _odata_batch(
+        session,
+        base,
+        "Catalog_СоглашенияСКлиентами",
+        {row.get("Соглашение_Key") or "" for row in orders},
+        "Ref_Key,Description,ТД_СчетОферта",
+    )
+    numbers = sorted({
+        (row.get("Number") or "").strip()
+        for row in orders
+        if (row.get("Number") or "").strip()
+    })
+    in_sql: set[str] = set()
+    if numbers:
+        cn = connect()
+        try:
+            cur = cn.cursor()
+            for i in range(0, len(numbers), 80):
+                part = numbers[i:i + 80]
+                marks = ",".join("?" * len(part))
+                cur.execute(
+                    f"""
+                    SELECT _Number FROM _Document704 WITH (NOLOCK)
+                    WHERE _Date_Time >= ? AND _Date_Time < ?
+                      AND _Number IN ({marks})
+                    """,
+                    p0,
+                    p_next,
+                    *part,
+                )
+                in_sql.update((r[0] or "").strip() for r in cur.fetchall())
+        finally:
+            cn.close()
+
+    out: dict[str, float] = {}
+    for row in orders:
+        number = (row.get("Number") or "").strip()
+        if not number or number in in_sql:
+            continue
+        if (row.get("Статус") or "") in {"НеСогласован", "Черновик", "Отменен", "Отменён"}:
+            continue
+        advance = (row.get("ТД_ПредполагаемаяДатаАванса") or "")[:10]
+        if advance and advance > "0001-01-01" and advance < _odata_stamp(p0)[:10]:
+            continue
+        if row.get("ТД_НеУчитыватьВПланФакте") or row.get("ТД_СопровождениеПродажи"):
+            continue
+        dept = _DEPT_GUID_TO_NAME.get(row.get("Подразделение_Key") or "")
+        if not dept or dept == "Отдел продаж БМИ":
+            continue
+        agr = agreements.get(row.get("Соглашение_Key") or "") or {}
+        desc = (agr.get("Description") or "").lower()
+        if not agr.get("ТД_СчетОферта") or "оферт" not in desc:
+            continue
+        if not _keep_partner(
+            row.get("Подразделение_Key") or "",
+            row.get("Партнер_Key") or "",
+            False,
+            resale,
+            nomgs,
+            opbo,
+        ):
+            continue
+        amount = float(row.get("СуммаДокумента") or 0)
+        out[dept] = out.get(dept, 0.0) + amount
+        from comdir.plan_fact_sink import note
+
+        note(
+            "dog",
+            "Ожидаемо",
+            amount,
+            date=(row.get("ТД_ПредполагаемаяДатаАванса") or row.get("Date") or "")[:10],
+            department=dept,
+            partner_key=row.get("Партнер_Key") or "",
+            document=("Заказ клиента " + number) if number else "Счёт-оферта",
+        )
+    return {k: round(v, 2) for k, v in out.items()}
+
+
 def calc_expected_potential(
     cur,
     p0: datetime,
@@ -1065,6 +1370,10 @@ def calc_expected_potential(
 ) -> dict[str, float]:
     """Ветка потенциальных КП (ТД_ДоговорыПотенциальные)."""
     p_asof = p_asof or p_next
+    try:
+        return calc_expected_potential_odata(p0, p_asof)
+    except Exception:
+        logger.exception("OData потенциальные договоры недоступны — SQL")
     load_depts(cur, COMMERCIAL_DEPTS, "#exp_depts")
     load_resale(cur)
 
@@ -1128,6 +1437,39 @@ def _expected_advance_from(p0: datetime) -> datetime:
     return p0.replace(month=p0.month - 1, day=1)
 
 
+def _odata_order_status(numbers: list[str]) -> dict[str, str]:
+    """Живой статус заказа. SQL-копия _Fld21195RRef отстаёт на дни."""
+    from urllib.parse import quote
+
+    import requests
+    from requests.auth import HTTPBasicAuth
+
+    base = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
+    session = requests.Session()
+    session.auth = HTTPBasicAuth("odata.user", "npo852456")
+    out: dict[str, str] = {}
+    clean = sorted({n.strip() for n in numbers if n and n.strip()})
+    for i in range(0, len(clean), 10):
+        part = clean[i:i + 10]
+        flt = quote(
+            "(" + " or ".join(f"Number eq '{n}'" for n in part) + ")"
+            " and Date ge datetime'2026-01-01T00:00:00'",
+            safe="",
+        )
+        sel = quote("Number,Date,Статус", safe=",_")
+        response = session.get(
+            f"{base}/Document_ЗаказКлиента?$format=json&$filter={flt}&$select={sel}&$top=50",
+            timeout=60,
+        )
+        response.raise_for_status()
+        for row in response.json().get("value") or []:
+            number = (row.get("Number") or "").strip()
+            prev = out.get(number)
+            if prev is None or (row.get("Date") or "") >= prev[0]:
+                out[number] = (row.get("Date") or "", row.get("Статус") or "")
+    return {number: status for number, (_dt, status) in out.items()}
+
+
 def calc_expected_offer(
     cur,
     p0: datetime,
@@ -1167,19 +1509,33 @@ def calc_expected_offer(
             SELECT 1 FROM _InfoRg112278 s WITH (NOLOCK)
             WHERE s._Fld112481RRef = ord._IDRRef
           )
-          AND EXISTS (
-            SELECT 1
-            FROM _AccumRg53885 s WITH (NOLOCK)
-            WHERE s._Fld140429RRef = ord._Fld138973RRef
-              AND s._Period < ?
-              AND s._Active = 0x01
-              AND ISNULL(s._Fld140434, 0x00) = 0x00
-              AND s._Fld53890 <> 0
-            GROUP BY s._Fld140429RRef
-            HAVING ABS(
-              SUM(CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END)
-              - ord._Fld21186
-            ) < 1
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM _AccumRg53885 s WITH (NOLOCK)
+              WHERE s._Fld140429RRef = ord._Fld138973RRef
+                AND s._Period < ?
+                AND s._Active = 0x01
+                AND ISNULL(s._Fld140434, 0x00) = 0x00
+                AND s._Fld53890 <> 0
+              GROUP BY s._Fld140429RRef
+              HAVING ABS(
+                SUM(CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END)
+                - ord._Fld21186
+              ) < 1
+            )
+            OR (
+              ord._Date_Time >= ? AND ord._Date_Time < ?
+              AND NOT EXISTS (
+                SELECT 1
+                FROM _AccumRg53885 s WITH (NOLOCK)
+                WHERE s._Fld140429RRef = ord._Fld138973RRef
+                  AND s._Period < ?
+                  AND s._Active = 0x01
+                  AND ISNULL(s._Fld140434, 0x00) = 0x00
+                  AND s._Fld53890 <> 0
+              )
+            )
           )
           AND (
                 CASE
@@ -1201,8 +1557,205 @@ def calc_expected_offer(
         p_asof,
         p_next,
         p_next,
+        p0,
+        p_next,
+        p_next,
     )
-    return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+    out = {r[0]: float(r[1] or 0) for r in cur.fetchall()}
+    from comdir.plan_fact_sink import lines as _pf_lines
+    from comdir.plan_fact_sink import note as _pf_note
+
+    if _pf_lines.get() is not None:
+        try:
+            cur.execute(
+                f"""
+                SELECT d.name, ord._Number,
+                       CONVERT(varchar(10), DATEADD(year, -2000, ord.[{ORDER_ADVANCE_DT}]), 23),
+                       p._Description, {amt}
+                FROM _Document704 ord WITH (NOLOCK)
+                INNER JOIN #offer_depts d ON d.id = ord._Fld21220RRef
+                INNER JOIN _Reference473 a WITH (NOLOCK)
+                  ON a._IDRRef = ord._Fld21183RRef
+                LEFT JOIN _Reference328 p WITH (NOLOCK)
+                  ON p._IDRRef = ord._Fld21180RRef
+                WHERE a.[{AG_OFFER_FLAG}] = 0x01
+                  AND a._Description LIKE N'%оферт%'
+                  AND ord._Posted = 0x01
+                  AND ISNULL(ord._Fld184301, 0x00) = 0x00
+                  AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
+                  AND ord._Fld138973RRef <> ?
+                  AND ord.[{ORDER_ADVANCE_DT}] >= ?
+                  AND ord.[{ORDER_ADVANCE_DT}] < ?
+                  AND EXISTS (
+                    SELECT 1 FROM _Document704_VT21278 st WITH (NOLOCK)
+                    WHERE st._Document704_IDRRef = ord._IDRRef
+                      AND st._Fld21281 < ?
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM _InfoRg112278 s WITH (NOLOCK)
+                    WHERE s._Fld112481RRef = ord._IDRRef
+                  )
+                  AND (
+                    EXISTS (
+                      SELECT 1
+                      FROM _AccumRg53885 s WITH (NOLOCK)
+                      WHERE s._Fld140429RRef = ord._Fld138973RRef
+                        AND s._Period < ?
+                        AND s._Active = 0x01
+                        AND ISNULL(s._Fld140434, 0x00) = 0x00
+                        AND s._Fld53890 <> 0
+                      GROUP BY s._Fld140429RRef
+                      HAVING ABS(
+                        SUM(CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END)
+                        - ord._Fld21186
+                      ) < 1
+                    )
+                    OR (
+                      ord._Date_Time >= ? AND ord._Date_Time < ?
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM _AccumRg53885 s WITH (NOLOCK)
+                        WHERE s._Fld140429RRef = ord._Fld138973RRef
+                          AND s._Period < ?
+                          AND s._Active = 0x01
+                          AND ISNULL(s._Fld140434, 0x00) = 0x00
+                          AND s._Fld53890 <> 0
+                      )
+                    )
+                  )
+                  AND (
+                        CASE
+                          WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = ord._Fld21220RRef) THEN
+                            CASE WHEN EXISTS (
+                              SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
+                            ) THEN 0 ELSE 1 END
+                          ELSE
+                            CASE WHEN EXISTS (
+                              SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                            ) THEN 0 ELSE 1 END
+                        END
+                      ) = 1
+                """,
+                *fx_params(),
+                EMPTY16,
+                adv_from,
+                p_asof,
+                p_next,
+                p_next,
+                p0,
+                p_next,
+                p_next,
+            )
+            for name, number, pay_date, partner_name, amount in cur.fetchall():
+                num = (number or "").strip()
+                _pf_note(
+                    "dog",
+                    "Ожидаемо",
+                    amount,
+                    date=pay_date or "",
+                    department=name,
+                    partner=partner_name or "",
+                    document=("Заказ клиента " + num) if num else "Счёт-оферта",
+                )
+        except Exception:
+            logger.exception("Строки счёт-оферты ожидаемых договоров не собрались")
+    # В SQL-копии статус заказа отстаёт от 1С. Снимаем только те,
+    # что и в живом OData ещё «НеСогласован».
+    cur.execute(
+        f"""
+        SELECT d.name, ord._Number, {amt} AS ExpSum
+        FROM _Document704 ord WITH (NOLOCK)
+        INNER JOIN #offer_depts d ON d.id = ord._Fld21220RRef
+        INNER JOIN _Reference473 a WITH (NOLOCK)
+          ON a._IDRRef = ord._Fld21183RRef
+        WHERE a.[{AG_OFFER_FLAG}] = 0x01
+          AND a._Description LIKE N'%оферт%'
+          AND ord._Posted = 0x01
+          AND ISNULL(ord._Fld184301, 0x00) = 0x00
+          AND ISNULL(ord.[{ORDER_SOPR_FIELD}], 0x00) = 0x00
+          AND ord.[{ORDER_STATUS_FIELD}] = ?
+          AND ord._Fld138973RRef <> ?
+          AND ord.[{ORDER_ADVANCE_DT}] >= ?
+          AND ord.[{ORDER_ADVANCE_DT}] < ?
+          AND EXISTS (
+            SELECT 1 FROM _Document704_VT21278 st WITH (NOLOCK)
+            WHERE st._Document704_IDRRef = ord._IDRRef
+              AND st._Fld21281 < ?
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM _InfoRg112278 s WITH (NOLOCK)
+            WHERE s._Fld112481RRef = ord._IDRRef
+          )
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM _AccumRg53885 s WITH (NOLOCK)
+              WHERE s._Fld140429RRef = ord._Fld138973RRef
+                AND s._Period < ?
+                AND s._Active = 0x01
+                AND ISNULL(s._Fld140434, 0x00) = 0x00
+                AND s._Fld53890 <> 0
+              GROUP BY s._Fld140429RRef
+              HAVING ABS(
+                SUM(CASE WHEN s._RecordKind = 1 THEN -s._Fld53890 ELSE s._Fld53890 END)
+                - ord._Fld21186
+              ) < 1
+            )
+            OR (
+              ord._Date_Time >= ? AND ord._Date_Time < ?
+              AND NOT EXISTS (
+                SELECT 1
+                FROM _AccumRg53885 s WITH (NOLOCK)
+                WHERE s._Fld140429RRef = ord._Fld138973RRef
+                  AND s._Period < ?
+                  AND s._Active = 0x01
+                  AND ISNULL(s._Fld140434, 0x00) = 0x00
+                  AND s._Fld53890 <> 0
+              )
+            )
+          )
+          AND (
+                CASE
+                  WHEN EXISTS (SELECT 1 FROM #dept_nomgs x WHERE x.id = ord._Fld21220RRef) THEN
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale_nomgs r WHERE r.id = ord._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                  ELSE
+                    CASE WHEN EXISTS (
+                      SELECT 1 FROM #resale r WHERE r.id = ord._Fld21180RRef
+                    ) THEN 0 ELSE 1 END
+                END
+              ) = 1
+        """,
+        *fx_params(),
+        ORDER_STATUS_NOT_AGREED,
+        EMPTY16,
+        adv_from,
+        p_asof,
+        p_next,
+        p_next,
+        p0,
+        p_next,
+        p_next,
+    )
+    stale = [(r[0], (r[1] or "").strip(), float(r[2] or 0)) for r in cur.fetchall()]
+    if stale:
+        live_status = _odata_order_status([num for _, num, _ in stale if num])
+        for name, number, amount in stale:
+            if live_status.get(number) == "НеСогласован":
+                out[name] = out.get(name, 0.0) - amount
+                buf = _pf_lines.get()
+                doc = "Заказ клиента " + (number or "").strip()
+                if buf is not None and doc.strip():
+                    buf[:] = [
+                        row for row in buf
+                        if not (
+                            row.get("metric") == "dog"
+                            and row.get("kind") == "Ожидаемо"
+                            and row.get("document") == doc
+                        )
+                    ]
+    return {k: round(v, 2) for k, v in out.items() if abs(v) >= 0.005}
 
 
 def calc_expected(
@@ -1215,8 +1768,15 @@ def calc_expected(
     p_asof = p_asof or p_next
     pot = calc_expected_potential(cur, p0, p_next, p_asof=p_asof)
     offer = calc_expected_offer(cur, p0, p_next, p_asof=p_asof)
+    try:
+        live = calc_expected_offer_live(p0, p_asof)
+    except Exception:
+        logger.exception("OData счёт-оферты ожидаемых договоров недоступны")
+        live = {}
     out: dict[str, float] = dict(pot)
     for name, val in offer.items():
+        out[name] = out.get(name, 0.0) + float(val or 0)
+    for name, val in live.items():
         out[name] = out.get(name, 0.0) + float(val or 0)
     return out
 

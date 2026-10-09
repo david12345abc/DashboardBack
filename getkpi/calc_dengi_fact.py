@@ -734,6 +734,19 @@ def _calc_branch1(ds_rows: list[dict], catalog: dict,
             amt = -amt
 
         monthly[effective_dept][m] += amt
+        from comdir.plan_fact_sink import note
+
+        note(
+            "money",
+            "Факт",
+            amt,
+            month=m,
+            date=(row.get("Period") or "")[:10],
+            department=effective_dept,
+            partner_key=row.get("Партнер_Key") or (order or {}).get("partner") or "",
+            order_key=(order or {}).get("ref") or "",
+            document="Платёж",
+        )
 
     return monthly
 
@@ -812,6 +825,18 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, l
             continue
 
         monthly[reg_dept][m] += amt
+        from comdir.plan_fact_sink import note
+
+        note(
+            "money",
+            "Факт",
+            amt,
+            month=m,
+            date=(row.get("Period") or "")[:10],
+            department=reg_dept,
+            partner_key=reg_partner,
+            document="Комиссия",
+        )
 
     return monthly
 
@@ -855,6 +880,19 @@ def _calc_branch3(kk_rows: list[dict], catalog: dict,
             continue
 
         monthly[effective_dept][m] += amt
+        from comdir.plan_fact_sink import note
+
+        note(
+            "money",
+            "Факт",
+            amt,
+            month=m,
+            date=(row.get("Period") or "")[:10],
+            department=effective_dept,
+            partner_key=row.get("Партнер_Key") or (order or {}).get("partner") or "",
+            order_key=(order or {}).get("ref") or "",
+            document="Взаимозачёт",
+        )
 
     return monthly
 
@@ -1053,6 +1091,45 @@ def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
         "ref_month": payload.get("ref_month"),
         "months": sliced_months,
     }
+
+
+def collect_fact_lines(year: int, month: int) -> None:
+    """Прогон факта одного месяца: строки пишет plan_fact_sink.note."""
+    session = requests.Session()
+    session.auth = AUTH
+    ds_rows = _load_ds_register(session, year, month, start_month=month)
+    kk_rows = _load_kk_register(session, year, month, start_month=month)
+    if not ds_rows and not kk_rows:
+        return
+    obj_keys: set[str] = set()
+    for source in (ds_rows or [], kk_rows or []):
+        for item in source:
+            key = item.get("ОбъектРасчетов", "")
+            if key and key != EMPTY:
+                obj_keys.add(key)
+    catalog = _batch_load_catalog(session, obj_keys)
+    orders_by_obj = _scan_orders_by_object_keys(session, obj_keys)
+    _link_realization_orders(session, catalog, orders_by_obj)
+    partner_keys: set[str] = set()
+    for item in ds_rows or []:
+        key = item.get("Партнер_Key", "")
+        if key and key != EMPTY:
+            partner_keys.add(key)
+    for obj in catalog.values():
+        key = obj.get("partner", "")
+        if key and key != EMPTY:
+            partner_keys.add(key)
+    for orders in orders_by_obj.values():
+        for order in orders:
+            key = order.get("partner", "")
+            if key and key != EMPTY:
+                partner_keys.add(key)
+    partners_map = _batch_load_partners(session, partner_keys)
+    excl_full = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES}
+    excl_no_mgs = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS}
+    _calc_branch1(ds_rows or [], catalog, orders_by_obj, excl_full, excl_no_mgs, month)
+    _calc_branch2(ds_rows or [], catalog, orders_by_obj, excl_full, excl_no_mgs, month)
+    _calc_branch3(kk_rows or [], catalog, orders_by_obj, excl_full, excl_no_mgs, month)
 
 
 if __name__ == "__main__":

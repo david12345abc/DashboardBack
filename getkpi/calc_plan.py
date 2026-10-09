@@ -464,7 +464,7 @@ def _batch_load_orders_for_expected(session: requests.Session,
     result: dict[str, dict] = {}
     keys = sorted(k for k in order_keys if k and k != EMPTY)
     fields = (
-        "Ref_Key,Date,Подразделение_Key,Партнер_Key,Соглашение_Key,Валюта_Key,ОбъектРасчетов_Key,"
+        "Ref_Key,Number,Date,Подразделение_Key,Партнер_Key,Соглашение_Key,Валюта_Key,ОбъектРасчетов_Key,"
         "ДатаОтгрузки,Статус,ТД_НеУчитыватьВПланФакте,ТД_НеУчитыватьВПланФактеДС,"
         "ТД_НеУчитыватьВПланФактеОтгрузки,ТД_СопровождениеПродажи"
     )
@@ -482,6 +482,7 @@ def _batch_load_orders_for_expected(session: requests.Session,
         try:
             for it in r.json().get("value", []):
                 result[it["Ref_Key"]] = {
+                    "number": it.get("Number", ""),
                     "date": it.get("Date", ""),
                     "dept": it.get("Подразделение_Key", ""),
                     "partner": it.get("Партнер_Key", ""),
@@ -503,7 +504,7 @@ def _batch_load_orders_for_expected(session: requests.Session,
 def _load_payment_stage_order_months(session: requests.Session,
                                      year: int,
                                      ref_month: int) -> dict[str, set[int]]:
-    months, _sums = _load_payment_stage_months_and_sums(session, year, ref_month)
+    months, _sums, _dates = _load_payment_stage_months_and_sums(session, year, ref_month)
     return months
 
 
@@ -511,10 +512,11 @@ def _load_payment_stage_months_and_sums(
     session: requests.Session,
     year: int,
     ref_month: int,
-) -> tuple[dict[str, set[int]], dict[str, dict[int, float]]]:
-    """Этапы оплаты: месяцы и суммы СуммаПлатежа по заказу."""
+) -> tuple[dict[str, set[int]], dict[str, dict[int, float]], dict[str, dict[int, str]]]:
+    """Этапы оплаты: месяцы, суммы СуммаПлатежа и ближайшая дата по заказу."""
     months: dict[str, set[int]] = {}
     sums: dict[str, dict[int, float]] = {}
+    dates: dict[str, dict[int, str]] = {}
     start = _month_start(year, 1)
     end = _month_end_exclusive(year, ref_month)
     sel = quote("Ref_Key,ДатаПлатежа,СуммаПлатежа", safe=",_")
@@ -545,10 +547,14 @@ def _load_payment_stage_months_and_sums(
                 sums[order_key][m] = sums[order_key].get(m, 0.0) + float(
                     it.get("СуммаПлатежа") or 0
                 )
+                pay_date = (it.get("ДатаПлатежа") or "")[:10]
+                prev = dates.setdefault(order_key, {}).get(m)
+                if pay_date and (not prev or pay_date < prev):
+                    dates[order_key][m] = pay_date
         if len(batch) < 5000:
             break
         skip += 5000
-    return months, sums
+    return months, sums, dates
 
 
 def _load_payment_stage_months(session: requests.Session,
@@ -803,6 +809,22 @@ def _merge_expected_shipments(result: dict[int, dict],
                 continue
             result[m]["otgruzki_expected"] += amount
             result[m]["by_dept"][dept]["otgruzki_expected"] += amount
+            from comdir.plan_fact_sink import note
+
+            number = (order.get("number") or "").strip()
+            ship_date = (order.get("ship_date") or "")[:10]
+            if ship_date.startswith("0001-01-01"):
+                ship_date = ""
+            note(
+                "ship",
+                "Ожидаемо",
+                amount,
+                month=m,
+                date=ship_date,
+                department=DEPARTMENTS.get(dept, dept),
+                partner_key=order.get("partner") or "",
+                document=("Заказ клиента " + number) if number else "Заказ к отгрузке",
+            )
 
 
 def _merge_expected_money_and_shipments(result: dict[int, dict],
@@ -1228,7 +1250,7 @@ def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str
     session.auth = AUTH
 
     resale_partners, resale_without_mgs = _partner_resale_sets(session)
-    payment_months, stage_sums = _load_payment_stage_months_and_sums(
+    payment_months, stage_sums, stage_dates = _load_payment_stage_months_and_sums(
         session, year, ref_month,
     )
     orders = _batch_load_orders_for_expected(session, set(payment_months))
@@ -1292,7 +1314,21 @@ def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str
             dept = order.get("dept") or ""
             if dept not in DEPT_SET:
                 continue
-            result[month][dept] += bal * _currency_rate(order.get("currency") or "")
+            amount = bal * _currency_rate(order.get("currency") or "")
+            result[month][dept] += amount
+            from comdir.plan_fact_sink import note
+
+            number = (order.get("number") or "").strip()
+            note(
+                "money",
+                "Ожидаемо",
+                amount,
+                month=month,
+                date=(stage_dates.get(order_key) or {}).get(month) or "",
+                department=DEPARTMENTS.get(dept, dept),
+                partner_key=order.get("partner") or "",
+                document=("Заказ клиента " + number) if number else "Плановый платёж",
+            )
 
     return {
         month: {dept: round(amt, 2) for dept, amt in by_dept.items()}

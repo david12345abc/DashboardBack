@@ -43,12 +43,13 @@ from getkpi.valovaya_pribyl import vp_plan_for_month  # noqa: E402
 logger = logging.getLogger(__name__)
 
 # v17: KD-M1 ожидаемо на плитке — полный месяц (как колонка 14 отчёта), не «до завтра».
-#      KD-M2 отгрузки — план SQL, факт «итого выручка» отчёта валовой прибыли, ожидаемо OData.
-# v21: KD-M2/MRK-06 факт текущего месяца — по сегодня, без документов будущим числом.
-CACHE_VERSION = 20
+# v22: KD-M2 факт — расход «РаспоряженияНаОтгрузку» за весь месяц отчёта «План-факт»,
+#      не выручка валовой прибыли и не срез «по сегодня».
+#      KD-M3 факт и ожидаемые — тоже весь месяц отчёта, живой OData.
+CACHE_VERSION = 22
 KD_M1_SOURCE_TAG = "comdir_kd_m1_ytd_odata_fact_expected_sql_plan_v4"
-KD_M2_SOURCE_TAG = "comdir_kd_m2_ytd_vyruchka_odata_fact_sql_plan_odata_expected_v1"
-KD_M3_SOURCE_TAG = "comdir_kd_m3_ytd_odata_fact_sql_plan_expected_v4"
+KD_M2_SOURCE_TAG = "comdir_kd_m2_ytd_odata_register_fact_full_month_v2"
+KD_M3_SOURCE_TAG = "comdir_kd_m3_ytd_odata_fact_expected_full_month_v5"
 
 
 def _kpi_pct(fact, plan) -> float | None:
@@ -357,12 +358,10 @@ def get_dengi_ytd(
 
 def compute_otgruzki_month(year: int, month: int) -> dict[str, Any]:
     p0, p_next = period_bounds(year, month)
-    today = date.today()
+    # Колонки отчёта «План-факт» за календарный месяц, включая документы
+    # с датой внутри месяца позже сегодня.
     fact_next = p_next
     expected_next = p_next
-    if year == today.year and month == today.month:
-        fact_next = otg_mod.to_1c_dt(today + timedelta(days=1))
-        expected_next = fact_next
     with connect_ctx() as cn:
         cur = cn.cursor()
         cur.execute("SET NOCOUNT ON")
@@ -395,7 +394,7 @@ def compute_otgruzki_month(year: int, month: int) -> dict[str, Any]:
         "expected_current": round(sum(expected_current_map.values()), 2),
         "expected_full": round(sum(expected_full_map.values()), 2),
         "by_dept": by_dept,
-        "fact_source": "sql",
+        "fact_source": "odata_register",
     }
 
 
@@ -461,12 +460,8 @@ def _overlay_otgruzki_expected_odata(months: list[dict[str, Any]], year: int, re
 
 def build_otgruzki_payload(year: int, month: int) -> dict[str, Any]:
     months = [compute_otgruzki_month(year, m) for m in range(1, month + 1)]
-    fact_source = "sql"
+    fact_source = "odata_register"
     expected_source = "sql"
-    try:
-        fact_source = _overlay_otgruzki_fact_vyruchka(months, year, month)
-    except Exception:
-        logger.exception("KD-M2: факт из выручки валовой прибыли не собрался, оставляю SQL")
     try:
         expected_source = _overlay_otgruzki_expected_odata(months, year, month)
     except Exception:
@@ -511,11 +506,9 @@ def get_otgruzki_ytd(
 
 def compute_dogovory_month(year: int, month: int) -> dict[str, Any]:
     p0, p_next = period_bounds(year, month)
-    today = date.today()
-    # В текущем месяце факт и даты «ожидаемо» — по сегодня (как период Excel).
+    # Отчёт «План-факт» выгружается на календарный месяц (01–конец),
+    # а не на срез «по сегодня».
     asof_next = p_next
-    if year == today.year and month == today.month:
-        asof_next = dog_mod.to_1c_dt(today + timedelta(days=1))
     with connect_ctx() as cn:
         cur = cn.cursor()
         cur.execute("SET NOCOUNT ON")

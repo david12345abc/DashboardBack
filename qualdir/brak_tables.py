@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from calendar import monthrange
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,20 @@ def _month_cache_is_perpetual(year: int, month: int) -> bool:
     return (year, month) < (today.year, today.month)
 
 
+def _month_cache_closed_snapshot(year: int, month: int, cache_date: str | None) -> bool:
+    """Закрытый месяц годен только если снимок снят в последний день или позже.
+
+    Файл от 23 сентября не содержит заявки, проведённые 24–30 сентября,
+    но после наступления октября считался вечным и таблица оставалась пустой.
+    """
+    try:
+        saved = date.fromisoformat(str(cache_date or "")[:10])
+    except ValueError:
+        return False
+    last_day = date(year, month, monthrange(year, month)[1])
+    return saved >= last_day
+
+
 def _load_month_table_cache(table_kind: str, year: int, month: int) -> list[dict[str, str]] | None:
     path = _month_table_cache_path(table_kind, year, month)
     if not path.exists():
@@ -73,9 +88,11 @@ def _load_month_table_cache(table_kind: str, year: int, month: int) -> list[dict
         return None
     if data.get("table_kind") != table_kind:
         return None
-    if not _month_cache_is_perpetual(year, month):
-        if data.get("cache_date") != date.today().isoformat():
+    if _month_cache_is_perpetual(year, month):
+        if not _month_cache_closed_snapshot(year, month, data.get("cache_date")):
             return None
+    elif data.get("cache_date") != date.today().isoformat():
+        return None
     rows = data.get("rows")
     if not isinstance(rows, list):
         return None
@@ -204,14 +221,35 @@ def _assemble_brak_table(
     }
 
 
+def _ytd_month_blocks_match_caches(table_kind: str, payload: dict[str, Any]) -> bool:
+    monthly = payload.get("monthly_data")
+    if not isinstance(monthly, list) or not monthly:
+        return False
+    for block in monthly:
+        if not isinstance(block, dict):
+            return False
+        try:
+            year = int(block.get("year"))
+            month = int(block.get("month"))
+        except (TypeError, ValueError):
+            return False
+        cached = _load_month_table_cache(table_kind, year, month)
+        if cached is None or len(cached) != len(block.get("rows") or []):
+            return False
+    return True
+
+
 def _load_ytd_table_cache(table_kind: str, ref_y: int, ref_m: int) -> dict[str, Any] | None:
     path = _ytd_table_cache_path(table_kind, ref_y, ref_m)
-    return ytd_json_cache.load_payload(
+    payload = ytd_json_cache.load_payload(
         path,
         source_tag=f"{TABLE_YTD_DISK_TAG}_{table_kind}",
         version=TABLE_YTD_DISK_VERSION,
         perpetual=ytd_json_cache.is_ref_period_fully_past(ref_y, ref_m),
     )
+    if payload is None or not _ytd_month_blocks_match_caches(table_kind, payload):
+        return None
+    return payload
 
 
 def _save_ytd_table_cache(table_kind: str, ref_y: int, ref_m: int, payload: dict[str, Any]) -> None:

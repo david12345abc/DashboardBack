@@ -195,14 +195,23 @@ def _tile_rag(kpi_id: str, pct: float | None) -> str:
     return _rag_higher_better(pct)
 
 
-def _plan_fact_higher_better_rag(plan, fact, pct: float | None) -> str:
-    """KD-M1/M2/M3: факт выше плана — всегда зелёный."""
+def _forecast_amount(fact, expected) -> float | None:
+    if fact is None and expected is None:
+        return None
+    return float(fact or 0) + float(expected or 0)
+
+
+def _plan_fact_higher_better_rag(plan, fact, pct: float | None, expected=None) -> str:
+    """KD-M1/M2/M3: прогноз (факт + ожидаемо) выше плана — зелёный."""
+    compare = _forecast_amount(fact, expected)
+    if compare is None:
+        compare = fact
     try:
         plan_value = float(plan)
-        fact_value = float(fact)
+        compare_value = float(compare)
     except (TypeError, ValueError):
         return _rag_higher_better(pct)
-    if fact_value > plan_value:
+    if compare_value > plan_value:
         return 'green'
     return _rag_higher_better(pct)
 
@@ -326,7 +335,8 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
         if expected_plan_full is None:
             expected_plan_full = expected_current
         expected_plan = expected_plan_full if use_expected_full else expected_current
-        pct = round(fact / plan * 100, 1) if plan and fact is not None else None
+        forecast = _forecast_amount(fact, expected_plan)
+        pct = round(forecast / plan * 100, 1) if plan and forecast is not None else None
         mrow = {
             'month': m,
             'year': y,
@@ -334,6 +344,7 @@ def _build_plan_fact_tile(raw_months: list[dict], plans_by_month: dict[int, floa
             'plan': plan,
             'plan_full': plan_full,
             'fact': fact,
+            'forecast': round(forecast, 2) if forecast is not None else None,
             'expected_plan': expected_plan,
             'expected_plan_current': expected_current,
             'expected_plan_full': expected_plan_full,
@@ -1700,13 +1711,15 @@ def _patch_payload_tile(payload: dict, kpi_id: str, tile_data: dict, ref_y: int,
         pct = ytd.get("kpi_pct")
         tile["kpi_pct"] = pct
         if kpi_id in {"KD-M1", "KD-M2", "KD-M3"}:
-            tile["color"] = _plan_fact_higher_better_rag(lm.get("plan"), lm.get("fact"), pct)
+            tile["color"] = _plan_fact_higher_better_rag(
+                lm.get("plan"), lm.get("fact"), pct, lm.get("expected_plan"),
+            )
         else:
             tile["color"] = _tile_rag(kpi_id, float(pct) if pct is not None else None)
         if "monthly_data" in tile_data:
             tile["monthly_data"] = tile_data.get("monthly_data") or []
         if lm:
-            for key in ("plan", "fact", "expected_plan", "has_data"):
+            for key in ("plan", "fact", "forecast", "expected_plan", "has_data"):
                 if key in lm:
                     tile[key] = lm.get(key)
             kpi_period = tile_data.get("kpi_period") or {}
@@ -1837,7 +1850,9 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
         period_y = kpi_period.get('year', ref_y)
         period_m = kpi_period.get('month', ref_m)
         if kid in {'KD-M1', 'KD-M2', 'KD-M3'} and lm:
-            color = _plan_fact_higher_better_rag(lm.get('plan'), lm.get('fact'), pct)
+            color = _plan_fact_higher_better_rag(
+                lm.get('plan'), lm.get('fact'), pct, lm.get('expected_plan'),
+            )
         else:
             color = _tile_rag(kid, pct)
         monthly_data = td.get("monthly_data") or []
@@ -1866,6 +1881,7 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
             "frequency": meta.get("frequency"),
             "plan": lm.get("plan") if lm else None,
             "fact": lm.get("fact") if lm else None,
+            "forecast": lm.get("forecast") if lm else None,
             "expected_plan": lm.get("expected_plan") if lm else None,
             "has_data": (
                 (lm.get("fact") is not None if lm else False)
@@ -2097,6 +2113,13 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
         tablitsy.update(_build_lawsuits_table(ref_y, series_m, dept_guid=dept_guid))
     except Exception:
         pass
+
+    try:
+        from comdir.plan_fact_lines import tables_for_month
+
+        tablitsy.update(tables_for_month(ref_y, series_m))
+    except Exception:
+        logger.exception("Расшифровка денег, отгрузок и договоров не подставилась")
 
     try:
         tablitsy["KD-T-OVERDUE"] = _build_overdue_table(

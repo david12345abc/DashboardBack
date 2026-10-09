@@ -130,12 +130,135 @@ def calc_mp_plan(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     return {r[0]: float(r[1] or 0) for r in cur.fetchall()}
 
 
+def _odata_period(dt: datetime) -> str:
+    return f"{dt.year - YEAR_OFFSET:04d}-{dt.month:02d}-{dt.day:02d}T00:00:00"
+
+
+def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
+    """Отгрузки произведённые из живого OData.
+
+    SQL-копия регистра отстаёт на документы последних дней, а колонка отчёта
+    «План-факт» — это расход РаспоряженияНаОтгрузку за весь месяц, не выручка
+    валовой прибыли.
+    """
+    from urllib.parse import quote
+
+    import requests
+    from requests.auth import HTTPBasicAuth
+
+    from comdir.common import uuid_to_1c_bytes
+    from comdir.resale import _fetch_from_odata
+
+    base = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
+    session = requests.Session()
+    session.auth = HTTPBasicAuth("odata.user", "npo852456")
+    resale, _mgs, opbo = _fetch_from_odata()
+    resale_nomgs = [b for b in resale if b != _mgs]
+    name_by_guid = {
+        "bd7b5184-9f9c-11e4-80da-001e67112509": "Отдел по работе с ПАО Газпром",
+        "7587c178-92f6-11f0-96f9-6cb31113810e": "Отдел дилерских продаж",
+        "639ec87b-67b6-11eb-8523-ac1f6b05524d": "Отдел по работе с ключевыми клиентами",
+        "34497ef7-810f-11e4-80d6-001e67112509": "Отдел продаж эталонного оборудования и услуг",
+        "49480c10-e401-11e8-8283-ac1f6b05524d": "Отдел внешнеэкономической деятельности",
+        "9edaa7d4-37a5-11ee-93d3-6cb31113810e": "Отдел продаж БМИ",
+    }
+    flt = quote(
+        f"Period ge datetime'{_odata_period(p0)}' and Period lt datetime'{_odata_period(p_next)}' "
+        "and Active eq true and ВидДвиженияРегистра eq 'Расход'",
+        safe="",
+    )
+    sel = quote("Period,Распоряжение,Распоряжение_Type,Сумма", safe=",_")
+    rows: list[dict] = []
+    skip = 0
+    while True:
+        url = (
+            f"{base}/AccumulationRegister_РаспоряженияНаОтгрузку_RecordType"
+            f"?$format=json&$filter={flt}&$select={sel}&$top=500&$skip={skip}"
+        )
+        response = session.get(url, timeout=120)
+        response.raise_for_status()
+        batch = response.json().get("value") or []
+        rows.extend(batch)
+        if len(batch) < 500:
+            break
+        skip += len(batch)
+
+    order_keys = sorted({
+        row.get("Распоряжение") or ""
+        for row in rows
+        if "ЗаказКлиента" in str(row.get("Распоряжение_Type") or "")
+        and row.get("Распоряжение")
+    })
+    orders: dict[str, dict] = {}
+    for i in range(0, len(order_keys), 15):
+        part = order_keys[i:i + 15]
+        oflt = quote(" or ".join(f"Ref_Key eq guid'{k}'" for k in part), safe="")
+        ourl = (
+            f"{base}/Document_ЗаказКлиента?$format=json&$filter={oflt}"
+            f"&$select={quote('Ref_Key,Number,Date,Подразделение_Key,Партнер_Key,Соглашение_Key,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи', safe=',_')}"
+            f"&$top={len(part)}"
+        )
+        oresp = session.get(ourl, timeout=60)
+        oresp.raise_for_status()
+        for item in oresp.json().get("value") or []:
+            if item.get("Ref_Key"):
+                orders[item["Ref_Key"]] = item
+
+    empty = "00000000-0000-0000-0000-000000000000"
+    out: dict[str, float] = {}
+    for row in rows:
+        if "ЗаказКлиента" not in str(row.get("Распоряжение_Type") or ""):
+            continue
+        order = orders.get(row.get("Распоряжение") or "")
+        if not order:
+            continue
+        dept = name_by_guid.get(order.get("Подразделение_Key") or "")
+        if not dept:
+            continue
+        if not order.get("Соглашение_Key") or order.get("Соглашение_Key") == empty:
+            continue
+        if order.get("ТД_НеУчитыватьВПланФакте"):
+            continue
+        try:
+            partner = uuid_to_1c_bytes(order.get("Партнер_Key") or "")
+            dept_bin = uuid_to_1c_bytes(order.get("Подразделение_Key") or "")
+        except Exception:
+            continue
+        sopr = bool(order.get("ТД_СопровождениеПродажи"))
+        if opbo and dept_bin == opbo:
+            if partner in resale_nomgs:
+                continue
+        elif partner in resale and not sopr:
+            continue
+        amount = -float(row.get("Сумма") or 0)
+        out[dept] = out.get(dept, 0.0) + amount
+        from comdir.plan_fact_sink import note
+
+        number = (order.get("Number") or "").strip()
+        note(
+            "ship",
+            "Факт",
+            amount,
+            date=(row.get("Period") or order.get("Date") or "")[:10],
+            department=dept,
+            partner_key=order.get("Партнер_Key") or "",
+            document=("Заказ клиента " + number) if number else "Отгрузка",
+        )
+    return {k: round(v, 2) for k, v in out.items()}
+
+
 def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     """Отгрузки произведённые: расход по РаспоряженияНаОтгрузку.
 
-    Перепродажа: для ОДП/ликв. — список без МГС; для прочих — полный список,
-    но партнёр перепродажи допускается при ТД_СопровождениеПродажи (как в OData).
+    Сначала живой OData (SQL erp_pm отстаёт), при ошибке — SQL.
+    Перепродажа: для ОДП — список без МГС; для прочих — полный список,
+    но партнёр перепродажи допускается при ТД_СопровождениеПродажи.
     """
+    try:
+        return calc_fact_odata(p0, p_next)
+    except Exception:
+        pass
+
     from comdir.resale import ORDER_SOPR_FIELD
 
     all_depts = COMMERCIAL_DEPTS + LIQUIDATED_DEPTS + HOLDINGS_DEPTS

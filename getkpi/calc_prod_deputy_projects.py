@@ -419,6 +419,38 @@ def _project_has_overdue_milestone_in_month(project: dict[str, Any], year: int, 
     return f"{year:04d}-{month:02d}" in (project.get("overdue_milestone_months") or [])
 
 
+def _project_card_rows(projects: list[dict[str, Any]], year: int, month: int) -> list[dict[str, Any]]:
+    """Все проекты месяца: просроченные сверху, остальные со статусом «в срок»."""
+    month_end = _month_start_end(year, month)[1]
+    as_of_date = min(month_end, date.today())
+    rows: list[dict[str, Any]] = []
+    for project in projects:
+        overdue_rows = _project_overdue_milestones_in_month(project, year, month)
+        details = _build_milestone_deviation_details(overdue_rows, as_of_date) if overdue_rows else []
+        max_delay = max((int(item.get("delay_days") or 0) for item in details), default=0)
+        is_overdue = bool(overdue_rows)
+        if is_overdue:
+            status_label = f"просрочен, {max_delay} дн." if max_delay else "просрочен"
+        else:
+            status_label = "в срок"
+        rows.append({
+            "project_name": project.get("project_name") or "",
+            "project_manager": str(project.get("project_manager") or "").strip(),
+            "delay_workdays": max_delay,
+            "is_deviated": is_overdue,
+            "status_label": status_label,
+            "delay_caption": "Статус",
+        })
+    rows.sort(
+        key=lambda row: (
+            0 if row.get("is_deviated") else 1,
+            -(int(row.get("delay_workdays") or 0)),
+            str(row.get("project_name") or ""),
+        )
+    )
+    return rows
+
+
 def get_pd_q1_monthly(year: int | None = None, month: int | None = None) -> dict | None:
     try:
         target_projects = list((_compute_projects_snapshot().get("projects") or []))
@@ -446,6 +478,7 @@ def get_pd_q1_monthly(year: int | None = None, month: int | None = None) -> dict
                 "has_data": plan_count > 0 or overdue_count > 0,
                 "projects_on_time": on_time_count,
                 "projects_with_overdue_milestones": overdue_count,
+                "project_deviation_rows": _project_card_rows(month_projects, y, m),
                 "values_unit": "шт.",
             }
             rows.append(row)

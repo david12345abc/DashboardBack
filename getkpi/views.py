@@ -4465,6 +4465,8 @@ def _apply_monthly_cache_to_prod_deputy_tile(tile: dict, data: dict, ref_y: int,
     if 'has_data' in row:
         tile['has_data'] = row.get('has_data')
     tile['last_full_month_row'] = dict(row)
+    if 'project_deviation_rows' in row:
+        tile['project_deviation_rows'] = row.get('project_deviation_rows') or []
     period = data.get('kpi_period') if isinstance(data.get('kpi_period'), dict) else {
         'type': 'current_month',
         'year': row.get('year', ref_y),
@@ -4476,6 +4478,35 @@ def _apply_monthly_cache_to_prod_deputy_tile(tile: dict, data: dict, ref_y: int,
     year_label = row.get('year', ref_y)
     if month_name:
         tile['plan_fact_period_label'] = f"{str(month_name).capitalize()} {year_label}"
+
+
+def _overlay_pd_q1_projects(payload: dict, ref_y: int, ref_m: int) -> dict:
+    """Оборот PD-Q1: проекты выбранного месяца и просроченные вехи."""
+    if not isinstance(payload, dict):
+        return payload
+    from . import calc_prod_deputy_projects
+
+    try:
+        data = calc_prod_deputy_projects.get_pd_q1_monthly(year=ref_y, month=ref_m)
+    except Exception:
+        logger.exception("Не удалось наложить проекты PD-Q1")
+        return payload
+    if not isinstance(data, dict):
+        return payload
+    next_payload = dict(payload)
+    tiles_block = dict(next_payload.get('Плитки') or {})
+    items: list = []
+    for tile in tiles_block.get('items') or []:
+        if not isinstance(tile, dict):
+            items.append(tile)
+            continue
+        next_tile = dict(tile)
+        if str(next_tile.get('kpi_id') or '').strip() == 'PD-Q1':
+            _apply_monthly_cache_to_prod_deputy_tile(next_tile, data, ref_y, ref_m)
+        items.append(next_tile)
+    tiles_block['items'] = items
+    next_payload['Плитки'] = tiles_block
+    return next_payload
 
 
 def _adapt_prod_deputy_payload_to_period(payload: dict, ref_y: int, ref_m: int) -> dict:
@@ -4841,7 +4872,11 @@ def _build_prod_deputy_payload(
     if not cache_manager.is_force_compute_context():
         cached_payload = _load_fresh_prod_deputy_payload_cache(ref_y, ref_m)
         if cached_payload is not None:
-            return _overlay_prod_plan_tiles(cached_payload, ref_y, ref_m)
+            return _overlay_pd_q1_projects(
+                _overlay_prod_plan_tiles(cached_payload, ref_y, ref_m),
+                ref_y,
+                ref_m,
+            )
         stale_payload = _load_stale_prod_deputy_payload_cache(ref_y, ref_m)
         cache_manager.schedule_background_refresh(
             cache_key,
