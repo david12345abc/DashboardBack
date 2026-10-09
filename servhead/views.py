@@ -48,7 +48,6 @@ SERVHEAD_HIGHER_BETTER_TILE_IDS: frozenset[str] = frozenset({
 
 SERVHEAD_LOWER_BETTER_TILE_IDS: frozenset[str] = frozenset({
     "SH-M2",
-    "SH-M3",
     "SH-M5",
 })
 
@@ -155,7 +154,7 @@ def rag_servhead_m1_pct(pct: float | None) -> str:
 
 
 def rag_servhead_lower_better_pct(pct: float | None) -> str:
-    """SH-M2/M3: ≤5 % — зелёный, 5,1–10 % — жёлтый, >10 % — красный."""
+    """SH-M2/M5: ≤5 % — зелёный, 5,1–10 % — жёлтый, >10 % — красный."""
     if pct is None:
         return "unknown"
     if pct <= 5:

@@ -5,11 +5,13 @@ QD-M5 — уровень внутреннего брака (директор п�
   → qualdir.brak_report.compute_internal_brak_month
   Document_ТД_Форма0318
 
-Логика за месяц (по Date документа, без помеченных на удаление):
-  plan        — заявки, статус не из excluded
+Логика (без помеченных на удаление), см. qualdir.form_sla:
+  plan        — месяц (Date + 2 рабочих дня), статус не из excluded
                 (НеСогласовано / Отменена / Подготовлен[/о]);
-                статус «НаСогласовании» входит в план;
-  fact        — из plan со статусом «Выполнено»;
+  fact        — месяц ДатаУстраненияФакт, статус «Выполнено»;
+  в работе    — формы месяца (Date + 2 раб. дня) в статусах согласования/КМ, просрочка
+                Date + 2 раб. дня + 30 календарных дней
+                («ИсполнениеКМ» не просрочивается);
   significant — из plan с ФормаЯвляетсяЗначимой = Истина;
   departments — ОТК-1 / ОТК-2 / Прочие по ПодразделениеПоставщика.
 
@@ -20,6 +22,7 @@ SQL (erp_pm):
     _Fld148654RRef               — Статус → _Enum100559
     _Fld185471                   — ФормаЯвляетсяЗначимой (0x01 = да)
     _Fld148649RRef               — ПодразделениеПоставщика → _Reference513
+    _Fld148639                   — ДатаУстраненияФакт (+2000 лет, пустая = 2001-01-01)
   Catalog_СтруктураПредприятия   → dbo._Reference513
   Enum статусов формы            → dbo._Enum100559
     порядок — qualdir.form_status.STATUS_BY_ORDER
@@ -39,13 +42,13 @@ from __future__ import annotations
 
 import functools
 import sys
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from sql_connection import SqlConnection
 
+from qualdir.form_sla import FormSqlSpec, aggregate_hits, fetch_hits, is_working_for_years
 from qualdir.form_status import STATUS_BY_ORDER
 
 DOC_TABLE = "_Document148564X1"
@@ -57,15 +60,17 @@ COL_MARKED = "_Marked"
 COL_STATUS = "_Fld148654RRef"
 COL_SIGNIFICANT = "_Fld185471"
 COL_DEPT = "_Fld148649RRef"
+COL_ELIMINATION = "_Fld148639"
 
-EXECUTED_STATUS = "Выполнено"
-PLAN_EXCLUDED_STATUSES = frozenset(
-    {
-        "НеСогласовано",
-        "Отменена",
-        "Подготовлен",
-        "Подготовлено",
-    }
+FORM_SPEC = FormSqlSpec(
+    doc_table=DOC_TABLE,
+    dept_table=DEPT_TABLE,
+    col_date=COL_DATE,
+    col_marked=COL_MARKED,
+    col_status=COL_STATUS,
+    col_significant=COL_SIGNIFICANT,
+    col_dept=COL_DEPT,
+    col_elimination=COL_ELIMINATION,
 )
 
 DIRECTION_LABELS = {
@@ -166,9 +171,6 @@ def normalize_text(value: str | None) -> str:
     return " ".join("".join(ch if ch.isalnum() else " " for ch in text).split())
 
 
-PLAN_EXCLUDED_NORM = frozenset(normalize_text(s) for s in PLAN_EXCLUDED_STATUSES)
-
-
 def classify_direction(supplier_dept: str | None) -> str:
     norm = normalize_text(supplier_dept)
     if norm == "отк-1" or "отк 1" in norm:
@@ -220,60 +222,6 @@ def load_status_bins(cur) -> dict[str, bytes]:
     return result
 
 
-def is_plan_status(status_name: str | None) -> bool:
-    if not status_name:
-        return False
-    return normalize_text(status_name) not in PLAN_EXCLUDED_NORM
-
-
-def load_documents(
-    cur,
-    start_dt: date,
-    end_dt: date,
-    status_bins: dict[str, bytes],
-) -> list[tuple[str, str, bool, bool]]:
-    """Plan-документы: (month_key, direction, is_executed, is_significant)."""
-    sql_start = to_sql_dt(start_dt)
-    sql_end_exclusive = to_sql_dt(end_dt + timedelta(days=1))
-    bin_to_status = {blob: name for name, blob in status_bins.items()}
-
-    cur.execute(
-        f"""
-        SELECT
-            doc.[{COL_DATE}],
-            doc.[{COL_STATUS}],
-            doc.[{COL_SIGNIFICANT}],
-            dept._Description
-        FROM [{DOC_TABLE}] doc WITH (NOLOCK)
-        LEFT JOIN [{DEPT_TABLE}] dept WITH (NOLOCK)
-            ON dept._IDRRef = doc.[{COL_DEPT}]
-        WHERE doc.[{COL_MARKED}] = 0x00
-          AND doc.[{COL_DATE}] >= ?
-          AND doc.[{COL_DATE}] < ?
-        """,
-        sql_start,
-        sql_end_exclusive,
-    )
-
-    rows: list[tuple[str, str, bool, bool]] = []
-    for date_raw, status_bin, sig_raw, dept_name in cur.fetchall():
-        if date_raw is None or status_bin is None:
-            continue
-        year = date_raw.year - YEAR_OFFSET
-        month = date_raw.month
-        if year < 1:
-            continue
-        status_name = bin_to_status.get(bytes(status_bin))
-        if not is_plan_status(status_name):
-            continue
-        month_key = f"{year:04d}-{month:02d}"
-        direction = classify_direction((dept_name or "").strip() or None)
-        is_executed = status_name == EXECUTED_STATUS
-        is_significant = bytes(sig_raw) != b"\x00" if sig_raw is not None else False
-        rows.append((month_key, direction, is_executed, is_significant))
-    return rows
-
-
 def build_monthly_report(
     start_period: tuple[int, int],
     end_period: tuple[int, int],
@@ -283,37 +231,35 @@ def build_monthly_report(
         conn.timeout = 0
         cur = conn.cursor()
         status_bins = load_status_bins(cur)
-        docs = load_documents(
+        period_start = month_start(*start_period)
+        period_end = month_end(*end_period)
+        working = is_working_for_years(period_start.year - 1, period_end.year + 1)
+        hits = fetch_hits(
             cur,
-            month_start(*start_period),
-            month_end(*end_period),
+            FORM_SPEC,
             status_bins,
+            period_start,
+            period_end,
+            working,
         )
 
-    stats: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {
-            "plan": 0,
-            "fact": 0,
-            "significant": 0,
-            "directions": defaultdict(int),
-        }
+    month_keys = iter_months(start_period, end_period)
+    stats = aggregate_hits(
+        hits,
+        month_keys,
+        dept_key=classify_direction,
+        today=date.today(),
+        is_working=working,
     )
-    for month_key, direction, is_executed, is_significant in docs:
-        bucket = stats[month_key]
-        bucket["plan"] += 1
-        if is_executed:
-            bucket["fact"] += 1
-        if is_significant:
-            bucket["significant"] += 1
-        bucket["directions"][direction] += 1
 
     report_rows: list[dict[str, Any]] = []
-    for month_key in iter_months(start_period, end_period):
+    for month_key in month_keys:
         bucket = stats[month_key]
         plan = int(bucket["plan"])
         fact = int(bucket["fact"])
         significant = int(bucket["significant"])
-        departments = departments_payload(dict(bucket["directions"]))
+        on_time = int(bucket["in_work_on_time"])
+        overdue = int(bucket["in_work_overdue"])
         report_rows.append(
             {
                 "month": month_key,
@@ -321,7 +267,11 @@ def build_monthly_report(
                 "fact": fact,
                 "significant": significant,
                 "kpi_pct": kpi_pct(plan, fact),
-                "departments": departments,
+                "departments": departments_payload(dict(bucket["departments"])),
+                "in_work": on_time + overdue,
+                "in_work_on_time": on_time,
+                "in_work_overdue": overdue,
+                "in_work_departments": departments_payload(dict(bucket["in_work_departments"])),
                 "has_data": True,
             }
         )
@@ -398,6 +348,10 @@ def build_qd_m5_payload(year: int | None = None, month: int | None = None) -> di
             "kpi_pct": kpi_pct(plan, fact),
             "has_data": True,
             "departments": [dict(d) for d in row.get("departments") or []],
+            "in_work": int(row.get("in_work") or 0),
+            "in_work_on_time": int(row.get("in_work_on_time") or 0),
+            "in_work_overdue": int(row.get("in_work_overdue") or 0),
+            "in_work_departments": [dict(d) for d in row.get("in_work_departments") or []],
             "values_unit": "шт.",
         }
         monthly_rows.append(item)
@@ -454,11 +408,14 @@ def build_qd_m5_payload(year: int | None = None, month: int | None = None) -> di
                 "status_col": COL_STATUS,
                 "significant_col": COL_SIGNIFICANT,
                 "department_col": COL_DEPT,
+                "elimination_col": COL_ELIMINATION,
             },
             "rule": (
-                "plan = documents in month, DeletionMark=false, status not in "
+                "plan = Date + 2 working days in month, DeletionMark=false, status not in "
                 "НеСогласовано/Отменена/Подготовлен; "
-                "fact = plan with status Выполнено; "
+                "fact = ДатаУстраненияФакт in month and status Выполнено; "
+                "in_work = forms whose Date+2 working days falls in the month and status is still in work, overdue after "
+                "Date + 2 working days + 30 calendar days, ИсполнениеКМ never overdue; "
                 "significant = plan with ФормаЯвляетсяЗначимой; "
                 "departments = ОТК-1 / ОТК-2 / Прочие"
             ),
@@ -491,7 +448,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
 QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_sql_v1"
-QD_M5_YTD_DISK_VERSION = 23
+QD_M5_YTD_DISK_VERSION = 25
 
 
 def internal_brak_month_cache_path(year: int, month: int) -> _Path:

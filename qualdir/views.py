@@ -16,20 +16,22 @@ from .qd_m10 import get_qd_m10_ytd
 from .qd_m7 import get_qd_m7_ytd
 from .qd_m8 import get_qd_m8_ytd
 from .qd_q2 import get_qd_q2_ytd
+from .form_sla import as_in_work_payload
 
 QUALDIR_TILE_KPI_IDS: frozenset[str] = frozenset({
-    'QD-Q2', 'QD-Q1', 'QD-M1', 'QD-M4', 'QD-M3', 'QD-M5',
-    'QD-M6', 'QD-M7', 'QD-M8', 'QD-M9', 'QD-M10',
+    'QD-Q2', 'QD-Q1', 'QD-M1', 'QD-M1W', 'QD-M4', 'QD-M3', 'QD-M5', 'QD-M5W',
+    'QD-M6', 'QD-M7', 'QD-M8', 'QD-M8W', 'QD-M9', 'QD-M10',
 })
 
 KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset(
-    {'QD-M1', 'QD-M3', 'QD-M4', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10'}
+    {'QD-M1', 'QD-M1W', 'QD-M3', 'QD-M4', 'QD-M5', 'QD-M5W', 'QD-M6', 'QD-M8', 'QD-M8W', 'QD-M9', 'QD-M10'}
 )
 RUB_UNIT_KPI_IDS: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
 TILE_COLOR_TD_M4_LIMIT_IDS: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
 TILE_COLOR_PLAN_FACT_IDS: frozenset[str] = frozenset(
-    {'QD-M1', 'QD-M5', 'QD-M6', 'QD-M8', 'QD-M9', 'QD-M10', 'QD-Q1'}
+    {'QD-M1', 'QD-M1W', 'QD-M5', 'QD-M5W', 'QD-M6', 'QD-M8', 'QD-M8W', 'QD-M9', 'QD-M10', 'QD-Q1'}
 )
+FORM_WORK_TILE_IDS: frozenset[str] = frozenset({'QD-M1W', 'QD-M5W', 'QD-M8W'})
 TILE_FACT_ONLY_IDS: frozenset[str] = frozenset({'QD-M7'})
 OTK_INCOMING_TILE_IDS: frozenset[str] = frozenset({'QD-M6', 'QD-M9', 'QD-M10'})
 
@@ -82,7 +84,7 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     elif kid == "QD-Q2":
         # Только YTD SQL-кэш; старый qualdir_tekuchet_* давал залипший «Обновлено».
         paths.append(qd_q2_ytd_cache_path(ref_y, ref_m))
-    elif kid == "QD-M1":
+    elif kid in {"QD-M1", "QD-M1W"}:
         paths.extend([
             qd_m1_ytd_cache_path(ref_y, ref_m),
             external_brak_month_cache_path(ref_y, ref_m),
@@ -93,7 +95,7 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
         paths.append(qd_m3_ytd_cache_path(ref_y, ref_m))
     elif kid == "QD-M4":
         paths.append(qd_m4_ytd_cache_path(ref_y, ref_m))
-    elif kid == "QD-M5":
+    elif kid in {"QD-M5", "QD-M5W"}:
         paths.extend([
             qd_m5_ytd_cache_path(ref_y, ref_m),
             internal_brak_month_cache_path(ref_y, ref_m),
@@ -115,7 +117,7 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
             vyhod_kontrol_month_cache_path(ref_y, ref_m),
             qd_m7_tile_cache_path(ref_y, ref_m),
         ])
-    elif kid == "QD-M8":
+    elif kid in {"QD-M8", "QD-M8W"}:
         paths.extend([
             qd_m8_ytd_cache_path(ref_y, ref_m),
             forma0317_month_cache_path(ref_y, ref_m),
@@ -262,6 +264,40 @@ def _merge_qd_m3(entry: dict[str, Any], year: int | None, month: int | None) -> 
     return True
 
 
+def _merge_form_work(
+    entry: dict[str, Any],
+    year: int | None,
+    month: int | None,
+    *,
+    kpi_id: str,
+    loader,
+) -> bool:
+    source = loader(year=year, month=month)
+    if source is None:
+        return False
+    payload = as_in_work_payload(source, kpi_id)
+    entry['data_granularity'] = payload['data_granularity']
+    entry['monthly_data'] = payload['monthly_data']
+    entry['last_full_month_row'] = payload.get('last_full_month_row')
+    entry['ytd'] = payload['ytd']
+    entry['kpi_period'] = payload['kpi_period']
+    entry['departments'] = payload.get('departments')
+    entry['debug'] = payload.get('debug')
+    return True
+
+
+def _merge_qd_m1w(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
+    return _merge_form_work(entry, year, month, kpi_id='QD-M1W', loader=get_qd_m1_ytd)
+
+
+def _merge_qd_m5w(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
+    return _merge_form_work(entry, year, month, kpi_id='QD-M5W', loader=get_qd_m5_ytd)
+
+
+def _merge_qd_m8w(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
+    return _merge_form_work(entry, year, month, kpi_id='QD-M8W', loader=get_qd_m8_ytd)
+
+
 def _merge_qd_m8(entry: dict[str, Any], year: int | None, month: int | None) -> bool:
     qd = get_qd_m8_ytd(year=year, month=month)
     if qd is None:
@@ -349,14 +385,17 @@ _MERGE_BY_ID: dict[str, Callable[[dict[str, Any], int | None, int | None], bool]
     'QD-Q2': _merge_qd_q2,
     'QD-Q1': _merge_qd_q1,
     'QD-M1': _merge_qd_m1,
+    'QD-M1W': _merge_qd_m1w,
     'QD-M4': _merge_qd_m4,
     'QD-M3': _merge_qd_m3,
     'QD-M5': _merge_qd_m5,
+    'QD-M5W': _merge_qd_m5w,
     'QD-M6': _merge_qd_m6,
     'QD-M9': _merge_qd_m9,
     'QD-M10': _merge_qd_m10,
     'QD-M7': _merge_qd_m7,
     'QD-M8': _merge_qd_m8,
+    'QD-M8W': _merge_qd_m8w,
 }
 
 
