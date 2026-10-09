@@ -36,7 +36,7 @@ from comdir.common import (  # noqa: E402
     slice_months_by_dept,
 )
 from comdir.sql_tile_cache import get_ytd_via_cache, normalize_period  # noqa: E402
-from getkpi.calc_fot import KOMDIR_OWN_PLAN, get_fot_plan  # noqa: E402
+from getkpi.calc_fot import get_fot_plan  # noqa: E402
 from getkpi.calc_rashody import get_rashody_plan  # noqa: E402
 from getkpi.valovaya_pribyl import vp_plan_for_month  # noqa: E402
 
@@ -749,14 +749,6 @@ def compute_fot_month(year: int, month: int) -> dict[str, Any]:
         by_name = fot_mod.calc_fot_by_dept(cur, p0, p_next)
     fact_map = aggregate_by_odata_name(by_name)
     plan_map = {g: float(get_fot_plan(month, g)) for g in fact_map}
-    # План самого подразделения «КОММЕРЧЕСКИЙ ДИРЕКТОР» уже входит в get_fot_plan(None)
-    # отдельной константой и не лежит в FOT_PLAN, иначе итог задвоится.
-    idx = month - 1
-    if 0 <= idx < len(KOMDIR_OWN_PLAN):
-        own_plan = float(KOMDIR_OWN_PLAN[idx])
-        for guid in fact_map:
-            if str(guid).lower() == "4668a582-6eb1-11e2-afce-001e67112509":
-                plan_map[guid] = own_plan
     plan_total = float(get_fot_plan(month, None))
     guids = set(fact_map) | set(plan_map)
     by_dept = _merge_by_dept_maps(guids, fact_map=fact_map, plan_map=plan_map)
