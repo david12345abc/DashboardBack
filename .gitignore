@@ -40,6 +40,10 @@ logs/
 .env
 .env.*
 !.env.example
+
+# Local machine wiring (API/DB). Already tracked; skip-worktree keeps edits unpushed.
+Dashbord/settings.py
+getkpi/cache_manager.py
 *.pem
 *.key
 credentials*.json
