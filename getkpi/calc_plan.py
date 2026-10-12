@@ -531,12 +531,12 @@ def _load_payment_stage_months_and_sums(
             f"&$filter={flt}&$select={sel}"
         )
         r = request_with_retry(session, url, timeout=120, retries=4, label="Plans/PaymentStagesScan")
-        if r is None:
-            logger.error("Expected money stages: request dropped after retries")
-            break
-        if not r.ok:
-            logger.error("Expected money stages HTTP %d", r.status_code)
-            break
+        if r is None or not r.ok:
+            code = getattr(r, "status_code", None)
+            raise RuntimeError(
+                f"этапы оплаты не дочитаны"
+                + (f", HTTP {code}" if code else "")
+            )
         batch = r.json().get("value", [])
         for it in batch:
             m = _month_from_date(it.get("ДатаПлатежа"))
@@ -615,12 +615,12 @@ def _load_customer_settlement_rows(session: requests.Session,
                 f"&$filter={flt}&$select={sel}"
             )
             r = request_with_retry(session, url, timeout=120, retries=4, label="Plans/ExpectedMoney")
-            if r is None:
-                logger.error("Expected money: request dropped after retries")
-                break
-            if not r.ok:
-                logger.error("Expected money HTTP %d", r.status_code)
-                break
+            if r is None or not r.ok:
+                code = getattr(r, "status_code", None)
+                raise RuntimeError(
+                    "остатки к оплате не дочитаны"
+                    + (f", HTTP {code}" if code else "")
+                )
             batch = r.json().get("value", [])
             rows.extend(batch)
             if len(batch) < 5000:
@@ -660,12 +660,12 @@ def _load_shipment_order_rows(session: requests.Session,
                 f"&$filter={flt}&$select={sel}"
             )
             r = request_with_retry(session, url, timeout=120, retries=4, label="Plans/ExpectedShipment")
-            if r is None:
-                logger.error("Expected shipment: request dropped after retries")
-                break
-            if not r.ok:
-                logger.error("Expected shipment HTTP %d", r.status_code)
-                break
+            if r is None or not r.ok:
+                code = getattr(r, "status_code", None)
+                raise RuntimeError(
+                    "остатки к отгрузке не дочитаны"
+                    + (f", HTTP {code}" if code else "")
+                )
             batch = r.json().get("value", [])
             rows.extend(batch)
             if len(batch) < 5000:

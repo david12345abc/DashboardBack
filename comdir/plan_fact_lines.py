@@ -178,6 +178,156 @@ def load(year: int, month: int) -> list[dict]:
     return rows if isinstance(rows, list) else []
 
 
+def collect_through(year: int, through_month: int) -> None:
+    """Собрать расшифровку января..through_month теми же функциями, что и плитки.
+
+    Ожидаемое денег и отгрузок считается один раз на весь срок: там строки
+    уже помечены месяцем. Факт денег, факт и ожидаемое договоров и факт
+    отгрузок считаются помесячно, потому что запрос ограничен одним месяцем.
+    """
+    through_month = max(1, min(12, int(through_month)))
+    buckets: dict[int, list[dict]] = {month: [] for month in range(1, through_month + 1)}
+
+    shared: list[dict] = []
+    token_lines = lines_var.set(shared)
+    token_month = month_var.set(None)
+    try:
+        from getkpi.calc_plan import get_dengi_expected_by_month, get_otgruzki_expected_by_month
+
+        for label, fn in (
+            ("деньги ожидаемо", lambda: get_dengi_expected_by_month(year, through_month)),
+            ("отгрузки ожидаемо", lambda: get_otgruzki_expected_by_month(year, through_month)),
+        ):
+            try:
+                fn()
+            except Exception:
+                logger.exception("Расшифровка: %s", label)
+    finally:
+        lines_var.reset(token_lines)
+        month_var.reset(token_month)
+
+    for row in shared:
+        month = int(row.get("month") or 0)
+        if month in buckets:
+            buckets[month].append(row)
+    money_expected = [
+        row for row in shared
+        if row.get("metric") == "money" and row.get("kind") == "Ожидаемо"
+    ]
+    ship_expected = [
+        row for row in shared
+        if row.get("metric") == "ship" and row.get("kind") == "Ожидаемо"
+    ]
+    if not money_expected or not ship_expected:
+        logger.error(
+            "Расшифровка: ожидаемое пустое (деньги %s, отгрузки %s), файлы не перезаписываю",
+            len(money_expected),
+            len(ship_expected),
+        )
+        return
+    logger.info(
+        "Расшифровка: ожидаемое собрано, строк %s",
+        sum(len(rows) for rows in buckets.values()),
+    )
+
+    import comdir.calc_plan_fact_dogovory as dog
+    import comdir.calc_plan_fact_otgruzki as otg
+    from getkpi.calc_dengi_fact import collect_fact_lines
+
+    for month in range(1, through_month + 1):
+        month_rows: list[dict] = []
+        token_lines = lines_var.set(month_rows)
+        token_month = month_var.set(month)
+        try:
+            try:
+                collect_fact_lines(year, month)
+            except Exception:
+                logger.exception("Расшифровка: деньги факт %s-%02d", year, month)
+            start = date(year, month, 1)
+            nxt = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+            p0 = otg.to_1c_dt(start)
+            p_next = otg.to_1c_dt(nxt)
+            connection = otg.connect()
+            try:
+                cursor = connection.cursor()
+                for label, fn in (
+                    ("отгрузки факт", lambda: otg.calc_fact(cursor, p0, p_next)),
+                    ("договоры факт", lambda: dog.calc_fact(cursor, p0, p_next)),
+                    ("договоры ожидаемо", lambda: dog.calc_expected(cursor, p0, p_next, p_asof=p_next)),
+                ):
+                    try:
+                        fn()
+                    except Exception:
+                        logger.exception("Расшифровка: %s %s-%02d", label, year, month)
+            finally:
+                connection.close()
+        finally:
+            lines_var.reset(token_lines)
+            month_var.reset(token_month)
+        buckets[month].extend(month_rows)
+        saved = save(year, month, _resolve(buckets[month]))
+        logger.info("Расшифровка: %s-%02d сохранена, строк %s, %s", year, month, len(buckets[month]), saved.name)
+
+
+def tables_through(year: int, through_month: int, dept_name: str | None = None) -> dict:
+    """Три таблицы с помесячной расшифровкой. Пустой месяц не подменяется текущим."""
+    through_month = max(1, min(12, int(through_month)))
+    names = {
+        1: "январь", 2: "февраль", 3: "март", 4: "апрель",
+        5: "май", 6: "июнь", 7: "июль", 8: "август",
+        9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
+    }
+    by_month = {
+        month: _filter_dept(load(year, month), dept_name)
+        for month in range(1, through_month + 1)
+    }
+    tables = {}
+    for metric, key, title in METRICS:
+        monthly = []
+        for month in range(1, through_month + 1):
+            picked = [row for row in by_month[month] if row.get("metric") == metric]
+            fact, expected = _totals(picked)
+            monthly.append({
+                "year": year,
+                "month": month,
+                "month_name": names.get(month, ""),
+                "rows": picked,
+                "fact_total": fact,
+                "expected_total": expected,
+            })
+        current = monthly[-1]
+        tables[key] = {
+            "name": title,
+            "periodicity": "ежемесячно",
+            "description": (
+                f"Расшифровка плитки за выбранный месяц: факт {current['fact_total']}, "
+                f"ожидаемо {current['expected_total']}, "
+                f"прогноз {round(current['fact_total'] + current['expected_total'], 2)}"
+            ),
+            "period": {"year": year, "month": through_month, "month_name": names.get(through_month, "")},
+            "columns": ["Дата", "Отдел", "Партнер", "Документ", "Вид", "Сумма, руб."],
+            "rows_by_month": True,
+            "monthly_data": monthly,
+            "rows": current["rows"],
+            "fact_total": current["fact_total"],
+            "expected_total": current["expected_total"],
+        }
+    return tables
+
+
+def _filter_dept(rows: list[dict], dept_name: str | None) -> list[dict]:
+    if not dept_name:
+        return rows
+    wanted = dept_name.strip().lower()
+    return [row for row in rows if str(row.get("department") or "").strip().lower() == wanted]
+
+
+def _totals(rows: list[dict]) -> tuple[float, float]:
+    fact = round(sum(float(row.get("amount") or 0) for row in rows if row.get("kind") == "Факт"), 2)
+    expected = round(sum(float(row.get("amount") or 0) for row in rows if row.get("kind") == "Ожидаемо"), 2)
+    return fact, expected
+
+
 def tables_for_month(year: int, month: int, dept_name: str | None = None) -> dict:
     month_name = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",

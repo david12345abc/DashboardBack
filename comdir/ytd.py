@@ -285,11 +285,23 @@ def _overlay_dengi_fact_odata(months: list[dict[str, Any]], year: int, ref_month
     return "odata"
 
 
+def _odata_expected_is_blank(by_m: dict) -> bool:
+    """Пустой или целиком нулевой ответ — это сбой, не «ожидаемо 0»."""
+    if not by_m:
+        return True
+    for fmap in by_m.values():
+        if sum(float(v or 0) for v in (fmap or {}).values()):
+            return False
+    return True
+
+
 def _overlay_dengi_expected_odata(months: list[dict[str, Any]], year: int, ref_month: int) -> str:
     """Подставить ожидаемо OData за полный месяц (колонка 14 отчёта)."""
     from getkpi.calc_plan import get_dengi_expected_by_month
 
     by_m = get_dengi_expected_by_month(year, ref_month)
+    if _odata_expected_is_blank(by_m):
+        raise RuntimeError("OData ожидаемо денег пустое по всем месяцам")
     for row in months:
         fmap = by_m.get(int(row.get("month") or 0)) or {}
         total = round(sum(fmap.values()), 2)
@@ -440,8 +452,8 @@ def _overlay_otgruzki_expected_odata(months: list[dict[str, Any]], year: int, re
     from getkpi.calc_plan import get_otgruzki_expected_by_month
 
     exp_by_m = get_otgruzki_expected_by_month(year, ref_month)
-    if not exp_by_m:
-        raise RuntimeError("OData ожидаемо отгрузок пусто")
+    if _odata_expected_is_blank(exp_by_m):
+        raise RuntimeError("OData ожидаемо отгрузок пустое по всем месяцам")
     for row in months:
         month = int(row.get("month") or 0)
         emap = exp_by_m.get(month) or {}

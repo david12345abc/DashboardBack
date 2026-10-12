@@ -1570,8 +1570,10 @@ def _payload_cache_path(ref_y: int, ref_m: int, dept_guid: str | None) -> Path:
 
 
 def _save_payload_cache(ref_y: int, ref_m: int, dept_guid: str | None, payload: dict) -> None:
+    path = _payload_cache_path(ref_y, ref_m, dept_guid)
+    tmp = path.with_suffix(".json.tmp")
     try:
-        with _payload_cache_path(ref_y, ref_m, dept_guid).open("w", encoding="utf-8") as f:
+        with tmp.open("w", encoding="utf-8") as f:
             json.dump(
                 {
                     "cache_version": KOMDIR_PAYLOAD_CACHE_VERSION,
@@ -1581,8 +1583,39 @@ def _save_payload_cache(ref_y: int, ref_m: int, dept_guid: str | None, payload: 
                 f,
                 ensure_ascii=False,
             )
+        tmp.replace(path)
     except OSError:
         logger.exception("komdir payload cache: failed to save")
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+_PLAN_FACT_YTD_PREFIX = {
+    "KD-M1": "comdir_kd_m1_ytd",
+    "KD-M2": "comdir_kd_m2_ytd",
+    "KD-M3": "comdir_kd_m3_ytd",
+}
+
+
+def _newer_plan_fact_tiles(payload_path: Path, ref_y: int, ref_m: int) -> list[str]:
+    """Плитки, чей YTD пересчитан позже снимка дашборда."""
+    if not payload_path.exists():
+        return []
+    try:
+        payload_mtime = payload_path.stat().st_mtime
+    except OSError:
+        return []
+    newer: list[str] = []
+    for kid, prefix in _PLAN_FACT_YTD_PREFIX.items():
+        src = _CACHE_DIR / f"{prefix}_{ref_y}_{ref_m:02d}.json"
+        try:
+            if src.exists() and src.stat().st_mtime > payload_mtime:
+                newer.append(kid)
+        except OSError:
+            continue
+    return newer
 
 
 def _unwrap_payload_cache(raw: dict) -> dict:
@@ -1665,10 +1698,25 @@ def build_komdir_payload(kpi_list: list[dict],
     if not cache_manager.is_force_compute_context():
         cached_payload = _load_fresh_payload_cache(payload_cache_path)
         if cached_payload is not None:
+            for kid in _newer_plan_fact_tiles(payload_cache_path, ref_y, ref_m):
+                try:
+                    refresh_komdir_tile_cache(
+                        kid, month=ref_m, year=ref_y, dept_guid=dept_guid,
+                    )
+                except Exception:
+                    logger.exception(
+                        "komdir payload: не удалось подтянуть %s из свежего YTD", kid,
+                    )
+            reloaded = _load_fresh_payload_cache(payload_cache_path)
+            if reloaded is not None:
+                cached_payload = reloaded
             cached_payload = _payload_with_active_refresh_status(
                 cached_payload, ref_y, ref_m, payload_cache_path,
             )
-            return _attach_future_month_points(cached_payload, ref_y, ref_m, dept_guid)
+            return _attach_future_month_points(
+                _attach_plan_fact_breakdown(cached_payload, ref_y, ref_m),
+                ref_y, ref_m, dept_guid,
+            )
     raw = cache_manager.locked_call(
         cache_key,
         _build_komdir_payload_fresh,
@@ -1679,8 +1727,27 @@ def build_komdir_payload(kpi_list: list[dict],
         cache_path=payload_cache_path,
     )
     return _attach_future_month_points(
-        _unwrap_payload_cache(raw), ref_y, ref_m, dept_guid,
+        _attach_plan_fact_breakdown(_unwrap_payload_cache(raw), ref_y, ref_m),
+        ref_y, ref_m, dept_guid,
     )
+
+
+def _attach_plan_fact_breakdown(payload: dict, ref_y: int, ref_m: int) -> dict:
+    """Подставить расшифровку каждого месяца, а не только того, что в снимке."""
+    if not isinstance(payload, dict):
+        return payload
+    try:
+        from comdir.plan_fact_lines import tables_through
+
+        tables = tables_through(ref_y, ref_m)
+    except Exception:
+        logger.exception("Расшифровка денег, отгрузок и договоров не подставилась")
+        return payload
+    next_payload = dict(payload)
+    tablitsy = dict(next_payload.get("Таблицы") or {})
+    tablitsy.update(tables)
+    next_payload["Таблицы"] = tablitsy
+    return next_payload
 
 
 def _attach_future_month_points(payload: dict, ref_y: int, ref_m: int, dept_guid: str | None) -> dict:
@@ -2158,9 +2225,9 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
         pass
 
     try:
-        from comdir.plan_fact_lines import tables_for_month
+        from comdir.plan_fact_lines import tables_through
 
-        tablitsy.update(tables_for_month(ref_y, series_m))
+        tablitsy.update(tables_through(ref_y, series_m))
     except Exception:
         logger.exception("Расшифровка денег, отгрузок и договоров не подставилась")
 

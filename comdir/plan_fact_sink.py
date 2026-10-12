@@ -22,6 +22,8 @@ def note(metric: str, kind: str, amount, **fields) -> None:
         return
     want = only_month.get()
     month = fields.get("month")
+    if month is None:
+        month = want
     if want is not None and month is not None and int(month) != int(want):
         return
     row = {
@@ -29,6 +31,11 @@ def note(metric: str, kind: str, amount, **fields) -> None:
         "kind": kind,
         "amount": round(value, 2),
     }
+    if month is not None:
+        try:
+            row["month"] = int(month)
+        except (TypeError, ValueError):
+            pass
     for key, val in fields.items():
         if key == "month" or val is None:
             continue

@@ -1,4 +1,6 @@
 import json
+import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -10,7 +12,17 @@ from django.http import JsonResponse
 from django.utils import timezone as django_timezone
 from django.views.decorators.http import require_POST, require_GET, require_http_methods
 
+from .erp_auth import (
+    AmbiguousUserError,
+    DashboardAccessError,
+    ErpAuthError,
+    OnecUser,
+    UserNotFoundError,
+    authenticate as authenticate_onec,
+)
 from .models import AccessRequest, User
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +175,26 @@ def _send_access_request_email(req: AccessRequest) -> None:
 # POST /api/user/login/
 # ---------------------------------------------------------------------------
 
+def _upsert_onec_user(erp_user: OnecUser) -> User:
+    """Локальная учётка для JWT: логин — ФИО, подразделение — узел дашборда.
+
+    Роль уже существующего пользователя не меняется. Пароль 1С в PostgreSQL не пишется.
+    """
+    fio = erp_user.fio.strip()[:150]
+    department = (erp_user.department or erp_user.department_1c or "—").strip()[:255]
+    user = User.objects.filter(nickname__iexact=fio).first()
+    if user is None:
+        user = User(nickname=fio, role=User.Role.USER5, department=department)
+        user.set_password(secrets.token_urlsafe(32))
+    else:
+        if user.nickname != fio and not User.objects.filter(nickname=fio).exclude(pk=user.pk).exists():
+            user.nickname = fio
+        if department and department != "—":
+            user.department = department
+    user.save()
+    return user
+
+
 @require_POST
 def login(request):
     try:
@@ -170,24 +202,56 @@ def login(request):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    nickname = data.get('nickname', '').strip()
+    nickname = (data.get('nickname') or data.get('fio') or '').strip()
     password = data.get('password', '')
 
     if not nickname or not password:
-        return JsonResponse({'error': 'nickname and password are required'}, status=400)
+        return JsonResponse({'error': 'Укажите логин и пароль'}, status=400)
+
+    local_user = (
+        User.objects.filter(nickname=nickname).first()
+        or User.objects.filter(nickname__iexact=nickname).first()
+    )
+    if local_user is not None and local_user.verify_password(password):
+        token = _generate_token(local_user)
+        return JsonResponse({
+            'token': token,
+            'user': _user_to_dict(local_user),
+        })
 
     try:
-        user = User.objects.get(nickname=nickname)
-    except User.DoesNotExist:
-        return JsonResponse({'error': 'Invalid nickname or password'}, status=401)
+        erp_user = authenticate_onec(nickname, password)
+    except AmbiguousUserError:
+        return JsonResponse(
+            {'error': 'Найдено несколько пользователей с таким ФИО'},
+            status=409,
+        )
+    except UserNotFoundError:
+        return JsonResponse({'error': 'Неверный логин или пароль'}, status=401)
+    except DashboardAccessError:
+        if local_user is not None:
+            return JsonResponse({'error': 'Неверный логин или пароль'}, status=401)
+        return JsonResponse(
+            {'error': 'Доступ к дашборду есть только у руководителя подразделения'},
+            status=403,
+        )
+    except ErpAuthError:
+        logger.exception("1C login failed for fio=%s", nickname)
+        return JsonResponse(
+            {'error': 'База 1С сейчас недоступна. Повторите вход позже.'},
+            status=503,
+        )
 
-    if not user.verify_password(password):
-        return JsonResponse({'error': 'Invalid nickname or password'}, status=401)
-
+    user = _upsert_onec_user(erp_user)
     token = _generate_token(user)
+    payload = _user_to_dict(user)
+    if erp_user.position:
+        payload['position'] = erp_user.position
+    if erp_user.department_1c:
+        payload['department_1c'] = erp_user.department_1c
     return JsonResponse({
         'token': token,
-        'user': _user_to_dict(user),
+        'user': payload,
     })
 
 

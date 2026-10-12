@@ -6637,13 +6637,32 @@ def get_immediate_subordinates(request):
 
 @require_GET
 def get_users_departments(request):
-    """Список пользователей и их подразделений (без авторизации)."""
+    """Руководители из 1С и уже существующие учётки дашборда."""
+    from User.erp_auth import ErpAuthError, list_login_users, merge_login_users
     from User.models import User as AppUser
 
-    users = list(
-        AppUser.objects.values('nickname', 'department')
-        .order_by('department', 'nickname')
-    )
+    leaders: list[dict[str, str]] = []
+    try:
+        leaders = list_login_users()
+    except ErpAuthError:
+        logger.exception("1C user list failed")
+
+    legacy = [
+        {
+            'nickname': (row['nickname'] or '').strip(),
+            'department': (row['department'] or '').strip(),
+            'position': '',
+        }
+        for row in AppUser.objects.values('nickname', 'department')
+        if (row['nickname'] or '').strip()
+    ]
+    users = merge_login_users(leaders, legacy)
+    if not users and not leaders:
+        return JsonResponse(
+            {'error': 'Не удалось загрузить список пользователей'},
+            status=503,
+            json_dumps_params={'ensure_ascii': False},
+        )
     return JsonResponse(
         {'users': users, 'count': len(users)},
         json_dumps_params={'ensure_ascii': False},
