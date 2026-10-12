@@ -29,7 +29,7 @@ def _as_total_count(value: Any) -> int | None:
 
 
 def present_sh_m3_count(payload: dict[str, Any] | None) -> dict[str, Any]:
-    """Одно число на плитке: все обращения месяца (бывший plan), без плана и KPI %."""
+    """Одно число на плитке: план — все обращения месяца по ДатаРегистрации."""
     if not isinstance(payload, dict):
         return {}
     out = dict(payload)
@@ -41,8 +41,8 @@ def present_sh_m3_count(payload: dict[str, Any] | None) -> dict[str, Any]:
         if total is None:
             total = row.get("fact")
         rewritten = dict(row)
-        rewritten["plan"] = None
-        rewritten["fact"] = _as_total_count(total)
+        rewritten["plan"] = _as_total_count(total)
+        rewritten["fact"] = None
         rewritten["kpi_pct"] = None
         rewritten.pop("color", None)
         return rewritten
@@ -58,8 +58,8 @@ def present_sh_m3_count(payload: dict[str, Any] | None) -> dict[str, Any]:
         if total is None:
             total = ytd.get("total_fact")
         ytd_out = dict(ytd)
-        ytd_out["total_plan"] = None
-        ytd_out["total_fact"] = _as_total_count(total)
+        ytd_out["total_plan"] = _as_total_count(total)
+        ytd_out["total_fact"] = None
         ytd_out["kpi_pct"] = None
         out["ytd"] = ytd_out
     debug = out.get("debug")

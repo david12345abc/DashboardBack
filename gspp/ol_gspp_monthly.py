@@ -1,15 +1,13 @@
 """
-ГСП-M2 — ОЛ, запущенные в производство без срыва срока.
+ГСП-M2 — ОЛ, проверенные диспетчером ГСПП без срыва срока.
 
-Эталон (OData): DashboardBack/gspp/ol_gspp_monthly.py
+Эталон: отчёт 1С «Проверка опросного листа диспетчером ГСПП»
+(в месяц попадают строки с датой факта в этом месяце).
 
-Логика (как шапка Word «Заказы клиента»):
-  План — число ОЛ (Recorder), у которых ДатаЗавершенияПлан попала в месяц
+  План — строки регистра, у которых ДатаЗавершенияФакт попала в месяц
   и точка этапа = «ПроверкаОпросногоЛистаДиспетчеромГСПП».
-  Факт — сколько из этих ОЛ имеют закрытый этап «Расчет МЦР ОЛ (Ручной расчет)».
-  Не в срок = План − Факт.
-
-  Один ОЛ — одна строка: берётся запись с максимальной ДатаЗавершенияПлан.
+  Не в срок — НачалоДня(Факт) > НачалоДня(План).
+  Факт — План − Не в срок.
 
 SQL (erp_pm):
   Catalog_ТД_ТочкиЭтапов
@@ -50,16 +48,11 @@ REGISTER_TABLE = "_AccumRg127619"
 COL_STAGE = "_Fld127620RRef"
 COL_PLAN = "_Fld127622"
 COL_FACT = "_Fld127623"
-COL_RECORDER = "_RecorderRRef"
 
 STAGE_PDN = "ПроверкаОпросногоЛистаДиспетчеромГСПП"
 STAGE_DESCRIPTION = "Проверка опросного листа диспетчером ГСПП"
 # OData Ref_Key 5dc2ef78-738a-11ec-87c7-ac1f6b05524d в 1C binary
 STAGE_BIN = bytes.fromhex("87c7ac1f6b05524d11ec738a5dc2ef78")
-
-FACT_STAGE_DESCRIPTION = "Расчет МЦР ОЛ (Ручной расчет)"
-# OData/SQL: 875bac1f6b05524d11ec478b14bb75b1
-FACT_STAGE_BIN = bytes.fromhex("875bac1f6b05524d11ec478b14bb75b1")
 
 YEAR_OFFSET = 2000
 EMPTY_SQL_YEAR = 2001  # 0001 + YEAR_OFFSET
@@ -194,7 +187,7 @@ def resolve_named_stage(
 
 
 def resolve_stage_point(cur) -> tuple[bytes, str]:
-    """Точка плана: проверка ОЛ диспетчером ГСПП."""
+    """Точка этапа: проверка ОЛ диспетчером ГСПП."""
     return resolve_named_stage(
         cur,
         STAGE_BIN,
@@ -203,29 +196,11 @@ def resolve_stage_point(cur) -> tuple[bytes, str]:
     )
 
 
-def resolve_fact_stage(cur) -> tuple[bytes, str]:
-    """Точка факта Word: закрытый расчёт МЦР."""
-    return resolve_named_stage(
-        cur,
-        FACT_STAGE_BIN,
-        FACT_STAGE_DESCRIPTION,
-        "Расчет%МЦР%ОЛ%",
-    )
-
-
-def load_completed_recorders(cur, stage_bin: bytes) -> set[bytes]:
-    cur.execute(
-        f"""
-        SELECT DISTINCT [{COL_RECORDER}]
-        FROM [{REGISTER_TABLE}] WITH (NOLOCK)
-        WHERE [{COL_STAGE}] = ?
-          AND [{COL_FACT}] IS NOT NULL
-          AND YEAR([{COL_FACT}]) > ?
-        """,
-        stage_bin,
-        EMPTY_SQL_YEAR,
-    )
-    return {bytes(row[0]) for row in cur.fetchall() if row[0]}
+def is_late(plan_dt: datetime | None, fact_dt: datetime | None) -> bool:
+    """Не в срок: нет плана или НачалоДня(Факт) > НачалоДня(План)."""
+    if fact_dt is None or plan_dt is None:
+        return True
+    return fact_dt.date() > plan_dt.date()
 
 
 def kpi_pct(fact: int, plan: int) -> float | None:
@@ -239,43 +214,29 @@ def load_register_rows(
     stage_bin: bytes,
     start_dt: date,
     end_dt: date,
-) -> list[tuple[bytes, datetime, datetime | None]]:
+) -> list[tuple[datetime | None, datetime]]:
+    """Строки, у которых факт закрытия этапа попал в период (как на отчёте 1С)."""
     sql_start = to_sql_dt(start_dt)
-    # конец месяца включительно → следующий день (полуинтервал)
     sql_end_exclusive = to_sql_dt(end_dt + timedelta(days=1))
     cur.execute(
         f"""
-        SELECT [{COL_RECORDER}], [{COL_PLAN}], [{COL_FACT}]
+        SELECT [{COL_PLAN}], [{COL_FACT}]
         FROM [{REGISTER_TABLE}] WITH (NOLOCK)
         WHERE [{COL_STAGE}] = ?
-          AND [{COL_PLAN}] >= ?
-          AND [{COL_PLAN}] < ?
+          AND [{COL_FACT}] >= ?
+          AND [{COL_FACT}] < ?
         """,
         stage_bin,
         sql_start,
         sql_end_exclusive,
     )
-    rows: list[tuple[bytes, datetime, datetime | None]] = []
-    for recorder, plan_raw, fact_raw in cur.fetchall():
-        if not recorder or plan_raw is None:
-            continue
-        plan_dt = from_sql_dt(plan_raw)
-        if plan_dt is None:
-            continue
+    rows: list[tuple[datetime | None, datetime]] = []
+    for plan_raw, fact_raw in cur.fetchall():
         fact_dt = from_sql_dt(fact_raw)
-        rows.append((bytes(recorder), plan_dt, fact_dt))
+        if fact_dt is None:
+            continue
+        rows.append((from_sql_dt(plan_raw), fact_dt))
     return rows
-
-
-def dedupe_by_recorder(
-    rows: list[tuple[bytes, datetime, datetime | None]],
-) -> list[tuple[bytes, datetime, datetime | None]]:
-    best: dict[bytes, tuple[datetime, datetime | None]] = {}
-    for recorder, plan_dt, fact_dt in rows:
-        prev = best.get(recorder)
-        if prev is None or plan_dt > prev[0]:
-            best[recorder] = (plan_dt, fact_dt)
-    return [(rec, plan, fact) for rec, (plan, fact) in best.items()]
 
 
 def build_monthly_report(
@@ -287,24 +248,19 @@ def build_monthly_report(
         conn.timeout = 0
         cur = conn.cursor()
         stage_bin, stage_name = resolve_stage_point(cur)
-        fact_bin, fact_stage_name = resolve_fact_stage(cur)
-        rows = dedupe_by_recorder(
-            load_register_rows(
-                cur,
-                stage_bin,
-                month_start(*start_period),
-                month_end(*end_period),
-            )
+        rows = load_register_rows(
+            cur,
+            stage_bin,
+            month_start(*start_period),
+            month_end(*end_period),
         )
-        done_mcr = load_completed_recorders(cur, fact_bin)
 
     stats: dict[str, dict[str, int]] = defaultdict(lambda: {"plan": 0, "late": 0})
-    for recorder, plan_dt, _fact_dt in rows:
-        month_key = f"{plan_dt.year:04d}-{plan_dt.month:02d}"
+    for plan_dt, fact_dt in rows:
+        month_key = f"{fact_dt.year:04d}-{fact_dt.month:02d}"
         stats[month_key]["plan"] += 1
-        if recorder not in done_mcr:
+        if is_late(plan_dt, fact_dt):
             stats[month_key]["late"] += 1
-    stage_name = f"{stage_name} → факт: {fact_stage_name}"
 
     report_rows: list[dict[str, Any]] = []
     for month_key in iter_months(start_period, end_period):
@@ -324,9 +280,10 @@ def build_monthly_report(
 
 def format_report(point_name: str, rows: list[dict[str, Any]]) -> str:
     lines = [
-        "ОЛ ГСПП / заказы клиента (ГСП-M2 / SQL, как в Word)",
-        f"Этапы: {point_name}",
+        "ОЛ ГСПП (ГСП-M2 / SQL, как отчёт 1С по дате факта)",
+        f"Этап: {point_name}",
         f"Источник: {REGISTER_TABLE} + {STAGE_TABLE}",
+        "Отбор: ДатаЗавершенияФакт в месяце; не в срок, если день факта позже дня плана",
         "",
         f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'Не в срок':>10} {'KPI %':>8}",
         f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 10} {'-' * 8}",
@@ -425,7 +382,6 @@ def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> 
             "status": "ok",
             "source": "gspp.ol_gspp_monthly.sql",
             "stage_point": point_name,
-            "fact_stage": FACT_STAGE_DESCRIPTION,
             "tables": {
                 "stage_catalog": STAGE_TABLE,
                 "register": REGISTER_TABLE,
@@ -434,9 +390,10 @@ def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> 
                 "fact_col": COL_FACT,
             },
             "rule": (
-                "plan = unique OL with dispatcher stage planned in month; "
-                "fact = those OL with completed stage «Расчет МЦР ОЛ (Ручной расчет)» "
-                "(Word «Заказы клиента»); late = plan - fact"
+                "plan = register rows whose fact completion is in the month "
+                "(stage = Проверка опросного листа диспетчером ГСПП); "
+                "late = fact date strictly after plan date (time ignored); "
+                "fact = plan - late"
             ),
             "rows_by_month": rows,
         },
@@ -467,7 +424,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 GSPP_M2_CACHE_PREFIX = "gspp_m2_ol_monthly"
 GSPP_M2_DISK_TAG = "gspp_m2_sql_payload_v1"
-GSPP_M2_DISK_VERSION = 3
+GSPP_M2_DISK_VERSION = 4
 
 
 def gspp_m2_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

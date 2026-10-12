@@ -2,21 +2,17 @@
 ГСП-Q4 — вехи проектов TurboProject, где РП совпадает с актуальным «Руководителем отдела» ГСПП.
 
 **Когорта месяца (план):** вехи, у которых на графике Turbo окончание (``finish_date``)
-попадает в месяц. Baseline в план не входит: иначе в сентябрь попадают вехи,
-которые на графике уже стоят в следующем месяце.
+попадает в месяц, плюс просроченный baseline этого месяца, если график уже
+уехал в другой месяц. Иначе таблица показывает вехи, которых нет в плитке.
 
-**Отклонение:** веха из когорты, у которой к дате расчёта
-(конец месяца для закрытых периодов, сегодня для текущего месяца):
-  - не выполнена (``percent_complete`` < 100%%), а дата на графике (``finish_date``)
-    уже наступила; или
-  - выполнена, но фактическое окончание позже baseline (если baseline нет —
-    завершённая веха не считается отклонившейся, см. ``debug.milestones_without_baseline``).
+**Отклонение** (плитка и таблица — одна выборка): веха, у которой плановое
+окончание (baseline) попадает в опорный месяц, эта дата к моменту расчёта уже
+наступила (конец месяца для закрытых периодов, сегодня для текущего), а веха
+не выполнена (``percent_complete`` < 100%%). Просрочка по дате графика и
+позднее закрытие относительно baseline другого месяца в отклонение не входят.
 
-**Таблица отклонений** (окно «Отклонения по вехам», не плитка): веха месяца —
-та, у которой плановое окончание (baseline) попадает в месяц, дата плана уже
-наступила, а веха не выполнена. Дни просрочки — календарные дни от плановой
-даты до даты расчёта (сегодня либо конец закрытого месяца). В строке проекта
-показывается максимум по этим вехам.
+**Таблица отклонений:** те же вехи. Дни просрочки — календарные дни от плановой
+даты до даты расчёта. В строке проекта показывается максимум по этим вехам.
 
 **Факт:** план минус число отклонившихся (остальные — без отклонения за месяц).
 План/факт по плитке — **сумма по всем** подходящим проектам.
@@ -80,8 +76,8 @@ STATUS_COMPLETED = frozenset({"завершен", "закрыт"})
 PROJECT_NAME_SUBSTR = "номенклатур"
 
 GSPP_Q4_CACHE_PREFIX = "gspp_q4_ytd"
-GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v13"
-GSPP_Q4_DISK_VERSION = 13
+GSPP_Q4_DISK_TAG = "gspp_q4_ytd_payload_v14"
+GSPP_Q4_DISK_VERSION = 14
 
 GSPP_Q4_DEVIATION_CACHE_PREFIX = "gspp_q4_deviation_tables"
 GSPP_Q4_DEVIATION_DISK_TAG = "gspp_q4_deviation_tables_v12"
@@ -318,27 +314,17 @@ def _milestone_deviated(
     *,
     without_baseline: list[str],
 ) -> bool:
-    """Веха когорты месяца считается отклонившейся — см. модульный docstring."""
+    """Просроченный baseline опорного месяца — та же выборка, что у таблицы.
+
+    Плановая дата попадает в месяц, уже наступила, веха не выполнена.
+    ``without_baseline`` оставлен для совместимости вызова и debug-поля.
+    """
+    del without_baseline
     as_of_date = _deviation_as_of_date(ref_y, ref_m)
-    completed = _milestone_completed(task)
-    act_d = _calendar_date_from_field(task.get("finish_date"))
-    base_raw = _task_baseline_finish(task)
-    base_d = _calendar_date_from_field(base_raw) if base_raw else None
-
-    if completed:
-        if act_d is None:
-            return True
-        if base_d is None:
-            name = str(task.get("name") or "").strip()
-            if name:
-                without_baseline.append(name)
-            return False
-        return act_d > base_d
-
-    due_d = act_d if act_d is not None else base_d
-    if due_d is None:
+    plan_d = _plan_finish_in_month(task, ref_y, ref_m)
+    if plan_d is None or plan_d > as_of_date:
         return False
-    return due_d <= as_of_date
+    return not _milestone_completed(task)
 
 
 def _plan_finish_in_month(task: dict[str, Any], ref_y: int, ref_m: int) -> date | None:
@@ -369,8 +355,8 @@ def _collect_gspp_q4_deviated_milestones(
 ) -> list[dict[str, Any]]:
     """Вехи, которые по плану заканчиваются в месяце и к дате расчёта просрочены.
 
-    Просрочена — плановая дата уже наступила, а ``percent_complete`` < 100%.
-    Плитка ГСП-Q4 по-прежнему считает когорту по дате графика.
+    Просрочена — baseline месяца уже наступил, а ``percent_complete`` < 100%.
+    Плитка считает отклонение тем же правилом (``_milestone_deviated``).
     """
     as_of_date = _deviation_as_of_date(ref_y, ref_m)
     out: list[dict[str, Any]] = []
@@ -636,7 +622,9 @@ def _count_milestones_for_month(
 ) -> tuple[int, int, int, list[str]]:
     """(план, факт, отклонившиеся, имена завершённых вех без baseline для debug).
 
-    Факт = план − отклонившиеся.
+    План — вехи с ``finish_date`` в месяце. Отклонение — просроченный baseline
+    этого месяца (та же выборка, что у таблицы), в том числе если график уже
+    в другом месяце: такие вехи добавляются и в план. Факт = план − отклонившиеся.
     """
     without_baseline: list[str] = []
     plan_n = 0
@@ -648,10 +636,12 @@ def _count_milestones_for_month(
             continue
         if not _gspp_q4_counts_as_milestone(task):
             continue
-        if not _milestone_in_reference_month(task, ref_y, ref_m):
+        in_schedule = _milestone_in_reference_month(task, ref_y, ref_m)
+        deviated = _milestone_deviated(task, ref_y, ref_m, without_baseline=without_baseline)
+        if not in_schedule and not deviated:
             continue
         plan_n += 1
-        if _milestone_deviated(task, ref_y, ref_m, without_baseline=without_baseline):
+        if deviated:
             deviated_n += 1
     fact_n = plan_n - deviated_n
     return plan_n, fact_n, deviated_n, without_baseline

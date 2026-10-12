@@ -869,7 +869,12 @@ def _tile_cache_files(kpi_id: str, ref_y: int, ref_m: int) -> list[str]:
 
 
 def _tile_cache_updated_at(kpi_id: str, ref_y: int, ref_m: int) -> str | None:
-    """ISO-timestamp последнего обновления кэша для плитки (по mtime файла)."""
+    """Живой источник — mtime файла кэша. Копия SQL — дата последней записи в её таблице."""
+    from . import tile_freshness
+
+    stamped = tile_freshness.tile_updated_at(kpi_id)
+    if stamped:
+        return stamped
     latest_mtime: float | None = None
     for fname in _tile_cache_files(kpi_id, ref_y, ref_m):
         p = _CACHE_DIR / fname

@@ -30,6 +30,7 @@ from . import (
     qualdir_tables,
     techdir_dashboard,
     techdir_projects,
+    tile_freshness,
     valovaya_pribyl,
 )
 from devdir import turboproject_projects_by_resources as _devdir_turboproject_projects
@@ -926,6 +927,10 @@ def _public_unit_row(row: dict) -> dict:
 
 
 def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) -> str | None:
+    """Живой источник — mtime файла кэша. Копия SQL — дата последней записи в её таблице."""
+    stamped = tile_freshness.tile_updated_at(kpi_id)
+    if stamped:
+        return stamped
     if ref_y is None or ref_m is None:
         return None
 
@@ -2056,60 +2061,60 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        # v17: ГСП-Q4 — в таблице отклонений вехи с планом на месяц, которые просрочены.
-        gspp_memo_key = f"gspp_dashboard:v17:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v18: ГСП-Q4 — отклонение плитки совпадает с таблицей (просроченный baseline месяца).
+        gspp_memo_key = f"gspp_dashboard:v18:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
-            return cached_payload
+            return tile_freshness.apply_tile_freshness(cached_payload)
     if techdir_dashboard.is_techdir_department(dept) and not include_debug:
         # v4: color на строках месяца у плиток текучести (TD-Q2).
         techdir_memo_key = f"techdir_dashboard:v4:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(techdir_memo_key)
         if cached_payload is not None:
-            return cached_payload
+            return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
         # v9: «в работе» форм 03-17/18/19 — только формы месяца, не весь открытый хвост.
         qualdir_memo_key = f"qualdir_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
-            return cached_payload
+            return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_sup_department(dept) and not include_debug:
         # v36: color на строках месяца у плиток текучести.
         sup_memo_key = f"sup_dashboard:v36:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
-            return cached_payload
+            return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_autoit_department(dept) and not include_debug:
         # v9: color на строках месяца у плиток текучести (IT-Q2/IT-Q5).
         autoit_memo_key = f"autoit_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(autoit_memo_key)
         if cached_payload is not None:
-            return cached_payload
+            return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_c1auto_department(dept) and not include_debug:
         # v6: color на строках месяца у плиток текучести (1C-Q5).
         c1auto_memo_key = f"c1auto_dashboard:v6:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(c1auto_memo_key)
         if cached_payload is not None:
-            return cached_payload
+            return tile_freshness.apply_tile_freshness(cached_payload)
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
-        # v10: SH-M3 — одно число, всего обращений за месяц.
-        servhead_memo_key = f"servhead_dashboard:v10:{ref_y}:{ref_m:02d}"
+        # v11: SH-M3 показывает план — все обращения по ДатаРегистрации.
+        servhead_memo_key = f"servhead_dashboard:v11:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
-            return cached_payload
+            return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_devdir_department(dept) and not include_debug:
         # v9: color на строках месяца у плиток текучести (RD-Q2).
         devdir_memo_key = f"devdir_dashboard:v9:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(devdir_memo_key)
         if cached_payload is not None:
             logger.info("cache_manager: devdir dashboard memo hit %s", devdir_memo_key)
-            return cached_payload
+            return tile_freshness.apply_tile_freshness(cached_payload)
 
     dashboard_disk_key: str | None = None
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v17_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v18_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
             dashboard_disk_key = f"techdir_v4_{ref_y}_{ref_m:02d}"
@@ -2127,7 +2132,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"c1auto_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
-            dashboard_disk_key = f"servhead_v10_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"servhead_v11_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
             dashboard_disk_key = f"devdir_v9_{ref_y}_{ref_m:02d}"
@@ -2147,7 +2152,7 @@ def _build_universal_payload(
             ),
         )
         if disk_cached is not None:
-            return disk_cached
+            return tile_freshness.apply_tile_freshness(disk_cached)
 
     for kpi in tiles_meta:
         entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
@@ -2653,7 +2658,7 @@ def _build_universal_payload(
         )
     if dashboard_disk_key:
         cache_manager.save_dashboard_disk(dashboard_disk_key, result)
-    return result
+    return tile_freshness.apply_tile_freshness(result)
 
 
 MONTH_NAMES = {
@@ -3305,9 +3310,10 @@ def _build_komdir_style_payload(dept: str, kpis: list[dict], request,
     year_param = request.GET.get('year')
     req_month = int(month_param) if month_param else None
     req_year = int(year_param) if year_param else None
-    return komdir_dashboard.build_komdir_payload(
+    payload = komdir_dashboard.build_komdir_payload(
         kpis, month=req_month, year=req_year, dept_guid=dept_guid,
     )
+    return tile_freshness.apply_tile_freshness(payload)
 
 
 @require_GET
@@ -3384,6 +3390,7 @@ def get_all_departments(request):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
                 kpis, month=req_m, year=req_yr, for_raw=for_raw,
             )
+            tile_freshness.apply_tile_freshness(payload)
             if req_m and req_yr:
                 ref_y, ref_m = req_yr, req_m
             else:
@@ -3476,6 +3483,7 @@ def get_all_departments(request):
             payload, for_block = chairman_data.build_chairman_payload_by_for(
                 kpis, month=req_month_all, year=req_year_all, for_raw=chairman_for_raw,
             )
+            tile_freshness.apply_tile_freshness(payload)
             if req_month_all and req_year_all:
                 ref_y, ref_m = req_year_all, req_month_all
             else:
