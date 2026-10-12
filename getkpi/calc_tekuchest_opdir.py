@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-calc_tekuchest_opdir.py — Текучесть для операционного директора (вся «Турбулентность-Дон»).
+calc_tekuchest_opdir.py — Текучесть персонала компании для операционного директора.
 
-Логика как в calc_tekuchest.py (коммерческий директор):
-  Document_ТД_ТекучестьПерсонала, ВидДокумента 0 = план, 1 = факт,
-  табличная часть «Текучесть»: Месяц, План, Факт.
+Тот же принцип, что у коммерческого директора (calc_tekuchest / KD-M11):
+  текучесть, % = уволенные за месяц / штатные единицы на конец месяца × 100.
+Источник — кадровая история и штатное расписание в SQL erp_pm.
 
-Периметр: Catalog_СтруктураПредприятия (как в реквизите Подразделение документа).
-  Все элементы справочника, кроме поддеревьев:
-    • «_Ликвидированные»
-    • «ПРОИЗВОДСТВО  АЛМАЗ» (и все дочерние — дочерние юрлица / участки Алмаза)
-  (аналог «вся Турбулентность-Дон» без типичных дочерних контуров; при необходимости
-   список исключений расширяется константами EXCLUDE_SUBTREE_ROOTS).
+Периметр — организация «ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО».
+На обороте плитки — службы внутри «Обособленного подразделения»
+(и прочие корни НПО, где есть штат): процент и сколько уволено из штата.
+Штат вложенных отделов входит в свою службу, без двойного счёта.
 
 Вывод:
   • Итог по всем отделам периметра
@@ -40,6 +38,16 @@ from urllib.parse import quote
 import requests
 from requests.auth import HTTPBasicAuth
 
+from hr_turnover_sql import (
+    ORG_TABLE,
+    DeptSpec,
+    SqlConnection,
+    bin_to_guid,
+    build_report,
+    guid_to_1c,
+    turnover_percent,
+)
+
 sys.stdout.reconfigure(encoding="utf-8")
 print = functools.partial(print, flush=True)
 
@@ -52,8 +60,32 @@ EMPTY = "00000000-0000-0000-0000-000000000000"
 ENTITY = "Document_ТД_ТекучестьПерсонала"
 CAT_STRUKTURA = "Catalog_СтруктураПредприятия"
 CACHE_DIR = Path(__file__).resolve().parent / "dashboard"
-SOURCE_TAG = "tekuchest_opdir_monthly_v1"
-CACHE_VERSION = 3
+SOURCE_TAG = "tekuchest_opdir_hr_sql_v1"
+CACHE_VERSION = 4
+
+# Catalog_Организации «ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО» — владелец подразделений.
+NPO_OWNER = "fbca2148-6cfd-11e7-812d-001e67112509"
+# Корень действующей оргструктуры НПО в Catalog_ПодразделенияОрганизаций.
+COMPANY_ROOT = "572c1ca9-e6f3-11e7-826b-ac1f6b05524d"
+
+OD_Q2_SOURCE = (
+    "1С: кадровая история и штатное расписание, "
+    "все подразделения НПО «Турбулентность»"
+)
+OD_Q2_FORMULA = (
+    "уволенные за месяц / штатные единицы на последний день месяца × 100"
+)
+OD_Q2_DESCRIPTION = (
+    "Факт:\n"
+    "Текучесть, % = уволенные за месяц / штатные единицы "
+    "на последний день месяца × 100.\n\n"
+    "Периметр — организация «ТУРБУЛЕНТНОСТЬ-ДОН ООО НПО». "
+    "Штат вложенных отделов суммируется в службу, к которой они относятся.\n\n"
+    "Увольнение — событие «Увольнение» в кадровой истории за календарный месяц. "
+    "Один сотрудник в одном подразделении считается один раз. "
+    "Сотрудники с признаком «не учитывать при текучести» не входят.\n\n"
+    "На развороте — служба и её текучесть: процент и сколько уволено из штата."
+)
 
 # Корни поддеревьев, которые не входят в периметр операционного директора (Турбулентность-Дон).
 EXCLUDE_SUBTREE_ROOTS: frozenset[str] = frozenset({
@@ -86,7 +118,7 @@ def _save_json(path: Path, payload: dict) -> None:
 
 def _cache_path_monthly(year: int, ref_month: int) -> Path:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return CACHE_DIR / f"tekuchest_opdir_monthly_{year}_{ref_month:02d}.json"
+    return CACHE_DIR / f"tekuchest_opdir_hr_{year}_{ref_month:02d}.json"
 
 
 def _normalize_period(year: int | None = None, month: int | None = None) -> tuple[int, int]:
@@ -297,6 +329,153 @@ def _empty_monthly_payload(ref_year: int, ref_month: int) -> dict:
     }
 
 
+def _company_turnover_rag(pct: float | None) -> str:
+    """Пороги плитки OD-Q2: ≤5 зелёный, 5,1–7 жёлтый, >7 красный."""
+    if pct is None:
+        return "unknown"
+    if pct <= 5:
+        return "green"
+    if pct <= 7:
+        return "yellow"
+    return "red"
+
+
+def _load_npo_tree(sql: SqlConnection) -> tuple[dict[str, str], dict[str, list[str]]]:
+    owner = guid_to_1c(NPO_OWNER)
+    names: dict[str, str] = {}
+    children: dict[str, list[str]] = defaultdict(list)
+    with sql.connect_ctx() as conn:
+        conn.timeout = 0
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT _IDRRef, _Description, _ParentIDRRef
+            FROM dbo.[{ORG_TABLE}] WITH (NOLOCK)
+            WHERE _Marked = 0x00 AND _OwnerIDRRef = ?
+            """,
+            [owner],
+        )
+        for ref, desc, parent in cur.fetchall():
+            key = bin_to_guid(bytes(ref))
+            parent_key = bin_to_guid(bytes(parent)) if parent else ""
+            if parent_key == EMPTY:
+                parent_key = ""
+            names[key] = str(desc or "").strip() or key
+            children[parent_key].append(key)
+    return names, children
+
+
+def _descendants(key: str, children: dict[str, list[str]]) -> list[str]:
+    out = [key]
+    for child in children.get(key, []):
+        out.extend(_descendants(child, children))
+    return out
+
+
+def _company_groups(
+    names: dict[str, str],
+    children: dict[str, list[str]],
+) -> list[tuple[str, list[str]]]:
+    """Службы НПО и подразделения, которые в них входят."""
+    groups: list[tuple[str, list[str]]] = []
+    seen: set[str] = set()
+    for child in children.get(COMPANY_ROOT, []):
+        keys = _descendants(child, children)
+        groups.append((names.get(child) or child, keys))
+        seen.update(keys)
+    own = COMPANY_ROOT
+    if own in names and own not in seen:
+        groups.append((names[own], [own]))
+        seen.add(own)
+    for root in children.get("", []):
+        if root in seen or root == COMPANY_ROOT:
+            continue
+        if (names.get(root) or "").casefold() == "удалить":
+            continue
+        keys = [key for key in _descendants(root, children) if key not in seen]
+        if not keys:
+            continue
+        groups.append((names.get(root) or root, keys))
+        seen.update(keys)
+    return groups
+
+
+def _month_from_report(year: int, month: int, month_payload: dict, org_to_group: dict[str, str]) -> dict:
+    buckets: dict[str, dict[str, float | int]] = {}
+    for row in month_payload.get("rows") or []:
+        org_key = str(row.get("org_key") or "").lower()
+        group = org_to_group.get(org_key)
+        if not group:
+            continue
+        bucket = buckets.get(group)
+        if bucket is None:
+            bucket = {"staff": 0.0, "dismissed": 0}
+            buckets[group] = bucket
+        bucket["staff"] += float(row.get("staff_units") or 0)
+        bucket["dismissed"] += int(row.get("dismissed") or 0)
+
+    turnover_rows = []
+    for name in sorted(buckets, key=lambda item: item.casefold()):
+        staff = round(float(buckets[name]["staff"]), 2)
+        dismissed = int(buckets[name]["dismissed"])
+        if staff <= 0 and dismissed <= 0:
+            continue
+        turnover_rows.append({
+            "name": name,
+            "staff": staff,
+            "dismissed": dismissed,
+            "fact": turnover_percent(staff, dismissed),
+            "navigable": False,
+        })
+    staff_total = round(sum(row["staff"] for row in turnover_rows), 2)
+    dismissed_total = sum(row["dismissed"] for row in turnover_rows)
+    fact = turnover_percent(staff_total, dismissed_total) if staff_total > 0 or dismissed_total else None
+    return {
+        "year": year,
+        "month": month,
+        "month_name": MONTH_RU[month].lower(),
+        "plan": None,
+        "fact": fact,
+        "kpi_pct": fact,
+        "staff_units": staff_total,
+        "dismissed": dismissed_total,
+        "has_data": staff_total > 0 or dismissed_total > 0,
+        "values_unit": "%",
+        "color": _company_turnover_rag(fact),
+        "turnover_rows": turnover_rows,
+    }
+
+
+def _calc_company_year(year: int, ref_month: int) -> list[dict]:
+    sql = SqlConnection()
+    names, children = _load_npo_tree(sql)
+    groups = _company_groups(names, children)
+    org_to_group: dict[str, str] = {}
+    specs: list[DeptSpec] = []
+    for group_name, keys in groups:
+        for key in keys:
+            org_to_group[key.lower()] = group_name
+            specs.append(DeptSpec(
+                group=key,
+                org_key=key,
+                structure_name=names.get(key) or group_name,
+                note=group_name,
+            ))
+    report = build_report(
+        specs,
+        (year, 1),
+        (year, ref_month),
+        sql=sql,
+        hierarchy_mode="listed_only_no_auto_children",
+        kpi_label="OD-Q2",
+    )
+    by_month = {row["month"]: row for row in report.get("months") or []}
+    return [
+        _month_from_report(year, month, by_month.get(month) or {"rows": []}, org_to_group)
+        for month in range(1, ref_month + 1)
+    ]
+
+
 def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = None) -> dict:
     today = date.today()
     ref_year, ref_month = _normalize_period(year, month)
@@ -313,7 +492,6 @@ def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = Non
     ):
         return cached
 
-    # Нет сентябрьского файла / устарел: не блокировать /api/kpi/ полным OData.
     if not cache_manager.is_force_compute_context():
         stale = cached
         if stale is None and ref_month > 1:
@@ -330,44 +508,9 @@ def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = Non
             return out
         return _empty_monthly_payload(ref_year, ref_month)
 
-    session = requests.Session()
-    session.auth = AUTH
-
-    dept_names = load_opdir_struktura_departments(session)
-    all_docs = load_all_tekuchest_docs(session)
-    docs_dept = [d for d in all_docs if d.get("Подразделение_Key", EMPTY) in dept_names]
-
-    months_out: list[dict] = []
-    total_plan = 0.0
-    total_fact = 0.0
-    for mm in range(1, ref_month + 1):
-        summary, children = aggregate_month(docs_dept, dept_names, ref_year, mm)
-        plan_total = round(float(summary.get("plan") or 0), 2)
-        fact_total = round(float(summary.get("fact") or 0), 2)
-        row = {
-            "year": ref_year,
-            "month": mm,
-            "month_name": MONTH_RU[mm].lower(),
-            "plan": plan_total,
-            "fact": fact_total,
-            "kpi_pct": round(fact_total / plan_total * 100, 1) if plan_total > 0 else None,
-            "has_data": abs(plan_total) > 0 or abs(fact_total) > 0,
-            "values_unit": "%",
-            "plan_by_dept": {
-                child["name"]: round(float(child.get("plan") or 0), 2)
-                for child in children
-                if float(child.get("plan") or 0) != 0
-            },
-            "fact_by_dept": {
-                child["name"]: round(float(child.get("fact") or 0), 2)
-                for child in children
-                if float(child.get("fact") or 0) != 0
-            },
-        }
-        months_out.append(row)
-        total_plan += plan_total
-        total_fact += fact_total
-
+    logger.info("calc_tekuchest_opdir: HR SQL %s-%02d", ref_year, ref_month)
+    months_out = _calc_company_year(ref_year, ref_month)
+    last = months_out[-1] if months_out else None
     payload = {
         "cache_date": today.isoformat(),
         "source": SOURCE_TAG,
@@ -375,11 +518,11 @@ def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = Non
         "year": ref_year,
         "ref_month": ref_month,
         "months": months_out,
-        "last_full_month_row": dict(months_out[-1]) if months_out else None,
+        "last_full_month_row": dict(last) if last else None,
         "ytd": {
-            "total_plan": round(total_plan, 2) if months_out else None,
-            "total_fact": round(total_fact, 2) if months_out else None,
-            "kpi_pct": round(total_fact / total_plan * 100, 1) if total_plan > 0 else None,
+            "total_plan": None,
+            "total_fact": last.get("fact") if last else None,
+            "kpi_pct": last.get("kpi_pct") if last else None,
             "months_with_data": sum(1 for row in months_out if row.get("has_data")),
             "months_total": len(months_out),
             "values_unit": "%" if months_out else None,

@@ -50,7 +50,7 @@ DEPARTMENTS = [
 
 
 def apply_gspp_q5_plan(payload: dict[str, Any], year: int, month: int) -> dict[str, Any]:
-    """План из утверждённой таблицы (раньше top2 Document_ТД_ТекучестьПерсонала)."""
+    """План подразделения ГСПП из документа 1С «Текучесть персонала» № 000000072."""
     for row in payload.get("monthly_data") or []:
         try:
             ry, rm = int(row["year"]), int(row["month"])
