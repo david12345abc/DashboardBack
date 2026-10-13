@@ -3482,3 +3482,36 @@ cache_manager: [techdir_m4] done
 cache_manager: [techdir_m5_2026_7] computing...
 cache_manager: [techdir_td_m5_2026_07] force_compute, synchronous recompute
 cache_manager: [techdir_projects] force_compute, synchronous recompute
+cache_manager: [techdir_m5_2026_7] done
+cache_manager: [techdir_tekuchet] computing...
+cache_manager: [techdir_q2_sql_2026_07] force_compute, synchronous recompute
+cache_manager: [techdir_tekuchet] done
+cache_manager: [techdir_m6_2026_7] computing...
+cache_manager: [techdir_m6_2026_07] force_compute, synchronous recompute
+cache_manager: [techdir_projects] force_compute, synchronous recompute
+C:\Users\testii\Downloads\dash\DashboardBack\qualdir\qd_m8.py changed, reloading.
+cache_manager: warming thread started
+cache_manager: next midnight warm in 55267 s (15.4 h)
+cache_manager: midnight cache scheduler started
+cache_manager: [pd_m2_otif_pc1_2026_10] computing...
+cache_manager: warming 317 cache tasks (2026-10, startup)
+cache_manager: prefetched GSPP TurboProject projects
+cache_manager: [comdir_dengi_2026_10] fresh, skip
+cache_manager: [comdir_otgruzki_2026_10] fresh, skip
+cache_manager: [comdir_dogovory_2026_10] fresh, skip
+cache_manager: [psd_vipusk_2026_10] fresh, skip
+cache_manager: [comdir_debitorka_2026_10] fresh, skip
+cache_manager: [dz_limits] fresh, skip
+cache_manager: [comdir_rashody_2026_10] fresh, skip
+cache_manager: [comdir_fot_2026_10] fresh, skip
+cache_manager: [comdir_cena_2026_10] fresh, skip
+cache_manager: [comdir_tkp_sla_2026_10] fresh, skip
+cache_manager: [tekuchest_2026_10] fresh, skip
+cache_manager: [vyruchka_opdir_2026_10] computing...
+Watching for file changes with StatReloader
+cache_manager: [pd_m2_otif_pc1_2026_10] done
+cache_manager: [pd_m2_otif_pc2_2026_10] computing...
+cache_manager: [pd_m2_otif_pc2_2026_10] done
+cache_manager: [pd_q2_turnover_pc1_2026_10] already computing, skip background schedule
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|##########| 199/199 [00:00<00:00, 13263.20it/s]
