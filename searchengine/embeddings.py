@@ -78,13 +78,33 @@ def _load_sentence_transformer() -> SentenceTransformer:
 
 
 _lock = threading.Lock()
+_model: SentenceTransformer | None = None
+_model_failed = False
 _dept_names: list[str] = []
 _dept_embeddings: np.ndarray | None = None
 _structure_mtime: float | None = None
 
-logger.info("Loading embedding model %s …", MODEL_NAME)
-_model = _load_sentence_transformer()
-logger.info("Model loaded.")
+
+def _get_model() -> SentenceTransformer | None:
+    """Модель грузится при первом поиске, не при старте сервера.
+
+    На этой машине загрузка вместе с прогревом кэша упирается в файл подкачки
+    Windows (os error 1455) и роняет процесс.
+    """
+    global _model, _model_failed
+    if _model is not None:
+        return _model
+    if _model_failed:
+        return None
+    try:
+        logger.info("Loading embedding model %s …", MODEL_NAME)
+        _model = _load_sentence_transformer()
+        logger.info("Model loaded.")
+        return _model
+    except Exception:
+        _model_failed = True
+        logger.exception("Embedding model is unavailable, department search is off")
+        return None
 
 
 def _collect_all_keys(tree) -> list[str]:
@@ -115,8 +135,11 @@ def _ensure_index():
         tree = json.load(f)
 
     names = list(dict.fromkeys(_collect_all_keys(tree)))
+    model = _get_model()
+    if model is None:
+        return [], np.empty((0, 0), dtype=np.float32)
 
-    embs = _model.encode(names, convert_to_numpy=True, normalize_embeddings=True)
+    embs = model.encode(names, convert_to_numpy=True, normalize_embeddings=True)
 
     _dept_names = names
     _dept_embeddings = embs
@@ -136,9 +159,13 @@ def search(query: str, allowed: set[str], top_k: int = 5) -> list[dict]:
     Результаты ниже MIN_SCORE после бустинга отсекаются.
     """
     with _lock:
+        model = _get_model()
         names, embs = _ensure_index()
 
-    q_emb = _model.encode([query], convert_to_numpy=True, normalize_embeddings=True)
+    if model is None or len(names) == 0:
+        return []
+
+    q_emb = model.encode([query], convert_to_numpy=True, normalize_embeddings=True)
 
     cos_scores: np.ndarray = (embs @ q_emb.T).flatten()
 

@@ -991,19 +991,35 @@ def _is_servhead_m5_tile(kpi: dict) -> bool:
     return _servhead_kpi_views.servhead_m5_tile_matches(kid) or _servhead_kpi_views.servhead_m5_tile_matches(raw)
 
 
+def _is_servhead_m6_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _servhead_kpi_views.servhead_m6_tile_matches(kid) or _servhead_kpi_views.servhead_m6_tile_matches(raw)
+
+
+def _is_servhead_m8_tile(kpi: dict) -> bool:
+    raw = kpi.get('kpi_id')
+    kid = _normalize_dashboard_kpi_id(raw)
+    return _servhead_kpi_views.servhead_m8_tile_matches(kid) or _servhead_kpi_views.servhead_m8_tile_matches(raw)
+
+
 def _is_servhead_lower_better_tile(kpi: dict) -> bool:
-    return _is_servhead_m2_tile(kpi) or _is_servhead_m3_tile(kpi) or _is_servhead_m5_tile(kpi)
+    return (
+        _is_servhead_m2_tile(kpi) or _is_servhead_m3_tile(kpi)
+        or _is_servhead_m5_tile(kpi) or _is_servhead_m8_tile(kpi)
+    )
 
 
 def _is_servhead_higher_better_tile(kpi: dict) -> bool:
-    return _is_servhead_m1_tile(kpi) or _is_servhead_m4_tile(kpi)
+    return _is_servhead_m1_tile(kpi) or _is_servhead_m4_tile(kpi) or _is_servhead_m6_tile(kpi)
 
 
 def _is_servhead_tile(kpi: dict) -> bool:
     return (
         _is_servhead_m1_tile(kpi) or _is_servhead_m2_tile(kpi)
         or _is_servhead_m3_tile(kpi) or _is_servhead_m4_tile(kpi)
-        or _is_servhead_m5_tile(kpi)
+        or _is_servhead_m5_tile(kpi) or _is_servhead_m6_tile(kpi)
+        or _is_servhead_m8_tile(kpi)
     )
 
 

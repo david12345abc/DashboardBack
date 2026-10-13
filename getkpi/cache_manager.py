@@ -602,6 +602,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from servhead import sh_m3 as servhead_sh_m3
     from servhead import sh_m4 as servhead_sh_m4
     from servhead import sh_m5 as servhead_sh_m5
+    from servhead import production_plan as servhead_plan
     from servhead import sh_t1 as servhead_sh_t1
     from servhead import sh_t2 as servhead_sh_t2
     from qualdir import mpp_tasks_report, qd_m1, qd_m3, qd_m4, qd_m5, qd_m6, qd_m7, qd_m8, qd_m9, qd_m10
@@ -1009,7 +1010,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     _append_servhead_warm_tasks(
         tasks, y, m,
         servhead_sh_m1, servhead_sh_m2, servhead_sh_m3, servhead_sh_m4, servhead_sh_m5,
-        servhead_sh_t1, servhead_sh_t2,
+        servhead_sh_t1, servhead_sh_t2, servhead_plan,
     )
     _append_sup_warm_tasks(
         tasks, y, m,
@@ -1189,6 +1190,7 @@ def _append_servhead_warm_tasks(
     sh_m5_mod: object,
     sh_t1_mod: object,
     sh_t2_mod: object,
+    plan_mod: object,
 ) -> None:
     """Прогреть файловые кэши servhead за все месяцы 1..ref_m текущего года."""
     for warm_m in range(1, ref_m + 1):
@@ -1216,6 +1218,21 @@ def _append_servhead_warm_tasks(
             f"servhead_sh_m5_{ref_y}_{warm_m:02d}",
             sh_m5_mod.sh_m5_ytd_cache_path(ref_y, warm_m),
             lambda yy=ref_y, mm=warm_m: sh_m5_mod.get_sh_m5_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"servhead_sh_m6_{ref_y}_{warm_m:02d}",
+            plan_mod.sh_m6_ytd_cache_path(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: plan_mod.get_sh_m6_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"servhead_sh_m8_{ref_y}_{warm_m:02d}",
+            plan_mod.sh_m8_ytd_cache_path(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: plan_mod.get_sh_m8_ytd(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"servhead_sh_t3_{ref_y}_{warm_m:02d}",
+            plan_mod.sh_t3_cache_path(ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: plan_mod.get_sh_t3_table(year=yy, month=mm),
         ))
         tasks.append((
             f"servhead_sh_t1_{ref_y}_{warm_m:02d}",
