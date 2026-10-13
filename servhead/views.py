@@ -25,6 +25,8 @@ SERVHEAD_TILE_KPI_IDS: frozenset[str] = frozenset({
     "SH-M3",
     "SH-M4",
     "SH-M5",
+    "SH-M6",
+    "SH-M8",
 })
 
 SERVHEAD_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
@@ -33,6 +35,8 @@ SERVHEAD_KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset({
     "SH-M3",
     "SH-M4",
     "SH-M5",
+    "SH-M6",
+    "SH-M8",
 })
 
 SERVHEAD_M1_TILE_IDS: frozenset[str] = frozenset({"SH-M1"})
@@ -40,15 +44,25 @@ SERVHEAD_M2_TILE_IDS: frozenset[str] = frozenset({"SH-M2"})
 SERVHEAD_M3_TILE_IDS: frozenset[str] = frozenset({"SH-M3"})
 SERVHEAD_M4_TILE_IDS: frozenset[str] = frozenset({"SH-M4"})
 SERVHEAD_M5_TILE_IDS: frozenset[str] = frozenset({"SH-M5"})
+SERVHEAD_M6_TILE_IDS: frozenset[str] = frozenset({"SH-M6"})
+SERVHEAD_M8_TILE_IDS: frozenset[str] = frozenset({"SH-M8"})
+
+def _plan_module():
+    from servhead import production_plan
+
+    return production_plan
+
 
 SERVHEAD_HIGHER_BETTER_TILE_IDS: frozenset[str] = frozenset({
     "SH-M1",
     "SH-M4",
+    "SH-M6",
 })
 
 SERVHEAD_LOWER_BETTER_TILE_IDS: frozenset[str] = frozenset({
     "SH-M2",
     "SH-M5",
+    "SH-M8",
 })
 
 _PAYLOAD_BUILDERS = {
@@ -57,6 +71,8 @@ _PAYLOAD_BUILDERS = {
     "SH-M3": get_sh_m3_ytd,
     "SH-M4": get_sh_m4_ytd,
     "SH-M5": get_sh_m5_ytd,
+    "SH-M6": lambda **kwargs: _plan_module().get_sh_m6_ytd(**kwargs),
+    "SH-M8": lambda **kwargs: _plan_module().get_sh_m8_ytd(**kwargs),
 }
 
 
@@ -104,6 +120,14 @@ def servhead_m5_tile_matches(kpi_id: str) -> bool:
     return _normalize_kpi_id(kpi_id) in SERVHEAD_M5_TILE_IDS
 
 
+def servhead_m6_tile_matches(kpi_id: str) -> bool:
+    return _normalize_kpi_id(kpi_id) in SERVHEAD_M6_TILE_IDS
+
+
+def servhead_m8_tile_matches(kpi_id: str) -> bool:
+    return _normalize_kpi_id(kpi_id) in SERVHEAD_M8_TILE_IDS
+
+
 def servhead_tile_matches(kpi_id: str) -> bool:
     return _normalize_kpi_id(kpi_id) in SERVHEAD_TILE_KPI_IDS
 
@@ -119,6 +143,7 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
     from servhead.sh_m3 import sh_m3_ytd_cache_path
     from servhead.sh_m4 import sh_m4_ytd_cache_path
     from servhead.sh_m5 import sh_m5_ytd_cache_path
+    from servhead.production_plan import sh_m6_ytd_cache_path, sh_m8_ytd_cache_path
 
     kid = _normalize_kpi_id(kpi_id)
     if kid == "SH-M1":
@@ -131,6 +156,10 @@ def cache_stamp_paths(kpi_id: str, ref_y: int, ref_m: int) -> list[Path]:
         return [sh_m4_ytd_cache_path(ref_y, ref_m)]
     if kid == "SH-M5":
         return [sh_m5_ytd_cache_path(ref_y, ref_m)]
+    if kid == "SH-M6":
+        return [sh_m6_ytd_cache_path(ref_y, ref_m)]
+    if kid == "SH-M8":
+        return [sh_m8_ytd_cache_path(ref_y, ref_m)]
     return []
 
 
@@ -271,3 +300,32 @@ def merge_servhead_tables_into_universal_payload(
         }
     if isinstance(satisfaction_table, dict):
         tablitsy[SH_T2_TABLE_ID] = satisfaction_table
+
+    from servhead.production_plan import TABLE_COLUMNS as SH_T3_COLUMNS
+
+    plan = _plan_module()
+    SH_T3_TABLE_ID = plan.TABLE_ID
+
+    open_by_month: dict[str, Any] = {}
+    for month in range(1, int(ref_m) + 1):
+        try:
+            month_table = _plan_module().get_sh_t3_table(year=ref_y, month=month)
+        except Exception as exc:
+            logger.exception("SH-T3: ошибка сборки таблицы за %s-%02d", ref_y, month)
+            month_table = {
+                "kpi_id": SH_T3_TABLE_ID,
+                "name": f"Незавершённые этапы — {MONTH_NAMES[month].capitalize()} {ref_y}",
+                "periodicity": "ежемесячно",
+                "period": {"year": ref_y, "month": month, "month_name": MONTH_NAMES[month]},
+                "columns": list(SH_T3_COLUMNS),
+                "rows": [],
+                "totals": {"total": 0, "open": 0},
+                "debug": {"kpi_id": SH_T3_TABLE_ID, "status": "error", "error": str(exc)[:500]},
+            }
+        if isinstance(month_table, dict):
+            open_by_month[str(month)] = month_table
+    open_table = open_by_month.get(str(int(ref_m)))
+    if isinstance(open_table, dict):
+        tablitsy[SH_T3_TABLE_ID] = open_table
+    if open_by_month:
+        tablitsy[f"{SH_T3_TABLE_ID}-BY-MONTH"] = open_by_month
