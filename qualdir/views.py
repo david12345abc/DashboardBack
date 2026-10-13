@@ -29,10 +29,11 @@ KPI_IDS_USE_BUILDER_KP_PERIOD: frozenset[str] = frozenset(
 RUB_UNIT_KPI_IDS: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
 TILE_COLOR_TD_M4_LIMIT_IDS: frozenset[str] = frozenset({'QD-M3', 'QD-M4'})
 TILE_COLOR_PLAN_FACT_IDS: frozenset[str] = frozenset(
-    {'QD-M1', 'QD-M1W', 'QD-M5', 'QD-M5W', 'QD-M6', 'QD-M8', 'QD-M8W', 'QD-M9', 'QD-M10', 'QD-Q1'}
+    {'QD-M1W', 'QD-M5W', 'QD-M6', 'QD-M8W', 'QD-M9', 'QD-M10', 'QD-Q1'}
 )
 FORM_WORK_TILE_IDS: frozenset[str] = frozenset({'QD-M1W', 'QD-M5W', 'QD-M8W'})
-TILE_FACT_ONLY_IDS: frozenset[str] = frozenset({'QD-M7'})
+FORM_OVERVIEW_TILE_IDS: frozenset[str] = frozenset({'QD-M1', 'QD-M5', 'QD-M8'})
+TILE_FACT_ONLY_IDS: frozenset[str] = frozenset({'QD-M7', 'QD-M1', 'QD-M5', 'QD-M8'})
 OTK_INCOMING_TILE_IDS: frozenset[str] = frozenset({'QD-M6', 'QD-M9', 'QD-M10'})
 
 
@@ -195,7 +196,7 @@ def sync_qualdir_plan_fact_tile_color(tile: dict[str, Any]) -> None:
 
 
 def clear_qualdir_fact_only_tile_rag(tile: dict[str, Any]) -> None:
-    """QD-M7: только счётчик документов, без KPI % и RAG."""
+    """QD-M7 и формы 03-17/18/19: на лице строки, без KPI % и RAG."""
     kid = str(tile.get('kpi_id') or '').strip().upper()
     if kid not in TILE_FACT_ONLY_IDS:
         return

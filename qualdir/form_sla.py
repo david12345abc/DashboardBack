@@ -1,18 +1,19 @@
 """Срок и статусы плиток «всего» / «в работе» для форм 03-17, 03-18, 03-19.
 
 Всего
-  план — месяц даты документа + 2 рабочих дня;
+  план — месяц даты создания (дата документа);
          все статусы, кроме «Отменена», «НеСогласовано», «Подготовлен»;
-  факт — месяц «ДатаУстраненияФакт», статус «Выполнено» (в интерфейсе «Завершено»).
+  факт — тот же месяц даты создания, статус «Выполнено» (в интерфейсе «Завершено»).
+         Дата устранения на месяц факта не влияет.
 
 В работе
-  статусы согласования и КМ, кроме «Исполнение КМ», делятся по сроку
-  «дата документа + 2 рабочих дня + 30 календарных дней»:
-  не превышает срок — без просрочки, превышает — просрочка;
-  «Исполнение КМ» всегда без просрочки.
-  В месяц попадают только формы, у которых дата документа + 2 рабочих дня
-  лежит в этом месяце, и текущий статус всё ещё из списка «в работе».
-  Просрочка считается на конец месяца, для незакрытого месяца — на сегодня.
+  два состояния: «по плану» и «просрочено».
+  «Исполнение КМ» всегда по плану.
+  Остальные статусы «в работе»: если с даты создания не прошло 32 календарных
+  дня — по плану, иначе просрочено.
+  В месяц попадают только формы, созданные в этом месяце, у которых текущий
+  статус всё ещё из списка «в работе».
+  Срок смотрится на конец месяца, для незакрытого месяца — на сегодня.
 """
 
 from __future__ import annotations
@@ -30,9 +31,7 @@ from qualdir.form_status import STATUS_BY_ORDER
 logger = logging.getLogger(__name__)
 
 YEAR_OFFSET = 2000
-PLAN_WORKDAYS = 2
-OVERDUE_CALENDAR_DAYS = 30
-PLAN_LOOKBACK_DAYS = 21
+IN_WORK_LIMIT_DAYS = 32
 
 PLAN_EXCLUDED_STATUSES = frozenset(
     {
@@ -112,12 +111,9 @@ def add_working_days(
 
 
 def deadline_date(created: date, is_working: Callable[[date], bool] | None = None) -> date:
-    """Дата создания + 2 рабочих дня + 30 календарных дней."""
-    return add_working_days(created, PLAN_WORKDAYS, is_working) + timedelta(days=OVERDUE_CALENDAR_DAYS)
-
-
-def plan_bucket_date(created: date, is_working: Callable[[date], bool] | None = None) -> date:
-    return add_working_days(created, PLAN_WORKDAYS, is_working)
+    """Первый день, когда с создания уже прошло 32 календарных дня."""
+    del is_working
+    return created + timedelta(days=IN_WORK_LIMIT_DAYS)
 
 
 def in_work_on_time(
@@ -132,7 +128,7 @@ def in_work_on_time(
         return None
     if normalize_text(status) == _EXECUTION_NORM:
         return True
-    return as_of <= deadline_date(created, is_working)
+    return as_of < deadline_date(created, is_working)
 
 
 def kpi_pct(plan: int | None, fact: int | None) -> float | None:
@@ -274,10 +270,9 @@ def fetch_hits(
     is_working: Callable[[date], bool] | None = None,
 ) -> list[FormHit]:
     """Документы, которые могут попасть в план, факт или «в работе» периода."""
-    working = is_working or is_working_for_years(period_start.year - 1, period_end.year + 1)
+    del is_working
     bin_to_status = {blob: name for name, blob in status_bins.items()}
     in_work_bins = [status_bins[name] for name in IN_WORK_STATUSES if name in status_bins]
-    plan_from = period_start - timedelta(days=PLAN_LOOKBACK_DAYS)
     end_exclusive = period_end + timedelta(days=1)
     placeholders = ",".join("?" * len(in_work_bins)) if in_work_bins else None
     status_sql = f"OR doc.[{spec.col_status}] IN ({placeholders})" if placeholders else ""
@@ -300,7 +295,7 @@ def fetch_hits(
              {status_sql}
           )
         """,
-        to_sql_datetime(plan_from),
+        to_sql_datetime(period_start),
         to_sql_datetime(end_exclusive),
         to_sql_datetime(period_start),
         to_sql_datetime(end_exclusive),
@@ -317,14 +312,11 @@ def fetch_hits(
             continue
         elimination = from_sql_datetime(elimination_raw)
         plan_month = None
-        if is_plan_status(status_name):
-            planned_on = plan_bucket_date(created, working)
-            if period_start <= planned_on <= period_end:
-                plan_month = month_key(planned_on)
+        if is_plan_status(status_name) and period_start <= created <= period_end:
+            plan_month = month_key(created)
         fact_month = None
-        if is_executed_status(status_name) and elimination is not None:
-            if period_start <= elimination <= period_end:
-                fact_month = month_key(elimination)
+        if is_executed_status(status_name) and period_start <= created <= period_end:
+            fact_month = month_key(created)
         dept = (dept_name or "").strip() or None
         significant = bytes(sig_raw) != b"\x00" if sig_raw is not None else False
         hits.append(
@@ -386,7 +378,7 @@ def aggregate_hits(
         as_of = today if month_end > today else month_end
         bucket = stats[key]
         for hit in hits:
-            # Месяц плитки — месяц входа в работу, не весь открытый хвост.
+            # Месяц плитки — месяц даты создания.
             if hit.plan_month != key or hit.created > as_of:
                 continue
             on_time = in_work_on_time(hit.status, hit.created, as_of, working)
@@ -454,9 +446,9 @@ def as_in_work_payload(source: dict[str, Any], kpi_id: str) -> dict[str, Any]:
             "status": "ok",
             "source": (source.get("debug") or {}).get("source"),
             "rule": (
-                "plan = формы месяца (дата документа + 2 раб. дня) в статусах «в работе»; "
-                "fact = из них без просрочки (ещё + 30 календарных дней, "
-                "либо статус ИсполнениеКМ); overdue = plan - fact"
+                "plan = формы, созданные в этом месяце, в статусах «в работе»; "
+                "fact = из них по плану: статус ИсполнениеКМ всегда, остальные — "
+                "пока с даты документа не прошло 32 календарных дня; overdue = plan - fact"
             ),
         },
     }

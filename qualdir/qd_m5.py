@@ -6,12 +6,12 @@ QD-M5 — уровень внутреннего брака (директор п�
   Document_ТД_Форма0318
 
 Логика (без помеченных на удаление), см. qualdir.form_sla:
-  plan        — месяц (Date + 2 рабочих дня), статус не из excluded
+  plan        — месяц даты создания, статус не из excluded
                 (НеСогласовано / Отменена / Подготовлен[/о]);
-  fact        — месяц ДатаУстраненияФакт, статус «Выполнено»;
-  в работе    — формы месяца (Date + 2 раб. дня) в статусах согласования/КМ, просрочка
-                Date + 2 раб. дня + 30 календарных дней
-                («ИсполнениеКМ» не просрочивается);
+  fact        — месяц даты создания, статус «Выполнено»;
+  в работе    — формы, созданные в этом месяце, в статусах согласования/КМ;
+                просрочка — прошло 32 календарных дня с даты документа
+                («ИсполнениеКМ» всегда по плану);
   significant — из plan с ФормаЯвляетсяЗначимой = Истина;
   departments — ОТК-1 / ОТК-2 / Прочие по ПодразделениеПоставщика.
 
@@ -48,7 +48,7 @@ from typing import Any
 
 from sql_connection import SqlConnection
 
-from qualdir.form_sla import FormSqlSpec, aggregate_hits, fetch_hits, is_working_for_years
+from qualdir.form_sla import FormSqlSpec, aggregate_hits, fetch_hits
 from qualdir.form_status import STATUS_BY_ORDER
 
 DOC_TABLE = "_Document148564X1"
@@ -233,14 +233,12 @@ def build_monthly_report(
         status_bins = load_status_bins(cur)
         period_start = month_start(*start_period)
         period_end = month_end(*end_period)
-        working = is_working_for_years(period_start.year - 1, period_end.year + 1)
         hits = fetch_hits(
             cur,
             FORM_SPEC,
             status_bins,
             period_start,
             period_end,
-            working,
         )
 
     month_keys = iter_months(start_period, end_period)
@@ -249,7 +247,6 @@ def build_monthly_report(
         month_keys,
         dept_key=classify_direction,
         today=date.today(),
-        is_working=working,
     )
 
     report_rows: list[dict[str, Any]] = []
@@ -411,11 +408,11 @@ def build_qd_m5_payload(year: int | None = None, month: int | None = None) -> di
                 "elimination_col": COL_ELIMINATION,
             },
             "rule": (
-                "plan = Date + 2 working days in month, DeletionMark=false, status not in "
+                "plan = document date in month, DeletionMark=false, status not in "
                 "НеСогласовано/Отменена/Подготовлен; "
-                "fact = ДатаУстраненияФакт in month and status Выполнено; "
-                "in_work = forms whose Date+2 working days falls in the month and status is still in work, overdue after "
-                "Date + 2 working days + 30 calendar days, ИсполнениеКМ never overdue; "
+                "fact = document date in month and status Выполнено; "
+                "in_work = forms created in the month whose status is still in work, overdue after "
+                "32 calendar days from the document date, ИсполнениеКМ never overdue; "
                 "significant = plan with ФормаЯвляетсяЗначимой; "
                 "departments = ОТК-1 / ОТК-2 / Прочие"
             ),
@@ -447,8 +444,8 @@ from pathlib import Path as _Path
 from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normalize_period
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
-QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_sql_v1"
-QD_M5_YTD_DISK_VERSION = 25
+QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_sql_v3"
+QD_M5_YTD_DISK_VERSION = 27
 
 
 def internal_brak_month_cache_path(year: int, month: int) -> _Path:
