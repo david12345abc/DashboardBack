@@ -1272,6 +1272,10 @@ def _build_tile_item(
         lfr = tile.get('last_full_month_row') or {}
         if lfr.get('significant') is not None:
             tile['significant'] = lfr.get('significant')
+        if lfr.get('in_work_on_time') is not None:
+            tile['in_work_on_time'] = lfr.get('in_work_on_time')
+        if lfr.get('in_work_overdue') is not None:
+            tile['in_work_overdue'] = lfr.get('in_work_overdue')
         if lfr.get('overdue') is not None:
             tile['overdue'] = lfr.get('overdue')
     if kpi.get('kpi_id') in _qualdir_kpi_views.OTK_INCOMING_TILE_IDS:
@@ -2073,8 +2077,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        # v9: «в работе» форм 03-17/18/19 — только формы месяца, не весь открытый хвост.
-        qualdir_memo_key = f"qualdir_dashboard:v9:{ref_y}:{ref_m:02d}"
+        # v12: формы 03-17/18/19 — месяц по дате создания, без сдвига на 2 рабочих дня.
+        qualdir_memo_key = f"qualdir_dashboard:v12:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -2120,7 +2124,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"techdir_v4_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v8_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v11_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
             dashboard_disk_key = f"sup_v36_{ref_y}_{ref_m:02d}"
@@ -2226,6 +2230,10 @@ def _build_universal_payload(
                     tile['kinds'] = lm.get('kinds')
                 if lm.get('significant') is not None:
                     tile['significant'] = lm.get('significant')
+                if lm.get('in_work_on_time') is not None:
+                    tile['in_work_on_time'] = lm.get('in_work_on_time')
+                if lm.get('in_work_overdue') is not None:
+                    tile['in_work_overdue'] = lm.get('in_work_overdue')
                 if lm.get('overdue') is not None:
                     tile['overdue'] = lm.get('overdue')
             if kpi.get('kpi_id') in _qualdir_kpi_views.TILE_COLOR_PLAN_FACT_IDS:

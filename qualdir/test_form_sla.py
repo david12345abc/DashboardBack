@@ -12,7 +12,6 @@ from qualdir.form_sla import (
     as_in_work_payload,
     deadline_date,
     in_work_on_time,
-    plan_bucket_date,
     weekday_is_working,
 )
 
@@ -25,51 +24,83 @@ class FormSlaTests(unittest.TestCase):
         saturday = date(2026, 10, 10)
         self.assertEqual(add_working_days(saturday, 2, weekday_is_working), date(2026, 10, 13))
 
-    def test_deadline_is_plan_date_plus_30_calendar_days(self):
+    def test_deadline_is_32_calendar_days_from_creation(self):
         created = date(2026, 10, 9)
-        self.assertEqual(plan_bucket_date(created, weekday_is_working), date(2026, 10, 13))
-        self.assertEqual(deadline_date(created, weekday_is_working), date(2026, 11, 12))
+        self.assertEqual(deadline_date(created, weekday_is_working), date(2026, 11, 10))
 
     def test_overdue_boundary_and_execution_status(self):
         created = date(2026, 10, 9)
-        deadline = date(2026, 11, 12)
+        last_on_plan = date(2026, 11, 9)
+        first_overdue = date(2026, 11, 10)
+        self.assertEqual((last_on_plan - created).days, 31)
+        self.assertEqual((first_overdue - created).days, 32)
         self.assertIs(
             True,
-            in_work_on_time("НаСогласовании", created, deadline, weekday_is_working),
+            in_work_on_time("НаСогласовании", created, last_on_plan, weekday_is_working),
         )
         self.assertIs(
             False,
-            in_work_on_time("СогласованиеКМ", created, date(2026, 11, 13), weekday_is_working),
+            in_work_on_time("СогласованиеКМ", created, first_overdue, weekday_is_working),
         )
         self.assertIs(
             True,
             in_work_on_time("ИсполнениеКМ", created, date(2027, 1, 1), weekday_is_working),
         )
-        self.assertIsNone(in_work_on_time("Выполнено", created, deadline, weekday_is_working))
-        self.assertIsNone(in_work_on_time("Подготовлен", created, deadline, weekday_is_working))
-        self.assertIsNone(in_work_on_time("Отменена", created, deadline, weekday_is_working))
+        self.assertIsNone(in_work_on_time("Выполнено", created, last_on_plan, weekday_is_working))
+        self.assertIsNone(in_work_on_time("Подготовлен", created, last_on_plan, weekday_is_working))
+        self.assertIsNone(in_work_on_time("Отменена", created, last_on_plan, weekday_is_working))
 
-    def test_plan_and_fact_use_different_dates(self):
+    def test_month_is_creation_month(self):
         hits = [
             FormHit(
-                created=date(2026, 1, 30),  # Friday → plan Monday 2026-02-02
+                created=date(2026, 1, 30),
                 status="НаСогласовании",
                 elimination=None,
                 dept_name="ОТК",
                 significant=False,
                 doc_id=b"1",
-                plan_month="2026-02",
+                plan_month="2026-01",
                 fact_month=None,
             ),
             FormHit(
-                created=date(2025, 11, 3),
+                created=date(2026, 2, 3),
                 status="Выполнено",
-                elimination=date(2026, 2, 11),
+                elimination=date(2026, 3, 11),
                 dept_name="ОТК",
                 significant=True,
                 doc_id=b"2",
-                plan_month=None,
+                plan_month="2026-02",
                 fact_month="2026-02",
+            ),
+            FormHit(
+                created=date(2026, 1, 20),
+                status="Выполнено",
+                elimination=date(2026, 2, 11),
+                dept_name="ОТК",
+                significant=False,
+                doc_id=b"4",
+                plan_month="2026-01",
+                fact_month="2026-01",
+            ),
+            FormHit(
+                created=date(2025, 12, 30),
+                status="НаСогласовании",
+                elimination=None,
+                dept_name="ОТК",
+                significant=False,
+                doc_id=b"5",
+                plan_month="2025-12",
+                fact_month=None,
+            ),
+            FormHit(
+                created=date(2025, 12, 30),
+                status="ИсполнениеКМ",
+                elimination=None,
+                dept_name="Цех",
+                significant=False,
+                doc_id=b"6",
+                plan_month="2025-12",
+                fact_month=None,
             ),
             FormHit(
                 created=date(2026, 1, 5),
@@ -91,13 +122,13 @@ class FormSlaTests(unittest.TestCase):
         )
         self.assertEqual(stats["2026-02"]["plan"], 1)
         self.assertEqual(stats["2026-02"]["fact"], 1)
-        self.assertEqual(stats["2026-01"]["plan"], 1)
-        self.assertEqual(stats["2026-01"]["fact"], 0)
-        # В месяц входят только формы с plan_month этого месяца.
-        # Январская РазработкаКМ не раздувает февраль, даже если к концу февраля она просрочена.
-        self.assertEqual(stats["2026-01"]["in_work_on_time"], 1)
+        self.assertEqual(stats["2026-01"]["plan"], 3)
+        self.assertEqual(stats["2026-01"]["fact"], 1)
+        # Устранение в феврале не переносит январскую «Завершено» из января.
+        # Формы от 30.12 остаются в декабре и в январь не входят.
+        self.assertEqual(stats["2026-01"]["in_work_on_time"], 2)
         self.assertEqual(stats["2026-01"]["in_work_overdue"], 0)
-        self.assertEqual(stats["2026-02"]["in_work_on_time"], 1)
+        self.assertEqual(stats["2026-02"]["in_work_on_time"], 0)
         self.assertEqual(stats["2026-02"]["in_work_overdue"], 0)
 
     def test_in_work_payload_uses_on_time_as_fact(self):
