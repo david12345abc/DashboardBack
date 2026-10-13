@@ -19,6 +19,11 @@ urlpatterns = [
     ),
     path('users/', views.get_users_departments, name='users-departments'),
     path('cache-refresh/', views.refresh_kpi_tile_cache, name='refresh-kpi-tile-cache'),
+    path(
+        'chairman-dashboard-refresh/',
+        views.refresh_chairman_dashboard,
+        name='refresh-chairman-dashboard',
+    ),
     path('cache-status/', views.get_cache_status, name='cache-status'),
     path('lawsuits-table/', views.get_lawsuits_table, name='lawsuits-table'),
     path(

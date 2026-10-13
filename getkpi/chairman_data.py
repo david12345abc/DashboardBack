@@ -215,39 +215,40 @@ def _ytd_month_rows(payload: dict | None) -> list[dict]:
 
 
 def _build_fnd_t1_revenue_rows(months: list[int], ref_y: int) -> list[dict]:
-    """FND-T1 «Выручка» = деньги план/факт из comdir (те же, что KD-M1 у комдира)."""
+    """FND-T1 = план и факт денег, как MRK-03 / KD-M1.
+
+    План текущего месяца урезан на сегодня (план / дни месяца × прошедшие дни),
+    факт — поступления за месяц. Берём уже собранный кэш comdir, без нового
+    полного пересчёта: иначе запрос уходит в пустой ответ и плитка пустая,
+    хотя шапка «план денег» эти цифры уже показывает.
+    """
     if not months:
         return []
-    max_m = max(months)
-
-    # Как в коммерческом блоке ПСД: не отдавать «пустой» stale-штамп
-    # (обёртка без months) — иначе FND-T1 рисует «Нет данных из источника»,
-    # хотя KD-M1 / шапка «план денег» уже посчитаны.
-    with cache_manager.force_compute():
-        dengi_payload = cache_manager.locked_call(
-            f"comdir_dengi_{ref_y}_{max_m}",
-            get_dengi_ytd,
-            year=ref_y, month=max_m, dept_guid=None,
-        )
-
-    plan_by_m: dict[int, float | None] = {}
-    fact_by_m: dict[int, float | None] = {}
-    for row in _ytd_month_rows(dengi_payload):
-        m = int(row.get("month") or 0)
-        if 1 <= m <= 12:
-            plan_by_m[m] = row.get("plan")
-            fact_by_m[m] = row.get("fact")
-
+    ref_m = max(months)
+    tile = _comdir_kd_plan_fact_tile(
+        kpi_id="KD-M1",
+        get_ytd_fn=get_dengi_ytd,
+        lock_prefix="comdir_dengi",
+        ref_y=ref_y,
+        ref_m=ref_m,
+        series_m=ref_m,
+    )
     rows: list[dict] = []
-    for m in months:
-        plan = plan_by_m.get(m)
-        fact = fact_by_m.get(m)
-        has = plan is not None or fact is not None
-        pct = _kpi_pct(fact, plan) if (plan is not None and fact is not None) else None
+    for row in tile.get("monthly_data") or []:
+        month = int(row.get("month") or 0)
+        if month not in months:
+            continue
+        plan = row.get("plan")
+        fact = row.get("fact")
         rows.append({
-            "month": m, "year": ref_y, "month_name": MONTH_NAMES[m],
-            "plan": plan, "fact": fact,
-            "kpi_pct": pct, "has_data": has,
+            "month": month,
+            "year": row.get("year") or ref_y,
+            "month_name": row.get("month_name") or MONTH_NAMES.get(month, str(month)),
+            "plan": plan,
+            "fact": fact,
+            "expected_plan": row.get("expected_plan"),
+            "kpi_pct": row.get("kpi_pct"),
+            "has_data": bool(row.get("has_data")) or plan is not None or fact is not None,
         })
     return rows
 
@@ -865,6 +866,7 @@ TILE_IDS = [
     "FND-T6", "FND-T7", "FND-T9",
 ]
 TILE_UNIT_OVERRIDES = {
+    "FND-T1": "руб.",
     "FND-T2": "руб.",
 }
 

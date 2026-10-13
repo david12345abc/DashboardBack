@@ -6195,67 +6195,10 @@ def get_kpi(request):
         )
 
     if chairman_data.is_chairman_department(requested_dept):
-        payload, for_block = chairman_data.build_chairman_payload_by_for(
-            kpis, month=req_month, year=req_year, for_raw=for_raw,
-        )
-        # Коммерческий блок уже кладёт претензии/суды/ДЗ в payload — не дублируем запросы в 1С.
-        if for_block != chairman_data.CHAIRMAN_BLOCK_COMMERCE:
-            if req_month and req_year:
-                ref_y, ref_m = req_year, req_month
-            else:
-                _t = date.today()
-                ref_y, ref_m = _t.year, _t.month
-            tables = payload.get('Таблицы') or {}
-            target_dept = requested_dept
-            try:
-                claims_rows = _fetch_claims_rows_for_department(ref_y, ref_m, target_dept, psd_filters=True)
-            except Exception:
-                claims_rows = []
-            try:
-                lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, target_dept)
-            except Exception:
-                lawsuits_rows = []
-            month_name = MONTH_NAMES.get(ref_m, str(ref_m))
-            tables.update({
-                'KD-T-CLAIMS': {
-                    'name': 'Активные претензии',
-                    'periodicity': 'ежемесячно',
-                    'description': (
-                        'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
-                        'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
-                    ),
-                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                    'rows': claims_rows,
-                },
-                'KD-T-LAWSUITS': {
-                    'name': f'Суды на {month_name} {ref_y}',
-                    'periodicity': 'ежемесячно',
-                    'description': (
-                        'Активные судебные споры и исковая работа из 1С '
-                        '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) '
-                        'на конец выбранного месяца (статус ≠ Закрыта)'
-                    ),
-                    'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
-                    'columns': [
-                        'Тип документа', 'Контрагент', 'Предмет спора',
-                        'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
-                        'Дата SLA', 'Краткое описание ситуации',
-                        'Сумма требований, руб.',
-                    ],
-                    'rows': lawsuits_rows,
-                },
-            })
-            payload['Таблицы'] = tables
-        dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
-        # У председателя СД нет расшифровки просроченной ДЗ / «ТОП-10 решений».
-        payload = chairman_data.strip_chairman_overdue_table(payload)
         return JsonResponse(
-            {
-                'department': requested_dept,
-                'for': for_block,
-                'kpi_count': payload['Плитки']['count'],
-                **payload,
-            },
+            _assemble_chairman_dashboard_payload(
+                requested_dept, kpis, req_month, req_year, for_raw,
+            ),
             json_dumps_params={'ensure_ascii': False},
         )
 
@@ -6781,6 +6724,200 @@ def get_logistics_tmc_deliveries(request):
     payload['status_filter'] = status_filter
     payload['returned_rows'] = len(payload.get('rows', []))
     return JsonResponse(payload, json_dumps_params={'ensure_ascii': False})
+
+
+_chairman_refresh_lock = threading.Lock()
+_chairman_refresh_state: dict[str, dict] = {}
+
+
+def _assemble_chairman_dashboard_payload(
+    requested_dept: str,
+    kpis: list[dict],
+    req_month: int | None,
+    req_year: int | None,
+    for_raw: str | None,
+) -> dict:
+    """Плитки и таблицы открытого дашборда председателя совета директоров."""
+    payload, for_block = chairman_data.build_chairman_payload_by_for(
+        kpis, month=req_month, year=req_year, for_raw=for_raw,
+    )
+    # Коммерческий блок уже кладёт претензии/суды/ДЗ в payload — не дублируем запросы в 1С.
+    if for_block != chairman_data.CHAIRMAN_BLOCK_COMMERCE:
+        if req_month and req_year:
+            ref_y, ref_m = req_year, req_month
+        else:
+            _t = date.today()
+            ref_y, ref_m = _t.year, _t.month
+        tables = payload.get('Таблицы') or {}
+        try:
+            claims_rows = _fetch_claims_rows_for_department(
+                ref_y, ref_m, requested_dept, psd_filters=True,
+            )
+        except Exception:
+            claims_rows = []
+        try:
+            lawsuits_rows = _fetch_lawsuits_rows_for_department(ref_y, ref_m, requested_dept)
+        except Exception:
+            lawsuits_rows = []
+        month_name = MONTH_NAMES.get(ref_m, str(ref_m))
+        tables.update({
+            'KD-T-CLAIMS': {
+                'name': 'Активные претензии',
+                'periodicity': 'ежемесячно',
+                'description': (
+                    'Претензии из 1С со статусами: Зарегистрирована, Обрабатывается, '
+                    'На контроле; причина возникновения = Претензия; сумма заказа > 1 млн'
+                ),
+                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                'rows': claims_rows,
+            },
+            'KD-T-LAWSUITS': {
+                'name': f'Суды на {month_name} {ref_y}',
+                'periodicity': 'ежемесячно',
+                'description': (
+                    'Активные судебные споры и исковая работа из 1С '
+                    '(Document_ТД_ПретензииСудебныеСпорыИсковаяРабота) '
+                    'на конец выбранного месяца (статус ≠ Закрыта)'
+                ),
+                'period': {'year': ref_y, 'month': ref_m, 'month_name': month_name},
+                'columns': [
+                    'Тип документа', 'Контрагент', 'Предмет спора',
+                    'Роль ГК в споре', 'Юр. лицо', 'Подразделение',
+                    'Дата SLA', 'Краткое описание ситуации',
+                    'Сумма требований, руб.',
+                ],
+                'rows': lawsuits_rows,
+            },
+        })
+        payload['Таблицы'] = tables
+    dept_protocol_tables.enrich_payload_tables(payload, requested_dept)
+    payload = chairman_data.strip_chairman_overdue_table(payload)
+    return {
+        'department': requested_dept,
+        'for': for_block,
+        'kpi_count': payload['Плитки']['count'],
+        **payload,
+    }
+
+
+def _chairman_refresh_key(for_block: str, ref_y: int, ref_m: int) -> str:
+    return f'{for_block}|{ref_y}|{ref_m:02d}'
+
+
+def _chairman_refresh_payload(key: str) -> dict:
+    with _chairman_refresh_lock:
+        current = dict(_chairman_refresh_state.get(key) or {})
+    if not current:
+        return {'status': 'idle'}
+    return current
+
+
+def _chairman_dashboard_refresh_worker(
+    *,
+    key: str,
+    department: str,
+    for_raw: str,
+    ref_y: int,
+    ref_m: int,
+) -> None:
+    try:
+        kpis = _lookup_kpi_data(department) or []
+        with cache_manager.force_compute():
+            _assemble_chairman_dashboard_payload(
+                department, kpis, ref_m, ref_y, for_raw,
+            )
+        cache_manager.clear_memoized_dashboard_payload()
+        with _chairman_refresh_lock:
+            entry = dict(_chairman_refresh_state.get(key) or {})
+            entry['status'] = 'succeeded'
+            entry['finished_at'] = _manual_tile_refresh_now()
+            entry['error'] = ''
+            _chairman_refresh_state[key] = entry
+    except Exception as exc:
+        logger.exception('chairman dashboard refresh failed: %s %s', department, for_raw)
+        with _chairman_refresh_lock:
+            entry = dict(_chairman_refresh_state.get(key) or {})
+            entry['status'] = 'failed'
+            entry['finished_at'] = _manual_tile_refresh_now()
+            entry['error'] = str(exc)
+            _chairman_refresh_state[key] = entry
+
+
+@require_http_methods(['GET', 'POST'])
+@login_required
+def refresh_chairman_dashboard(request):
+    """Пересчёт открытого дашборда председателя совета директоров.
+
+    Вызывается клиентом в 06:00, 13:00 и 17:00, только если этот дашборд открыт.
+    """
+    user_department = (request.current_user.department or '').strip()
+    if not chairman_data.is_chairman_department(user_department):
+        return JsonResponse({'error': 'Только для председателя совета директоров'}, status=403)
+
+    body: dict[str, Any] = {}
+    if request.method == 'POST' and request.body:
+        try:
+            parsed = json.loads(request.body.decode('utf-8') or '{}')
+            body = parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON body'}, status=400)
+
+    def _param(name: str, default: object = None) -> object:
+        return body.get(name, request.GET.get(name, default))
+
+    for_raw = str(_param('for', '') or '').strip() or None
+    for_block = chairman_data.normalize_chairman_for_param(for_raw)
+    try:
+        ref_m = int(_param('month')) if _param('month') not in (None, '') else None
+        ref_y = int(_param('year')) if _param('year') not in (None, '') else None
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'month/year must be integers'}, status=400)
+    today = date.today()
+    if ref_y is None:
+        ref_y = today.year
+    if ref_m is None:
+        ref_m = today.month
+    if not 1 <= ref_m <= 12:
+        return JsonResponse({'error': 'month must be between 1 and 12'}, status=400)
+
+    key = _chairman_refresh_key(for_block, ref_y, ref_m)
+    if request.method == 'GET':
+        payload = _chairman_refresh_payload(key)
+        payload.setdefault('for', for_block)
+        payload.setdefault('year', ref_y)
+        payload.setdefault('month', ref_m)
+        return JsonResponse(payload, json_dumps_params={'ensure_ascii': False})
+
+    with _chairman_refresh_lock:
+        current = dict(_chairman_refresh_state.get(key) or {})
+        if current.get('status') == 'running':
+            return JsonResponse(current, status=202, json_dumps_params={'ensure_ascii': False})
+        entry = {
+            'status': 'running',
+            'department': user_department,
+            'for': for_block,
+            'year': ref_y,
+            'month': ref_m,
+            'started_at': _manual_tile_refresh_now(),
+            'finished_at': None,
+            'error': '',
+        }
+        _chairman_refresh_state[key] = entry
+
+    thread = threading.Thread(
+        target=_chairman_dashboard_refresh_worker,
+        kwargs={
+            'key': key,
+            'department': user_department,
+            'for_raw': for_block,
+            'ref_y': ref_y,
+            'ref_m': ref_m,
+        },
+        name=f'chairman-dashboard-refresh-{for_block}',
+        daemon=True,
+    )
+    thread.start()
+    return JsonResponse(entry, status=202, json_dumps_params={'ensure_ascii': False})
 
 
 @require_http_methods(["GET", "POST"])
