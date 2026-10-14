@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'c1auto',
     'tools',
     'servhead',
+    'jurist',
 ]
 
 MIDDLEWARE = [
