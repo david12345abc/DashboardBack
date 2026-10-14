@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'aiassistant',
     'lmstudio_proxy',
     'servhead',
+    'jurist',
 ]
 
 MIDDLEWARE = [

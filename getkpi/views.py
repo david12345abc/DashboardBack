@@ -62,6 +62,7 @@ import sup.views as _sup_kpi_views
 import servhead.views as _servhead_kpi_views
 import autoit.views as _autoit_kpi_views
 import c1auto.views as _c1auto_kpi_views
+import jurist.views as _jurist_kpi_views
 from . import techdir_kpi_entry
 from qualdir.turnover import _qd_q2_kpi_pct
 
@@ -1217,6 +1218,9 @@ def _tile_color(kpi: dict, entry: dict) -> tuple[float | None, str]:
         color = _rag_lower_turnover(ratio)
         return pct, color
 
+    if _jurist_kpi_views.is_jurist_tile_kpi_id(kid):
+        return None, None
+
     # SH-M3: счётчик всех обращений, без KPI % и RAG.
     if _is_servhead_m3_tile(kpi):
         return None, None
@@ -1495,6 +1499,8 @@ def _tile_cache_updated_at(kpi_id: str, ref_y: int | None, ref_m: int | None) ->
         cache_files = _c1auto_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     elif _servhead_kpi_views.is_servhead_tile_kpi_id(kpi_id):
         cache_files = _servhead_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
+    elif _jurist_kpi_views.is_jurist_tile_kpi_id(kpi_id):
+        cache_files = _jurist_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     elif _devdir_kpi_views.is_devdir_tile_kpi_id(kpi_id):
         cache_files = _devdir_kpi_views.cache_stamp_paths(kpi_id, ref_y, ref_m)
     else:
@@ -3279,6 +3285,7 @@ def _build_universal_payload(
         or _servhead_kpi_views.is_servhead_department(dept)
         or _is_autoit_department(dept)
         or _is_c1auto_department(dept)
+        or _jurist_kpi_views.is_jurist_department(dept)
     ):
         if year is not None and month is None:
             ref_y = int(year)
@@ -3307,6 +3314,7 @@ def _build_universal_payload(
     servhead_memo_key: str | None = None
     devdir_memo_key: str | None = None
     opdir_memo_key: str | None = None
+    jurist_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
         # v18: ГСП-Q4 — отклонение плитки совпадает с таблицей (просроченный baseline месяца).
         gspp_memo_key = f"gspp_dashboard:v18:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
@@ -3367,6 +3375,12 @@ def _build_universal_payload(
         cached_payload = cache_manager.get_memoized_dashboard_payload(opdir_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
+    if _jurist_kpi_views.is_jurist_department(dept) and not include_debug:
+        # v1: снимок договоров, файл кэша на каждый месяц.
+        jurist_memo_key = f"jurist_dashboard:v3:{ref_y}:{ref_m:02d}"
+        cached_payload = cache_manager.get_memoized_dashboard_payload(jurist_memo_key)
+        if cached_payload is not None:
+            return tile_freshness.apply_tile_freshness(cached_payload)
 
     dashboard_disk_key: str | None = None
     dashboard_mem_key: str | None = None
@@ -3398,6 +3412,9 @@ def _build_universal_payload(
         elif opdir_memo_key:
             dashboard_disk_key = f"opdir_v2_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = opdir_memo_key
+        elif jurist_memo_key:
+            dashboard_disk_key = f"jurist_v3_{ref_y}_{ref_m:02d}"
+            dashboard_mem_key = jurist_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
         disk_cached = cache_manager.try_serve_dashboard_disk_cache(
@@ -3834,6 +3851,14 @@ def _build_universal_payload(
         _devdir_kpi_views.sync_devdir_piece_tile_color(tile)
         _qualdir_kpi_views.sync_qualdir_plan_fact_tile_color(tile)
         _qualdir_kpi_views.clear_qualdir_fact_only_tile_rag(tile)
+        _jurist_kpi_views.clear_jurist_tile_rag(tile)
+        if _jurist_kpi_views.is_jurist_tile_kpi_id(str(kpi.get('kpi_id') or '')):
+            goals = lm.get('goals') if isinstance(lm, dict) else None
+            if not goals:
+                goals = entry.get('goals')
+            if goals:
+                tile['goals'] = goals
+                tile['goals_title'] = 'Цель договора'
 
         plitki_items.append(tile)
 
@@ -3936,6 +3961,7 @@ def _build_universal_payload(
         and not _is_autoit_department(dept)
         and not _is_c1auto_department(dept)
         and not _servhead_kpi_views.is_servhead_department(dept)
+        and not _jurist_kpi_views.is_jurist_department(dept)
     )
 
     if include_generic_tables:
@@ -4293,6 +4319,8 @@ def _build_universal_payload(
         )
     if opdir_memo_key:
         cache_manager.set_memoized_dashboard_payload(opdir_memo_key, result)
+    if jurist_memo_key:
+        cache_manager.set_memoized_dashboard_payload(jurist_memo_key, result)
     if dashboard_disk_key:
         cache_manager.save_dashboard_disk(dashboard_disk_key, result)
     return tile_freshness.apply_tile_freshness(result)
@@ -5276,6 +5304,10 @@ def _build_kpi_entry(
         return entry
     if _c1auto_kpi_views.merge_kpi_entry_if_applicable(
         kpi_id, entry, year=year, month=month, department=dept_key,
+    ):
+        return entry
+    if _jurist_kpi_views.merge_kpi_entry_if_applicable(
+        kpi_id, entry, year=year, month=month,
     ):
         return entry
 
