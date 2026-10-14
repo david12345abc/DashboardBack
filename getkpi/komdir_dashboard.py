@@ -748,16 +748,19 @@ def _build_bar_chart(by_id: dict, tiles_data: dict,
 
 
 def _build_claims_table(ref_y: int, ref_m: int,
-                        dept_guid: str | None = None) -> dict:
+                        dept_guid: str | None = None,
+                        include_all: bool = False) -> dict:
     """Таблица претензий за выбранный месяц.
-    dept_guid=None  → коммерческий директор, все претензии;
-    dept_guid='...' → дочернее подразделение, только его претензии.
+    dept_guid=None  → коммерческий директор, претензии коммерческих отделов;
+    dept_guid='...' → дочернее подразделение, только его претензии;
+    include_all=True → все претензии компании за месяц (дашборд юриста).
     """
     from .komdir_claims import fetch_claims_for_month
 
+    cache_key = f"claims_all_{ref_y}_{ref_m}" if include_all else f"claims_{ref_y}_{ref_m}"
     rows = cache_manager.locked_call(
-        f'claims_{ref_y}_{ref_m}',
-        fetch_claims_for_month, ref_y, ref_m,
+        cache_key,
+        fetch_claims_for_month, ref_y, ref_m, include_all=include_all,
     )
 
     if dept_guid:

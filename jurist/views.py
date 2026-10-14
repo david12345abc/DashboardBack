@@ -118,10 +118,30 @@ def merge_kpi_entry_if_applicable(
             "by_status": totals.get("by_status"),
             "rule": (
                 "Catalog_ДоговорыКонтрагентов, DeletionMark=false, "
-                "ДатаНачалаДействия в выбранном месяце"
+                "Дата (от) в выбранном месяце"
             ),
         }
     return True
+
+
+def merge_claims_and_lawsuits(tablitsy: dict, *, year: int, month: int) -> None:
+    """Те же таблицы, что у коммерческого директора, за выбранный месяц.
+
+    Претензии — все по компании, не только коммерческие отделы.
+    Суды — все документы месяца.
+    """
+    from getkpi.komdir_dashboard import _build_claims_table, _build_lawsuits_table
+
+    ref_m = max(1, min(12, int(month)))
+    ref_y = int(year)
+    try:
+        tablitsy.update(_build_claims_table(ref_y, ref_m, dept_guid=None, include_all=True))
+    except Exception:
+        logger.exception("jurist: не удалось собрать претензии %s-%02d", ref_y, ref_m)
+    try:
+        tablitsy.update(_build_lawsuits_table(ref_y, ref_m, dept_guid=None))
+    except Exception:
+        logger.exception("jurist: не удалось собрать суды %s-%02d", ref_y, ref_m)
 
 
 def merge_contracts_table(tablitsy: dict, *, year: int, month: int) -> None:
@@ -151,7 +171,7 @@ def merge_contracts_table(tablitsy: dict, *, year: int, month: int) -> None:
             "Контрагент",
             "Цель договора",
             "Статус",
-            "Действует с",
+            "от",
             "Сумма",
         ],
         "rows": rows,
