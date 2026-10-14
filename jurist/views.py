@@ -118,9 +118,41 @@ def merge_kpi_entry_if_applicable(
             "by_status": totals.get("by_status"),
             "rule": (
                 "Catalog_ДоговорыКонтрагентов, DeletionMark=false, "
-                "месяц = ДатаНачалаДействия (Действует с); сумма = поле Сумма; "
-                "без целей «Передача на хранение с правом продажи» "
-                "и «Производство у переработчика»"
+                "ДатаНачалаДействия в выбранном месяце"
             ),
         }
     return True
+
+
+def merge_contracts_table(tablitsy: dict, *, year: int, month: int) -> None:
+    """Помесячная таблица договоров. Клик по плитке фильтрует её по компании."""
+    from jurist.contracts import contract_table_rows
+
+    ref_m = max(1, min(12, int(month)))
+    ref_y = int(year)
+    try:
+        rows = contract_table_rows(year=ref_y, month=ref_m)
+    except Exception:
+        logger.exception("jurist: не удалось собрать таблицу договоров")
+        rows = []
+    tablitsy["YR-T-CONTRACTS"] = {
+        "name": f"Договоры за {MONTH_NAMES[ref_m]} {ref_y}",
+        "periodicity": "ежемесячно",
+        "description": "Договоры контрагентов за выбранный месяц, без удалённых и без исключённых целей",
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "columns": [
+            "Организация",
+            "Номер",
+            "Наименование",
+            "Контрагент",
+            "Цель договора",
+            "Статус",
+            "Действует с",
+            "Сумма",
+        ],
+        "rows": rows,
+    }
