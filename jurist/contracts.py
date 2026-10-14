@@ -29,8 +29,15 @@ AUTH = HTTPBasicAuth("odata.user", "npo852456")
 ENTITY = "Catalog_ДоговорыКонтрагентов"
 PAGE = 2000
 CACHE_PREFIX = "jurist_contracts"
-CACHE_SOURCE = "jurist_contracts_v3"
-CACHE_VERSION = 3
+CACHE_SOURCE = "jurist_contracts_v4"
+CACHE_VERSION = 4
+
+STATUS_LABELS = {
+    "Действует": "Действует",
+    "Закрыт": "Закрыт",
+    "НеСогласован": "Не согласован",
+}
+EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 
 # Эти цели договора в количество и сумму не входят и на плитку не выводятся.
 EXCLUDED_GOAL_CODES = frozenset({
@@ -40,32 +47,51 @@ EXCLUDED_GOAL_CODES = frozenset({
 })
 EXCLUDED_GOAL_LABELS = frozenset({
     "Передача на хранение с правом продажи",
+    "Передача на ответственное хранение",
     "Производство у переработчика",
+    "Передача в переработку",
 })
 
-# Синонимы перечисления. «Закупка у поставщика» на форме показана как «Закупка».
+# Подписи как в списке «Цель договора» на форме.
 GOAL_LABELS = {
     "ЗакупкаУПоставщика": "Закупка",
-    "ЗакупкаПоИмпорту": "Закупка по импорту",
-    "ЗакупкаВСтранахЕАЭС": "Закупка в странах ЕАЭС",
+    "ЗакупкаПоИмпорту": "Закупка (импорт)",
+    "ЗакупкаВСтранахЕАЭС": "Закупка (ЕАЭС)",
     "ЗакупкаУПоставщикаТоварыВПути": "Закупка у поставщика (товары в пути)",
-    "РеализацияКлиенту": "Реализация клиенту",
+    "РеализацияКлиенту": "Реализация",
     "РеализацияЧерезКомиссионера": "Реализация через комиссионера",
     "ПередачаНаКомиссию": "Передача на комиссию",
     "ПриемНаКомиссию": "Прием на комиссию",
-    "ПроизводствоУПереработчика": "Производство у переработчика",
-    "ПроизводствоУПереработчика2_5": "Производство у переработчика",
-    "ПроизводствоИзДавальческогоСырья": "Производство из давальческого сырья",
-    "ПроизводствоИзДавальческогоСырья2_5": "Производство из давальческого сырья",
-    "ПередачаНаХранениеСПравомПродажи": "Передача на хранение с правом продажи",
-    "ПриемНаХранениеСПравомПродажи": "Прием на хранение с правом продажи",
+    "ПроизводствоУПереработчика": "Передача в переработку",
+    "ПроизводствоУПереработчика2_5": "Передача в переработку",
+    "ПроизводствоИзДавальческогоСырья": "Прием в переработку",
+    "ПроизводствоИзДавальческогоСырья2_5": "Прием в переработку",
+    "ПередачаНаХранениеСПравомПродажи": "Передача на ответственное хранение",
+    "ПриемНаХранениеСПравомПродажи": "Прием на ответственное хранение",
     "ПоставкаПодПринципала": "Поставка под принципала",
     "": "Не указана",
 }
 
 
+# Уже записанные в кэш подписи до сокращения по форме.
+_STORED_GOAL_LABELS = {
+    "Реализация клиенту": "Реализация",
+    "Закупка по импорту": "Закупка (импорт)",
+    "Закупка в странах ЕАЭС": "Закупка (ЕАЭС)",
+    "Прием на хранение с правом продажи": "Прием на ответственное хранение",
+    "Передача на хранение с правом продажи": "Передача на ответственное хранение",
+    "Производство из давальческого сырья": "Прием в переработку",
+    "Производство у переработчика": "Передача в переработку",
+}
+
+
 def goal_label(code: str) -> str:
-    return GOAL_LABELS.get(code, code or "Не указана")
+    text = str(code or "")
+    if text in GOAL_LABELS:
+        return GOAL_LABELS[text]
+    if text in _STORED_GOAL_LABELS:
+        return _STORED_GOAL_LABELS[text]
+    return text or "Не указана"
 
 
 def goal_excluded(code: str) -> bool:
@@ -124,11 +150,22 @@ def _parse_start(raw: object) -> date | None:
     return parsed
 
 
+def _status_label(code: str) -> str:
+    text = str(code or "").strip()
+    return STATUS_LABELS.get(text, text or "—")
+
+
+def _iso_date(raw: object) -> str:
+    parsed = _parse_start(raw)
+    return parsed.isoformat() if parsed else ""
+
+
 def _fetch_org(session: requests.Session, org_guid: str, year: int, month: int) -> dict:
     count = 0
     total = 0.0
     by_status: dict[str, dict] = {}
     by_goal: dict[str, dict] = {}
+    rows: list[dict] = []
     start, end = _month_bounds(year, month)
     seen: set[str] = set()
     skip = 0
@@ -141,7 +178,8 @@ def _fetch_org(session: requests.Session, org_guid: str, year: int, month: int) 
         url = (
             f"{BASE}/{ENTITY}?$format=json"
             f"&$filter={filt}"
-            f"&$select=Ref_Key,Статус,Сумма,ХозяйственнаяОперация,ДатаНачалаДействия"
+            f"&$select=Ref_Key,Description,Номер,Статус,Сумма,ХозяйственнаяОперация,"
+            f"ДатаНачалаДействия,ДатаОкончанияДействия,Контрагент_Key"
             f"&$top={PAGE}&$skip={skip}"
         )
         response = request_with_retry(
@@ -174,6 +212,17 @@ def _fetch_org(session: requests.Session, org_guid: str, year: int, month: int) 
             goal_bucket["sum"] += amount
             count += 1
             total += amount
+            counterparty_key = str(row.get("Контрагент_Key") or "")
+            rows.append({
+                "number": str(row.get("Номер") or "").strip(),
+                "name": str(row.get("Description") or "").strip(),
+                "goal": goal_label(goal_code),
+                "status": _status_label(status_name),
+                "sum": round(amount, 2),
+                "start_date": _iso_date(row.get("ДатаНачалаДействия")),
+                "end_date": _iso_date(row.get("ДатаОкончанияДействия")),
+                "counterparty_key": "" if counterparty_key == EMPTY_GUID else counterparty_key,
+            })
         if fresh == 0 or len(chunk) < PAGE:
             break
         skip += PAGE
@@ -188,7 +237,32 @@ def _fetch_org(session: requests.Session, org_guid: str, year: int, month: int) 
             code: {"count": bucket["count"], "sum": round(bucket["sum"], 2)}
             for code, bucket in by_goal.items()
         },
+        "rows": rows,
     }
+
+
+def _counterparty_names(session: requests.Session, keys: set[str]) -> dict[str, str]:
+    """Имена контрагентов пачками, чтобы не раздувать запрос договоров expand-ом."""
+    names: dict[str, str] = {}
+    pending = [key for key in keys if key and key != EMPTY_GUID]
+    for offset in range(0, len(pending), 20):
+        part = pending[offset:offset + 20]
+        filt = " or ".join(f"Ref_Key eq guid'{key}'" for key in part)
+        url = (
+            f"{BASE}/Catalog_Контрагенты?$format=json"
+            f"&$filter={filt}&$select=Ref_Key,Description&$top={len(part)}"
+        )
+        response = request_with_retry(
+            session, url, timeout=120, retries=3, label="jurist/counterparties",
+        )
+        if response is None or not response.ok:
+            logger.warning("jurist: не удалось прочитать имена контрагентов, skip=%s", offset)
+            continue
+        for item in response.json().get("value") or []:
+            ref = str(item.get("Ref_Key") or "")
+            if ref:
+                names[ref] = str(item.get("Description") or "").strip()
+    return names
 
 
 def _fetch_companies(year: int, month: int) -> dict[str, dict]:
@@ -205,7 +279,43 @@ def _fetch_companies(year: int, month: int) -> dict[str, dict]:
             "jurist contracts %s %d-%02d: count=%s sum=%s",
             company["code"], year, month, totals["count"], totals["sum"],
         )
+    keys: set[str] = set()
+    for totals in companies.values():
+        for row in totals.get("rows") or []:
+            key = str(row.get("counterparty_key") or "")
+            if key:
+                keys.add(key)
+    names = _counterparty_names(session, keys) if keys else {}
+    for totals in companies.values():
+        for row in totals.get("rows") or []:
+            key = str(row.pop("counterparty_key", "") or "")
+            row["counterparty"] = names.get(key) or "—"
     return companies
+
+
+def contract_table_rows(
+    *,
+    year: int | None = None,
+    month: int | None = None,
+) -> list[dict]:
+    """Строки таблицы договоров за месяц: те же отборы, что и на плитках."""
+    companies = load_company_totals(year=year, month=month)
+    rows: list[dict] = []
+    for code, totals in companies.items():
+        if not isinstance(totals, dict):
+            continue
+        title = str(totals.get("title") or code)
+        for row in totals.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            item = dict(row)
+            item.pop("counterparty_key", None)
+            item["goal"] = goal_label(str(item.get("goal") or ""))
+            item["company_code"] = code
+            item["company"] = title
+            rows.append(item)
+    rows.sort(key=lambda row: (str(row.get("start_date") or ""), str(row.get("number") or "")), reverse=True)
+    return rows
 
 
 def load_company_totals(
