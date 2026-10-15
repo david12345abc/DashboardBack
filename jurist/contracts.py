@@ -1,7 +1,7 @@
 """Количество и сумма договоров контрагентов по организациям за месяц.
 
 Источник: Catalog_ДоговорыКонтрагентов.
-Месяц договора — поле «ДатаНачалаДействия» (на форме «Действует с»).
+Месяц договора — поле «Дата» (на форме дата «от» рядом с номером).
 В расчёт входят договоры без пометки удаления
 (статусы «Действует», «Закрыт», «НеСогласован»).
 Сумма — поле «Сумма», без пересчёта валюты.
@@ -29,8 +29,8 @@ AUTH = HTTPBasicAuth("odata.user", "npo852456")
 ENTITY = "Catalog_ДоговорыКонтрагентов"
 PAGE = 2000
 CACHE_PREFIX = "jurist_contracts"
-CACHE_SOURCE = "jurist_contracts_v4"
-CACHE_VERSION = 4
+CACHE_SOURCE = "jurist_contracts_v5"
+CACHE_VERSION = 5
 
 STATUS_LABELS = {
     "Действует": "Действует",
@@ -124,7 +124,7 @@ def cache_path(year: int | None = None, month: int | None = None) -> Path:
 
 
 def _month_bounds(year: int, month: int) -> tuple[date, date]:
-    """[начало месяца, начало следующего) — период поля «Действует с»."""
+    """[начало месяца, начало следующего) — период поля «Дата» («от»)."""
     start = date(year, month, 1)
     if month == 12:
         end = date(year + 1, 1, 1)
@@ -172,14 +172,14 @@ def _fetch_org(session: requests.Session, org_guid: str, year: int, month: int) 
     while skip <= 200_000:
         filt = (
             f"Организация_Key eq guid'{org_guid}' and DeletionMark eq false"
-            f" and ДатаНачалаДействия ge datetime'{_odata_datetime(start)}'"
-            f" and ДатаНачалаДействия lt datetime'{_odata_datetime(end)}'"
+            f" and Дата ge datetime'{_odata_datetime(start)}'"
+            f" and Дата lt datetime'{_odata_datetime(end)}'"
         )
         url = (
             f"{BASE}/{ENTITY}?$format=json"
             f"&$filter={filt}"
             f"&$select=Ref_Key,Description,Номер,Статус,Сумма,ХозяйственнаяОперация,"
-            f"ДатаНачалаДействия,ДатаОкончанияДействия,Контрагент_Key"
+            f"Дата,ДатаОкончанияДействия,Контрагент_Key"
             f"&$top={PAGE}&$skip={skip}"
         )
         response = request_with_retry(
@@ -196,7 +196,7 @@ def _fetch_org(session: requests.Session, org_guid: str, year: int, month: int) 
                 continue
             seen.add(ref)
             fresh += 1
-            started = _parse_start(row.get("ДатаНачалаДействия"))
+            started = _parse_start(row.get("Дата"))
             if started is None or not (start <= started < end):
                 continue
             goal_code = str(row.get("ХозяйственнаяОперация") or "")
@@ -219,7 +219,7 @@ def _fetch_org(session: requests.Session, org_guid: str, year: int, month: int) 
                 "goal": goal_label(goal_code),
                 "status": _status_label(status_name),
                 "sum": round(amount, 2),
-                "start_date": _iso_date(row.get("ДатаНачалаДействия")),
+                "start_date": _iso_date(row.get("Дата")),
                 "end_date": _iso_date(row.get("ДатаОкончанияДействия")),
                 "counterparty_key": "" if counterparty_key == EMPTY_GUID else counterparty_key,
             })

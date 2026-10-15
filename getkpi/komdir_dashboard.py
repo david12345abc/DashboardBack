@@ -1215,17 +1215,21 @@ def _build_odp_ufg_h_tile(ref_y: int, ref_m: int) -> dict | None:
 
 
 def _build_claims_table(ref_y: int, ref_m: int,
-                        dept_guid: str | None = None) -> dict:
+                        dept_guid: str | None = None,
+                        include_all: bool = False) -> dict:
     """Таблица претензий за выбранный месяц.
     dept_guid=None  → коммерческий директор, все претензии;
-    dept_guid='...' → дочернее подразделение, только его претензии.
+    dept_guid='...' → дочернее подразделение, только его претензии
+                      (ВЭД дополнительно включает партнёров Узтрансгаз);
+    include_all=True → все претензии компании за месяц (дашборд юриста).
     """
     from .komdir_claims import VED_DEPT_KEY, fetch_claims_for_month, _is_uztransgaz_partner
 
+    fetch_all = include_all or dept_guid is None or dept_guid == VED_DEPT_KEY
+    cache_key = f"claims_all_{ref_y}_{ref_m}" if fetch_all else f"claims_{ref_y}_{ref_m}"
     rows = cache_manager.locked_call(
-        f'claims_all_{ref_y}_{ref_m}' if dept_guid is None or dept_guid == VED_DEPT_KEY else f'claims_{ref_y}_{ref_m}',
-        fetch_claims_for_month, ref_y, ref_m,
-        include_all=dept_guid is None or dept_guid == VED_DEPT_KEY,
+        cache_key,
+        fetch_claims_for_month, ref_y, ref_m, include_all=fetch_all,
     )
 
     if dept_guid:
