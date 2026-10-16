@@ -117,8 +117,8 @@ def merge_kpi_entry_if_applicable(
             "metric": metric,
             "by_status": totals.get("by_status"),
             "rule": (
-                "Catalog_ДоговорыКонтрагентов, DeletionMark=false, "
-                "Дата (от) в выбранном месяце"
+                "erp_pm._Reference155X1, без пометки удаления, "
+                "дата «от» в выбранном месяце"
             ),
         }
     return True
@@ -142,6 +142,48 @@ def merge_claims_and_lawsuits(tablitsy: dict, *, year: int, month: int) -> None:
         tablitsy.update(_build_lawsuits_table(ref_y, ref_m, dept_guid=None))
     except Exception:
         logger.exception("jurist: не удалось собрать суды %s-%02d", ref_y, ref_m)
+
+
+def merge_enforcement_table(tablitsy: dict, *, year: int, month: int) -> None:
+    """Карточки с типом документа «Исполнительное производство» за выбранный месяц."""
+    from jurist.enforcement import enforcement_table_rows
+
+    ref_m = max(1, min(12, int(month)))
+    ref_y = int(year)
+    try:
+        rows = enforcement_table_rows(year=ref_y, month=ref_m)
+    except Exception:
+        logger.exception("jurist: не удалось собрать исполнительное производство")
+        rows = []
+    tablitsy["YR-T-ENFORCEMENT"] = {
+        "name": f"Исполнительное производство за {MONTH_NAMES[ref_m]} {ref_y}",
+        "periodicity": "ежемесячно",
+        "description": (
+            "Карточки «Претензии, судебные споры и исковая работа» "
+            "с типом документа «Исполнительное производство», дата документа в выбранном месяце"
+        ),
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "columns": [
+            "Номер",
+            "Дата",
+            "Контрагент",
+            "Юрист",
+            "Предмет спора",
+            "Статус",
+            "Роль ГК",
+            "Номер дела",
+            "Сумма требований",
+            "Возбуждено",
+            "ИЛ получен",
+            "Подано в ФССП",
+            "Взыскано",
+        ],
+        "rows": rows,
+    }
 
 
 def merge_contracts_table(tablitsy: dict, *, year: int, month: int) -> None:

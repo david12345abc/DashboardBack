@@ -3376,8 +3376,9 @@ def _build_universal_payload(
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _jurist_kpi_views.is_jurist_department(dept) and not include_debug:
-        # v9: претензии и суды за выбранный месяц, как у остальных дашбордов.
-        jurist_memo_key = f"jurist_dashboard:v9:{ref_y}:{ref_m:02d}"
+        # v11: плитки договоров из SQL erp_pm. v10 записан 16.10 утром с пустым фактом
+        # (OData уже не использовался) и до конца дня отдавался как свежий.
+        jurist_memo_key = f"jurist_dashboard:v11:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(jurist_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -3413,7 +3414,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"opdir_v2_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = opdir_memo_key
         elif jurist_memo_key:
-            dashboard_disk_key = f"jurist_v9_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"jurist_v11_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = jurist_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
@@ -4083,12 +4084,14 @@ def _build_universal_payload(
 
     if _jurist_kpi_views.is_jurist_department(dept):
         _jurist_kpi_views.merge_claims_and_lawsuits(tablitsy, year=ref_y, month=ref_m)
+        _jurist_kpi_views.merge_enforcement_table(tablitsy, year=ref_y, month=ref_m)
         _jurist_kpi_views.merge_contracts_table(tablitsy, year=ref_y, month=ref_m)
         logger.info(
-            "jurist contracts table %s-%02d: %d rows",
+            "jurist tables %s-%02d: contracts %d, enforcement %d",
             ref_y,
             ref_m,
             len((tablitsy.get("YR-T-CONTRACTS") or {}).get("rows") or []),
+            len((tablitsy.get("YR-T-ENFORCEMENT") or {}).get("rows") or []),
         )
 
     if _is_qualdir_dashboard(dept, all_kpis):
