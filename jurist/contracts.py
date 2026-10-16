@@ -1,43 +1,53 @@
 """Количество и сумма договоров контрагентов по организациям за месяц.
 
-Источник: Catalog_ДоговорыКонтрагентов.
-Месяц договора — поле «Дата» (на форме дата «от» рядом с номером).
-В расчёт входят договоры без пометки удаления
-(статусы «Действует», «Закрыт», «НеСогласован»).
+Источник — SQL erp_pm, справочник «Договоры с контрагентами»:
+
+  dbo._Reference155X1
+    _Marked          пометка удаления
+    _Description     наименование
+    _Fld5090         дата окончания действия (+2000 лет)
+    _Fld5091RRef     организация
+    _Fld5092RRef     контрагент → _Reference233
+    _Fld5097         дата «от» рядом с номером (+2000 лет)
+    _Fld5098         номер
+    _Fld5104RRef     статус → _Enum1629
+    _Fld5105RRef     цель (хозяйственная операция) → _Enum1919
+    _Fld5116         сумма
+
+Месяц договора — поле «Дата» (на форме дата «от»).
+В расчёт входят договоры без пометки удаления.
 Сумма — поле «Сумма», без пересчёта валюты.
-Цель договора — поле «ХозяйственнаяОперация» (на форме: «Цель договора»).
 """
 from __future__ import annotations
 
 import logging
-from datetime import date
+import uuid
+from datetime import date, datetime
 from pathlib import Path
-
-import requests
-from requests.auth import HTTPBasicAuth
 
 from devdir import ytd_json_cache
 from devdir.rd_monthly_period import normalize_rd_tile_period
-from getkpi.odata_http import request_with_retry
-
+from jurist.business_operations import OPERATIONS
 from jurist.companies import COMPANIES
+from sql_connection import SqlConnection
 
 logger = logging.getLogger(__name__)
 
-BASE = "http://192.168.2.229:81/erp_pm/odata/standard.odata"
-AUTH = HTTPBasicAuth("odata.user", "npo852456")
-ENTITY = "Catalog_ДоговорыКонтрагентов"
-PAGE = 2000
+YEAR_OFFSET = 2000
 CACHE_PREFIX = "jurist_contracts"
-CACHE_SOURCE = "jurist_contracts_v5"
-CACHE_VERSION = 5
+CACHE_SOURCE = "jurist_contracts_v6"
+CACHE_VERSION = 6
 
+STATUS_BY_ORDER = {
+    0: "НеСогласован",
+    1: "Действует",
+    2: "Закрыт",
+}
 STATUS_LABELS = {
     "Действует": "Действует",
     "Закрыт": "Закрыт",
     "НеСогласован": "Не согласован",
 }
-EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 
 # Эти цели договора в количество и сумму не входят и на плитку не выводятся.
 EXCLUDED_GOAL_CODES = frozenset({
@@ -45,6 +55,9 @@ EXCLUDED_GOAL_CODES = frozenset({
     "ПроизводствоУПереработчика",
     "ПроизводствоУПереработчика2_5",
 })
+EXCLUDED_GOAL_ORDERS = frozenset(
+    OPERATIONS.index(code) for code in EXCLUDED_GOAL_CODES
+)
 EXCLUDED_GOAL_LABELS = frozenset({
     "Передача на хранение с правом продажи",
     "Передача на ответственное хранение",
@@ -123,31 +136,64 @@ def cache_path(year: int | None = None, month: int | None = None) -> Path:
     return ytd_json_cache.public_cache_path(CACHE_PREFIX, year, month)
 
 
-def _month_bounds(year: int, month: int) -> tuple[date, date]:
-    """[начало месяца, начало следующего) — период поля «Дата» («от»)."""
-    start = date(year, month, 1)
+SQL = """
+SELECT
+    d._Fld5091RRef,
+    d._Description,
+    d._Fld5098,
+    d._Fld5097,
+    d._Fld5090,
+    d._Fld5116,
+    st._EnumOrder,
+    gl._EnumOrder,
+    ct._Description
+FROM dbo._Reference155X1 AS d WITH (NOLOCK)
+LEFT JOIN dbo._Enum1629 AS st WITH (NOLOCK)
+    ON st._IDRRef = d._Fld5104RRef
+LEFT JOIN dbo._Enum1919 AS gl WITH (NOLOCK)
+    ON gl._IDRRef = d._Fld5105RRef
+LEFT JOIN dbo._Reference233 AS ct WITH (NOLOCK)
+    ON ct._IDRRef = d._Fld5092RRef
+WHERE d._Marked = 0x00
+  AND d._Fld5097 >= ?
+  AND d._Fld5097 < ?
+  AND d._Fld5091RRef IN (?, ?, ?, ?)
+"""
+
+
+def _guid_to_1c(guid_str: str) -> bytes:
+    raw = uuid.UUID(guid_str).bytes
+    return raw[8:16] + raw[6:8] + raw[4:6] + raw[0:4]
+
+
+def _sql_day(value) -> date | None:
+    if not isinstance(value, datetime) or value.year < 3000:
+        return None
+    return value.replace(year=value.year - YEAR_OFFSET).date()
+
+
+def _month_sql_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+    start = datetime(year + YEAR_OFFSET, month, 1)
     if month == 12:
-        end = date(year + 1, 1, 1)
+        end = datetime(year + YEAR_OFFSET + 1, 1, 1)
     else:
-        end = date(year, month + 1, 1)
+        end = datetime(year + YEAR_OFFSET, month + 1, 1)
     return start, end
 
 
-def _odata_datetime(value: date) -> str:
-    return value.strftime("%Y-%m-%dT00:00:00")
+def _status_code(order) -> str:
+    if order is None:
+        return ""
+    return STATUS_BY_ORDER.get(int(order), "")
 
 
-def _parse_start(raw: object) -> date | None:
-    text = str(raw or "")[:10]
-    if len(text) < 10:
-        return None
-    try:
-        parsed = date(int(text[0:4]), int(text[5:7]), int(text[8:10]))
-    except ValueError:
-        return None
-    if parsed.year < 1900:
-        return None
-    return parsed
+def _goal_code(order) -> str:
+    if order is None:
+        return ""
+    index = int(order)
+    if index < 0 or index >= len(OPERATIONS):
+        return ""
+    return OPERATIONS[index]
 
 
 def _status_label(code: str) -> str:
@@ -155,141 +201,88 @@ def _status_label(code: str) -> str:
     return STATUS_LABELS.get(text, text or "—")
 
 
-def _iso_date(raw: object) -> str:
-    parsed = _parse_start(raw)
-    return parsed.isoformat() if parsed else ""
-
-
-def _fetch_org(session: requests.Session, org_guid: str, year: int, month: int) -> dict:
-    count = 0
-    total = 0.0
-    by_status: dict[str, dict] = {}
-    by_goal: dict[str, dict] = {}
-    rows: list[dict] = []
-    start, end = _month_bounds(year, month)
-    seen: set[str] = set()
-    skip = 0
-    while skip <= 200_000:
-        filt = (
-            f"Организация_Key eq guid'{org_guid}' and DeletionMark eq false"
-            f" and Дата ge datetime'{_odata_datetime(start)}'"
-            f" and Дата lt datetime'{_odata_datetime(end)}'"
-        )
-        url = (
-            f"{BASE}/{ENTITY}?$format=json"
-            f"&$filter={filt}"
-            f"&$select=Ref_Key,Description,Номер,Статус,Сумма,ХозяйственнаяОперация,"
-            f"Дата,ДатаОкончанияДействия,Контрагент_Key"
-            f"&$top={PAGE}&$skip={skip}"
-        )
-        response = request_with_retry(
-            session, url, timeout=180, retries=3, label="jurist/contracts",
-        )
-        if response is None or not response.ok:
-            status = getattr(response, "status_code", None)
-            raise RuntimeError(f"OData {ENTITY} org={org_guid} skip={skip} status={status}")
-        chunk = response.json().get("value") or []
-        fresh = 0
-        for row in chunk:
-            ref = str(row.get("Ref_Key") or "")
-            if not ref or ref in seen:
-                continue
-            seen.add(ref)
-            fresh += 1
-            started = _parse_start(row.get("Дата"))
-            if started is None or not (start <= started < end):
-                continue
-            goal_code = str(row.get("ХозяйственнаяОперация") or "")
-            if goal_excluded(goal_code):
-                continue
-            status_name = str(row.get("Статус") or "—")
-            amount = float(row.get("Сумма") or 0)
-            bucket = by_status.setdefault(status_name, {"count": 0, "sum": 0.0})
-            bucket["count"] += 1
-            bucket["sum"] += amount
-            goal_bucket = by_goal.setdefault(goal_code, {"count": 0, "sum": 0.0})
-            goal_bucket["count"] += 1
-            goal_bucket["sum"] += amount
-            count += 1
-            total += amount
-            counterparty_key = str(row.get("Контрагент_Key") or "")
-            rows.append({
-                "number": str(row.get("Номер") or "").strip(),
-                "name": str(row.get("Description") or "").strip(),
-                "goal": goal_label(goal_code),
-                "status": _status_label(status_name),
-                "sum": round(amount, 2),
-                "start_date": _iso_date(row.get("Дата")),
-                "end_date": _iso_date(row.get("ДатаОкончанияДействия")),
-                "counterparty_key": "" if counterparty_key == EMPTY_GUID else counterparty_key,
-            })
-        if fresh == 0 or len(chunk) < PAGE:
-            break
-        skip += PAGE
+def _empty_company(company: dict) -> dict:
     return {
-        "count": count,
-        "sum": round(total, 2),
-        "by_status": {
-            name: {"count": bucket["count"], "sum": round(bucket["sum"], 2)}
-            for name, bucket in sorted(by_status.items())
-        },
-        "by_goal": {
-            code: {"count": bucket["count"], "sum": round(bucket["sum"], 2)}
-            for code, bucket in by_goal.items()
-        },
-        "rows": rows,
+        "count": 0,
+        "sum": 0.0,
+        "by_status": {},
+        "by_goal": {},
+        "rows": [],
+        "title": company["title"],
+        "odata_name": company["odata_name"],
+        "org_guid": company["org_guid"],
     }
 
 
-def _counterparty_names(session: requests.Session, keys: set[str]) -> dict[str, str]:
-    """Имена контрагентов пачками, чтобы не раздувать запрос договоров expand-ом."""
-    names: dict[str, str] = {}
-    pending = [key for key in keys if key and key != EMPTY_GUID]
-    for offset in range(0, len(pending), 20):
-        part = pending[offset:offset + 20]
-        filt = " or ".join(f"Ref_Key eq guid'{key}'" for key in part)
-        url = (
-            f"{BASE}/Catalog_Контрагенты?$format=json"
-            f"&$filter={filt}&$select=Ref_Key,Description&$top={len(part)}"
-        )
-        response = request_with_retry(
-            session, url, timeout=120, retries=3, label="jurist/counterparties",
-        )
-        if response is None or not response.ok:
-            logger.warning("jurist: не удалось прочитать имена контрагентов, skip=%s", offset)
-            continue
-        for item in response.json().get("value") or []:
-            ref = str(item.get("Ref_Key") or "")
-            if ref:
-                names[ref] = str(item.get("Description") or "").strip()
-    return names
-
-
 def _fetch_companies(year: int, month: int) -> dict[str, dict]:
-    session = requests.Session()
-    session.auth = AUTH
-    companies: dict[str, dict] = {}
-    for company in COMPANIES:
-        totals = _fetch_org(session, company["org_guid"], year, month)
-        totals["title"] = company["title"]
-        totals["odata_name"] = company["odata_name"]
-        totals["org_guid"] = company["org_guid"]
-        companies[company["code"]] = totals
+    start, end = _month_sql_bounds(year, month)
+    org_bins = [_guid_to_1c(company["org_guid"]) for company in COMPANIES]
+    by_org = {org_bins[index]: COMPANIES[index]["code"] for index in range(len(COMPANIES))}
+    companies = {company["code"]: _empty_company(company) for company in COMPANIES}
+
+    sql = SqlConnection()
+    with sql.connect_ctx() as conn:
+        cur = conn.cursor()
+        cur.execute(SQL, start, end, *org_bins)
+        fetched = cur.fetchall()
+
+    for (
+        org_ref,
+        description,
+        number,
+        started_raw,
+        ended_raw,
+        amount_raw,
+        status_order,
+        goal_order,
+        counterparty,
+    ) in fetched:
+        code = by_org.get(bytes(org_ref) if org_ref is not None else b"")
+        if not code:
+            continue
+        started = _sql_day(started_raw)
+        if started is None or started.year != year or started.month != month:
+            continue
+        goal_code = _goal_code(goal_order)
+        if goal_excluded(goal_code):
+            continue
+        status_name = _status_code(status_order) or "—"
+        amount = round(float(amount_raw or 0), 2)
+        totals = companies[code]
+        status_bucket = totals["by_status"].setdefault(status_name, {"count": 0, "sum": 0.0})
+        status_bucket["count"] += 1
+        status_bucket["sum"] += amount
+        goal_bucket = totals["by_goal"].setdefault(goal_code, {"count": 0, "sum": 0.0})
+        goal_bucket["count"] += 1
+        goal_bucket["sum"] += amount
+        totals["count"] += 1
+        totals["sum"] += amount
+        ended = _sql_day(ended_raw)
+        totals["rows"].append({
+            "number": str(number or "").strip(),
+            "name": str(description or "").strip(),
+            "goal": goal_label(goal_code),
+            "status": _status_label(status_name),
+            "sum": amount,
+            "start_date": started.isoformat(),
+            "end_date": ended.isoformat() if ended else "",
+            "counterparty": str(counterparty or "").strip() or "—",
+        })
+
+    for code, totals in companies.items():
+        totals["sum"] = round(totals["sum"], 2)
+        totals["by_status"] = {
+            name: {"count": bucket["count"], "sum": round(bucket["sum"], 2)}
+            for name, bucket in sorted(totals["by_status"].items())
+        }
+        totals["by_goal"] = {
+            name: {"count": bucket["count"], "sum": round(bucket["sum"], 2)}
+            for name, bucket in totals["by_goal"].items()
+        }
         logger.info(
             "jurist contracts %s %d-%02d: count=%s sum=%s",
-            company["code"], year, month, totals["count"], totals["sum"],
+            code, year, month, totals["count"], totals["sum"],
         )
-    keys: set[str] = set()
-    for totals in companies.values():
-        for row in totals.get("rows") or []:
-            key = str(row.get("counterparty_key") or "")
-            if key:
-                keys.add(key)
-    names = _counterparty_names(session, keys) if keys else {}
-    for totals in companies.values():
-        for row in totals.get("rows") or []:
-            key = str(row.pop("counterparty_key", "") or "")
-            row["counterparty"] = names.get(key) or "—"
     return companies
 
 

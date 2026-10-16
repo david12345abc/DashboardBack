@@ -10,7 +10,7 @@ from getkpi.kpi_definitions_cache import bump_kpi_definitions_cache_version
 from getkpi.models import KpiDefinition
 from jurist.companies import COMPANIES, DEPARTMENT
 
-SOURCE = "1С ERP / Catalog_ДоговорыКонтрагентов"
+SOURCE = "1С ERP (SQL erp_pm) / договоры контрагентов"
 RULE = (
     "Договоры контрагентов организации без пометки удаления, "
     "у которых дата «от» рядом с номером попадает в выбранный месяц. "

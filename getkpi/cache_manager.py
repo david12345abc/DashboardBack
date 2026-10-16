@@ -602,6 +602,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         tasks, y, m,
         hrd_m1, hrd_m2, hrd_m3, hrd_m4, hrd_m7, hrd_m9, hrd_q4,
     )
+    _append_jurist_warm_tasks(tasks, y, m)
 
     tasks.append((
         "dept_protocol_overdue_warm_all",
@@ -789,6 +790,29 @@ def _append_sup_warm_tasks(
             f"sup_hrd_q4_{ref_y}_{warm_m:02d}",
             hrd_q4_mod.cache_file_path_for_period(ref_y, warm_m),
             lambda yy=ref_y, mm=warm_m: hrd_q4_mod.get_hrd_q4_ytd(year=yy, month=mm),
+        ))
+
+
+def _append_jurist_warm_tasks(
+    tasks: list[tuple[str, Path, object]],
+    ref_y: int,
+    ref_m: int,
+) -> None:
+    """Прогреть договоры и исполнительное производство за месяцы 1..ref_m."""
+    from devdir import ytd_json_cache
+    from jurist import contracts as jurist_contracts
+    from jurist import enforcement as jurist_enforcement
+
+    for warm_m in range(1, ref_m + 1):
+        tasks.append((
+            f"jurist_contracts_warm_{ref_y}_{warm_m:02d}",
+            ytd_json_cache.cache_path(jurist_contracts.CACHE_PREFIX, ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: jurist_contracts.load_company_totals(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"jurist_enforcement_warm_{ref_y}_{warm_m:02d}",
+            ytd_json_cache.cache_path(jurist_enforcement.CACHE_PREFIX, ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: jurist_enforcement.enforcement_table_rows(year=yy, month=mm),
         ))
 
 
