@@ -41,7 +41,8 @@ COMPANIES: tuple[dict, ...] = (
 
 COUNT_KPI_IDS: frozenset[str] = frozenset(item["count_kpi_id"] for item in COMPANIES)
 SUM_KPI_IDS: frozenset[str] = frozenset(item["sum_kpi_id"] for item in COMPANIES)
-TILE_KPI_IDS: frozenset[str] = COUNT_KPI_IDS | SUM_KPI_IDS
+MEMO_KPI_ID = "YR-SZ-Q"
+TILE_KPI_IDS: frozenset[str] = COUNT_KPI_IDS | SUM_KPI_IDS | {MEMO_KPI_ID}
 
 _BY_KPI_ID: dict[str, tuple[dict, str]] = {}
 for _company in COMPANIES:

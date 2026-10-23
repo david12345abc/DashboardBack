@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from devdir.rd_monthly_period import normalize_rd_tile_period
-from jurist.companies import DEPARTMENT, TILE_KPI_IDS, company_for_kpi
+from jurist.companies import DEPARTMENT, MEMO_KPI_ID, TILE_KPI_IDS, company_for_kpi
 from jurist.contracts import cache_path, goals_rows, load_company_totals
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,92 @@ def clear_jurist_tile_rag(tile: dict[str, Any]) -> None:
         goals = row.get("goals") if isinstance(row, dict) else None
     if goals:
         tile["goals"] = goals
-        tile["goals_title"] = "Цель договора"
+        tile["goals_title"] = tile.get("goals_title") or "Цель договора"
+
+
+def _month_row(ref_y: int, ref_m: int, value: int | float | None, goals: list) -> dict:
+    return {
+        "year": ref_y,
+        "month": ref_m,
+        "month_name": MONTH_NAMES[ref_m],
+        "plan": None,
+        "fact": value,
+        "kpi_pct": None,
+        "has_data": value is not None,
+        "goals": goals,
+    }
+
+
+def _fill_entry(
+    entry: dict[str, Any],
+    *,
+    ref_y: int,
+    ref_m: int,
+    value: int | float | None,
+    goals: list,
+    goals_title: str,
+) -> None:
+    row = _month_row(ref_y, ref_m, value, goals)
+    entry["data_granularity"] = "snapshot"
+    entry["monthly_data"] = [row]
+    entry["last_full_month_row"] = row
+    entry["goals"] = goals
+    entry["goals_title"] = goals_title
+    entry["ytd"] = {
+        "total_plan": None,
+        "total_fact": value,
+        "kpi_pct": None,
+        "months_with_data": 1 if value is not None else 0,
+        "months_total": 1,
+    }
+    entry["kpi_period"] = {
+        "type": "current_month",
+        "year": ref_y,
+        "month": ref_m,
+        "month_name": MONTH_NAMES[ref_m],
+    }
+
+
+def _merge_memo_entry(entry: dict[str, Any], *, year: int | None, month: int | None) -> bool:
+    ref_y, ref_m = normalize_rd_tile_period(year, month)
+    try:
+        companies = load_company_totals(year=ref_y, month=ref_m)
+    except Exception:
+        logger.exception("jurist: не удалось посчитать %s", MEMO_KPI_ID)
+        companies = None
+    if not companies:
+        _fill_entry(entry, ref_y=ref_y, ref_m=ref_m, value=None, goals=[], goals_title="Организация")
+        return True
+    total = 0
+    goals = []
+    for code, totals in companies.items():
+        if not isinstance(totals, dict):
+            continue
+        count = int(totals.get("memo_count") or 0)
+        total += count
+        if count:
+            goals.append({
+                "name": str(totals.get("title") or code),
+                "count": count,
+                "sum": round(float(totals.get("memo_sum") or 0), 2),
+            })
+    goals.sort(key=lambda row: (-row["count"], row["name"].casefold()))
+    _fill_entry(
+        entry,
+        ref_y=ref_y,
+        ref_m=ref_m,
+        value=total,
+        goals=goals,
+        goals_title="Организация",
+    )
+    entry["debug"] = {
+        "metric": "memo_count",
+        "rule": (
+            "erp_pm._Document76733, тема «ЗаключениеДоговораГПХ», "
+            "без пометки удаления, дата документа в выбранном месяце"
+        ),
+    }
+    return True
 
 
 def merge_kpi_entry_if_applicable(
@@ -61,6 +146,8 @@ def merge_kpi_entry_if_applicable(
     year: int | None,
     month: int | None,
 ) -> bool:
+    if str(kpi_id or "").strip().upper() == MEMO_KPI_ID:
+        return _merge_memo_entry(entry, year=year, month=month)
     spec = company_for_kpi(kpi_id)
     if spec is None:
         return False
