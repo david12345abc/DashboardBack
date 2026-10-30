@@ -1569,6 +1569,70 @@ def _build_overdue_table(ref_y: int, ref_m: int,
     return table
 
 
+def _build_dz_table(ref_y: int, ref_m: int,
+                    dept_guid: str | None = None) -> dict:
+    """Таблица всей дебиторки: заказ, контрагент, отдел, дата оплаты, сумма.
+
+    dept_guid=None → все коммерческие отделы, иначе один отдел.
+    """
+    detail = calc_debitorka.get_dz_detail(
+        year=ref_y, month=ref_m, dept_guid=dept_guid,
+    )
+    rows = []
+    for raw in detail.get("rows") or []:
+        if not isinstance(raw, dict):
+            continue
+        department = (
+            (raw.get("department") or "").strip()
+            or (raw.get("dept_name") or "").strip()
+        )
+        rows.append({
+            "order_num": raw.get("order_num") or "",
+            "counterparty": raw.get("counterparty") or raw.get("partner_name") or "",
+            "partner_name": raw.get("partner_name") or raw.get("counterparty") or "",
+            "department": department,
+            "Подразделение": department,
+            "payment_date": raw.get("payment_date") or "",
+            "amount": raw.get("amount"),
+            "dept_key": raw.get("dept_key") or "",
+        })
+    table = {
+        "kpi_id": "KD-T-DZ",
+        "name": f"Дебиторская задолженность на {detail.get('na_datu', '')}",
+        "periodicity": "ежемесячно",
+        "description": "Заказы клиентов с остатком долга и датой плановой оплаты",
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES_RU[ref_m],
+        },
+        "total_dz": detail.get("total_dz", 0),
+        "columns": [
+            "№ Заказа клиента", "Контрагент", "Подразделение", "Дата оплаты", "Сумма",
+        ],
+        "rows": rows,
+    }
+    if detail.get("cache_refresh_status"):
+        table["cache_refresh_status"] = detail.get("cache_refresh_status")
+    return table
+
+
+def _attach_dz_table(payload: dict, ref_y: int, ref_m: int, dept_guid: str | None) -> dict:
+    """Добавить расшифровку дебиторки и к снимку, собранному раньше этой таблицы."""
+    if not isinstance(payload, dict):
+        return payload
+    try:
+        table = _build_dz_table(ref_y, ref_m, dept_guid=dept_guid)
+    except Exception:
+        logger.exception("Расшифровка дебиторской задолженности не подставилась")
+        return payload
+    next_payload = dict(payload)
+    tablitsy = dict(next_payload.get("Таблицы") or {})
+    tablitsy["KD-T-DZ"] = table
+    next_payload["Таблицы"] = tablitsy
+    return next_payload
+
+
 def _payload_cache_dept_part(dept_guid: str | None) -> str:
     return str(dept_guid or 'all').strip().lower().replace('-', '')
 
@@ -1764,7 +1828,10 @@ def build_komdir_payload(kpi_list: list[dict],
                 cached_payload, ref_y, ref_m, payload_cache_path,
             )
             return _attach_future_month_points(
-                _attach_plan_fact_breakdown(cached_payload, ref_y, ref_m),
+                _attach_dz_table(
+                    _attach_plan_fact_breakdown(cached_payload, ref_y, ref_m, dept_guid),
+                    ref_y, ref_m, dept_guid,
+                ),
                 ref_y, ref_m, dept_guid,
             )
     raw = cache_manager.locked_call(
@@ -1777,19 +1844,45 @@ def build_komdir_payload(kpi_list: list[dict],
         cache_path=payload_cache_path,
     )
     return _attach_future_month_points(
-        _attach_plan_fact_breakdown(_unwrap_payload_cache(raw), ref_y, ref_m),
+        _attach_dz_table(
+            _attach_plan_fact_breakdown(_unwrap_payload_cache(raw), ref_y, ref_m, dept_guid),
+            ref_y, ref_m, dept_guid,
+        ),
         ref_y, ref_m, dept_guid,
     )
 
 
-def _attach_plan_fact_breakdown(payload: dict, ref_y: int, ref_m: int) -> dict:
+def _plan_fact_dept_names(dept_guid: str | None) -> set[str] | None:
+    """Имена отдела в расшифровке план/факта. Пустой GUID — сводка комдира."""
+    if not dept_guid:
+        return None
+    from comdir.common import DEPT_NAME_TO_ODATA
+    from getkpi.calc_plan import DEPARTMENTS
+
+    guid = str(dept_guid).strip().lower()
+    names: set[str] = set()
+    for key, label in DEPARTMENTS.items():
+        if str(key).lower() == guid and label:
+            names.add(str(label).strip())
+    for label, key in DEPT_NAME_TO_ODATA.items():
+        if str(key).lower() == guid and label:
+            names.add(str(label).strip())
+    return names or None
+
+
+def _attach_plan_fact_breakdown(
+    payload: dict,
+    ref_y: int,
+    ref_m: int,
+    dept_guid: str | None = None,
+) -> dict:
     """Подставить расшифровку каждого месяца, а не только того, что в снимке."""
     if not isinstance(payload, dict):
         return payload
     try:
         from comdir.plan_fact_lines import tables_through
 
-        tables = tables_through(ref_y, ref_m)
+        tables = tables_through(ref_y, ref_m, dept_names=_plan_fact_dept_names(dept_guid))
     except Exception:
         logger.exception("Расшифровка денег, отгрузок и договоров не подставилась")
         return payload
@@ -2288,7 +2381,9 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
     try:
         from comdir.plan_fact_lines import tables_through
 
-        tablitsy.update(tables_through(ref_y, series_m))
+        tablitsy.update(tables_through(
+            ref_y, series_m, dept_names=_plan_fact_dept_names(dept_guid),
+        ))
     except Exception:
         logger.exception("Расшифровка денег, отгрузок и договоров не подставилась")
 
@@ -2298,6 +2393,13 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
         )
     except Exception:
         pass
+
+    try:
+        tablitsy["KD-T-DZ"] = _build_dz_table(
+            ref_y, series_m, dept_guid=dept_guid,
+        )
+    except Exception:
+        logger.exception("Расшифровка дебиторской задолженности не подставилась")
 
     if dept_guid and str(dept_guid).lower() == DEALER_SALES_DEPT.lower():
         try:

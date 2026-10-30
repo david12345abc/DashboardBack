@@ -269,7 +269,12 @@ def collect_through(year: int, through_month: int) -> None:
         logger.info("Расшифровка: %s-%02d сохранена, строк %s, %s", year, month, len(buckets[month]), saved.name)
 
 
-def tables_through(year: int, through_month: int, dept_name: str | None = None) -> dict:
+def tables_through(
+    year: int,
+    through_month: int,
+    dept_name: str | None = None,
+    dept_names: set[str] | None = None,
+) -> dict:
     """Три таблицы с помесячной расшифровкой. Пустой месяц не подменяется текущим."""
     through_month = max(1, min(12, int(through_month)))
     names = {
@@ -278,7 +283,7 @@ def tables_through(year: int, through_month: int, dept_name: str | None = None) 
         9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
     }
     by_month = {
-        month: _filter_dept(load(year, month), dept_name)
+        month: _filter_dept(load(year, month), dept_name, dept_names)
         for month in range(1, through_month + 1)
     }
     tables = {}
@@ -315,11 +320,21 @@ def tables_through(year: int, through_month: int, dept_name: str | None = None) 
     return tables
 
 
-def _filter_dept(rows: list[dict], dept_name: str | None) -> list[dict]:
-    if not dept_name:
+def _filter_dept(
+    rows: list[dict],
+    dept_name: str | None,
+    dept_names: set[str] | None = None,
+) -> list[dict]:
+    wanted: set[str] = set()
+    if dept_name:
+        wanted.add(dept_name.strip().lower())
+    for name in dept_names or ():
+        text = str(name or "").strip().lower()
+        if text:
+            wanted.add(text)
+    if not wanted:
         return rows
-    wanted = dept_name.strip().lower()
-    return [row for row in rows if str(row.get("department") or "").strip().lower() == wanted]
+    return [row for row in rows if str(row.get("department") or "").strip().lower() in wanted]
 
 
 def _totals(rows: list[dict]) -> tuple[float, float]:

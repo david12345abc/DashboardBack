@@ -70,7 +70,7 @@ KZ_REPORT_DAY_PREPAY_BANK_GUIDS = {
 }
 # Версия только для детализации просрочки: при смене инвалидируется overdue_detail,
 # не трогая помесячные снимки ДЗ (dept_alias_source).
-OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_odata_v1"
+OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_odata_v2"
 DEALER_SALES_DEPT_GUID = "7587c178-92f6-11f0-96f9-6cb31113810e"
 DEBITORKA_DEPT_ALIASES = {
     source: target
@@ -639,6 +639,81 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
     return rows
 
 
+def _payment_date_label(planned_dt: str) -> str:
+    text = (planned_dt or "")[:10]
+    if len(text) != 10 or text[4] != "-" or text[:4] in ("0001", "2001", ""):
+        return ""
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError:
+        return ""
+    if parsed.year <= 1:
+        return ""
+    return f"{text[8:10]}.{text[5:7]}.{text[:4]}"
+
+
+def _build_dz_term_rows(balances: dict, obj_catalog: dict, session) -> list[dict]:
+    """Вся дебиторка по срокам: заказ, контрагент, отдел, дата оплаты, сумма.
+
+    Одна строка — нетто-остаток ДолгУпр по паре (заказ, дата планового погашения).
+    В список входят и непросроченные сроки. Нулевые и кредитовые остатки не входят.
+    """
+    dept_keys_lower = {d.lower() for d in DEPARTMENTS}
+    liquidated_keys_lower = {k.lower() for k in LIQUIDATED_DEPT_NAMES}
+    pending: list[dict] = []
+    partner_keys_used: set[str] = set()
+
+    for (obj_key, planned_dt), balance in balances.items():
+        if balance <= TOLERANCE:
+            continue
+        cat = obj_catalog.get(obj_key)
+        if not cat:
+            continue
+        dept = cat["dept"]
+        liquidated_name = (cat.get("liquidated_dept_name") or "").strip()
+        source_dept = str(cat.get("source_dept") or "").lower()
+        if dept not in dept_keys_lower and source_dept not in liquidated_keys_lower:
+            continue
+        partner_key = cat["partner"]
+        dept_name = (
+            DEPARTMENTS.get(dept)
+            or liquidated_name
+            or LIQUIDATED_DEPT_NAMES.get(source_dept, dept[:8])
+        )
+        department = liquidated_name or dept_name
+        pending.append({
+            "dept_key": dept,
+            "dept_name": dept_name,
+            "source_dept_key": source_dept,
+            "liquidated_dept_name": liquidated_name or LIQUIDATED_DEPT_NAMES.get(source_dept, ""),
+            "department": department,
+            "partner_key": partner_key,
+            "order_key": obj_key,
+            "order_num": str(cat.get("number") or "").strip(),
+            "payment_date": _payment_date_label(str(planned_dt or "")),
+            "payment_date_sort": (str(planned_dt or "")[:10]),
+            "amount": round(float(balance), 2),
+        })
+        partner_keys_used.add(partner_key)
+
+    partner_names = resolve_partner_names(session, partner_keys_used)
+    rows: list[dict] = []
+    for row in pending:
+        partner_name = partner_names.get(row["partner_key"], row["partner_key"][:8])
+        rows.append({
+            **row,
+            "partner_name": partner_name,
+            "counterparty": partner_name,
+        })
+    rows.sort(key=lambda item: (
+        item.get("department") or "",
+        item.get("counterparty") or "",
+        item.get("payment_date_sort") or "9999",
+        item.get("order_num") or "",
+    ))
+    return rows
+
+
 def _sql_ref_to_guid(ref: bytes | bytearray | memoryview | None) -> str:
     if not ref:
         return EMPTY
@@ -817,7 +892,9 @@ def _calc_overdue_detail_sql(na_datu: date) -> dict:
         "overdue_detail_version": OVERDUE_DETAIL_CACHE_VERSION,
         "source": "sql_erp_pm",
         "total_overdue": total,
+        "total_dz": 0,
         "rows": rows,
+        "dz_rows": [],
     }
 
 
@@ -1009,6 +1086,8 @@ def _overdue_detail_cache_is_current(data: dict | None) -> bool:
         return False
     if data.get("overdue_detail_version") != OVERDUE_DETAIL_CACHE_VERSION:
         return False
+    if "dz_rows" not in data:
+        return False
     rows = data.get("rows") or []
     return not rows or all(
         "department" in row and "liquidated_dept_name" in row for row in rows
@@ -1021,6 +1100,8 @@ def _overdue_detail_cache_is_usable(data: dict | None) -> bool:
     if data.get("dept_alias_source") != DEPT_ALIAS_SOURCE:
         return False
     if data.get("overdue_detail_version") != OVERDUE_DETAIL_CACHE_VERSION:
+        return False
+    if "dz_rows" not in data:
         return False
     rows = data.get("rows") or []
     return not rows or all(
@@ -1230,6 +1311,7 @@ def _build_overdue_detail_from_data(na_datu: date, records: list,
     balances = aggregate_balances(filtered)
 
     rows = _build_overdue_rows_per_order(na_datu, balances, obj_catalog, session)
+    dz_rows = _build_dz_term_rows(balances, obj_catalog, session)
     total = round(sum(r["amount"] for r in rows), 2)
 
     detail = {
@@ -1238,7 +1320,9 @@ def _build_overdue_detail_from_data(na_datu: date, records: list,
         "dept_alias_source": DEPT_ALIAS_SOURCE,
         "overdue_detail_version": OVERDUE_DETAIL_CACHE_VERSION,
         "total_overdue": total,
+        "total_dz": round(sum(r["amount"] for r in dz_rows), 2),
         "rows": rows,
+        "dz_rows": dz_rows,
     }
     _save_json(_cache_path_overdue_detail(na_datu), detail)
     logger.info("calc_debitorka: batch overdue detail %s (%d rows)", na_datu_str, len(rows))
@@ -1527,6 +1611,7 @@ def _calc_overdue_detail(na_datu: date) -> dict:
     obj_catalog = resolve_objects(session, obj_keys)
 
     rows = _build_overdue_rows_per_order(na_datu, balances, obj_catalog, session)
+    dz_rows = _build_dz_term_rows(balances, obj_catalog, session)
     total = round(sum(r["amount"] for r in rows), 2)
 
     return {
@@ -1535,7 +1620,9 @@ def _calc_overdue_detail(na_datu: date) -> dict:
         "dept_alias_source": DEPT_ALIAS_SOURCE,
         "overdue_detail_version": OVERDUE_DETAIL_CACHE_VERSION,
         "total_overdue": total,
+        "total_dz": round(sum(r["amount"] for r in dz_rows), 2),
         "rows": rows,
+        "dz_rows": dz_rows,
     }
 
 
@@ -1579,7 +1666,9 @@ def get_overdue_detail(year: int | None = None,
                 data = {
                     "na_datu": na_datu.isoformat(),
                     "total_overdue": total or 0,
+                    "total_dz": 0,
                     "rows": [],
+                    "dz_rows": [],
                     "cache_refresh_status": "running",
                 }
     else:
@@ -1591,42 +1680,74 @@ def get_overdue_detail(year: int | None = None,
             data = _calc_overdue_detail(na_datu)
             _save_json(cache_path, data)
 
-    rows = data.get("rows", [])
-    if dept_guid:
-        dept_lower = str(dept_guid).lower()
-        dept_norm = normalize_debitorka_dept_guid(dept_lower).lower()
-        # В т.ч. ликвидированные дилерские (алиас в COMMERCIAL, но не в DEBITORKA).
-        rows = [
-            r for r in rows
-            if str(r.get("dept_key") or "").lower() in {dept_lower, dept_norm}
-            or normalize_debitorka_dept_guid(str(r.get("source_dept_key") or "").lower())
-            in {dept_lower, dept_norm}
-            or normalize_commercial_dept_guid(str(r.get("source_dept_key") or "").lower())
-            in {dept_lower, dept_norm}
-        ]
-
-    enriched_rows = []
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        row = dict(r)
-        liquidated = (row.get("liquidated_dept_name") or "").strip()
-        dept_name = (row.get("dept_name") or "").strip()
-        department = (row.get("department") or "").strip() or liquidated or dept_name
-        row["department"] = department
-        row["liquidated_dept_name"] = liquidated
-        enriched_rows.append(row)
-    rows = enriched_rows
+    rows = _detail_rows_for_dept(data.get("rows") or [], dept_guid)
+    dz_rows = _detail_rows_for_dept(data.get("dz_rows") or [], dept_guid)
 
     if rows:
         total = round(sum(r["amount"] for r in rows), 2)
     else:
         total = round(float(data.get("total_overdue") or 0), 2)
+    if dz_rows:
+        total_dz = round(sum(float(r.get("amount") or 0) for r in dz_rows), 2)
+    else:
+        total_dz = round(float(data.get("total_dz") or 0), 2) if not dept_guid else 0.0
 
-    return {
+    result = {
         "na_datu": data.get("na_datu"),
         "total_overdue": total,
+        "total_dz": total_dz,
         "rows": rows,
+        "dz_rows": dz_rows,
+    }
+    if data.get("cache_refresh_status"):
+        result["cache_refresh_status"] = data.get("cache_refresh_status")
+    return result
+
+
+def _detail_row_matches_dept(row: dict, dept_guid: str) -> bool:
+    dept_lower = str(dept_guid).lower()
+    dept_norm = normalize_debitorka_dept_guid(dept_lower).lower()
+    return (
+        str(row.get("dept_key") or "").lower() in {dept_lower, dept_norm}
+        or normalize_debitorka_dept_guid(str(row.get("source_dept_key") or "").lower())
+        in {dept_lower, dept_norm}
+        or normalize_commercial_dept_guid(str(row.get("source_dept_key") or "").lower())
+        in {dept_lower, dept_norm}
+    )
+
+
+def _detail_rows_for_dept(rows: list, dept_guid: str | None) -> list[dict]:
+    picked = rows
+    if dept_guid:
+        picked = [r for r in rows if isinstance(r, dict) and _detail_row_matches_dept(r, dept_guid)]
+    enriched = []
+    for raw in picked:
+        if not isinstance(raw, dict):
+            continue
+        row = dict(raw)
+        liquidated = (row.get("liquidated_dept_name") or "").strip()
+        dept_name = (row.get("dept_name") or "").strip()
+        department = (row.get("department") or "").strip() or liquidated or dept_name
+        row["department"] = department
+        row["liquidated_dept_name"] = liquidated
+        enriched.append(row)
+    return enriched
+
+
+def get_dz_detail(year: int | None = None,
+                  month: int | None = None,
+                  dept_guid: str | None = None) -> dict:
+    """Детализация всей ДЗ по заказам и срокам оплаты.
+
+    dept_guid=None → все коммерческие отделы,
+    dept_guid='...' → один отдел. Тот же кэш, что у просрочки.
+    """
+    data = get_overdue_detail(year=year, month=month, dept_guid=dept_guid)
+    return {
+        "na_datu": data.get("na_datu"),
+        "total_dz": data.get("total_dz") or 0,
+        "rows": data.get("dz_rows") or [],
+        "cache_refresh_status": data.get("cache_refresh_status"),
     }
 
 
