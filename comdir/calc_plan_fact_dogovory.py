@@ -56,9 +56,12 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from calendar import monthrange
+from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
+from typing import Iterator
 from urllib.parse import quote
 
 import pyodbc
@@ -452,6 +455,28 @@ def _odata_period_str(p: datetime) -> str:
 
 _EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 _SIGNED_REG_CACHE: list[dict] | None = None
+_SIGNED_REG_LOCK = threading.Lock()
+_SIGNED_REG_REFRESH = threading.local()
+
+
+def clear_signed_register_cache() -> None:
+    """Сбросить кэш ТД_ДоговорыПодписанные — следующий load_signed_register_odata() идёт в 1С."""
+    global _SIGNED_REG_CACHE
+    with _SIGNED_REG_LOCK:
+        _SIGNED_REG_CACHE = None
+
+
+@contextmanager
+def signed_register_refresh() -> Iterator[None]:
+    """При входе сбросить кэш регистра; внутри одного расчёта факта строки переиспользуются."""
+    depth = getattr(_SIGNED_REG_REFRESH, "depth", 0)
+    if depth == 0:
+        clear_signed_register_cache()
+    _SIGNED_REG_REFRESH.depth = depth + 1
+    try:
+        yield
+    finally:
+        _SIGNED_REG_REFRESH.depth = getattr(_SIGNED_REG_REFRESH, "depth", 1) - 1
 
 # ОДП: «Владикавказ» в ветке дозаказа/оферты отчёт 1С не берёт
 # (в регистре подписанных — берёт; поэтому сюда, не в calc_fact_odata).
@@ -529,8 +554,9 @@ def load_signed_register_odata() -> list[dict]:
     до начала месяца), поэтому грузим целиком и режем период в Python.
     """
     global _SIGNED_REG_CACHE
-    if _SIGNED_REG_CACHE is not None:
-        return _SIGNED_REG_CACHE
+    with _SIGNED_REG_LOCK:
+        if _SIGNED_REG_CACHE is not None:
+            return _SIGNED_REG_CACHE
     from comdir.resale import _base, _session
 
     session = _session()
@@ -550,7 +576,8 @@ def load_signed_register_odata() -> list[dict]:
         if len(batch) < 5000:
             break
         skip += 5000
-    _SIGNED_REG_CACHE = rows
+    with _SIGNED_REG_LOCK:
+        _SIGNED_REG_CACHE = rows
     return rows
 
 
@@ -1092,27 +1119,30 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
 
     Все месяцы: live OData и ветка дозаказа (как отчёт «План-факт»).
     SQL — только fallback, если OData недоступен.
+    При каждом вызове регистр подписанных читается из 1С заново
+    (внутри одного расчёта строки переиспользуются).
     """
-    try:
-        reg = calc_fact_odata(p0, p_next)
-    except Exception:
-        logger.exception("OData факт договоров недоступен — SQL fallback")
+    with signed_register_refresh():
         try:
-            reg = calc_fact_sql(cur, p0, p_next)
+            reg = calc_fact_odata(p0, p_next)
         except Exception:
-            logger.exception("SQL факт договоров тоже недоступен")
-            reg = {}
-    try:
-        offer = calc_fact_offer_live_odata(p0, p_next)
-    except Exception:
-        logger.exception("Ветка счёт-оферта факта договоров недоступна")
-        offer = {}
-    try:
-        reorder = calc_fact_reorder_odata(p0, p_next)
-    except Exception:
-        logger.exception("Ветка дозаказа факта договоров недоступна")
-        reorder = {}
-    return _merge_fact(_merge_fact(reg, offer), reorder)
+            logger.exception("OData факт договоров недоступен — SQL fallback")
+            try:
+                reg = calc_fact_sql(cur, p0, p_next)
+            except Exception:
+                logger.exception("SQL факт договоров тоже недоступен")
+                reg = {}
+        try:
+            offer = calc_fact_offer_live_odata(p0, p_next)
+        except Exception:
+            logger.exception("Ветка счёт-оферта факта договоров недоступна")
+            offer = {}
+        try:
+            reorder = calc_fact_reorder_odata(p0, p_next)
+        except Exception:
+            logger.exception("Ветка дозаказа факта договоров недоступна")
+            reorder = {}
+        return _merge_fact(_merge_fact(reg, offer), reorder)
 
 
 _DEPT_GUID_TO_NAME = {

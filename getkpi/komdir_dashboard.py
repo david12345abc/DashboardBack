@@ -1605,22 +1605,63 @@ _PLAN_FACT_YTD_PREFIX = {
     "KD-M1": "comdir_kd_m1_ytd",
     "KD-M2": "comdir_kd_m2_ytd",
     "KD-M3": "comdir_kd_m3_ytd",
+    "KD-M4": "comdir_kd_m4_ytd",
+    "KD-M5": "comdir_kd_m4_ytd",
+}
+
+_REFRESHABLE_KOMDIR_TILES = frozenset({
+    "KD-M1", "KD-M2", "KD-M3", "KD-M4", "KD-M5", "KD-M8", "KD-M11",
+})
+
+# Один YTD-файл на две плитки: при точечном обновлении патчим обе.
+_SHARED_SOURCE_TILES = {
+    "KD-M4": ("KD-M4", "KD-M5"),
+    "KD-M5": ("KD-M4", "KD-M5"),
 }
 
 
+def _tile_cache_updated_ts(value: object) -> float | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except ValueError:
+        return None
+
+
 def _newer_plan_fact_tiles(payload_path: Path, ref_y: int, ref_m: int) -> list[str]:
-    """Плитки, чей YTD пересчитан позже снимка дашборда."""
+    """Плитки, чей YTD новее, чем cache_updated_at самой плитки.
+
+    Сравниваем с меткой плитки, а не с mtime всего payload: точечный
+    патч договоров обновляет файл дашборда и иначе «прячет» свежую ДЗ.
+    """
     if not payload_path.exists():
         return []
     try:
         payload_mtime = payload_path.stat().st_mtime
     except OSError:
         return []
+    tiles_by_id: dict[str, dict] = {}
+    try:
+        with payload_path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+        payload = raw.get("payload") if isinstance(raw, dict) else None
+        if isinstance(payload, dict):
+            for tile in (payload.get("Плитки") or {}).get("items") or []:
+                if isinstance(tile, dict) and tile.get("kpi_id"):
+                    tiles_by_id[str(tile.get("kpi_id"))] = tile
+    except (OSError, json.JSONDecodeError):
+        tiles_by_id = {}
     newer: list[str] = []
     for kid, prefix in _PLAN_FACT_YTD_PREFIX.items():
         src = _CACHE_DIR / f"{prefix}_{ref_y}_{ref_m:02d}.json"
         try:
-            if src.exists() and src.stat().st_mtime > payload_mtime:
+            if not src.exists():
+                continue
+            tile_ts = _tile_cache_updated_ts((tiles_by_id.get(kid) or {}).get("cache_updated_at"))
+            if tile_ts is None:
+                tile_ts = payload_mtime
+            if src.stat().st_mtime > tile_ts:
                 newer.append(kid)
         except OSError:
             continue
@@ -1887,21 +1928,32 @@ def refresh_komdir_tile_cache(kpi_id: str,
     if existing_tile is None:
         return False
 
-    plans_payload = _plans_payload_from_tile(existing_tile, kid)
-    if kid in {"KD-M1", "KD-M2", "KD-M3", "KD-M8", "KD-M11"}:
+    if kid not in _REFRESHABLE_KOMDIR_TILES:
+        return False
+
+    pairs = [(ref_y, m) for m in range(1, series_m + 1)]
+    patched = False
+    for patch_kid in _SHARED_SOURCE_TILES.get(kid, (kid,)):
+        patch_tile = None
+        for tile in (payload.get("Плитки") or {}).get("items") or []:
+            if isinstance(tile, dict) and tile.get("kpi_id") == patch_kid:
+                patch_tile = tile
+                break
+        if patch_tile is None:
+            continue
         tile_data = _get_tile_data(
-            kid,
-            [(ref_y, m) for m in range(1, series_m + 1)],
+            patch_kid,
+            pairs,
             ref_y,
             ref_m,
             series_m,
             dept_guid=dept_guid,
-            plans_payload=plans_payload,
+            plans_payload=_plans_payload_from_tile(patch_tile, patch_kid),
         )
-    else:
+        _patch_payload_tile(payload, patch_kid, tile_data, ref_y, ref_m)
+        patched = True
+    if not patched:
         return False
-
-    _patch_payload_tile(payload, kid, tile_data, ref_y, ref_m)
     _save_payload_cache(ref_y, ref_m, dept_guid, payload)
     return True
 

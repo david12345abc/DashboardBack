@@ -556,7 +556,9 @@ def compute_dogovory_month(year: int, month: int) -> dict[str, Any]:
 
 
 def build_dogovory_payload(year: int, month: int) -> dict[str, Any]:
-    months = [compute_dogovory_month(year, m) for m in range(1, month + 1)]
+    # Один запрос регистра на весь YTD: иначе calc_fact сбрасывал бы кэш 10 раз.
+    with dog_mod.signed_register_refresh():
+        months = [compute_dogovory_month(year, m) for m in range(1, month + 1)]
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M3")
     payload["debug"] = {
         **(payload.get("debug") or {}),
