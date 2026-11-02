@@ -441,21 +441,48 @@ def resolve_partner_names(session, partner_keys: set):
     return names
 
 
+def _resolve_user_names(session, user_keys: set) -> dict[str, str]:
+    """ФИО менеджера: Catalog_Пользователи.Description по Ref_Key."""
+    names: dict[str, str] = {}
+    keys = [key.lower() for key in user_keys if key and str(key).lower() != EMPTY]
+    if not keys:
+        return names
+    for i in range(0, len(keys), 40):
+        chunk = keys[i:i + 40]
+        flt = " or ".join(f"Ref_Key eq guid'{key}'" for key in chunk)
+        url = (
+            f"{BASE}/Catalog_Пользователи?$format=json"
+            f"&$select=Ref_Key,Description"
+            f"&$filter={quote(flt, safe='')}&$top=5000"
+        )
+        response = request_with_retry(session, url, timeout=60, retries=4, label="Users")
+        if response is None or not response.ok:
+            continue
+        for item in response.json().get("value", []):
+            key = str(item.get("Ref_Key") or "").lower()
+            title = (item.get("Description") or "").strip()
+            if key and title:
+                names[key] = title
+    return names
+
+
 def _fetch_order_details(session, order_numbers: set) -> dict:
     """
-    Загрузить ТД_ПричинаОбразованияПросроченнойДЗ и
-    ТД_КорректирующееДействиеПоФактуВыявленияДЗ из Document_ЗаказКлиента
-    по `Number`. Возвращает dict: {order_number: {"reason", "action"}}.
+    Поля заказа клиента по номеру: причина и действие по просрочке,
+    дата контакта, дата следующего контакта и менеджер.
     """
     numbers_list = [str(n).strip() for n in order_numbers if n and str(n).strip() not in ("", "?")]
     if not numbers_list:
         return {}
 
     details: dict[str, dict] = {}
+    manager_keys: set[str] = set()
 
     entity = quote("Document_ЗаказКлиента")
     sel = quote(
-        "Number,ТД_ПричинаОбразованияПросроченнойДЗ,ТД_КорректирующееДействиеПоФактуВыявленияДЗ",
+        "Number,ТД_ПричинаОбразованияПросроченнойДЗ,"
+        "ТД_КорректирующееДействиеПоФактуВыявленияДЗ,"
+        "ТД_ДатаКонтакта,ТД_ДатаСледующегоКонтакта,Менеджер_Key",
         safe=",_",
     )
 
@@ -477,14 +504,28 @@ def _fetch_order_details(session, order_numbers: set) -> dict:
                 num = (item.get("Number") or "").strip()
                 if not num:
                     continue
+                manager_key = str(item.get("Менеджер_Key") or "").lower()
+                if manager_key == EMPTY:
+                    manager_key = ""
+                if manager_key:
+                    manager_keys.add(manager_key)
                 details[num] = {
                     "reason": (item.get("ТД_ПричинаОбразованияПросроченнойДЗ") or "").strip(),
                     "action": (item.get("ТД_КорректирующееДействиеПоФактуВыявленияДЗ") or "").strip(),
+                    "contact_date": _payment_date_label(str(item.get("ТД_ДатаКонтакта") or "")),
+                    "next_contact_date": _payment_date_label(
+                        str(item.get("ТД_ДатаСледующегоКонтакта") or "")
+                    ),
+                    "manager_key": manager_key,
+                    "manager": "",
                 }
         except Exception as exc:
             logger.warning("Order details fetch error: %s", exc)
             continue
 
+    manager_names = _resolve_user_names(session, manager_keys)
+    for info in details.values():
+        info["manager"] = manager_names.get(info.get("manager_key") or "", "")
     return details
 
 
@@ -633,6 +674,9 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
             "installments": installments,
             "reason": details.get("reason", ""),
             "action": details.get("action", ""),
+            "contact_date": details.get("contact_date", ""),
+            "next_contact_date": details.get("next_contact_date", ""),
+            "manager": details.get("manager", ""),
         })
 
     rows.sort(key=lambda x: -x["amount"])
@@ -1673,6 +1717,30 @@ def _calc_overdue_detail(na_datu: date) -> dict:
     }
 
 
+def _fill_overdue_contact_fields(data: dict, cache_path) -> None:
+    """Дописать в уже посчитанные строки дату контакта и менеджера заказа."""
+    rows = data.get("rows") or []
+    if not rows or all(isinstance(row, dict) and "manager" in row for row in rows):
+        return
+    session = requests.Session()
+    session.auth = AUTH
+    details = _fetch_order_details(
+        session,
+        {row.get("order_num") for row in rows if isinstance(row, dict)},
+    )
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        info = details.get(str(row.get("order_num") or "").strip(), {})
+        row["contact_date"] = info.get("contact_date") or ""
+        row["next_contact_date"] = info.get("next_contact_date") or ""
+        row["manager"] = info.get("manager") or ""
+    try:
+        _save_json(cache_path, data)
+    except Exception:
+        logger.exception("calc_debitorka: не сохранились контакты просроченной ДЗ")
+
+
 def get_overdue_detail(year: int | None = None,
                        month: int | None = None,
                        dept_guid: str | None = None) -> dict:
@@ -1726,6 +1794,8 @@ def get_overdue_detail(year: int | None = None,
         else:
             data = _calc_overdue_detail(na_datu)
             _save_json(cache_path, data)
+
+    _fill_overdue_contact_fields(data, cache_path)
 
     rows = _detail_rows_for_dept(data.get("rows") or [], dept_guid)
     dz_rows = _detail_rows_for_dept(data.get("dz_rows") or [], dept_guid)
