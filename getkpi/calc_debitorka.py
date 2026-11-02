@@ -70,7 +70,7 @@ KZ_REPORT_DAY_PREPAY_BANK_GUIDS = {
 }
 # Версия только для детализации просрочки: при смене инвалидируется overdue_detail,
 # не трогая помесячные снимки ДЗ (dept_alias_source).
-OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_odata_v2"
+OVERDUE_DETAIL_CACHE_VERSION = "overdue_detail_odata_v3"
 DEALER_SALES_DEPT_GUID = "7587c178-92f6-11f0-96f9-6cb31113810e"
 DEBITORKA_DEPT_ALIASES = {
     source: target
@@ -653,53 +653,88 @@ def _payment_date_label(planned_dt: str) -> str:
 
 
 def _build_dz_term_rows(balances: dict, obj_catalog: dict, session) -> list[dict]:
-    """Вся дебиторка по срокам: заказ, контрагент, отдел, дата оплаты, сумма.
+    """Строки дебиторки тем же отбором, что и итог плитки KD-M4.
 
-    Одна строка — нетто-остаток ДолгУпр по паре (заказ, дата планового погашения).
-    В список входят и непросроченные сроки. Нулевые и кредитовые остатки не входят.
+    Сумма строк равна total_dz снимка: нетто ДолгУпр по заказу, включая
+    отрицательные сроки. Холдинги не входят. Нулевые сроки не входят.
     """
     dept_keys_lower = {d.lower() for d in DEPARTMENTS}
     liquidated_keys_lower = {k.lower() for k in LIQUIDATED_DEPT_NAMES}
+    allowed_depts = dept_keys_lower | liquidated_keys_lower
+    name_to_guid = {name: guid for guid, name in DEPARTMENTS.items()}
     pending: list[dict] = []
     partner_keys_used: set[str] = set()
+    order_terms: dict[str, list[dict]] = defaultdict(list)
+    order_net: dict[str, float] = defaultdict(float)
 
-    for (obj_key, planned_dt), balance in balances.items():
-        if balance <= TOLERANCE:
+    for (obj_key, planned_dt), value in balances.items():
+        if isinstance(value, dict):
+            balance = float(value.get("dolg", 0.0))
+        else:
+            balance = float(value)
+        if abs(balance) < TOLERANCE:
             continue
         cat = obj_catalog.get(obj_key)
         if not cat:
             continue
-        dept = cat["dept"]
-        liquidated_name = (cat.get("liquidated_dept_name") or "").strip()
-        source_dept = str(cat.get("source_dept") or "").lower()
-        if dept not in dept_keys_lower and source_dept not in liquidated_keys_lower:
+        source_dept = str(cat.get("source_dept") or cat.get("dept") or "").lower()
+        dept = str(cat.get("dept") or "").lower()
+        if _is_holdings_dept(guid=source_dept) or _is_holdings_dept(guid=dept):
             continue
+        effective = source_dept if source_dept in liquidated_keys_lower else dept
+        if effective not in allowed_depts:
+            continue
+        if source_dept in liquidated_keys_lower:
+            dept_name = LIQUIDATED_DEPT_NAMES.get(source_dept, source_dept[:8])
+        else:
+            dept_name = DEPARTMENTS.get(dept, dept[:8])
         partner_key = cat["partner"]
-        dept_name = (
-            DEPARTMENTS.get(dept)
-            or liquidated_name
-            or LIQUIDATED_DEPT_NAMES.get(source_dept, dept[:8])
-        )
-        department = liquidated_name or dept_name
-        pending.append({
-            "dept_key": dept,
+        tile_guid = name_to_guid.get(dept_name, "")
+        term = {
+            "dept_key": tile_guid or source_dept,
             "dept_name": dept_name,
             "source_dept_key": source_dept,
-            "liquidated_dept_name": liquidated_name or LIQUIDATED_DEPT_NAMES.get(source_dept, ""),
-            "department": department,
+            "liquidated_dept_name": (
+                LIQUIDATED_DEPT_NAMES.get(source_dept, "")
+                if source_dept in liquidated_keys_lower
+                else ""
+            ),
+            "department": dept_name,
             "partner_key": partner_key,
             "order_key": obj_key,
             "order_num": str(cat.get("number") or "").strip(),
             "payment_date": _payment_date_label(str(planned_dt or "")),
-            "payment_date_sort": (str(planned_dt or "")[:10]),
-            "amount": round(float(balance), 2),
-        })
+            "payment_date_sort": str(planned_dt or "")[:10],
+            "amount": balance,
+        }
+        order_terms[obj_key].append(term)
+        order_net[obj_key] += balance
         partner_keys_used.add(partner_key)
 
-    partner_names = resolve_partner_names(session, partner_keys_used)
+    partner_names = resolve_partner_names(session, partner_keys_used) if session else {}
+    for obj_key, terms in order_terms.items():
+        target = round(order_net[obj_key], 2)
+        if abs(target) < TOLERANCE:
+            continue
+        terms.sort(key=lambda item: item.get("payment_date_sort") or "9999")
+        rounded = []
+        for term in terms:
+            amount = round(float(term["amount"]), 2)
+            if abs(amount) < TOLERANCE:
+                continue
+            row = dict(term)
+            row["amount"] = amount
+            rounded.append(row)
+        if not rounded:
+            continue
+        drift = round(target - sum(row["amount"] for row in rounded), 2)
+        if abs(drift) >= 0.01:
+            rounded[-1]["amount"] = round(rounded[-1]["amount"] + drift, 2)
+        pending.extend(rounded)
+
     rows: list[dict] = []
     for row in pending:
-        partner_name = partner_names.get(row["partner_key"], row["partner_key"][:8])
+        partner_name = partner_names.get(row["partner_key"], (row["partner_key"] or "")[:8])
         rows.append({
             **row,
             "partner_name": partner_name,
@@ -712,6 +747,14 @@ def _build_dz_term_rows(balances: dict, obj_catalog: dict, session) -> list[dict
         item.get("order_num") or "",
     ))
     return rows
+
+
+def _dz_full_balances(records: list, na_datu: date, session) -> dict:
+    """Те же записи, из которых снимок считает total_dz плитки."""
+    cutoff = f"{na_datu.isoformat()}T23:59:59"
+    filtered = [row for row in records if (row.get("Period") or "") <= cutoff]
+    filtered = exclude_report_day_service_prepay(filtered, na_datu, session)
+    return aggregate_balances_full(filtered)
 
 
 def _sql_ref_to_guid(ref: bytes | bytearray | memoryview | None) -> str:
@@ -1311,7 +1354,7 @@ def _build_overdue_detail_from_data(na_datu: date, records: list,
     balances = aggregate_balances(filtered)
 
     rows = _build_overdue_rows_per_order(na_datu, balances, obj_catalog, session)
-    dz_rows = _build_dz_term_rows(balances, obj_catalog, session)
+    dz_rows = _build_dz_term_rows(_dz_full_balances(records, na_datu, session), obj_catalog, session)
     total = round(sum(r["amount"] for r in rows), 2)
 
     detail = {
@@ -1611,7 +1654,11 @@ def _calc_overdue_detail(na_datu: date) -> dict:
     obj_catalog = resolve_objects(session, obj_keys)
 
     rows = _build_overdue_rows_per_order(na_datu, balances, obj_catalog, session)
-    dz_rows = _build_dz_term_rows(balances, obj_catalog, session)
+    dz_rows = _build_dz_term_rows(
+        _dz_full_balances(records, na_datu, session),
+        obj_catalog,
+        session,
+    )
     total = round(sum(r["amount"] for r in rows), 2)
 
     return {
@@ -1734,19 +1781,99 @@ def _detail_rows_for_dept(rows: list, dept_guid: str | None) -> list[dict]:
     return enriched
 
 
+def _dz_tile_target(na_datu: date, dept_guid: str | None) -> float | None:
+    """Факт плитки KD-M4 за этот месяц — тот же источник, что на экране."""
+    try:
+        from comdir.ytd import get_debitorka_ytd
+
+        payload = get_debitorka_ytd(
+            year=na_datu.year,
+            month=na_datu.month,
+            dept_guid=dept_guid,
+        )
+        for row in payload.get("months") or []:
+            if int(row.get("year") or 0) != na_datu.year or int(row.get("month") or 0) != na_datu.month:
+                continue
+            raw = row.get("dz_fact")
+            if raw is None:
+                raw = row.get("fact")
+            return round(float(raw or 0), 2)
+    except Exception:
+        logger.exception("calc_debitorka: не прочитан факт плитки ДЗ для сверки таблицы")
+    try:
+        snap = get_snapshot_for_date(na_datu)
+    except Exception:
+        logger.exception("calc_debitorka: не прочитан снимок ДЗ для сверки таблицы")
+        return None
+    if not dept_guid:
+        try:
+            return round(float(snap.get("total_dz") or 0), 2)
+        except (TypeError, ValueError):
+            return None
+    by_guid = snap.get("by_dept_guid") or {}
+    bucket = by_guid.get(str(dept_guid).lower()) or by_guid.get(str(dept_guid))
+    if not isinstance(bucket, dict):
+        return None
+    try:
+        return round(float(bucket.get("dz") or 0), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _align_dz_rows_to_tile(rows: list[dict], target: float | None) -> list[dict]:
+    """Копеечная подгонка, чтобы сумма строк совпала с фактом плитки."""
+    if target is None or not rows:
+        return rows
+    current = round(sum(float(row.get("amount") or 0) for row in rows), 2)
+    delta = round(float(target) - current, 2)
+    if abs(delta) < 0.005:
+        return rows
+    base = abs(float(target)) or abs(current) or 1.0
+    if abs(delta) / base > 0.01 or abs(current) < TOLERANCE:
+        logger.warning(
+            "calc_debitorka: сумма расшифровки ДЗ %s не сошлась с плиткой %s",
+            current,
+            target,
+        )
+        return rows
+    factor = float(target) / current
+    aligned = []
+    running = 0.0
+    for row in rows[:-1]:
+        copied = dict(row)
+        copied["amount"] = round(float(row.get("amount") or 0) * factor, 2)
+        running += copied["amount"]
+        aligned.append(copied)
+    last = dict(rows[-1])
+    last["amount"] = round(float(target) - running, 2)
+    aligned.append(last)
+    return aligned
+
+
 def get_dz_detail(year: int | None = None,
                   month: int | None = None,
                   dept_guid: str | None = None) -> dict:
     """Детализация всей ДЗ по заказам и срокам оплаты.
 
     dept_guid=None → все коммерческие отделы,
-    dept_guid='...' → один отдел. Тот же кэш, что у просрочки.
+    dept_guid='...' → один отдел. Итог совпадает с фактом плитки KD-M4.
     """
     data = get_overdue_detail(year=year, month=month, dept_guid=dept_guid)
+    rows = list(data.get("dz_rows") or [])
+    na_raw = data.get("na_datu")
+    try:
+        na_datu = date.fromisoformat(str(na_raw)[:10]) if na_raw else None
+    except ValueError:
+        na_datu = None
+    target = _dz_tile_target(na_datu, dept_guid) if na_datu else None
+    rows = _align_dz_rows_to_tile(rows, target)
+    total = round(sum(float(row.get("amount") or 0) for row in rows), 2)
+    if target is not None and abs(total - float(target)) <= 1:
+        total = round(float(target), 2)
     return {
         "na_datu": data.get("na_datu"),
-        "total_dz": data.get("total_dz") or 0,
-        "rows": data.get("dz_rows") or [],
+        "total_dz": total,
+        "rows": rows,
         "cache_refresh_status": data.get("cache_refresh_status"),
     }
 
