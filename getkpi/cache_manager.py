@@ -798,16 +798,28 @@ def _append_jurist_warm_tasks(
     ref_y: int,
     ref_m: int,
 ) -> None:
-    """Прогреть договоры и исполнительное производство за месяцы 1..ref_m."""
+    """Прогреть договоры, претензии, суды и исполнительное производство за месяцы 1..ref_m."""
     from devdir import ytd_json_cache
+    from jurist import claims as jurist_claims
     from jurist import contracts as jurist_contracts
     from jurist import enforcement as jurist_enforcement
+    from jurist import lawsuits as jurist_lawsuits
 
     for warm_m in range(1, ref_m + 1):
         tasks.append((
             f"jurist_contracts_warm_{ref_y}_{warm_m:02d}",
             ytd_json_cache.cache_path(jurist_contracts.CACHE_PREFIX, ref_y, warm_m),
             lambda yy=ref_y, mm=warm_m: jurist_contracts.load_company_totals(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"jurist_claims_warm_{ref_y}_{warm_m:02d}",
+            ytd_json_cache.cache_path(jurist_claims.CACHE_PREFIX, ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: jurist_claims.claims_table_rows(year=yy, month=mm),
+        ))
+        tasks.append((
+            f"jurist_lawsuits_warm_{ref_y}_{warm_m:02d}",
+            ytd_json_cache.cache_path(jurist_lawsuits.CACHE_PREFIX, ref_y, warm_m),
+            lambda yy=ref_y, mm=warm_m: jurist_lawsuits.lawsuits_table_rows(year=yy, month=mm),
         ))
         tasks.append((
             f"jurist_enforcement_warm_{ref_y}_{warm_m:02d}",

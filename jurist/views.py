@@ -212,23 +212,63 @@ def merge_kpi_entry_if_applicable(
 
 
 def merge_claims_and_lawsuits(tablitsy: dict, *, year: int, month: int) -> None:
-    """Те же таблицы, что у коммерческого директора, за выбранный месяц.
+    """Претензии и суды за выбранный месяц из SQL erp_pm.
 
     Претензии — все по компании, не только коммерческие отделы.
     Суды — все документы месяца.
     """
-    from getkpi.komdir_dashboard import _build_claims_table, _build_lawsuits_table
+    from jurist.claims import claims_table_rows
+    from jurist.lawsuits import lawsuits_table_rows
 
     ref_m = max(1, min(12, int(month)))
     ref_y = int(year)
     try:
-        tablitsy.update(_build_claims_table(ref_y, ref_m, dept_guid=None, include_all=True))
+        claim_rows = claims_table_rows(year=ref_y, month=ref_m)
     except Exception:
         logger.exception("jurist: не удалось собрать претензии %s-%02d", ref_y, ref_m)
+        claim_rows = []
     try:
-        tablitsy.update(_build_lawsuits_table(ref_y, ref_m, dept_guid=None))
+        lawsuit_rows = lawsuits_table_rows(year=ref_y, month=ref_m)
     except Exception:
         logger.exception("jurist: не удалось собрать суды %s-%02d", ref_y, ref_m)
+        lawsuit_rows = []
+    tablitsy["KD-T-CLAIMS"] = {
+        "name": f"Претензии за {MONTH_NAMES[ref_m]} {ref_y}",
+        "periodicity": "ежемесячно",
+        "description": "Претензии из 1С (справочник «Претензии», SQL erp_pm) за выбранный месяц",
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "rows": claim_rows,
+    }
+    tablitsy["KD-T-LAWSUITS"] = {
+        "name": f"Суды за {MONTH_NAMES[ref_m]} {ref_y}",
+        "periodicity": "ежемесячно",
+        "description": (
+            "Судебные споры и исковая работа из 1С "
+            "(документ «Претензии, судебные споры и исковая работа», SQL erp_pm) "
+            "за выбранный месяц"
+        ),
+        "period": {
+            "year": ref_y,
+            "month": ref_m,
+            "month_name": MONTH_NAMES[ref_m],
+        },
+        "columns": [
+            "Тип документа",
+            "Контрагент",
+            "Предмет спора",
+            "Роль ГК в споре",
+            "Юр. лицо",
+            "Подразделение",
+            "Дата SLA",
+            "Краткое описание ситуации",
+            "Сумма требований, руб.",
+        ],
+        "rows": lawsuit_rows,
+    }
 
 
 def merge_enforcement_table(tablitsy: dict, *, year: int, month: int) -> None:
