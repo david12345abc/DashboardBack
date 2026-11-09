@@ -71,6 +71,31 @@ def _dept_name(value: str) -> str:
     return text
 
 
+def _dept_guid(value: str) -> str:
+    """GUID отдела тем же сопоставлением, что у плитки (aggregate_by_odata_name)."""
+    from getkpi.calc_plan import DEPARTMENTS
+    from comdir.common import name_to_odata
+
+    text = (value or "").strip()
+    if not text:
+        return ""
+    low = text.lower()
+    for key in DEPARTMENTS:
+        if str(key).lower() == low:
+            return low
+    guid = name_to_odata(text)
+    if guid:
+        return guid.lower()
+    for key, label in DEPARTMENTS.items():
+        if label == text:
+            return str(key).lower()
+    return ""
+
+
+def _row_dept_guid(row: dict) -> str:
+    return str(row.get("dept_guid") or "").strip().lower() or _dept_guid(row.get("department") or "")
+
+
 def _display_date(value: str) -> str:
     text = (value or "")[:10]
     if len(text) == 10 and text[4] == "-" and text[:4] not in ("0001", "2001"):
@@ -79,6 +104,9 @@ def _display_date(value: str) -> str:
 
 
 def _resolve(rows: list[dict]) -> list[dict]:
+    from comdir.plan_fact_sink import FAILED
+
+    rows = [row for row in rows if row.get("metric") != FAILED]
     partners = _odata_names("Catalog_Партнеры", {row.get("partner_key") or "" for row in rows})
     orders = _odata_names(
         "Document_ЗаказКлиента",
@@ -87,6 +115,10 @@ def _resolve(rows: list[dict]) -> list[dict]:
     )
     ready = []
     for row in rows:
+        guid = _row_dept_guid(row)
+        if not guid:
+            # Плитка такой отдел не считает — и в таблице его быть не должно.
+            continue
         department = _dept_name(row.get("department") or "")
         partner = (row.get("partner") or "").strip() or partners.get(row.get("partner_key") or "", "")
         document = (row.get("document") or "").strip()
@@ -96,11 +128,13 @@ def _resolve(rows: list[dict]) -> list[dict]:
         ready.append({
             "date": _display_date(row.get("date") or ""),
             "department": department,
+            "dept_guid": guid,
             "partner": partner,
             "document": document or "—",
             "kind": row.get("kind") or "",
             "amount": round(float(row.get("amount") or 0), 2),
             "metric": row.get("metric") or "",
+            "month": row.get("month"),
             "name": document or "—",
         })
     ready.sort(key=lambda item: (
@@ -341,6 +375,162 @@ def _totals(rows: list[dict]) -> tuple[float, float]:
     fact = round(sum(float(row.get("amount") or 0) for row in rows if row.get("kind") == "Факт"), 2)
     expected = round(sum(float(row.get("amount") or 0) for row in rows if row.get("kind") == "Ожидаемо"), 2)
     return fact, expected
+
+
+def _line_month(row: dict) -> int:
+    try:
+        month = int(row.get("month") or 0)
+    except (TypeError, ValueError):
+        month = 0
+    if 1 <= month <= 12:
+        return month
+    text = str(row.get("date") or "")
+    if len(text) >= 10 and text[2] == "." and text[5] == ".":
+        try:
+            return int(text[3:5])
+        except ValueError:
+            return 0
+    return 0
+
+
+def tables_from_lines(
+    lines: list[dict],
+    year: int,
+    through_month: int,
+    dept_guid: str | None = None,
+) -> dict:
+    """Таблицы из строк того же прохода, которым посчитана плитка."""
+    through_month = max(1, min(12, int(through_month)))
+    names = {
+        1: "январь", 2: "февраль", 3: "март", 4: "апрель",
+        5: "май", 6: "июнь", 7: "июль", 8: "август",
+        9: "сентябрь", 10: "октябрь", 11: "ноябрь", 12: "декабрь",
+    }
+    picked_rows = list(lines or [])
+    wanted = str(dept_guid or "").strip().lower()
+    if wanted:
+        picked_rows = [row for row in picked_rows if _row_dept_guid(row) == wanted]
+    by_month: dict[int, list[dict]] = {month: [] for month in range(1, through_month + 1)}
+    for row in picked_rows:
+        month = _line_month(row)
+        if month in by_month:
+            by_month[month].append(row)
+    tables = {}
+    for metric, key, title in METRICS:
+        monthly = []
+        for month in range(1, through_month + 1):
+            picked = [row for row in by_month[month] if row.get("metric") == metric]
+            fact, expected = _totals(picked)
+            monthly.append({
+                "year": year,
+                "month": month,
+                "month_name": names.get(month, ""),
+                "rows": picked,
+                "fact_total": fact,
+                "expected_total": expected,
+            })
+        current = monthly[-1]
+        tables[key] = {
+            "name": title,
+            "periodicity": "ежемесячно",
+            "description": (
+                f"Расшифровка плитки за выбранный месяц: факт {current['fact_total']}, "
+                f"ожидаемо {current['expected_total']}, "
+                f"прогноз {round(current['fact_total'] + current['expected_total'], 2)}"
+            ),
+            "period": {"year": year, "month": through_month, "month_name": names.get(through_month, "")},
+            "columns": ["Дата", "Отдел", "Партнер", "Документ", "Вид", "Сумма, руб."],
+            "rows_by_month": True,
+            "monthly_data": monthly,
+            "rows": current["rows"],
+            "fact_total": current["fact_total"],
+            "expected_total": current["expected_total"],
+        }
+    return tables
+
+
+TILE_CACHE_PREFIXES = {
+    "KD-M1": "comdir_kd_m1_ytd",
+    "KD-M2": "comdir_kd_m2_ytd",
+    "KD-M3": "comdir_kd_m3_ytd",
+}
+
+
+def _tile_cache_lines(prefix: str, year: int, month: int) -> list[dict] | None:
+    """breakdown_lines из кэша плитки; None — кэша нет или он без строк."""
+    from devdir.ytd_json_cache import cache_path
+
+    path = cache_path(prefix, year, month)
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    payload = raw.get("payload") if isinstance(raw, dict) else None
+    stored = payload.get("breakdown_lines") if isinstance(payload, dict) else None
+    if not isinstance(stored, list):
+        return None
+    return [row for row in stored if isinstance(row, dict)]
+
+
+def ytd_breakdown_missing(year: int, month: int) -> list[str]:
+    """Плитки, в кэше которых нет строк этого же расчёта."""
+    return [
+        kid for kid, prefix in TILE_CACHE_PREFIXES.items()
+        if _tile_cache_lines(prefix, year, month) is None
+    ]
+
+
+def tables_from_tile_cache(year: int, through_month: int, dept_guid: str | None = None) -> dict:
+    """Строки из кэша плиток KD-M1/M2/M3, записанного тем же расчётом."""
+    lines: list[dict] = []
+    for prefix in TILE_CACHE_PREFIXES.values():
+        lines.extend(_tile_cache_lines(prefix, year, through_month) or [])
+    return tables_from_lines(lines, year, through_month, dept_guid)
+
+
+def check_against_tile(
+    months: list[dict],
+    lines: list[dict],
+    metric: str,
+    month: int,
+    expected_field: str = "expected",
+) -> list[str]:
+    """Сверить сумму строк с плиткой за месяц: итог и каждый отдел."""
+    row = next((m for m in months if int(m.get("month") or 0) == int(month)), None)
+    if row is None:
+        return []
+    picked = [
+        line for line in lines
+        if line.get("metric") == metric and _line_month(line) == int(month)
+    ]
+    problems: list[str] = []
+
+    def _cmp(label: str, tile_fact: float, tile_exp: float, rows: list[dict]) -> None:
+        fact, expected = _totals(rows)
+        if abs(fact - tile_fact) > 1:
+            problems.append(f"{label} факт: строки {fact:.2f}, плитка {tile_fact:.2f}")
+        if abs(expected - tile_exp) > 1:
+            problems.append(f"{label} ожидаемо: строки {expected:.2f}, плитка {tile_exp:.2f}")
+
+    _cmp(
+        "итого",
+        float(row.get("fact") or 0),
+        float(row.get(expected_field) or 0),
+        picked,
+    )
+    for guid, bucket in (row.get("by_dept") or {}).items():
+        if not isinstance(bucket, dict):
+            continue
+        gl = str(guid).lower()
+        _cmp(
+            gl,
+            float(bucket.get("fact") or 0),
+            float(bucket.get("expected") or 0),
+            [line for line in picked if _row_dept_guid(line) == gl],
+        )
+    return problems
 
 
 def tables_for_month(year: int, month: int, dept_name: str | None = None) -> dict:

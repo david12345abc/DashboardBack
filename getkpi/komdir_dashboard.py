@@ -29,6 +29,8 @@ import calendar
 import json
 import logging
 import random
+import threading
+import time
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -1816,6 +1818,7 @@ def build_komdir_payload(kpi_list: list[dict],
     if not cache_manager.is_force_compute_context():
         cached_payload = _load_fresh_payload_cache(payload_cache_path)
         if cached_payload is not None:
+            _schedule_plan_fact_breakdown(ref_y, _series_m)
             for kid in _newer_plan_fact_tiles(payload_cache_path, ref_y, ref_m):
                 try:
                     refresh_komdir_tile_cache(
@@ -1833,7 +1836,7 @@ def build_komdir_payload(kpi_list: list[dict],
             )
             return _attach_future_month_points(
                 _attach_dz_table(
-                    _attach_plan_fact_breakdown(cached_payload, ref_y, ref_m, dept_guid),
+                    _attach_plan_fact_breakdown(cached_payload, ref_y, _series_m, dept_guid),
                     ref_y, ref_m, dept_guid,
                 ),
                 ref_y, ref_m, dept_guid,
@@ -1847,31 +1850,53 @@ def build_komdir_payload(kpi_list: list[dict],
         dept_guid=dept_guid,
         cache_path=payload_cache_path,
     )
+    if not cache_manager.is_force_compute_context():
+        _schedule_plan_fact_breakdown(ref_y, _series_m)
     return _attach_future_month_points(
         _attach_dz_table(
-            _attach_plan_fact_breakdown(_unwrap_payload_cache(raw), ref_y, ref_m, dept_guid),
+            _attach_plan_fact_breakdown(_unwrap_payload_cache(raw), ref_y, _series_m, dept_guid),
             ref_y, ref_m, dept_guid,
         ),
         ref_y, ref_m, dept_guid,
     )
 
 
-def _plan_fact_dept_names(dept_guid: str | None) -> set[str] | None:
-    """Имена отдела в расшифровке план/факта. Пустой GUID — сводка комдира."""
-    if not dept_guid:
-        return None
-    from comdir.common import DEPT_NAME_TO_ODATA
-    from getkpi.calc_plan import DEPARTMENTS
+_PLAN_FACT_RETRY_SECONDS = 30 * 60
+_plan_fact_attempts: dict[tuple[int, int], float] = {}
+_plan_fact_attempts_lock = threading.Lock()
 
-    guid = str(dept_guid).strip().lower()
-    names: set[str] = set()
-    for key, label in DEPARTMENTS.items():
-        if str(key).lower() == guid and label:
-            names.add(str(label).strip())
-    for label, key in DEPT_NAME_TO_ODATA.items():
-        if str(key).lower() == guid and label:
-            names.add(str(label).strip())
-    return names or None
+
+def _schedule_plan_fact_breakdown(ref_y: int, ref_m: int) -> None:
+    """Пересчитать в фоне плитки, в кэше которых нет строк расшифровки.
+
+    Плитка и строки пишутся одним расчётом в один файл. Повтор при сбое
+    не чаще раза в 30 минут, чтобы не грузить 1С на каждом запросе.
+    """
+    from comdir.plan_fact_lines import ytd_breakdown_missing
+
+    missing = ytd_breakdown_missing(ref_y, ref_m)
+    if not missing:
+        return
+    now = time.monotonic()
+    with _plan_fact_attempts_lock:
+        last = _plan_fact_attempts.get((ref_y, ref_m))
+        if last is not None and now - last < _PLAN_FACT_RETRY_SECONDS:
+            return
+        _plan_fact_attempts[(ref_y, ref_m)] = now
+
+    def _run() -> None:
+        from comdir import get_dengi_ytd, get_dogovory_ytd, get_otgruzki_ytd
+
+        getters = {"KD-M1": get_dengi_ytd, "KD-M2": get_otgruzki_ytd, "KD-M3": get_dogovory_ytd}
+        with cache_manager.force_compute():
+            for kid in missing:
+                try:
+                    getters[kid](year=ref_y, month=ref_m)
+                except Exception:
+                    logger.exception("komdir: расшифровка %s %04d-%02d не собралась", kid, ref_y, ref_m)
+
+    logger.info("komdir: пересчёт плиток вместе с расшифровкой %s за %04d-%02d", missing, ref_y, ref_m)
+    cache_manager.schedule_background_refresh(f"komdir_plan_fact_breakdown_{ref_y}_{ref_m:02d}", _run)
 
 
 def _attach_plan_fact_breakdown(
@@ -1884,9 +1909,9 @@ def _attach_plan_fact_breakdown(
     if not isinstance(payload, dict):
         return payload
     try:
-        from comdir.plan_fact_lines import tables_through
+        from comdir.plan_fact_lines import tables_from_tile_cache
 
-        tables = tables_through(ref_y, ref_m, dept_names=_plan_fact_dept_names(dept_guid))
+        tables = tables_from_tile_cache(ref_y, ref_m, dept_guid=dept_guid)
     except Exception:
         logger.exception("Расшифровка денег, отгрузок и договоров не подставилась")
         return payload
@@ -2383,11 +2408,9 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
         pass
 
     try:
-        from comdir.plan_fact_lines import tables_through
+        from comdir.plan_fact_lines import tables_from_tile_cache
 
-        tablitsy.update(tables_through(
-            ref_y, series_m, dept_names=_plan_fact_dept_names(dept_guid),
-        ))
+        tablitsy.update(tables_from_tile_cache(ref_y, series_m, dept_guid=dept_guid))
     except Exception:
         logger.exception("Расшифровка денег, отгрузок и договоров не подставилась")
 

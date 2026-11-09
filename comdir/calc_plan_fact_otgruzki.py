@@ -257,7 +257,9 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
     try:
         return calc_fact_odata(p0, p_next)
     except Exception:
-        pass
+        from comdir.plan_fact_sink import mark_failed
+
+        mark_failed("отгрузки факт: OData недоступен, SQL без строк")
 
     from comdir.resale import ORDER_SOPR_FIELD
 

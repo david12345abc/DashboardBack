@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextvars
+from contextlib import contextmanager
 
 lines = contextvars.ContextVar("plan_fact_lines", default=None)
 only_month = contextvars.ContextVar("plan_fact_only_month", default=None)
@@ -43,3 +44,31 @@ def note(metric: str, kind: str, amount, **fields) -> None:
         if text:
             row[key] = text
     buf.append(row)
+
+
+FAILED = "__failed__"
+
+
+def mark_failed(reason: str) -> None:
+    """Цифра посчитана запасной веткой без строк — расшифровка неполная."""
+    buf = lines.get()
+    if buf is None:
+        return
+    buf.append({"metric": FAILED, "reason": str(reason or "")})
+
+
+def failures(rows: list[dict]) -> list[str]:
+    return [str(row.get("reason") or "") for row in rows if row.get("metric") == FAILED]
+
+
+@contextmanager
+def capture(month: int | None = None):
+    """Собрать note() за текущий расчёт. Вложенный capture не пишет в наружный."""
+    buf: list[dict] = []
+    token_lines = lines.set(buf)
+    token_month = only_month.set(month)
+    try:
+        yield buf
+    finally:
+        lines.reset(token_lines)
+        only_month.reset(token_month)

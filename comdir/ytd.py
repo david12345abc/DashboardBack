@@ -47,9 +47,9 @@ logger = logging.getLogger(__name__)
 #      не выручка валовой прибыли и не срез «по сегодня».
 #      KD-M3 факт и ожидаемые — тоже весь месяц отчёта, живой OData.
 CACHE_VERSION = 22
-KD_M1_SOURCE_TAG = "comdir_kd_m1_ytd_odata_fact_expected_sql_plan_v4"
-KD_M2_SOURCE_TAG = "comdir_kd_m2_ytd_odata_register_fact_full_month_v2"
-KD_M3_SOURCE_TAG = "comdir_kd_m3_ytd_odata_fact_expected_full_month_v5"
+KD_M1_SOURCE_TAG = "comdir_kd_m1_ytd_odata_fact_expected_sql_plan_v5"
+KD_M2_SOURCE_TAG = "comdir_kd_m2_ytd_odata_register_fact_full_month_v3"
+KD_M3_SOURCE_TAG = "comdir_kd_m3_ytd_odata_fact_expected_full_month_v6"
 
 
 def _kpi_pct(fact, plan) -> float | None:
@@ -263,11 +263,8 @@ def compute_dengi_month(year: int, month: int) -> dict[str, Any]:
     }
 
 
-def _overlay_dengi_fact_odata(months: list[dict[str, Any]], year: int, ref_month: int) -> str:
-    """Подставить живой факт OData. При ошибке оставляет SQL."""
-    from getkpi.calc_dengi_fact import get_dengi_monthly
-
-    data = get_dengi_monthly(year, ref_month)
+def _apply_dengi_fact_odata(months: list[dict[str, Any]], data: dict[str, Any]) -> str:
+    """Подставить уже загруженный факт OData. При пустом ответе оставляет SQL."""
     by_m = {int(row.get("month") or 0): row for row in (data.get("months") or [])}
     if not by_m:
         raise RuntimeError("OData факт денег пуст")
@@ -317,19 +314,66 @@ def _overlay_dengi_expected_odata(months: list[dict[str, Any]], year: int, ref_m
     return "odata_full_month"
 
 
+def _attach_breakdown(
+    payload: dict[str, Any],
+    months: list[dict[str, Any]],
+    lines: list[dict],
+    failed: list[str],
+    metric: str,
+    month: int,
+    expected_field: str,
+) -> None:
+    """Строки расшифровки кладутся в тот же кэш, что и цифры плитки.
+
+    Если часть цифры посчитана запасной веткой без строк, breakdown_lines
+    не пишем: таблица покажет «не собрана», а не неполную сумму.
+    """
+    from comdir.plan_fact_lines import check_against_tile
+
+    kpi_id = payload.get("kpi_id") or metric
+    if failed:
+        logger.warning("%s: расшифровка неполная, не сохраняю строки: %s", kpi_id, "; ".join(failed))
+        payload["breakdown_failed"] = failed
+        return
+    problems = check_against_tile(months, lines, metric, month, expected_field)
+    if problems:
+        logger.warning("%s: строки расшифровки не сходятся с плиткой: %s", kpi_id, "; ".join(problems[:20]))
+    payload["breakdown_lines"] = lines
+    payload["breakdown_check"] = problems
+
+
 def build_dengi_payload(year: int, month: int) -> dict[str, Any]:
+    from comdir.plan_fact_lines import _resolve
+    from comdir.plan_fact_sink import capture, failures
+
     months = [compute_dengi_month(year, m) for m in range(1, month + 1)]
     fact_source = "sql"
     expected_source = "sql"
+    fact_lines: list[dict] = []
+    expected_lines: list[dict] = []
+    failed: list[str] = []
     try:
-        fact_source = _overlay_dengi_fact_odata(months, year, month)
+        from getkpi.calc_dengi_fact import get_dengi_monthly
+
+        fact_data = get_dengi_monthly(year, month)
+        fact_source = _apply_dengi_fact_odata(months, fact_data)
+        if isinstance(fact_data.get("lines"), list):
+            fact_lines = [row for row in fact_data["lines"] if isinstance(row, dict)]
+        else:
+            failed.append("деньги факт: кэш без строк")
     except Exception:
         logger.exception("KD-M1: живой факт OData не собрался, оставляю SQL")
+        failed.append("деньги факт: SQL без строк")
     try:
-        expected_source = _overlay_dengi_expected_odata(months, year, month)
+        with capture() as expected_raw:
+            expected_source = _overlay_dengi_expected_odata(months, year, month)
+        failed.extend(failures(expected_raw))
+        expected_lines = _resolve(expected_raw)
     except Exception:
         logger.exception("KD-M1: живое ожидаемо OData не собралось, оставляю SQL")
+        failed.append("деньги ожидаемо: SQL без строк")
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M1")
+    _attach_breakdown(payload, months, fact_lines + expected_lines, failed, "money", month, "expected_full")
     payload["debug"] = {
         **(payload.get("debug") or {}),
         "source": f"comdir.sql_plan + {fact_source}.fact + {expected_source}.expected",
@@ -471,14 +515,39 @@ def _overlay_otgruzki_expected_odata(months: list[dict[str, Any]], year: int, re
 
 
 def build_otgruzki_payload(year: int, month: int) -> dict[str, Any]:
-    months = [compute_otgruzki_month(year, m) for m in range(1, month + 1)]
+    from comdir.plan_fact_lines import _resolve
+    from comdir.plan_fact_sink import capture, failures
+
+    months = []
+    fact_lines: list[dict] = []
+    failed: list[str] = []
+    for current in range(1, month + 1):
+        with capture(current) as month_lines:
+            months.append(compute_otgruzki_month(year, current))
+        if current == month:
+            failed.extend(failures(month_lines))
+        fact_lines.extend(
+            row for row in month_lines
+            if row.get("metric") == "ship" and row.get("kind") == "Факт"
+        )
     fact_source = "odata_register"
     expected_source = "sql"
+    expected_lines: list[dict] = []
     try:
-        expected_source = _overlay_otgruzki_expected_odata(months, year, month)
+        with capture() as expected_raw:
+            expected_source = _overlay_otgruzki_expected_odata(months, year, month)
+        failed.extend(failures(expected_raw))
+        expected_lines = [
+            row for row in expected_raw
+            if row.get("metric") == "ship" and row.get("kind") == "Ожидаемо"
+        ]
     except Exception:
         logger.exception("KD-M2: живое ожидаемо OData не собралось, оставляю SQL")
+        failed.append("отгрузки ожидаемо: SQL без строк")
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M2")
+    _attach_breakdown(
+        payload, months, _resolve(fact_lines + expected_lines), failed, "ship", month, "expected_full",
+    )
     payload["debug"] = {
         **(payload.get("debug") or {}),
         "source": f"comdir.sql_plan + {fact_source}.fact + {expected_source}.expected",
@@ -556,10 +625,23 @@ def compute_dogovory_month(year: int, month: int) -> dict[str, Any]:
 
 
 def build_dogovory_payload(year: int, month: int) -> dict[str, Any]:
+    from comdir.plan_fact_lines import _resolve
+    from comdir.plan_fact_sink import capture, failures
+
     # Один запрос регистра на весь YTD: иначе calc_fact сбрасывал бы кэш 10 раз.
+    # Строки расшифровки пишутся теми же note(), что и суммы плитки.
+    months = []
+    raw_lines: list[dict] = []
+    failed: list[str] = []
     with dog_mod.signed_register_refresh():
-        months = [compute_dogovory_month(year, m) for m in range(1, month + 1)]
+        for current in range(1, month + 1):
+            with capture(current) as month_lines:
+                months.append(compute_dogovory_month(year, current))
+            if current == month:
+                failed.extend(failures(month_lines))
+            raw_lines.extend(month_lines)
     payload = _build_ytd_payload(year, month, months, kpi_id="KD-M3")
+    _attach_breakdown(payload, months, _resolve(raw_lines), failed, "dog", month, "expected")
     payload["debug"] = {
         **(payload.get("debug") or {}),
         "source": KD_M3_SOURCE_TAG,

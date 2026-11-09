@@ -1127,6 +1127,9 @@ def calc_fact(cur, p0: datetime, p_next: datetime) -> dict[str, float]:
             reg = calc_fact_odata(p0, p_next)
         except Exception:
             logger.exception("OData факт договоров недоступен — SQL fallback")
+            from comdir.plan_fact_sink import mark_failed
+
+            mark_failed("договоры факт: OData недоступен, SQL без строк")
             try:
                 reg = calc_fact_sql(cur, p0, p_next)
             except Exception:
@@ -1404,6 +1407,9 @@ def calc_expected_potential(
         return calc_expected_potential_odata(p0, p_asof)
     except Exception:
         logger.exception("OData потенциальные договоры недоступны — SQL")
+        from comdir.plan_fact_sink import mark_failed
+
+        mark_failed("договоры ожидаемо: потенциал из SQL без строк")
     load_depts(cur, COMMERCIAL_DEPTS, "#exp_depts")
     load_resale(cur)
 
@@ -1593,6 +1599,7 @@ def calc_expected_offer(
     )
     out = {r[0]: float(r[1] or 0) for r in cur.fetchall()}
     from comdir.plan_fact_sink import lines as _pf_lines
+    from comdir.plan_fact_sink import mark_failed as _pf_mark_failed
     from comdir.plan_fact_sink import note as _pf_note
 
     if _pf_lines.get() is not None:
@@ -1689,6 +1696,7 @@ def calc_expected_offer(
                 )
         except Exception:
             logger.exception("Строки счёт-оферты ожидаемых договоров не собрались")
+            _pf_mark_failed("договоры ожидаемо: строки счёт-оферты не собрались")
     # В SQL-копии статус заказа отстаёт от 1С. Снимаем только те,
     # что и в живом OData ещё «НеСогласован».
     cur.execute(

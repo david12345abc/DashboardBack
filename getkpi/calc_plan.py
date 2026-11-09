@@ -822,6 +822,7 @@ def _merge_expected_shipments(result: dict[int, dict],
                 month=m,
                 date=ship_date,
                 department=DEPARTMENTS.get(dept, dept),
+                dept_guid=dept,
                 partner_key=order.get("partner") or "",
                 document=("Заказ клиента " + number) if number else "Заказ к отгрузке",
             )
@@ -1326,6 +1327,7 @@ def get_dengi_expected_by_month(year: int, ref_month: int) -> dict[int, dict[str
                 month=month,
                 date=(stage_dates.get(order_key) or {}).get(month) or "",
                 department=DEPARTMENTS.get(dept, dept),
+                dept_guid=dept,
                 partner_key=order.get("partner") or "",
                 document=("Заказ клиента " + number) if number else "Плановый платёж",
             )

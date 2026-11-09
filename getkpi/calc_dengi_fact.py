@@ -941,40 +941,12 @@ def get_dengi_monthly(year: int | None = None,
             if (
                 data.get("cache_version") == CACHE_VERSION
                 and "by_dept" in first_m
+                and isinstance(data.get("lines"), list)
                 and _cache_is_fresh_for_period(data, ref_y, ref_m)
             ):
                 return _slice_payload(data, dept_guid)
         except (OSError, json.JSONDecodeError):
             pass
-
-    all_cached = not force_compute
-    for m in range(1, ref_m + 1):
-        if _load_cache(ref_y, m) is None:
-            all_cached = False
-            break
-
-    if all_cached:
-        out_months = []
-        for m in range(1, ref_m + 1):
-            cd = _load_cache(ref_y, m)
-            out_months.append({
-                "year": ref_y, "month": m,
-                "fact": cd["total"],
-                "by_dept": cd.get("by_dept", {}),
-            })
-        payload = {
-            "cache_version": CACHE_VERSION,
-            "cache_date": date.today().isoformat(),
-            "year": ref_y,
-            "ref_month": ref_m,
-            "months": out_months,
-        }
-        try:
-            with open(mc, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-        except OSError:
-            pass
-        return _slice_payload(payload, dept_guid)
 
     session = requests.Session()
     session.auth = AUTH
@@ -1035,15 +1007,18 @@ def get_dengi_monthly(year: int | None = None,
     excl_full = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES}
     excl_no_mgs = {k for k, v in partners_map.items() if v in EXCLUDE_PARTNER_NAMES_NO_MGS}
 
-    b1 = _calc_branch1(ds_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
-    b2 = _calc_branch2(ds_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
-    b3 = _calc_branch3(kk_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
+    from comdir.plan_fact_sink import capture
+
+    with capture() as raw_fact_lines:
+        b1 = _calc_branch1(ds_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
+        b2 = _calc_branch2(ds_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
+        b3 = _calc_branch3(kk_rows, catalog, orders_by_obj, excl_full, excl_no_mgs, ref_m)
 
     merged = _merge_by_dept(b1, b2, b3, ref_m)
 
     out_months = []
     for m in range(1, ref_m + 1):
-        cached = None if (force_compute and m == ref_m) else _load_cache(ref_y, m)
+        cached = None if m >= compute_start_m else _load_cache(ref_y, m)
         if cached is not None:
             total = cached["total"]
             by_dept = cached.get("by_dept", {})
@@ -1059,12 +1034,31 @@ def get_dengi_monthly(year: int | None = None,
             "by_dept": by_dept,
         })
 
+    from comdir.plan_fact_lines import _resolve
+
+    fresh_lines = [
+        row for row in _resolve(raw_fact_lines)
+        if int(row.get("month") or 0) >= compute_start_m
+    ]
+    kept_lines: list[dict] = []
+    if compute_start_m > 1 and mc.exists():
+        try:
+            with open(mc, "r", encoding="utf-8") as f:
+                previous = json.load(f)
+            if isinstance(previous.get("lines"), list):
+                kept_lines = [
+                    row for row in previous["lines"]
+                    if isinstance(row, dict) and int(row.get("month") or 0) < compute_start_m
+                ]
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            kept_lines = []
     payload = {
         "cache_version": CACHE_VERSION,
         "cache_date": date.today().isoformat(),
         "year": ref_y,
         "ref_month": ref_m,
         "months": out_months,
+        "lines": kept_lines + fresh_lines,
     }
     try:
         with open(mc, "w", encoding="utf-8") as f:

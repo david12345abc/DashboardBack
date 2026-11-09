@@ -252,7 +252,8 @@ def slice_months_by_dept(months: list[dict], dept_guid: str | None) -> list[dict
         if isinstance(dept_row, dict):
             fact = dept_row.get("fact", 0)
             plan = dept_row.get("plan", row.get("plan"))
-            expected = dept_row.get("expected", row.get("expected", 0))
+            # Нет корзины отдела — у него ничего не ожидается, а не итог комдира.
+            expected = dept_row.get("expected", row.get("expected", 0)) if dept_row else 0
             calc = dept_row.get("calc", row.get("calc"))
         else:
             fact = float(dept_row or 0)
