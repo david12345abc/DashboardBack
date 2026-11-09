@@ -36,6 +36,7 @@ from .commercial_department_aliases import (
     normalize_commercial_dept_guid,
 )
 from .odata_http import request_with_retry
+from .onec_links import nav_link
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +356,7 @@ def _catalog_item(item: dict) -> tuple[str, dict]:
         "desc": item.get("Description", ""),
         "number": item.get("Номер", "?"),
         "date": item.get("Дата", ""),
+        "onec_nav": nav_link(item.get("Объект_Type") or "", item.get("Объект") or ""),
     }
 
 
@@ -371,7 +373,7 @@ def resolve_objects(session, obj_keys: set):
 
     t0 = time.time()
     keys = list(needed)
-    select = "Ref_Key,Подразделение_Key,Партнер_Key,Description,Номер,Дата"
+    select = "Ref_Key,Подразделение_Key,Партнер_Key,Description,Номер,Дата,Объект,Объект_Type"
     # Прогресс раз в ~50 батчей _odata_docs_by_key (по 40 ключей).
     PROGRESS = 2000
 
@@ -665,6 +667,7 @@ def _build_overdue_rows_per_order(na_datu: date, balances: dict, obj_catalog: di
             "partner_name": partner_name,
             "counterparty": partner_name,
             "order_key": obj_key,
+            "onec_nav": (obj_catalog.get(obj_key) or {}).get("onec_nav", ""),
             "order_num": order_num,
             "order_date": data["order_date"],
             "amount": round(data["amount"], 2),
@@ -746,6 +749,7 @@ def _build_dz_term_rows(balances: dict, obj_catalog: dict, session) -> list[dict
             "department": dept_name,
             "partner_key": partner_key,
             "order_key": obj_key,
+            "onec_nav": cat.get("onec_nav", ""),
             "order_num": str(cat.get("number") or "").strip(),
             "payment_date": _payment_date_label(str(planned_dt or "")),
             "payment_date_sort": str(planned_dt or "")[:10],

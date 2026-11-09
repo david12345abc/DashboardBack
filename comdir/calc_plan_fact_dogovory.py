@@ -368,6 +368,10 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
         number = (od.get("Number") or "").strip()
         spec_name = (spec.get("Description") or "").strip()
         document = spec_name or (("Заказ клиента " + number) if number else "Договор")
+        if spec_name:
+            onec_type, onec_ref = "Справочник.СоглашенияСКлиентами", r.get("Спецификация_Key") or ""
+        else:
+            onec_type, onec_ref = "Документ.ЗаказКлиента", ok if ok != _EMPTY_GUID else ""
         note(
             "dog",
             "Факт",
@@ -376,6 +380,8 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
             department=dept_name,
             partner_key=partner,
             document=document,
+            onec_type=onec_type,
+            onec_ref=onec_ref,
         )
 
     return {k: round(v, 2) for k, v in out.items()}
@@ -904,6 +910,7 @@ def calc_fact_offer_live_odata(p0: datetime, p_next: datetime) -> dict[str, floa
             department=dept_name,
             partner_key=partner,
             document="Счёт-оферта",
+            order_key=order_key,
         )
     return {k: round(v, 2) for k, v in out.items()}
 
@@ -1103,6 +1110,7 @@ def calc_fact_reorder_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
             department=dept_name,
             partner_key=partner,
             document=("Заказ клиента " + number) if number else "Дозаказ",
+            order_key=order_key,
         )
     return {k: round(v, 2) for k, v in out.items()}
 
@@ -1285,6 +1293,8 @@ def calc_expected_potential_odata(p0: datetime, p_asof: datetime) -> dict[str, f
             department=dept,
             partner_key=row.get("Партнер_Key") or "",
             document=("Коммерческое предложение " + kp_number) if kp_number else "Потенциальный договор",
+            onec_type="Документ.КоммерческоеПредложениеКлиенту",
+            onec_ref=prop.get("Ref_Key") or "",
         )
     return {k: round(v, 2) for k, v in out.items()}
 
@@ -1391,6 +1401,7 @@ def calc_expected_offer_live(p0: datetime, p_next: datetime) -> dict[str, float]
             department=dept,
             partner_key=row.get("Партнер_Key") or "",
             document=("Заказ клиента " + number) if number else "Счёт-оферта",
+            order_key=row.get("Ref_Key") or "",
         )
     return {k: round(v, 2) for k, v in out.items()}
 
@@ -1608,7 +1619,7 @@ def calc_expected_offer(
                 f"""
                 SELECT d.name, ord._Number,
                        CONVERT(varchar(10), DATEADD(year, -2000, ord.[{ORDER_ADVANCE_DT}]), 23),
-                       p._Description, {amt}
+                       p._Description, {amt}, ord._IDRRef
                 FROM _Document704 ord WITH (NOLOCK)
                 INNER JOIN #offer_depts d ON d.id = ord._Fld21220RRef
                 INNER JOIN _Reference473 a WITH (NOLOCK)
@@ -1683,7 +1694,7 @@ def calc_expected_offer(
                 p_next,
                 p_next,
             )
-            for name, number, pay_date, partner_name, amount in cur.fetchall():
+            for name, number, pay_date, partner_name, amount, order_ref in cur.fetchall():
                 num = (number or "").strip()
                 _pf_note(
                     "dog",
@@ -1693,6 +1704,8 @@ def calc_expected_offer(
                     department=name,
                     partner=partner_name or "",
                     document=("Заказ клиента " + num) if num else "Счёт-оферта",
+                    onec_type="Документ.ЗаказКлиента",
+                    onec_hex=bytes(order_ref).hex() if order_ref else "",
                 )
         except Exception:
             logger.exception("Строки счёт-оферты ожидаемых договоров не собрались")

@@ -26,6 +26,7 @@ urlpatterns = [
     ),
     path('cache-status/', views.get_cache_status, name='cache-status'),
     path('lawsuits-table/', views.get_lawsuits_table, name='lawsuits-table'),
+    path('onec-link/', views.get_onec_link, name='onec-link'),
     path(
         'logistics/tmc-deliveries/',
         views.get_logistics_tmc_deliveries,

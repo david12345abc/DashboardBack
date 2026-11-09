@@ -243,6 +243,7 @@ def calc_fact_odata(p0: datetime, p_next: datetime) -> dict[str, float]:
             department=dept,
             partner_key=order.get("Партнер_Key") or "",
             document=("Заказ клиента " + number) if number else "Отгрузка",
+            order_key=order.get("Ref_Key") or "",
         )
     return {k: round(v, 2) for k, v in out.items()}
 

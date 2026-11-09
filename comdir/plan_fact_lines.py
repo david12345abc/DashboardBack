@@ -105,6 +105,7 @@ def _display_date(value: str) -> str:
 
 def _resolve(rows: list[dict]) -> list[dict]:
     from comdir.plan_fact_sink import FAILED
+    from getkpi.onec_links import nav_from_line
 
     rows = [row for row in rows if row.get("metric") != FAILED]
     partners = _odata_names("Catalog_Партнеры", {row.get("partner_key") or "" for row in rows})
@@ -136,6 +137,7 @@ def _resolve(rows: list[dict]) -> list[dict]:
             "metric": row.get("metric") or "",
             "month": row.get("month"),
             "name": document or "—",
+            "onec_nav": nav_from_line(row),
         })
     ready.sort(key=lambda item: (
         item["kind"] != "Факт",

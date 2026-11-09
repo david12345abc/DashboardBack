@@ -836,6 +836,8 @@ def _calc_branch2(ds_rows: list[dict], catalog: dict, orders_by_obj: dict[str, l
             department=reg_dept,
             partner_key=reg_partner,
             document="Комиссия",
+            onec_type=row.get("Recorder_Type") or "",
+            onec_ref=row.get("Recorder") or "",
         )
 
     return monthly

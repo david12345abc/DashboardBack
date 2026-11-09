@@ -7160,6 +7160,30 @@ def get_cache_status(request):
 
 @require_GET
 @login_required
+def get_onec_link(request):
+    """Найти документ строки в 1С: по объекту расчётов, номеру заказа или подписи документа."""
+    from . import onec_links
+
+    params = {
+        'settlement': request.GET.get('settlement') or '',
+        'order_num': request.GET.get('order_num') or '',
+        'document': request.GET.get('document') or '',
+        'partner': request.GET.get('partner') or '',
+    }
+    if not any(value.strip() for key, value in params.items() if key != 'partner'):
+        return JsonResponse({'error': 'settlement, order_num or document is required'}, status=400)
+    try:
+        nav = onec_links.resolve(**params)
+    except Exception:
+        logger.exception('onec-link: поиск документа в 1С не удался: %s', params)
+        return JsonResponse({'error': '1С не ответила, попробуйте ещё раз'}, status=502)
+    if not nav:
+        return JsonResponse({'error': 'Документ в 1С не найден'}, status=404)
+    return JsonResponse({'nav': nav}, json_dumps_params={'ensure_ascii': False})
+
+
+@require_GET
+@login_required
 def get_lawsuits_table(request):
     requested_dept = (request.GET.get('department') or '').strip()
     if not requested_dept:
