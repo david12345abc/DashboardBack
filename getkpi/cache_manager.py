@@ -566,6 +566,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         calc_logistics_warehouse_shipments,
         calc_dz_limits, calc_komdir_active_dealers, calc_ks_razvitie,
         calc_otif_vypusk_zam_proizvodstva,
+        calc_psd_portfolio,
         calc_psd_vipusk_plan,
         calc_prod_deputy_output, calc_prod_deputy_pc, calc_prod_deputy_projects,
         calc_prod_deputy_turnover,
@@ -664,6 +665,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'psd_vipusk_{y}_{m}',
          calc_psd_vipusk_plan._cache_path_monthly(y, m),
          lambda: calc_psd_vipusk_plan.get_psd_vipusk_plan_monthly(year=y, ref_month=m)),
+
+        (f'psd_portfolio_{y}_{m}',
+         calc_psd_portfolio._cache_path_monthly(y, m),
+         lambda: calc_psd_portfolio.get_psd_portfolio_monthly(year=y, ref_month=m)),
 
         (f'comdir_debitorka_{y}_{m}',
          _comdir_path('KD-M4'),

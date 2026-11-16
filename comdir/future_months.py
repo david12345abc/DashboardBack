@@ -55,6 +55,18 @@ def load(year: int) -> dict | None:
     return data
 
 
+def breakdown_lines(year: int, month: int | None = None) -> list[dict]:
+    """Строки ожидаемого за будущие месяцы, посчитанные вместе с итогом плитки."""
+    data = load(year)
+    stored = data.get("lines") if isinstance(data, dict) else None
+    if not isinstance(stored, list):
+        return []
+    rows = [row for row in stored if isinstance(row, dict)]
+    if month is None:
+        return rows
+    return [row for row in rows if int(row.get("month") or 0) == int(month)]
+
+
 def rows_for_tile(kpi_id: str, year: int, today: date | None = None) -> list[dict]:
     """Точки строго после сегодня. Прошлый и текущий месяц сюда не входят."""
     data = load(year)
@@ -358,6 +370,88 @@ def _plan_from_cache(year: int, month: int) -> dict[str, dict[str, float]]:
         "KD-M2": {"plan": float(raw.get("otgruzki") or 0), "expected": float(raw.get("otgruzki_expected") or 0)},
         "KD-M3": {"plan": float(raw.get("dogovory") or 0), "expected": float(raw.get("dogovory_expected") or 0)},
     }
+
+
+def collect_breakdown_lines(year: int, months: list[int]) -> list[dict]:
+    """Ожидаемые строки будущего месяца теми же функциями, что и цифра плитки."""
+    from comdir.common import connect_ctx, period_bounds
+    from comdir.plan_fact_lines import _resolve
+    from comdir.plan_fact_sink import capture
+    import comdir.calc_plan_fact_dogovory as dog_mod
+    from getkpi.calc_plan import get_dengi_expected_by_month, get_otgruzki_expected_by_month
+
+    wanted = {int(month) for month in months if 1 <= int(month) <= 12}
+    if not wanted:
+        return []
+    end = max(wanted)
+    raw: list[dict] = []
+    with capture() as money_raw:
+        get_dengi_expected_by_month(year, end)
+    raw.extend(
+        row for row in money_raw
+        if row.get("metric") == "money"
+        and row.get("kind") == "Ожидаемо"
+        and int(row.get("month") or 0) in wanted
+    )
+    with capture() as ship_raw:
+        get_otgruzki_expected_by_month(year, end)
+    raw.extend(
+        row for row in ship_raw
+        if row.get("metric") == "ship"
+        and row.get("kind") == "Ожидаемо"
+        and int(row.get("month") or 0) in wanted
+    )
+    for month in sorted(wanted):
+        p0, p_next = period_bounds(year, month)
+        with connect_ctx() as cn:
+            cn.timeout = 120
+            cur = cn.cursor()
+            cur.execute("SET NOCOUNT ON")
+            cur.execute("SET LOCK_TIMEOUT 20000")
+            with capture(month) as dog_raw:
+                dog_mod.calc_expected(cur, p0, p_next, p_asof=p_next)
+        raw.extend(
+            row for row in dog_raw
+            if row.get("metric") == "dog" and row.get("kind") == "Ожидаемо"
+        )
+    return _resolve(raw)
+
+
+def fill_breakdown_lines(year: int | None = None) -> int:
+    """Дописать строки расшифровки в кэш будущих месяцев, не трогая цифры плиток."""
+    import os
+
+    today = date.today()
+    year = int(year or today.year)
+    months = future_month_numbers(year, today)
+    path = cache_path(year)
+    lock = path.with_suffix(".lines.lock")
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        logger.info("future months: строки %s уже собираются", year)
+        return 0
+    try:
+        lines = collect_breakdown_lines(year, months)
+        if not lines:
+            logger.warning("future months: ожидаемые строки %s пустые, кэш не меняю", year)
+            return 0
+        data = load(year) or {
+            "cache_date": today.isoformat(),
+            "year": year,
+            "months": months,
+            "tiles": {},
+        }
+        data["lines"] = lines
+        _save(data, year)
+        logger.info("future months: строки %s сохранены, %s шт.", year, len(lines))
+        return len(lines)
+    finally:
+        os.close(fd)
+        try:
+            lock.unlink()
+        except OSError:
+            pass
 
 
 def compute_and_save(year: int | None = None) -> dict:

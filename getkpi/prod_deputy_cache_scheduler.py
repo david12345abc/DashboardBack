@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Ежедневный пересчёт OTIF (PD-M2.1 / PD-M2.2) из erp_pm в 08:00."""
+"""Ежедневный прогрев кэша заместителя директора по производству в 06:00.
+
+Сначала источники плиток (выпуск, OTIF, бюджет, ФОТ, проекты, текучесть),
+затем полный снимок страницы prod_deputy_payload. Без этого снимка дашборд
+за месяц не открывается.
+"""
 from __future__ import annotations
 
 import logging
@@ -13,7 +18,7 @@ from . import cache_manager
 
 logger = logging.getLogger(__name__)
 
-PROD_DEPUTY_CACHE_REFRESH_HOUR = int(os.getenv("PROD_DEPUTY_CACHE_REFRESH_HOUR", "8"))
+PROD_DEPUTY_CACHE_REFRESH_HOUR = int(os.getenv("PROD_DEPUTY_CACHE_REFRESH_HOUR", "6"))
 PROD_DEPUTY_CACHE_REFRESH_MINUTE = int(os.getenv("PROD_DEPUTY_CACHE_REFRESH_MINUTE", "0"))
 PROD_DEPUTY_CACHE_REFRESH_ENABLED = os.getenv("PROD_DEPUTY_CACHE_REFRESH_ENABLED", "1").lower() not in {
     "0",
@@ -53,25 +58,105 @@ def _ref_period(month: int | None = None, year: int | None = None) -> tuple[int,
     return today.year, today.month
 
 
-def _otif_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
-    from . import calc_otif_vypusk_zam_proizvodstva
+def _core_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
+    """Выпуск, OTIF, бюджет, ФОТ и проекты. Снимок страницы собирается сразу после них."""
+    from . import (
+        calc_otif_vypusk_zam_proizvodstva,
+        calc_prod_deputy_output,
+        calc_prod_deputy_pc,
+        calc_prod_deputy_projects,
+    )
+    from .calc_prod_deputy_pc_common import cache_path as pc_cache_path
 
-    return [
-        (
-            f"pd_m2_otif_pc1_{ref_y}_{ref_m}",
-            calc_otif_vypusk_zam_proizvodstva.cache_path("pc1", ref_y, ref_m),
-            lambda: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(
-                year=ref_y, month=ref_m, shop="pc1"
+    tasks: list[tuple[str, Path, object]] = []
+    for month in range(1, ref_m + 1):
+        tasks.extend([
+            (
+                f"pd_m1_output_pc1_{ref_y}_{month}",
+                calc_prod_deputy_output.cache_path("pc1", ref_y, month),
+                lambda m=month: calc_prod_deputy_output.get_prod_deputy_output_monthly(
+                    "pc1", year=ref_y, month=m
+                ),
             ),
-        ),
-        (
-            f"pd_m2_otif_pc2_{ref_y}_{ref_m}",
-            calc_otif_vypusk_zam_proizvodstva.cache_path("pc2", ref_y, ref_m),
-            lambda: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(
-                year=ref_y, month=ref_m, shop="pc2"
+            (
+                f"pd_m1_output_pc2_{ref_y}_{month}",
+                calc_prod_deputy_output.cache_path("pc2", ref_y, month),
+                lambda m=month: calc_prod_deputy_output.get_prod_deputy_output_monthly(
+                    "pc2", year=ref_y, month=m
+                ),
             ),
-        ),
-    ]
+            (
+                f"pd_m2_otif_pc1_{ref_y}_{month}",
+                calc_otif_vypusk_zam_proizvodstva.cache_path("pc1", ref_y, month),
+                lambda m=month: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(
+                    year=ref_y, month=m, shop="pc1"
+                ),
+            ),
+            (
+                f"pd_m2_otif_pc2_{ref_y}_{month}",
+                calc_otif_vypusk_zam_proizvodstva.cache_path("pc2", ref_y, month),
+                lambda m=month: calc_otif_vypusk_zam_proizvodstva.get_otif_vypusk_prod_monthly(
+                    year=ref_y, month=m, shop="pc2"
+                ),
+            ),
+            (
+                f"pd_pc_budget_pc1_{ref_y}_{month}",
+                pc_cache_path("budget", "pc1", ref_y, month),
+                lambda m=month: calc_prod_deputy_pc.get_pc_budget_monthly("pc1", ref_y, m),
+            ),
+            (
+                f"pd_pc_budget_pc2_{ref_y}_{month}",
+                pc_cache_path("budget", "pc2", ref_y, month),
+                lambda m=month: calc_prod_deputy_pc.get_pc_budget_monthly("pc2", ref_y, m),
+            ),
+            (
+                f"pd_pc_fot_pc1_{ref_y}_{month}",
+                pc_cache_path("fot", "pc1", ref_y, month),
+                lambda m=month: calc_prod_deputy_pc.get_pc_fot_monthly("pc1", ref_y, m),
+            ),
+            (
+                f"pd_pc_fot_pc2_{ref_y}_{month}",
+                pc_cache_path("fot", "pc2", ref_y, month),
+                lambda m=month: calc_prod_deputy_pc.get_pc_fot_monthly("pc2", ref_y, m),
+            ),
+        ])
+    tasks.append(
+        (
+            "prod_deputy_projects",
+            calc_prod_deputy_projects.CACHE_PATH,
+            lambda: calc_prod_deputy_projects.get_pd_q1_monthly(year=ref_y, month=ref_m),
+        )
+    )
+    return tasks
+
+
+def _turnover_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
+    """Текучесть считается после снимка страницы: её файлы отстают и не должны блокировать дашборд."""
+    from . import calc_prod_deputy_turnover
+
+    tasks: list[tuple[str, Path, object]] = []
+    for month in range(1, ref_m + 1):
+        tasks.extend([
+            (
+                f"pd_q2_turnover_pc1_{ref_y}_{month}",
+                calc_prod_deputy_turnover.cache_path("pc1", ref_y, month),
+                lambda m=month: calc_prod_deputy_turnover.get_prod_deputy_turnover_monthly(
+                    "pc1", year=ref_y, month=m
+                ),
+            ),
+            (
+                f"pd_q2_turnover_pc2_{ref_y}_{month}",
+                calc_prod_deputy_turnover.cache_path("pc2", ref_y, month),
+                lambda m=month: calc_prod_deputy_turnover.get_prod_deputy_turnover_monthly(
+                    "pc2", year=ref_y, month=m
+                ),
+            ),
+        ])
+    return tasks
+
+
+def _source_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
+    return _core_tasks(ref_y, ref_m) + _turnover_tasks(ref_y, ref_m)
 
 
 def _payload_path(ref_y: int, ref_m: int) -> Path:
@@ -98,7 +183,7 @@ def _is_today_snapshot_stale(ref_y: int, ref_m: int) -> bool:
         return True
     if raw.get("cache_date") != date.today().isoformat():
         return True
-    return any(not _cache_date_is_today(path) for _key, path, _fn in _otif_tasks(ref_y, ref_m))
+    return any(not _cache_date_is_today(path) for _key, path, _fn in _source_tasks(ref_y, ref_m))
 
 
 def _patch_otif_tiles_in_payload(ref_y: int, ref_m: int) -> bool:
@@ -174,8 +259,7 @@ def _patch_otif_tiles_in_payload(ref_y: int, ref_m: int) -> bool:
 
 
 def _rebuild_payload(ref_y: int, ref_m: int) -> None:
-    if _patch_otif_tiles_in_payload(ref_y, ref_m):
-        return
+    """Всегда собирать снимок страницы. Патч OTIF не заменяет отсутствующий дашборд."""
     from . import views
 
     kpis = views._get_kpi_dicts(PROD_DEPUTY_DASHBOARD_DEPT)
@@ -200,13 +284,14 @@ def run_prod_deputy_otif_refresh_once(
     month: int | None = None,
     year: int | None = None,
 ) -> dict[str, object]:
-    """Один цикл: OTIF из erp_pm, затем snapshot дашборда заместителя по производству."""
+    """Один цикл: источники заместителя, снимок страницы, затем текучесть и повторный снимок."""
     if not _run_lock.acquire(blocking=False):
         logger.warning("prod deputy cache scheduler: refresh already running, skip")
         return {"started": False, "reason": "already_running"}
     try:
         ref_y, ref_m = _ref_period(month, year)
-        tasks = _otif_tasks(ref_y, ref_m)
+        core = _core_tasks(ref_y, ref_m)
+        turnover = _turnover_tasks(ref_y, ref_m)
         payload_path = _payload_path(ref_y, ref_m)
         cache_manager.register_cache_path(f"prod_deputy_payload_{ref_y}_{ref_m:02d}", payload_path)
         logger.info(
@@ -215,12 +300,14 @@ def run_prod_deputy_otif_refresh_once(
             ref_m,
         )
         with cache_manager.mark_paths_refreshing("prod_deputy_daily_payload", [payload_path]):
-            cache_manager._run_warm_tasks(tasks, force=force)
+            cache_manager._run_warm_tasks(core, force=force)
+            _rebuild_payload(ref_y, ref_m)
+            cache_manager._run_warm_tasks(turnover, force=force)
             _rebuild_payload(ref_y, ref_m)
         logger.info("prod deputy cache scheduler: refresh complete")
         return {
             "started": True,
-            "tasks": len(tasks),
+            "tasks": len(core) + len(turnover),
             "year": ref_y,
             "month": ref_m,
         }
@@ -229,7 +316,7 @@ def run_prod_deputy_otif_refresh_once(
 
 
 def start_catch_up_if_stale() -> dict[str, object]:
-    """Если сервер подняли после 08:00, а снимок за сегодня ещё не готов — пересчитать сразу."""
+    """Если сервер подняли после шести утра, а снимок за сегодня ещё не готов — пересчитать сразу."""
     now = datetime.now()
     scheduled = now.replace(
         hour=PROD_DEPUTY_CACHE_REFRESH_HOUR,
@@ -247,7 +334,7 @@ def start_catch_up_if_stale() -> dict[str, object]:
 
     def _runner() -> None:
         try:
-            run_prod_deputy_otif_refresh_once(force=True)
+            run_prod_deputy_otif_refresh_once(force=False)
         except Exception:
             logger.exception("prod deputy cache scheduler: catch-up refresh failed")
 
@@ -275,7 +362,7 @@ def _scheduler_loop() -> None:
         )
         time.sleep(delay)
         try:
-            run_prod_deputy_otif_refresh_once(force=True)
+            run_prod_deputy_otif_refresh_once(force=False)
         except Exception:
             logger.exception("prod deputy cache scheduler: scheduled refresh failed")
 

@@ -291,8 +291,10 @@ def get_psd_portfolio_snapshot(month_arg: str) -> dict:
 
 
 def get_psd_portfolio_monthly(year: int, ref_month: int) -> dict:
+    from . import cache_manager
+
     cache_path = _cache_path_monthly(year, ref_month)
-    cached = _load_json(cache_path)
+    cached = None if cache_manager.is_force_compute_context() else _load_json(cache_path)
     if cached is not None and cached.get("source") == SOURCE_TAG:
         rows = cached.get("months") or []
         if rows and all(
@@ -317,6 +319,7 @@ def get_psd_portfolio_monthly(year: int, ref_month: int) -> dict:
             "year": year,
             "ref_month": ref_month,
             "source": SOURCE_TAG,
+            "cache_date": today.isoformat(),
             "months": [],
         }
         _save_json(cache_path, payload)
@@ -359,6 +362,7 @@ def get_psd_portfolio_monthly(year: int, ref_month: int) -> dict:
         "year": year,
         "ref_month": ref_month,
         "source": SOURCE_TAG,
+        "cache_date": today.isoformat(),
         "months": rows_out,
     }
     _save_json(cache_path, payload)

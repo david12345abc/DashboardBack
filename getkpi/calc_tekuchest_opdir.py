@@ -208,7 +208,7 @@ def load_all_tekuchest_docs(session: requests.Session) -> list:
         )
         r = session.get(u, timeout=120)
         if not r.ok:
-            raise SystemExit(f"HTTP {r.status_code} текучесть: {r.text[:400]}")
+            raise RuntimeError(f"HTTP {r.status_code} текучесть: {r.text[:400]}")
         batch = r.json().get("value", [])
         if not batch:
             break
@@ -564,7 +564,11 @@ def main() -> None:
     dept_names = load_opdir_struktura_departments(session)
     print(f"\n  Подразделений в периметре: {len(dept_names)}")
 
-    all_docs = load_all_tekuchest_docs(session)
+    try:
+        all_docs = load_all_tekuchest_docs(session)
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        sys.exit(1)
     docs_dept = [d for d in all_docs if d.get("Подразделение_Key", EMPTY) in dept_names]
     print(f"  Документов текучести (все): {len(all_docs)}")
     print(f"  Документов после отбора по периметру: {len(docs_dept)}")

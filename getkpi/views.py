@@ -3436,7 +3436,11 @@ def _build_universal_payload(
             return tile_freshness.apply_tile_freshness(disk_cached)
 
     for kpi in tiles_meta:
-        entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
+        try:
+            entry = _build_kpi_entry(kpi, 'плитка', dept_key=dept, year=ref_y, month=ref_m)
+        except Exception:
+            logger.exception("KPI %s: плитка не собрана, дашборд продолжается", kpi.get('kpi_id'))
+            entry = {'has_data': False}
         entries_by_id[kpi['kpi_id']] = entry
         pct, color = _tile_color(kpi, entry)
         # QD-M3 / QD-M4 и devdir RD-*: месяц в расчёте нормализуется внутри get_*_ytd —
@@ -4629,12 +4633,24 @@ def _load_fresh_prod_deputy_payload_cache(ref_y: int, ref_m: int) -> dict | None
 
 
 def _load_stale_prod_deputy_payload_cache(ref_y: int, ref_m: int) -> dict | None:
+    """Последний собранный снимок, не только предыдущий месяц.
+
+    Ноябрь без файла и без октября иначе не находит сентябрь и страница пустая.
+    """
     cached = _load_prod_deputy_payload_cache(ref_y, ref_m, require_today=False)
     if cached is not None:
         return cached
-    if ref_m > 1:
-        return _load_prod_deputy_payload_cache(ref_y, ref_m - 1, require_today=False)
-    return _load_prod_deputy_payload_cache(ref_y - 1, 12, require_today=False)
+    year, month = int(ref_y), int(ref_m)
+    for _ in range(24):
+        if month > 1:
+            month -= 1
+        else:
+            year -= 1
+            month = 12
+        cached = _load_prod_deputy_payload_cache(year, month, require_today=False)
+        if cached is not None:
+            return cached
+    return None
 
 
 def _prod_deputy_read_json(path: Path) -> dict | None:
@@ -6881,6 +6897,35 @@ def _chairman_refresh_payload(key: str) -> dict:
     return current
 
 
+def _begin_chairman_refresh(
+    department: str,
+    for_block: str,
+    ref_y: int,
+    ref_m: int,
+    *,
+    initiator: str,
+) -> tuple[bool, str, dict]:
+    """Занять слот пересчёта. False — такой же пересчёт уже идёт."""
+    key = _chairman_refresh_key(for_block, ref_y, ref_m)
+    with _chairman_refresh_lock:
+        current = dict(_chairman_refresh_state.get(key) or {})
+        if current.get('status') == 'running':
+            return False, key, current
+        entry = {
+            'status': 'running',
+            'department': department,
+            'for': for_block,
+            'year': ref_y,
+            'month': ref_m,
+            'initiator': initiator,
+            'started_at': _manual_tile_refresh_now(),
+            'finished_at': None,
+            'error': '',
+        }
+        _chairman_refresh_state[key] = entry
+    return True, key, dict(entry)
+
+
 def _chairman_dashboard_refresh_worker(
     *,
     key: str,
@@ -6915,9 +6960,10 @@ def _chairman_dashboard_refresh_worker(
 @require_http_methods(['GET', 'POST'])
 @login_required
 def refresh_chairman_dashboard(request):
-    """Пересчёт открытого дашборда председателя совета директоров.
+    """Статус (GET) или ручной запуск (POST) пересчёта дашборда председателя совета директоров.
 
-    Вызывается клиентом в 06:00, 13:00 и 17:00, только если этот дашборд открыт.
+    По расписанию 06:00, 13:00 и 17:00 пересчёт запускает сервер
+    (chairman_cache_scheduler); клиент только читает статус и перерисовывает дашборд.
     """
     user_department = (request.current_user.department or '').strip()
     if not chairman_data.is_chairman_department(user_department):
@@ -6957,21 +7003,11 @@ def refresh_chairman_dashboard(request):
         payload.setdefault('month', ref_m)
         return JsonResponse(payload, json_dumps_params={'ensure_ascii': False})
 
-    with _chairman_refresh_lock:
-        current = dict(_chairman_refresh_state.get(key) or {})
-        if current.get('status') == 'running':
-            return JsonResponse(current, status=202, json_dumps_params={'ensure_ascii': False})
-        entry = {
-            'status': 'running',
-            'department': user_department,
-            'for': for_block,
-            'year': ref_y,
-            'month': ref_m,
-            'started_at': _manual_tile_refresh_now(),
-            'finished_at': None,
-            'error': '',
-        }
-        _chairman_refresh_state[key] = entry
+    claimed, key, entry = _begin_chairman_refresh(
+        user_department, for_block, ref_y, ref_m, initiator='manual',
+    )
+    if not claimed:
+        return JsonResponse(entry, status=202, json_dumps_params={'ensure_ascii': False})
 
     thread = threading.Thread(
         target=_chairman_dashboard_refresh_worker,

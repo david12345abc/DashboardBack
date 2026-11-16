@@ -2003,11 +2003,18 @@ def build_chairman_commerce_payload(
     except Exception:
         pass
 
-    return {
+    from .komdir_dashboard import _attach_commercial_potential, _attach_plan_fact_breakdown
+
+    result = {
         "Плитки": {"count": len(plitki_items), "items": plitki_items},
         "Графики": grafiki,
         "Таблицы": tables,
     }
+    return _attach_commercial_potential(
+        _attach_plan_fact_breakdown(result, ref_y, series_m, None),
+        ref_y, series_m, None,
+        metric_by_tile={"MRK-01": "ship", "MRK-02": "dog", "MRK-03": "money"},
+    )
 
 
 def build_chairman_payload_by_for(

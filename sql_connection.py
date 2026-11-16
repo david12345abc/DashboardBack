@@ -30,6 +30,26 @@ DEFAULT_USER = r"TURBO-DON\testii"
 DEFAULT_DRIVER = "ODBC Driver 18 for SQL Server"
 
 
+def _current_windows_user() -> str:
+    domain = (os.environ.get("USERDOMAIN") or "").strip()
+    username = (os.environ.get("USERNAME") or "").strip()
+    if domain and username:
+        return f"{domain}\\{username}"
+    return username
+
+
+def _same_account(left: str, right: str) -> bool:
+    return left.strip().casefold() == right.strip().casefold()
+
+
+def _is_local_sql_server(server: str) -> bool:
+    host = (server or "").split(",")[0].split("\\")[0].strip().casefold()
+    if host in {"", ".", "(local)", "localhost", "127.0.0.1", "::1"}:
+        return True
+    computer = (os.environ.get("COMPUTERNAME") or "").strip().casefold()
+    return bool(computer) and host == computer
+
+
 def _parse_domain_user(user: str) -> tuple[str, str]:
     if "\\" in user:
         domain, username = user.split("\\", 1)
@@ -41,17 +61,30 @@ def _parse_domain_user(user: str) -> tuple[str, str]:
 
 
 @contextmanager
-def windows_impersonation(user: str, password: str) -> Generator[None, None, None]:
+def windows_impersonation(
+    user: str,
+    password: str,
+    *,
+    local_sql: bool = False,
+) -> Generator[None, None, None]:
     import win32con
     import win32security
 
     domain, username = _parse_domain_user(user)
-    # NEW_CREDENTIALS ≈ runas /netonly — нужно для доступа к удалённому SQL под другой учёткой.
-    logon_types = (
-        win32con.LOGON32_LOGON_NEW_CREDENTIALS,
-        win32con.LOGON32_LOGON_NETWORK,
-        win32con.LOGON32_LOGON_INTERACTIVE,
-    )
+    # Для локального SQL NEW_CREDENTIALS (runas /netonly) даёт билет,
+    # который сервер отвергает с 18456. На удалённый SQL он как раз нужен.
+    if local_sql:
+        logon_types = (
+            win32con.LOGON32_LOGON_INTERACTIVE,
+            win32con.LOGON32_LOGON_NETWORK,
+            win32con.LOGON32_LOGON_NEW_CREDENTIALS,
+        )
+    else:
+        logon_types = (
+            win32con.LOGON32_LOGON_NEW_CREDENTIALS,
+            win32con.LOGON32_LOGON_NETWORK,
+            win32con.LOGON32_LOGON_INTERACTIVE,
+        )
 
     last_error: Exception | None = None
     token = None
@@ -127,20 +160,42 @@ class SqlConnection:
             parts.append("TrustServerCertificate=yes")
         return ";".join(parts) + ";"
 
+    def _uses_current_account(self) -> bool:
+        return _same_account(_current_windows_user(), self.user)
+
     def connect(self) -> pyodbc.Connection:
+        timeout = self._login_timeout()
+        conn_str = self.connection_string()
+        if self._uses_current_account():
+            return pyodbc.connect(conn_str, timeout=timeout)
         if not self.password:
             raise RuntimeError("SQL_PASSWORD не задан в .env")
-        timeout = self._login_timeout()
-        with windows_impersonation(self.user, self.password):
-            return pyodbc.connect(self.connection_string(), timeout=timeout)
+        with windows_impersonation(
+            self.user,
+            self.password,
+            local_sql=_is_local_sql_server(self.server),
+        ):
+            return pyodbc.connect(conn_str, timeout=timeout)
 
     @contextmanager
     def connect_ctx(self) -> Iterator[pyodbc.Connection]:
+        timeout = self._login_timeout()
+        conn_str = self.connection_string()
+        if self._uses_current_account():
+            conn = pyodbc.connect(conn_str, timeout=timeout)
+            try:
+                yield conn
+            finally:
+                conn.close()
+            return
         if not self.password:
             raise RuntimeError("SQL_PASSWORD не задан в .env")
-        timeout = self._login_timeout()
-        with windows_impersonation(self.user, self.password):
-            conn = pyodbc.connect(self.connection_string(), timeout=timeout)
+        with windows_impersonation(
+            self.user,
+            self.password,
+            local_sql=_is_local_sql_server(self.server),
+        ):
+            conn = pyodbc.connect(conn_str, timeout=timeout)
             try:
                 yield conn
             finally:

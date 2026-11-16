@@ -8,6 +8,7 @@ class GetkpiConfig(AppConfig):
         from django.db.models.signals import post_delete, post_save
 
         from . import cache_manager
+        from . import chairman_cache_scheduler
         from . import commercial_cache_scheduler
         from . import prod_deputy_cache_scheduler
         from . import restore_scheduler
@@ -17,6 +18,7 @@ class GetkpiConfig(AppConfig):
         cache_manager.start_warming()
         cache_manager.start_midnight_cache_scheduler()
         commercial_cache_scheduler.start_commercial_cache_scheduler()
+        chairman_cache_scheduler.start_chairman_cache_scheduler()
         prod_deputy_cache_scheduler.start_prod_deputy_cache_scheduler()
         restore_scheduler.start_restore_scheduler()
 

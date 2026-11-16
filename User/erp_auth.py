@@ -132,7 +132,10 @@ def list_login_users() -> list[dict[str, str]]:
     if _list_cache is not None and now - _list_cache[0] < _LIST_CACHE_TTL_SEC:
         return list(_list_cache[1])
 
-    conn = _connect()
+    try:
+        conn = _connect()
+    except pyodbc.Error as exc:
+        raise ErpAuthError(f"Не удалось подключиться к erp_pm: {exc}") from exc
     try:
         cur = conn.cursor()
         cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
@@ -226,7 +229,10 @@ def authenticate(fio: str, password: str) -> OnecUser:
     if not fio or not password:
         raise UserNotFoundError("empty")
 
-    conn = _connect()
+    try:
+        conn = _connect()
+    except pyodbc.Error as exc:
+        raise ErpAuthError(f"Не удалось подключиться к erp_pm: {exc}") from exc
     try:
         cur = conn.cursor()
         cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")

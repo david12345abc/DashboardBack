@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from typing import Any, Literal
 from urllib.parse import quote
@@ -18,6 +19,8 @@ from .calc_tekuchest_opdir import (
     _normalize_period,
 )
 from .cache_manager import CACHE_DIR
+
+logger = logging.getLogger(__name__)
 
 ShopKey = Literal["pc1", "pc2"]
 
@@ -147,12 +150,15 @@ def get_prod_deputy_turnover_monthly(
         if not is_current_month or cached.get("cache_date") == today.isoformat():
             return cached
 
-    if not cache_manager.is_force_compute_context():
-        stale = cached
-        if stale is None and ref_month > 1:
-            prev = _load_json(cache_path(shop, ref_year, ref_month - 1))
+    def _older_turnover_cache() -> dict | None:
+        for month in range(ref_month - 1, 0, -1):
+            prev = _load_json(cache_path(shop, ref_year, month))
             if prev is not None and prev.get("source") == SOURCE_TAG:
-                stale = prev
+                return prev
+        return None
+
+    if not cache_manager.is_force_compute_context():
+        stale = cached if cached is not None and cached.get("source") == SOURCE_TAG else _older_turnover_cache()
         cache_manager.schedule_background_refresh(
             cache_key,
             get_prod_deputy_turnover_monthly,
@@ -165,6 +171,39 @@ def get_prod_deputy_turnover_monthly(
             out["cache_refresh_status"] = "stale"
             return out
 
+    try:
+        return _compute_prod_deputy_turnover_monthly(shop, ref_year, ref_month, path, today)
+    except Exception:
+        logger.exception(
+            "prod deputy turnover: расчёт %s %04d-%02d не удался, оставляем последний файл",
+            shop,
+            ref_year,
+            ref_month,
+        )
+        stale = cached if cached is not None and cached.get("source") == SOURCE_TAG else _older_turnover_cache()
+        if stale is not None:
+            out = dict(stale)
+            out["cache_refresh_status"] = "stale"
+            return out
+        return {
+            "cache_date": None,
+            "source": SOURCE_TAG,
+            "shop": shop,
+            "year": ref_year,
+            "ref_month": ref_month,
+            "months": [],
+            "last_full_month_row": None,
+            "ytd": {},
+            "kpi_period": {
+                "type": "last_full_month",
+                "year": ref_year,
+                "month": ref_month,
+                "month_name": MONTH_RU[ref_month].lower(),
+            },
+        }
+
+
+def _compute_prod_deputy_turnover_monthly(shop, ref_year, ref_month, path, today) -> dict:
     session = requests.Session()
     session.auth = AUTH
 

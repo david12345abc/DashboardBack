@@ -1837,12 +1837,15 @@ def build_komdir_payload(kpi_list: list[dict],
             cached_payload = _payload_with_active_refresh_status(
                 cached_payload, ref_y, ref_m, payload_cache_path,
             )
-            return _attach_future_month_points(
-                _attach_dz_table(
-                    _attach_plan_fact_breakdown(cached_payload, ref_y, _series_m, dept_guid),
+            return _attach_commercial_potential(
+                _attach_future_month_points(
+                    _attach_dz_table(
+                        _attach_plan_fact_breakdown(cached_payload, ref_y, _series_m, dept_guid),
+                        ref_y, ref_m, dept_guid,
+                    ),
                     ref_y, ref_m, dept_guid,
                 ),
-                ref_y, ref_m, dept_guid,
+                ref_y, _series_m, dept_guid,
             )
     raw = cache_manager.locked_call(
         cache_key,
@@ -1855,12 +1858,15 @@ def build_komdir_payload(kpi_list: list[dict],
     )
     if not cache_manager.is_force_compute_context():
         _schedule_plan_fact_breakdown(ref_y, _series_m)
-    return _attach_future_month_points(
-        _attach_dz_table(
-            _attach_plan_fact_breakdown(_unwrap_payload_cache(raw), ref_y, _series_m, dept_guid),
+    return _attach_commercial_potential(
+        _attach_future_month_points(
+            _attach_dz_table(
+                _attach_plan_fact_breakdown(_unwrap_payload_cache(raw), ref_y, _series_m, dept_guid),
+                ref_y, ref_m, dept_guid,
+            ),
             ref_y, ref_m, dept_guid,
         ),
-        ref_y, ref_m, dept_guid,
+        ref_y, _series_m, dept_guid,
     )
 
 
@@ -1902,6 +1908,82 @@ def _schedule_plan_fact_breakdown(ref_y: int, ref_m: int) -> None:
     cache_manager.schedule_background_refresh(f"komdir_plan_fact_breakdown_{ref_y}_{ref_m:02d}", _run)
 
 
+def _schedule_future_breakdown(ref_y: int) -> None:
+    """Собрать строки ожидаемого за декабрь и дальше, если их ещё нет в кэше."""
+    now = time.monotonic()
+    key = (ref_y, 0)
+    with _plan_fact_attempts_lock:
+        last = _plan_fact_attempts.get(key)
+        if last is not None and now - last < _PLAN_FACT_RETRY_SECONDS:
+            return
+        _plan_fact_attempts[key] = now
+
+    def _run() -> None:
+        from comdir.future_months import fill_breakdown_lines
+
+        try:
+            fill_breakdown_lines(ref_y)
+        except Exception:
+            logger.exception("komdir: строки ожидаемого за %s не собрались", ref_y)
+
+    logger.info("komdir: сбор расшифровки будущих месяцев %s", ref_y)
+    cache_manager.schedule_background_refresh(f"komdir_future_breakdown_{ref_y}", _run)
+
+
+_POTENTIAL_METRIC_BY_TILE = {
+    "KD-M1": "money",
+    "KD-M2": "ship",
+    "KD-M3": "dog",
+}
+
+
+def _attach_commercial_potential(
+    payload: dict,
+    year: int,
+    through_month: int,
+    dept_guid: str | None,
+    *,
+    metric_by_tile: dict[str, str] | None = None,
+) -> dict:
+    """Потенциал плитки — коммерческие предложения внутри ожидаемого.
+
+    План, факт, ожидаемое и прогноз не меняются. Потенциал только
+    дополнительная цифра, он уже входит в ожидаемое.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    try:
+        from comdir.plan_fact_lines import commercial_potential_by_month
+
+        totals = commercial_potential_by_month(year, through_month, dept_guid)
+    except Exception:
+        logger.exception("komdir: потенциал на плитках не посчитался")
+        return payload
+    metric_by_tile = metric_by_tile or _POTENTIAL_METRIC_BY_TILE
+    items = (payload.get("Плитки") or {}).get("items") or []
+    for tile in items:
+        if not isinstance(tile, dict):
+            continue
+        metric = metric_by_tile.get(str(tile.get("kpi_id") or ""))
+        if not metric:
+            continue
+        by_month = totals.get(metric) or {}
+        monthly = [row for row in (tile.get("monthly_data") or []) if isinstance(row, dict)]
+        ref_potential = 0.0
+        for row in monthly:
+            try:
+                month = int(row.get("month") or 0)
+                expected = float(row.get("expected_plan") or 0)
+            except (TypeError, ValueError):
+                continue
+            potential = min(float(by_month.get(month) or 0), expected) if expected > 0 else 0.0
+            row["potential"] = round(potential, 2)
+            if month == int(through_month):
+                ref_potential = row["potential"]
+        tile["potential"] = ref_potential
+    return payload
+
+
 def _attach_plan_fact_breakdown(
     payload: dict,
     ref_y: int,
@@ -1912,9 +1994,32 @@ def _attach_plan_fact_breakdown(
     if not isinstance(payload, dict):
         return payload
     try:
-        from comdir.plan_fact_lines import tables_from_tile_cache
+        from comdir.plan_fact_lines import tables_from_lines, tables_from_tile_cache
+        from comdir.future_months import breakdown_lines, future_month_numbers
 
         tables = tables_from_tile_cache(ref_y, ref_m, dept_guid=dept_guid)
+        future_lines = breakdown_lines(ref_y)
+        if future_lines:
+            extra = tables_from_lines(future_lines, ref_y, 12, dept_guid)
+            future = set(future_month_numbers(ref_y))
+            for key, table in extra.items():
+                current = tables.get(key)
+                if not isinstance(current, dict):
+                    tables[key] = table
+                    continue
+                monthly = [
+                    row for row in (current.get("monthly_data") or [])
+                    if int(row.get("month") or 0) not in future
+                ]
+                monthly.extend(
+                    row for row in (table.get("monthly_data") or [])
+                    if int(row.get("month") or 0) in future and row.get("rows")
+                )
+                monthly.sort(key=lambda row: int(row.get("month") or 0))
+                current["monthly_data"] = monthly
+                current["rows_by_month"] = True
+        else:
+            _schedule_future_breakdown(ref_y)
     except Exception:
         logger.exception("Расшифровка денег, отгрузок и договоров не подставилась")
         return payload

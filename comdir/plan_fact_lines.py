@@ -402,6 +402,12 @@ def tables_from_lines(
     dept_guid: str | None = None,
 ) -> dict:
     """Таблицы из строк того же прохода, которым посчитана плитка."""
+    try:
+        from comdir.deal_probability import attach
+
+        attach(list(lines or []))
+    except Exception:
+        logger.exception("Вероятность сделки к строкам расшифровки не подставилась")
     through_month = max(1, min(12, int(through_month)))
     names = {
         1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -482,6 +488,58 @@ def ytd_breakdown_missing(year: int, month: int) -> list[str]:
         kid for kid, prefix in TILE_CACHE_PREFIXES.items()
         if _tile_cache_lines(prefix, year, month) is None
     ]
+
+
+def _is_potential_document(document: str) -> bool:
+    """Потенциал договоров — коммерческое предложение, не счёт-оферта и не заказ."""
+    text = str(document or "").strip().lower().replace("ё", "е")
+    return text.startswith("коммерческое предложение") or text.startswith("потенциальный договор")
+
+
+def commercial_potential_by_month(
+    year: int,
+    through_month: int,
+    dept_guid: str | None = None,
+) -> dict[str, dict[int, float]]:
+    """Сумма потенциальных строк по месяцам: money / ship / dog.
+
+    Строки текущего расчёта берутся из кэша плитки, будущие месяцы — из
+    отдельного кэша ожидаемого. Потенциал не вычитается из ожидаемого здесь:
+    это делает плитка, чтобы прогноз оставался фактом плюс обе части.
+    """
+    lines: list[dict] = []
+    for prefix in TILE_CACHE_PREFIXES.values():
+        lines.extend(_tile_cache_lines(prefix, year, through_month) or [])
+    try:
+        from comdir.future_months import breakdown_lines
+
+        for row in breakdown_lines(year):
+            if int(row.get("month") or 0) > int(through_month):
+                lines.append(row)
+    except Exception:
+        logger.exception("Потенциал: строки будущих месяцев не прочитались")
+    wanted = (dept_guid or "").strip().lower()
+    totals = {"money": {}, "ship": {}, "dog": {}}
+    for row in lines:
+        metric = row.get("metric")
+        if metric not in totals or str(row.get("kind") or "") != "Ожидаемо":
+            continue
+        if not _is_potential_document(row.get("document") or ""):
+            continue
+        if wanted and str(row.get("dept_guid") or "").strip().lower() != wanted:
+            continue
+        try:
+            month = int(row.get("month") or 0)
+        except (TypeError, ValueError):
+            continue
+        if month < 1:
+            continue
+        bucket = totals[metric]
+        bucket[month] = bucket.get(month, 0.0) + float(row.get("amount") or 0)
+    return {
+        metric: {month: round(value, 2) for month, value in months.items()}
+        for metric, months in totals.items()
+    }
 
 
 def tables_from_tile_cache(year: int, through_month: int, dept_guid: str | None = None) -> dict:
