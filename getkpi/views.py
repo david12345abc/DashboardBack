@@ -2089,8 +2089,8 @@ def _build_universal_payload(
     devdir_memo_key: str | None = None
     jurist_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        # v18: ГСП-Q4 — отклонение плитки совпадает с таблицей (просроченный baseline месяца).
-        gspp_memo_key = f"gspp_dashboard:v18:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v19: ГСП-M1/M2 — правило отчёта (пустой факт не срыв; ОЛ по максимальной дате плана).
+        gspp_memo_key = f"gspp_dashboard:v19:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -2148,7 +2148,7 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v18_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v19_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
             dashboard_disk_key = f"techdir_v4_{ref_y}_{ref_m:02d}"

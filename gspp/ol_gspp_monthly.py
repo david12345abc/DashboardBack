@@ -1,13 +1,14 @@
 """
 ГСП-M2 — ОЛ, проверенные диспетчером ГСПП без срыва срока.
 
-Эталон: отчёт 1С «Проверка опросного листа диспетчером ГСПП»
-(в месяц попадают строки с датой факта в этом месяце).
+Эталон: отчёт 1С «Проверка опросного листа диспетчером ГСПП».
 
-  План — строки регистра, у которых ДатаЗавершенияФакт попала в месяц
-  и точка этапа = «ПроверкаОпросногоЛистаДиспетчеромГСПП».
-  Не в срок — НачалоДня(Факт) > НачалоДня(План).
-  Факт — План − Не в срок.
+  По каждому опросному листу берётся строка с максимальной датой плана.
+  План — такие листы, у которых эта дата попадает в месяц.
+  Точка этапа = «ПроверкаОпросногоЛистаДиспетчеромГСПП».
+  Срыв — дата факта заполнена и НачалоДня(Факт) > НачалоДня(План).
+  Пустой факт не срыв.
+  Факт — План − Срыв.
 
 SQL (erp_pm):
   Catalog_ТД_ТочкиЭтапов
@@ -197,9 +198,9 @@ def resolve_stage_point(cur) -> tuple[bytes, str]:
 
 
 def is_late(plan_dt: datetime | None, fact_dt: datetime | None) -> bool:
-    """Не в срок: нет плана или НачалоДня(Факт) > НачалоДня(План)."""
+    """Срыв: факт заполнен и день факта позже дня плана. Пустой факт не срыв."""
     if fact_dt is None or plan_dt is None:
-        return True
+        return False
     return fact_dt.date() > plan_dt.date()
 
 
@@ -214,28 +215,42 @@ def load_register_rows(
     stage_bin: bytes,
     start_dt: date,
     end_dt: date,
-) -> list[tuple[datetime | None, datetime]]:
-    """Строки, у которых факт закрытия этапа попал в период (как на отчёте 1С)."""
+) -> list[tuple[datetime, datetime | None]]:
+    """По каждому ОЛ — строка с максимальной датой плана, если эта дата в периоде."""
     sql_start = to_sql_dt(start_dt)
     sql_end_exclusive = to_sql_dt(end_dt + timedelta(days=1))
+    empty_plan_cutoff = datetime(EMPTY_SQL_YEAR, 1, 2)
     cur.execute(
         f"""
-        SELECT [{COL_PLAN}], [{COL_FACT}]
-        FROM [{REGISTER_TABLE}] WITH (NOLOCK)
-        WHERE [{COL_STAGE}] = ?
-          AND [{COL_FACT}] >= ?
-          AND [{COL_FACT}] < ?
+        WITH ranked AS (
+            SELECT
+                [{COL_PLAN}] AS plan_raw,
+                [{COL_FACT}] AS fact_raw,
+                ROW_NUMBER() OVER (
+                    PARTITION BY _RecorderTRef, _RecorderRRef
+                    ORDER BY [{COL_PLAN}] DESC, _LineNo DESC
+                ) AS rn
+            FROM [{REGISTER_TABLE}] WITH (NOLOCK)
+            WHERE [{COL_STAGE}] = ?
+              AND [{COL_PLAN}] > ?
+        )
+        SELECT plan_raw, fact_raw
+        FROM ranked
+        WHERE rn = 1
+          AND plan_raw >= ?
+          AND plan_raw < ?
         """,
         stage_bin,
+        empty_plan_cutoff,
         sql_start,
         sql_end_exclusive,
     )
-    rows: list[tuple[datetime | None, datetime]] = []
+    rows: list[tuple[datetime, datetime | None]] = []
     for plan_raw, fact_raw in cur.fetchall():
-        fact_dt = from_sql_dt(fact_raw)
-        if fact_dt is None:
+        plan_dt = from_sql_dt(plan_raw)
+        if plan_dt is None:
             continue
-        rows.append((from_sql_dt(plan_raw), fact_dt))
+        rows.append((plan_dt, from_sql_dt(fact_raw)))
     return rows
 
 
@@ -257,7 +272,7 @@ def build_monthly_report(
 
     stats: dict[str, dict[str, int]] = defaultdict(lambda: {"plan": 0, "late": 0})
     for plan_dt, fact_dt in rows:
-        month_key = f"{fact_dt.year:04d}-{fact_dt.month:02d}"
+        month_key = f"{plan_dt.year:04d}-{plan_dt.month:02d}"
         stats[month_key]["plan"] += 1
         if is_late(plan_dt, fact_dt):
             stats[month_key]["late"] += 1
@@ -280,10 +295,10 @@ def build_monthly_report(
 
 def format_report(point_name: str, rows: list[dict[str, Any]]) -> str:
     lines = [
-        "ОЛ ГСПП (ГСП-M2 / SQL, как отчёт 1С по дате факта)",
+        "ОЛ ГСПП (ГСП-M2 / SQL, как отчёт 1С по максимальной дате плана)",
         f"Этап: {point_name}",
         f"Источник: {REGISTER_TABLE} + {STAGE_TABLE}",
-        "Отбор: ДатаЗавершенияФакт в месяце; не в срок, если день факта позже дня плана",
+        "Отбор: максимальная дата плана ОЛ в месяце; срыв, если факт заполнен и позже плана",
         "",
         f"{'Месяц':<10} {'План':>8} {'Факт':>8} {'Не в срок':>10} {'KPI %':>8}",
         f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 10} {'-' * 8}",
@@ -390,10 +405,11 @@ def build_gspp_m2_payload(year: int | None = None, month: int | None = None) -> 
                 "fact_col": COL_FACT,
             },
             "rule": (
-                "plan = register rows whose fact completion is in the month "
+                "one row per survey sheet: the register row with the latest plan date "
                 "(stage = Проверка опросного листа диспетчером ГСПП); "
-                "late = fact date strictly after plan date (time ignored); "
-                "fact = plan - late"
+                "plan = those sheets whose max plan date falls in the month; "
+                "late = fact filled and fact date strictly after plan date (time ignored); "
+                "empty fact is on time; fact = plan - late"
             ),
             "rows_by_month": rows,
         },
@@ -424,7 +440,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 GSPP_M2_CACHE_PREFIX = "gspp_m2_ol_monthly"
 GSPP_M2_DISK_TAG = "gspp_m2_sql_payload_v1"
-GSPP_M2_DISK_VERSION = 4
+GSPP_M2_DISK_VERSION = 5
 
 
 def gspp_m2_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:
