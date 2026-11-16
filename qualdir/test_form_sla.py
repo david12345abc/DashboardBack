@@ -10,10 +10,14 @@ from qualdir.form_sla import (
     add_working_days,
     aggregate_hits,
     as_in_work_payload,
+    canonical_in_work_status,
     deadline_date,
     in_work_on_time,
+    is_executed_status,
+    is_plan_status,
     weekday_is_working,
 )
+from qualdir.form_status import STATUS_BY_ORDER
 
 
 class FormSlaTests(unittest.TestCase):
@@ -49,6 +53,28 @@ class FormSlaTests(unittest.TestCase):
         self.assertIsNone(in_work_on_time("Выполнено", created, last_on_plan, weekday_is_working))
         self.assertIsNone(in_work_on_time("Подготовлен", created, last_on_plan, weekday_is_working))
         self.assertIsNone(in_work_on_time("Отменена", created, last_on_plan, weekday_is_working))
+        self.assertIs(
+            True,
+            in_work_on_time("Коррекция", created, last_on_plan, weekday_is_working),
+        )
+        self.assertIs(
+            False,
+            in_work_on_time("ВРаботе", created, first_overdue, weekday_is_working),
+        )
+        self.assertIs(
+            True,
+            in_work_on_time("ПроверкаВыполнения", created, last_on_plan, weekday_is_working),
+        )
+
+    def test_every_counted_status_lands_in_a_bucket(self):
+        """Всего = выполнено + в работе. Иначе форма есть в плане и ни в одном статусе."""
+        for name in STATUS_BY_ORDER.values():
+            if not is_plan_status(name):
+                continue
+            self.assertTrue(
+                is_executed_status(name) or canonical_in_work_status(name),
+                name,
+            )
 
     def test_month_is_creation_month(self):
         hits = [
@@ -130,6 +156,46 @@ class FormSlaTests(unittest.TestCase):
         self.assertEqual(stats["2026-01"]["in_work_overdue"], 0)
         self.assertEqual(stats["2026-02"]["in_work_on_time"], 0)
         self.assertEqual(stats["2026-02"]["in_work_overdue"], 0)
+
+    def test_correction_is_in_work_on_plan_until_deadline(self):
+        hits = [
+            FormHit(
+                created=date(2026, 10, 2),
+                status="Коррекция",
+                elimination=None,
+                dept_name="ОТК",
+                significant=False,
+                doc_id=b"87",
+                plan_month="2026-10",
+                fact_month=None,
+            ),
+            FormHit(
+                created=date(2026, 10, 7),
+                status="Выполнено",
+                elimination=None,
+                dept_name="ОТК",
+                significant=False,
+                doc_id=b"88",
+                plan_month="2026-10",
+                fact_month="2026-10",
+            ),
+        ]
+        stats = aggregate_hits(
+            hits,
+            ["2026-10"],
+            dept_key=lambda name: name or "—",
+            today=date(2026, 10, 31),
+            is_working=weekday_is_working,
+        )
+        bucket = stats["2026-10"]
+        self.assertEqual(bucket["plan"], 2)
+        self.assertEqual(bucket["fact"], 1)
+        self.assertEqual(bucket["in_work_on_time"], 1)
+        self.assertEqual(bucket["in_work_overdue"], 0)
+        self.assertEqual(
+            bucket["plan"],
+            bucket["fact"] + bucket["in_work_on_time"] + bucket["in_work_overdue"],
+        )
 
     def test_in_work_payload_uses_on_time_as_fact(self):
         payload = as_in_work_payload(

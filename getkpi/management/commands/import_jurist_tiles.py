@@ -8,7 +8,7 @@ from django.core.management.base import BaseCommand
 
 from getkpi.kpi_definitions_cache import bump_kpi_definitions_cache_version
 from getkpi.models import KpiDefinition
-from jurist.companies import COMPANIES, DEPARTMENT
+from jurist.companies import COMPANIES, DEPARTMENT, MEMO_KPI_ID
 
 SOURCE = "1С ERP (SQL erp_pm) / договоры контрагентов"
 RULE = (
@@ -56,7 +56,9 @@ def _tiles() -> list[dict]:
             "formula": (
                 f"Сумма поля «Сумма» по договорам контрагентов организации "
                 f"«{company['odata_name']}» без пометки удаления, "
-                "у которых дата «от» в выбранном месяце"
+                "у которых дата «от» в выбранном месяце, "
+                "плюс «СуммаДоговораГПХ» служебных записок этой организации "
+                "с темой «Заключение договора ГПХ (регл.)» за тот же месяц"
             ),
             "unit": "руб.",
             "source": SOURCE,
@@ -65,6 +67,31 @@ def _tiles() -> list[dict]:
             "position": position,
         })
         position += 1
+    rows.append({
+        "kpi_id": MEMO_KPI_ID,
+        "name": "Служебные записки — заключение договора ГПХ",
+        "block": "плитка",
+        "frequency": "Ежемесячно",
+        "perspective": "Процессы",
+        "goal": "Видеть служебные записки на заключение договора ГПХ",
+        "formula": (
+            "Число служебных записок четырёх организаций без пометки удаления, "
+            "у которых тема «Заключение договора ГПХ (регл.)» "
+            "и дата документа в выбранном месяце"
+        ),
+        "unit": "шт.",
+        "source": "1С ERP (SQL erp_pm) / служебные записки",
+        "description": (
+            "Документ «Служебная записка (ТД)». "
+            "Тема — предопределённый элемент «ЗаключениеДоговораГПХ» "
+            "справочника «ТД_ТемыСлужебныхЗаписок». "
+            "Сумма «СуммаДоговораГПХ» входит в плитку суммы договоров той же организации "
+            "и в таблицу договоров отдельной строкой.\n"
+            "На обороте — количество по организациям."
+        ),
+        "weight_pct": None,
+        "position": position,
+    })
     return rows
 
 

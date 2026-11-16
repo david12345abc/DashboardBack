@@ -445,7 +445,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_M5_YTD_CACHE_PREFIX = "qualdir_qd_m5_ytd"
 QD_M5_YTD_DISK_TAG = "qualdir_qd_m5_ytd_payload_sql_v3"
-QD_M5_YTD_DISK_VERSION = 27
+QD_M5_YTD_DISK_VERSION = 28
 
 
 def internal_brak_month_cache_path(year: int, month: int) -> _Path:

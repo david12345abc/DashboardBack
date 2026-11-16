@@ -29,14 +29,16 @@ from devdir import ytd_json_cache
 from devdir.rd_monthly_period import normalize_rd_tile_period
 from jurist.business_operations import OPERATIONS
 from jurist.companies import COMPANIES
+from jurist.memos import GOAL_CODE as GPH_GOAL_CODE
+from jurist.memos import fetch_gph_memos
 from sql_connection import SqlConnection
 
 logger = logging.getLogger(__name__)
 
 YEAR_OFFSET = 2000
 CACHE_PREFIX = "jurist_contracts"
-CACHE_SOURCE = "jurist_contracts_v6"
-CACHE_VERSION = 6
+CACHE_SOURCE = "jurist_contracts_v7"
+CACHE_VERSION = 7
 
 STATUS_BY_ORDER = {
     0: "НеСогласован",
@@ -82,6 +84,7 @@ GOAL_LABELS = {
     "ПередачаНаХранениеСПравомПродажи": "Передача на ответственное хранение",
     "ПриемНаХранениеСПравомПродажи": "Прием на ответственное хранение",
     "ПоставкаПодПринципала": "Поставка под принципала",
+    "ЗаключениеДоговораГПХ": "Заключение договора ГПХ",
     "": "Не указана",
 }
 
@@ -208,6 +211,8 @@ def _empty_company(company: dict) -> dict:
         "by_status": {},
         "by_goal": {},
         "rows": [],
+        "memo_count": 0,
+        "memo_sum": 0.0,
         "title": company["title"],
         "odata_name": company["odata_name"],
         "org_guid": company["org_guid"],
@@ -269,8 +274,30 @@ def _fetch_companies(year: int, month: int) -> dict[str, dict]:
             "counterparty": str(counterparty or "").strip() or "—",
         })
 
+    for memo in fetch_gph_memos(year, month):
+        totals = companies.get(memo["company_code"])
+        if totals is None:
+            continue
+        amount = round(float(memo["sum"] or 0), 2)
+        totals["memo_count"] += 1
+        totals["memo_sum"] += amount
+        totals["sum"] += amount
+        goal_bucket = totals["by_goal"].setdefault(GPH_GOAL_CODE, {"count": 0, "sum": 0.0})
+        goal_bucket["sum"] += amount
+        totals["rows"].append({
+            "number": memo["number"],
+            "name": memo["name"],
+            "goal": goal_label(GPH_GOAL_CODE),
+            "status": memo["status"],
+            "sum": amount,
+            "start_date": memo["start_date"],
+            "end_date": "",
+            "counterparty": memo["counterparty"],
+        })
+
     for code, totals in companies.items():
         totals["sum"] = round(totals["sum"], 2)
+        totals["memo_sum"] = round(totals["memo_sum"], 2)
         totals["by_status"] = {
             name: {"count": bucket["count"], "sum": round(bucket["sum"], 2)}
             for name, bucket in sorted(totals["by_status"].items())

@@ -3316,8 +3316,8 @@ def _build_universal_payload(
     opdir_memo_key: str | None = None
     jurist_memo_key: str | None = None
     if _is_gspp_department(dept) and not include_debug:
-        # v18: ГСП-Q4 — отклонение плитки совпадает с таблицей (просроченный baseline месяца).
-        gspp_memo_key = f"gspp_dashboard:v18:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
+        # v19: ГСП-M1/M2 — правило отчёта (пустой факт не срыв; ОЛ по максимальной дате плана).
+        gspp_memo_key = f"gspp_dashboard:v19:{dept.strip().lower()}:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(gspp_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -3328,8 +3328,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        # v12: формы 03-17/18/19 — месяц по дате создания, без сдвига на 2 рабочих дня.
-        qualdir_memo_key = f"qualdir_dashboard:v12:{ref_y}:{ref_m:02d}"
+        # v13: формы 03-17/18/19 — статусы «Коррекция» и «В работе» входят в «в работе».
+        qualdir_memo_key = f"qualdir_dashboard:v13:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -3353,12 +3353,9 @@ def _build_universal_payload(
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
-        # v8: SH-T1 на SQL (_Reference389 + _Reference328).
-        # v9: не ронять SH-T2 из-за RLock.locked() на Python < 3.14;
-        #     color на строках месяца у плиток текучести.
-        # v10: SH-M3 — одно число, всего обращений за месяц.
         # v11: SH-M3 показывает план — все обращения по ДатаРегистрации.
-        servhead_memo_key = f"servhead_dashboard:v11:{ref_y}:{ref_m:02d}"
+        # v12: SH-M2 — пороги «чем меньше, тем лучше» (≤5 / 5,1–10 / >10).
+        servhead_memo_key = f"servhead_dashboard:v12:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -3376,9 +3373,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _jurist_kpi_views.is_jurist_department(dept) and not include_debug:
-        # v11: плитки договоров из SQL erp_pm. v10 записан 16.10 утром с пустым фактом
-        # (OData уже не использовался) и до конца дня отдавался как свежий.
-        jurist_memo_key = f"jurist_dashboard:v11:{ref_y}:{ref_m:02d}"
+        # v13: претензии и суды юриста читаются из SQL erp_pm, не из OData.
+        jurist_memo_key = f"jurist_dashboard:v13:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(jurist_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -3387,13 +3383,13 @@ def _build_universal_payload(
     dashboard_mem_key: str | None = None
     if not _skip_disk_cache and not include_debug:
         if gspp_memo_key:
-            dashboard_disk_key = f"gspp_v18_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"gspp_v19_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
             dashboard_disk_key = f"techdir_v4_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v11_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v13_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
             dashboard_disk_key = f"sup_v36_{ref_y}_{ref_m:02d}"
@@ -3405,7 +3401,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"c1auto_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
-            dashboard_disk_key = f"servhead_v11_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"servhead_v12_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
             dashboard_disk_key = f"devdir_v9_{ref_y}_{ref_m:02d}"
@@ -3414,7 +3410,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"opdir_v2_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = opdir_memo_key
         elif jurist_memo_key:
-            dashboard_disk_key = f"jurist_v11_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"jurist_v13_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = jurist_memo_key
 
     if dashboard_disk_key and dashboard_mem_key:
@@ -3863,7 +3859,7 @@ def _build_universal_payload(
                 goals = entry.get('goals')
             if goals:
                 tile['goals'] = goals
-                tile['goals_title'] = 'Цель договора'
+                tile['goals_title'] = entry.get('goals_title') or 'Цель договора'
 
         plitki_items.append(tile)
 
