@@ -2101,8 +2101,8 @@ def _build_universal_payload(
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        # v12: формы 03-17/18/19 — месяц по дате создания, без сдвига на 2 рабочих дня.
-        qualdir_memo_key = f"qualdir_dashboard:v12:{ref_y}:{ref_m:02d}"
+        # v13: формы 03-17/18/19 — статусы «Коррекция» и «В работе» входят в «в работе».
+        qualdir_memo_key = f"qualdir_dashboard:v13:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -2154,7 +2154,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"techdir_v4_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v11_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v13_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
             dashboard_disk_key = f"sup_v36_{ref_y}_{ref_m:02d}"
