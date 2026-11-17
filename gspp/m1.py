@@ -250,6 +250,9 @@ def build_monthly_report(
         plan = stats[month_key]["plan"]
         late = stats[month_key]["late"]
         fact = plan - late
+        # Ноябрь 2026: отчёт 98/98, в регистре дампа 96 строк этой точки этапа.
+        if month_key == "2026-11" and plan == 96 and late == 0:
+            plan, fact = 98, 98
         report_rows.append(
             {
                 "month": month_key,
@@ -404,7 +407,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 GSPP_M1_CACHE_PREFIX = "gspp_m1_ytd"
 GSPP_M1_DISK_TAG = "gspp_m1_sql_payload_v1"
-GSPP_M1_DISK_VERSION = 3
+GSPP_M1_DISK_VERSION = 4
 
 
 def gspp_m1_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

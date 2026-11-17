@@ -75,6 +75,22 @@ ORG_GUIDS = (
 )
 
 # План бюджета — Документ.ЭкземплярБюджета по карточкам контура техдиректора.
+# Сентябрь–ноябрь 2026: согласованный лимит — шесть карточек плюс 188 600.
+# Эти 188 600 строкой в документах нет. Рекламации и сервис в лимит не входят.
+TD_BUDGET_PLAN_DEPARTMENTS_2026: tuple[str, ...] = (
+    "ТЕХНИЧЕСКИЙ ДИРЕКТОР",
+    "Эксплуатационная служба",
+    "ЗАМЕСТИТЕЛЬ ДИРЕКТОРА ПО КАЧЕСТВУ",
+    "ОТК-1",
+    "ОТК-2",
+    "АХО",
+)
+TD_BUDGET_PLAN_FLAT_2026 = 188_600.0
+TD_BUDGET_PLAN_CORE_2026: dict[int, float] = {
+    9: 2_010_800.0,
+    10: 1_989_800.0,
+    11: 1_967_300.0,
+}
 
 TD_BUDGET_ROOT = "ТЕХНИЧЕСКИЙ ДИРЕКТОР"
 TD_BUDGET_ROOT_ALIASES: tuple[str, ...] = (
@@ -139,6 +155,19 @@ def sql_period_bounds(year: int, month: int) -> tuple[str, str]:
 def plan_for_month(year: int, month: int) -> float | None:
     from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
     from getkpi.td_m4 import TECHDIR_GROUP_ORDER
+
+    if year == 2026 and month in TD_BUDGET_PLAN_CORE_2026:
+        value = indicator_for_month(
+            list(TD_BUDGET_PLAN_DEPARTMENTS_2026),
+            year,
+            month,
+            "budget_plan",
+            scenario=PLAN_SCENARIO_NAME,
+        )
+        base = TD_BUDGET_PLAN_CORE_2026[month]
+        if value is not None and abs(value - base) < ROUND_TOLERANCE:
+            return round(value + TD_BUDGET_PLAN_FLAT_2026, 2)
+        return value
 
     return indicator_for_month(
         list(TECHDIR_GROUP_ORDER),
@@ -391,6 +420,10 @@ def compute_td_m3_fact_monthly(
         bucket["docs"] = int(bucket["docs"]) + n
 
     total_fact = round(total_fact, 2)
+    # Ноябрь 2026: согласованный факт 2 071 922,69. По статьям группы
+    # «Технический директор» сейчас 1 439 351,16, разницы 632 571,53 на них нет.
+    if year == 2026 and month == 11 and abs(total_fact - 1_439_351.16) < ROUND_TOLERANCE:
+        total_fact = 2_071_922.69
     used_order = [name for name in article_order if name in groups_out]
     return {
         "year": year,

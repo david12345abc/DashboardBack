@@ -9,10 +9,10 @@ QD-M3 — бюджет блока в пределах лимита (факт и�
     • Организация — НПО или Турбулентность-Дон
     • Статья ДДС ∈ поддерево группы «Технический директор»
       и в названии есть метка качества (_ТС_ОТК_ / _ТС_СМК_)
-    • Заявка в строке расшифровки: Подразделение ∈ контур качества
-      (7 п/п QD-M4 и потомки) или ТД_ЦФО ∈ метки качества
+  Подразделение заявки не режет сумму: оплаты по статьям ОТК/СМК
+  остаются в факте, даже если заявка проведена на другое подразделение.
   Эталон 1С: «Списание ДС по статьям ДДС», группа «Технический директор»,
-  организация НПО, строки подразделений контура качества.
+  организация НПО и Турбулентность-Дон, все строки статей качества.
 
 План 2026 — константы из DashboardBack/qualdir/qd_m3.py.
 
@@ -78,18 +78,18 @@ ORG_GUIDS = (
 
 # План бюджета — Документ.ЭкземплярБюджета, сценарий «Плановые данные - ЦФО».
 
-# Эталон: отчёт «Списание ДС» по группе «Технический директор», НПО,
-# подразделения контура качества (сверено 02.10.2026).
+# Эталон: отчёт «Списание ДС», группа «Технический директор»,
+# статьи с меткой _ТС_ОТК_ / _ТС_СМК_, без отсечения по подразделению заявки.
 REFERENCE_FACT_2026: dict[int, float] = {
-    1: 0.00,
-    2: 0.00,
-    3: 91_350.00,
-    4: 569_069.00,
-    5: 139_300.00,
-    6: 0.00,
-    7: 0.00,
-    8: 67_600.00,
-    9: 188_025.00,
+    1: 20_444.33,
+    2: 28_790.10,
+    3: 469_752.03,
+    4: 656_388.16,
+    5: 271_021.28,
+    6: 365_537.40,
+    7: 99_086.69,
+    8: 401_301.23,
+    9: 261_189.55,
 }
 ROUND_TOLERANCE = 0.01
 
@@ -398,23 +398,10 @@ def compute_qd_m3_fact_monthly(
         if cfo_ids is None:
             cfo_ids = _load_cfo_ids(cur)
 
-        dept_ids = list(id_to_group.keys())
-        cfo_id_list = list(cfo_ids.keys())
-        if not dept_ids and not cfo_id_list:
-            raise RuntimeError("Не найден контур качества (п/п / ЦФО)")
-
-        # Подразделение ∈ контур ИЛИ ТД_ЦФО ∈ метки качества.
         article_map = _load_article_map(cur)
         article_ids = list(article_map)
-        clauses: list[str] = []
-        params: list[Any] = [p_start, p_end, *org_bins, *article_ids]
-        if dept_ids:
-            clauses.append(f"r.[{COL_DEPT}] IN ({','.join('?' * len(dept_ids))})")
-            params.extend(dept_ids)
-        if cfo_id_list:
-            clauses.append(f"r.[{COL_CFO}] IN ({','.join('?' * len(cfo_id_list))})")
-            params.extend(cfo_id_list)
-        where_contour = "(" + " OR ".join(clauses) + ")"
+        if not article_ids:
+            raise RuntimeError("Не найдены статьи качества")
 
         cur.execute(
             f"""
@@ -422,7 +409,7 @@ def compute_qd_m3_fact_monthly(
             FROM dbo.[{WRITEOFF_VT}] vt WITH (NOLOCK)
             INNER JOIN dbo.[{WRITEOFF}] wo WITH (NOLOCK)
                 ON wo._IDRRef = vt._Document980_IDRRef
-            INNER JOIN dbo.[{DOC}] r WITH (NOLOCK)
+            LEFT JOIN dbo.[{DOC}] r WITH (NOLOCK)
                 ON r._IDRRef = vt.[{COL_WO_REQ}]
             LEFT JOIN dbo.[{ART_CAT}] a WITH (NOLOCK)
                 ON a._IDRRef = vt.[{COL_WO_ART}]
@@ -431,9 +418,8 @@ def compute_qd_m3_fact_monthly(
               AND wo._Posted = 0x01
               AND vt.[{COL_WO_LINE_ORG}] IN ({','.join('?' * len(org_bins))})
               AND vt.[{COL_WO_ART}] IN ({','.join('?' * len(article_ids))})
-              AND {where_contour}
             """,
-            params,
+            [p_start, p_end, *org_bins, *article_ids],
         )
         rows = cur.fetchall()
 
@@ -486,8 +472,8 @@ def compute_qd_m3_fact_monthly(
             "rule": (
                 "fact = sum(Сумма) of posted bank write-offs by write-off Date, "
                 f"DDS article in subtree of {ARTICLE_GROUP} "
-                f"with markers {', '.join(QUALITY_ARTICLE_MARKERS)}, "
-                "request in quality departments or quality ТД_ЦФО"
+                f"with markers {', '.join(QUALITY_ARTICLE_MARKERS)}; "
+                "request department does not filter the total"
             ),
         },
     }
@@ -656,7 +642,7 @@ def build_qd_m3_payload(year: int | None = None, month: int | None = None) -> di
 
 
 def run_check() -> int:
-    print("Сверка QD-M3 факт · 2026 (списания по заявкам контура качества)")
+    print("Сверка QD-M3 факт · 2026 (списания по статьям качества)")
     rows = build_monthly_report((2026, 1), (2026, max(REFERENCE_FACT_2026)))
     all_ok = True
     for row in rows:
@@ -719,8 +705,8 @@ from pathlib import Path as _Path
 from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 QD_M3_YTD_CACHE_PREFIX = "qualdir_qd_m3_ytd"
-QD_M3_YTD_DISK_TAG = "qualdir_qd_m3_ytd_payload_sql_v6"
-QD_M3_YTD_DISK_VERSION = 16
+QD_M3_YTD_DISK_TAG = "qualdir_qd_m3_ytd_payload_sql_v7"
+QD_M3_YTD_DISK_VERSION = 17
 
 
 def qd_m3_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

@@ -119,7 +119,7 @@ def load_opdir_struktura_departments(session: requests.Session) -> dict[str, str
     while True:
         r = session.get(f"{url}&$top={PAGE}&$skip={skip}", timeout=120)
         if not r.ok:
-            raise SystemExit(f"HTTP {r.status_code} структура: {r.text[:400]}")
+            raise RuntimeError(f"HTTP {r.status_code} структура: {r.text[:400]}")
         batch = r.json().get("value", [])
         if not batch:
             break
@@ -176,7 +176,7 @@ def load_all_tekuchest_docs(session: requests.Session) -> list:
         )
         r = session.get(u, timeout=120)
         if not r.ok:
-            raise SystemExit(f"HTTP {r.status_code} текучесть: {r.text[:400]}")
+            raise RuntimeError(f"HTTP {r.status_code} текучесть: {r.text[:400]}")
         batch = r.json().get("value", [])
         if not batch:
             break
@@ -284,8 +284,31 @@ def get_tekuchest_opdir_monthly(year: int | None = None, month: int | None = Non
     session = requests.Session()
     session.auth = AUTH
 
-    dept_names = load_opdir_struktura_departments(session)
-    all_docs = load_all_tekuchest_docs(session)
+    try:
+        dept_names = load_opdir_struktura_departments(session)
+        all_docs = load_all_tekuchest_docs(session)
+    except RuntimeError:
+        logger.exception(
+            "calc_tekuchest_opdir: не удалось загрузить текучесть %s-%02d",
+            ref_year,
+            ref_month,
+        )
+        if cached is not None:
+            return cached
+        return {
+            "year": ref_year,
+            "ref_month": ref_month,
+            "months": [],
+            "last_full_month_row": None,
+            "ytd": {},
+            "kpi_period": {
+                "type": "last_full_month",
+                "year": ref_year,
+                "month": ref_month,
+                "month_name": MONTH_RU[ref_month].lower(),
+            },
+            "error": "odata_unavailable",
+        }
     docs_dept = [d for d in all_docs if d.get("Подразделение_Key", EMPTY) in dept_names]
 
     months_out: list[dict] = []

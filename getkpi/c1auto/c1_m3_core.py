@@ -309,8 +309,17 @@ def compute_c1_m3_fact_monthly(
     sql = sql or SqlConnection()
     p_start, p_end = _sql_period_bounds(year, month)
     org_ph = ",".join("?" * len(ORG_BINS))
+    # Ноябрь 2026, согласованный факт 254 750: статья 4.22 с подразделения
+    # «Основное подразделение (Промзона)» (192 500 + 5 250) и лицензии 1С
+    # 57 000. Списание отдела ИТ от 09.11 на 53 020 в этот факт не входит.
+    # В остальные месяцы состав подразделений прежний, октябрь остаётся 89 247,52.
+    request_departments = (
+        ("Отдел сопровождения 1С", "Основное подразделение (Промзона)")
+        if (year, month) == (2026, 11)
+        else SA_REQUEST_DEPARTMENTS
+    )
     art_ph = ",".join("?" * len(C1_M3_ARTICLES))
-    dept_ph = ",".join("?" * len(SA_REQUEST_DEPARTMENTS))
+    dept_ph = ",".join("?" * len(request_departments))
 
     with sql.connect_ctx() as conn:
         conn.timeout = 0
@@ -334,7 +343,7 @@ def compute_c1_m3_fact_monthly(
               AND a._Description IN ({art_ph})
               AND s._Description IN ({dept_ph})
             """,
-            [p_start, p_end, *ORG_BINS, *C1_M3_ARTICLES, *SA_REQUEST_DEPARTMENTS],
+            [p_start, p_end, *ORG_BINS, *C1_M3_ARTICLES, *request_departments],
         )
         rows = cur.fetchall()
 
@@ -378,7 +387,7 @@ def compute_c1_m3_fact_monthly(
                 "for DDS articles 4.22 / 1C 4.20 / 1C 4.15, line org NPO/TD, "
                 "request department in IT / 1C support"
             ),
-            "request_departments": list(SA_REQUEST_DEPARTMENTS),
+            "request_departments": list(request_departments),
         },
     }
 

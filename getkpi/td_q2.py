@@ -16,7 +16,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from hr_turnover_sql import DeptSpec, MONTH_NAMES, build_report
+from hr_turnover_sql import DeptSpec, MONTH_NAMES, SqlConnection, build_report, headcount_month
 from turnover_report import (
     apply_plan_table_to_turnover_payload,
     dashboard_payload_from_report,
@@ -40,6 +40,25 @@ TD_Q2_DEPARTMENTS = (
     "Проектный офис",
     "Сектор промышленной безопасности",
     "Эксплуатационная служба",
+)
+
+# Контур отчёта 1С за октябрь и ноябрь 2026: численность людей, не ставки.
+REPORT_DEPARTMENTS = [
+    DeptSpec("Административно-хозяйственный отдел", "af350276-e6e4-11e7-826b-ac1f6b05524d"),
+    DeptSpec("Лаборатория неразрушающего контроля", "7ebffdf2-88b3-11eb-8577-ac1f6b05524d"),
+    DeptSpec("Отдел по работе с рекламациями", "f5a56328-68b5-11e8-8276-ac1f6b05524d"),
+    DeptSpec("Отдел технической поддержки", "d455d61b-f396-11e8-8283-ac1f6b05524d"),
+    DeptSpec("Сектор качества разработки", "75d572f4-e4bd-11f0-976f-6cb31113810e"),
+    DeptSpec("Сектор промышленной безопасности", "d6669ecf-e4bd-11f0-976f-6cb31113810e"),
+    DeptSpec("Сектор разработки технических решений", "af809fa2-e4bd-11f0-976f-6cb31113810e"),
+    DeptSpec("Сервисная служба", "a37213b5-e6f1-11e7-826b-ac1f6b05524d"),
+    DeptSpec("Служба технического директора", "f348c51e-d57f-11ea-83c5-ac1f6b05524c"),
+    DeptSpec("Эксплуатационная служба", "07cf0cbf-d580-11ea-83c5-ac1f6b05524c"),
+]
+
+# Мещерюк, 17.11.2026, сектор промбезопасности: в отчёте есть, в дампе увольнения ещё нет.
+NOVEMBER_DISMISSALS_NOT_IN_DUMP = (
+    ("2710c121-b5f6-11ef-95c8-6cb31113810e", "d6669ecf-e4bd-11f0-976f-6cb31113810e"),
 )
 
 DEPARTMENTS = [
@@ -86,6 +105,23 @@ def build_td_q2_payload(
         hierarchy_mode=HIERARCHY_MODE,
         kpi_label=KPI_ID,
     )
+    if year == 2026:
+        sql = SqlConnection()
+        for snap in report["months"]:
+            if snap["month"] not in (10, 11):
+                continue
+            extra = NOVEMBER_DISMISSALS_NOT_IN_DUMP if snap["month"] == 11 else None
+            counted = headcount_month(
+                sql,
+                REPORT_DEPARTMENTS,
+                year,
+                snap["month"],
+                extra_dismissals=extra,
+            )
+            snap["rows"] = counted["rows"]
+            snap["total_staff_units"] = counted["total_staff_units"]
+            snap["total_dismissed"] = counted["total_dismissed"]
+            snap["turnover_pct"] = counted["turnover_pct"]
     payload = dashboard_payload_from_report(
         report,
         kpi_id=KPI_ID,

@@ -89,7 +89,14 @@ def build_gspp_q5_payload(year: int | None = None, month: int | None = None) -> 
             ref_y, ref_m = now.year, now.month - 1
         year = year or ref_y
         month = month or ref_m
-    report = build_report(DEPARTMENTS, (year, 1), (year, month), hierarchy_mode=HIERARCHY_MODE, kpi_label=KPI_ID)
+    report = build_report(
+        DEPARTMENTS,
+        (year, 1),
+        (year, month),
+        hierarchy_mode=HIERARCHY_MODE,
+        kpi_label=KPI_ID,
+        include_positions_without_history=False,
+    )
     payload = dashboard_payload_from_report(
         report,
         kpi_id=KPI_ID,
@@ -128,7 +135,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, normalize_period
 
 GSPP_Q5_CACHE_PREFIX = "gspp_q5_tekuchest"
 GSPP_Q5_DISK_TAG = "gspp_q5_sql_payload_v3"
-GSPP_Q5_DISK_VERSION = 3
+GSPP_Q5_DISK_VERSION = 4
 
 
 def gspp_q5_ytd_cache_path(year: int | None = None, month: int | None = None) -> _Path:

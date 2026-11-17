@@ -579,7 +579,7 @@ def compute_td_turnover_month(year: int, month: int) -> dict:
 # остаётся для других контуров (RD/GSP/QD), которые зовут build_turnover_month_payload.
 _TD_Q2_YTD_PREFIX = "techdir_q2_ytd"
 _TD_Q2_YTD_TAG = "techdir_q2_ytd_sql_payload_v2"
-_TD_Q2_YTD_VERSION = 2
+_TD_Q2_YTD_VERSION = 3
 
 
 def _cache_path(year: int, month: int) -> Path:

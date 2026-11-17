@@ -268,6 +268,8 @@ def staff_units_by_dept(
     positions: list[dict[str, Any]],
     history: dict[bytes, dict[str, Any]],
     as_of: date,
+    *,
+    include_positions_without_history: bool = True,
 ) -> dict[bytes, float]:
     by_dept: dict[bytes, float] = defaultdict(float)
     for pos in positions:
@@ -276,9 +278,107 @@ def staff_units_by_dept(
             if hist["used"] and is_position_active(pos, as_of):
                 by_dept[pos["dept"]] += hist["rates"]
             continue
-        if is_position_active(pos, as_of):
+        if include_positions_without_history and is_position_active(pos, as_of):
             by_dept[pos["dept"]] += pos["rates"]
     return by_dept
+
+
+def headcount_month(
+    sql: SqlConnection,
+    departments: list[DeptSpec],
+    year: int,
+    month: int,
+    *,
+    extra_dismissals: list[tuple[str, str]] | None = None,
+    percent_digits: int = 2,
+) -> dict[str, Any]:
+    """Штат отчёта: люди на конец месяца, не сумма ставок.
+
+    Увольнение до начала месяца из штата исключается. Увольнение внутри месяца
+    остаётся и в штате, и в числе уволенных. extra_dismissals — пары
+    (сотрудник, подразделение), которые отчёт уже уволил, а дамп ещё нет.
+    """
+    org_keys = [d.org_key for d in departments if d.org_key]
+    wanted = {guid_to_1c(key): key for key in org_keys}
+    start = to_sql_dt(date(year, month, 1))
+    as_sql = to_sql_dt(month_end(year, month), end_of_day=True)
+    latest: dict[bytes, tuple[bytes, bool, datetime]] = {}
+    with sql.connect_ctx() as conn:
+        conn.timeout = 0
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT h.[{COL_HR_EMP}], h.[{COL_HR_DEPT}], h.[{COL_HR_EVENT}], h._Period
+            FROM dbo.[{HR_HIST}] h WITH (NOLOCK)
+            JOIN (
+                SELECT [{COL_HR_EMP}] AS emp, MAX(_Period) AS mx
+                FROM dbo.[{HR_HIST}] WITH (NOLOCK)
+                WHERE _Active = 0x01 AND _Period <= ?
+                GROUP BY [{COL_HR_EMP}]
+            ) t ON t.emp = h.[{COL_HR_EMP}] AND t.mx = h._Period
+            WHERE h._Active = 0x01
+            """,
+            [as_sql],
+        )
+        for emp, dept, event, period in cur.fetchall():
+            emp_b, dept_b = bytes(emp), bytes(dept)
+            is_fired = bytes(event) == DISMISSAL_EVENT_BIN
+            prev = latest.get(emp_b)
+            if prev is None or period > prev[2] or (period == prev[2] and is_fired):
+                latest[emp_b] = (dept_b, is_fired, period)
+
+    extra = {(employee, org) for employee, org in (extra_dismissals or [])}
+    roster: set[tuple[str, str]] = set()
+    already_fired: set[tuple[str, str]] = set()
+    staff_by_org: dict[str, int] = defaultdict(int)
+    fired_by_org: dict[str, int] = defaultdict(int)
+    for emp_b, (dept_b, is_fired, period) in latest.items():
+        org_key = wanted.get(dept_b)
+        if org_key is None:
+            continue
+        if is_fired and period < start:
+            continue
+        person = (bin_to_guid(emp_b), org_key)
+        roster.add(person)
+        staff_by_org[org_key] += 1
+        if is_fired:
+            fired_by_org[org_key] += 1
+            already_fired.add(person)
+    for person in extra:
+        if person not in roster or person in already_fired:
+            continue
+        fired_by_org[person[1]] += 1
+
+    org_meta = load_org_meta(sql, set(org_keys))
+    rows: list[dict[str, Any]] = []
+    total_staff = 0
+    total_dismissed = 0
+    for dept in departments:
+        meta = org_meta.get(dept.org_key, {}) if dept.org_key else {}
+        staff = staff_by_org.get(dept.org_key, 0) if dept.org_key else 0
+        dismissed = fired_by_org.get(dept.org_key, 0) if dept.org_key else 0
+        rows.append(
+            {
+                "group": dept.group,
+                "structure_code": dept.structure_code,
+                "structure_name": dept.structure_name or dept.group,
+                "org_code": meta.get("org_code", ""),
+                "org_name": meta.get("org_name", ""),
+                "org_key": dept.org_key,
+                "staff_units": float(staff),
+                "dismissed": dismissed,
+                "note": dept.note or "",
+            }
+        )
+        total_staff += staff
+        total_dismissed += dismissed
+    pct = 0.0 if total_staff <= 0 else round(total_dismissed / total_staff * 100, percent_digits)
+    return {
+        "rows": rows,
+        "total_staff_units": float(total_staff),
+        "total_dismissed": total_dismissed,
+        "turnover_pct": pct,
+    }
 
 
 def load_dismissals(
@@ -338,6 +438,7 @@ def calc_month(
     positions: list[dict[str, Any]] | None = None,
     excluded: set[bytes] | None = None,
     org_meta: dict[str, dict[str, str]] | None = None,
+    include_positions_without_history: bool = True,
 ) -> dict[str, Any]:
     org_keys = {d.org_key for d in departments if d.org_key}
     org_bins = [guid_to_1c(k) for k in sorted(org_keys)]
@@ -347,7 +448,12 @@ def calc_month(
 
     as_of = month_end(year, month)
     history = load_history_latest(sql, [p["ref"] for p in positions], as_of)
-    staff_by_dept = staff_units_by_dept(positions, history, as_of)
+    staff_by_dept = staff_units_by_dept(
+        positions,
+        history,
+        as_of,
+        include_positions_without_history=include_positions_without_history,
+    )
     dismissals = load_dismissals(sql, year, month, org_bins, excluded)
 
     dismissed_by_dept: dict[str, int] = defaultdict(int)
@@ -406,6 +512,7 @@ def build_report(
     sql: SqlConnection | None = None,
     hierarchy_mode: str = "listed_only_no_auto_children",
     kpi_label: str = "TURN",
+    include_positions_without_history: bool = True,
 ) -> dict[str, Any]:
     sql = sql or SqlConnection()
     org_keys = {d.org_key for d in departments if d.org_key}
@@ -426,6 +533,7 @@ def build_report(
                 positions=positions,
                 excluded=excluded,
                 org_meta=org_meta,
+                include_positions_without_history=include_positions_without_history,
             )
         )
         if m == 12:

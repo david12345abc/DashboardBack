@@ -18,7 +18,7 @@ from .rd_q2_tekuchest_plan import plan_for_month
 
 CACHE_FILE_PREFIX = "devdir_rd_q2_tekuchest"
 CACHE_SOURCE_TAG = "devdir_rd_q2_tekuchest_sql_v2"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 
 def _build_rd_q2_monthly_payload(year: int, month: int) -> dict[str, Any]:
