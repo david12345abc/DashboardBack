@@ -1244,7 +1244,7 @@ def calc_expected_potential_odata(p0: datetime, p_asof: datetime) -> dict[str, f
         safe="",
     )
     sel = quote(
-        "КоммерческоеПредложение,Подразделение_Key,Партнер_Key,ЗаказКлиента_Key,СуммаДоговора",
+        "КоммерческоеПредложение,Подразделение_Key,Партнер_Key,ЗаказКлиента_Key,СуммаДоговора,ДатаПодписанияПлан",
         safe=",_",
     )
     rows = _odata_get_pages(

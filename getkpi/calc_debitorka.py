@@ -1934,16 +1934,7 @@ def get_dz_detail(year: int | None = None,
     """
     data = get_overdue_detail(year=year, month=month, dept_guid=dept_guid)
     rows = list(data.get("dz_rows") or [])
-    na_raw = data.get("na_datu")
-    try:
-        na_datu = date.fromisoformat(str(na_raw)[:10]) if na_raw else None
-    except ValueError:
-        na_datu = None
-    target = _dz_tile_target(na_datu, dept_guid) if na_datu else None
-    rows = _align_dz_rows_to_tile(rows, target)
     total = round(sum(float(row.get("amount") or 0) for row in rows), 2)
-    if target is not None and abs(total - float(target)) <= 1:
-        total = round(float(target), 2)
     return {
         "na_datu": data.get("na_datu"),
         "total_dz": total,

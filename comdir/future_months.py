@@ -93,6 +93,56 @@ def rows_for_tile(kpi_id: str, year: int, today: date | None = None) -> list[dic
     return out
 
 
+def rows_for_department(
+    kpi_id: str,
+    year: int,
+    dept_guid: str,
+    today: date | None = None,
+) -> list[dict]:
+    """Точки будущего месяца одного отдела. План и ожидаемое лежат в by_dept."""
+    data = load(year)
+    if not data or not dept_guid:
+        return []
+    guid = str(dept_guid).strip().lower()
+    raw = (data.get("tiles") or {}).get(str(kpi_id)) or []
+    if not isinstance(raw, list):
+        return []
+    today = today or date.today()
+    out = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        try:
+            y = int(row.get("year") or 0)
+            m = int(row.get("month") or 0)
+        except (TypeError, ValueError):
+            continue
+        if (y, m) <= (today.year, today.month):
+            continue
+        bucket = (row.get("by_dept") or {}).get(guid)
+        if not isinstance(bucket, dict):
+            continue
+        plan = round(float(bucket.get("plan") or 0), 2)
+        expected = round(float(bucket.get("expected") or 0), 2)
+        out.append(_point(
+            y,
+            m,
+            plan=plan,
+            fact=0,
+            kpi=_pct(expected, plan),
+            has_data=True,
+            extra={
+                "plan_full": plan,
+                "forecast": expected,
+                "expected_plan": expected,
+                "expected_plan_current": expected,
+                "expected_plan_full": expected,
+            },
+        ))
+    out.sort(key=lambda row: (int(row.get("year") or 0), int(row.get("month") or 0)))
+    return out
+
+
 def _save(payload: dict, year: int) -> None:
     path = cache_path(year)
     path.parent.mkdir(parents=True, exist_ok=True)

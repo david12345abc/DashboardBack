@@ -1631,8 +1631,57 @@ def _build_dz_table(ref_y: int, ref_m: int,
     return table
 
 
+def _sync_kd_m4_tile_to_table(payload: dict, table: dict) -> None:
+    """Факт плитки KD-M4 — сумма строк таблицы. Таблица для отдела верная."""
+    try:
+        total = round(float(table.get("total_dz")), 2)
+    except (TypeError, ValueError):
+        return
+    period = table.get("period") if isinstance(table.get("period"), dict) else {}
+    ref_m = period.get("month")
+    items = (payload.get("Плитки") or {}).get("items") or []
+    for tile in items:
+        if not isinstance(tile, dict) or str(tile.get("kpi_id") or "") != "KD-M4":
+            continue
+        plan = tile.get("plan")
+        lm = tile.get("last_full_month_row")
+        if isinstance(lm, dict) and lm.get("plan") is not None:
+            plan = lm.get("plan")
+        try:
+            plan_num = float(plan) if plan is not None else None
+        except (TypeError, ValueError):
+            plan_num = None
+        pct = round(total / plan_num * 100, 1) if plan_num else None
+        tile["fact"] = total
+        if pct is not None:
+            tile["kpi_pct"] = pct
+            tile["color"] = _tile_rag("KD-M4", pct)
+        if isinstance(lm, dict):
+            lm["fact"] = total
+            if pct is not None:
+                lm["kpi_pct"] = pct
+        for row in tile.get("monthly_data") or []:
+            if not isinstance(row, dict):
+                continue
+            try:
+                row_month = int(row.get("month") or 0)
+                want_month = int(ref_m or 0)
+            except (TypeError, ValueError):
+                continue
+            if row_month != want_month:
+                continue
+            row["fact"] = total
+            if pct is not None:
+                row["kpi_pct"] = pct
+        ytd = tile.get("ytd")
+        if isinstance(ytd, dict):
+            ytd["total_fact"] = total
+            if pct is not None:
+                ytd["kpi_pct"] = pct
+
+
 def _attach_dz_table(payload: dict, ref_y: int, ref_m: int, dept_guid: str | None) -> dict:
-    """Добавить расшифровку дебиторки и к снимку, собранному раньше этой таблицы."""
+    """Добавить расшифровку дебиторки и поставить тот же итог на плитку KD-M4."""
     if not isinstance(payload, dict):
         return payload
     try:
@@ -1644,6 +1693,7 @@ def _attach_dz_table(payload: dict, ref_y: int, ref_m: int, dept_guid: str | Non
     tablitsy = dict(next_payload.get("Таблицы") or {})
     tablitsy["KD-T-DZ"] = table
     next_payload["Таблицы"] = tablitsy
+    _sync_kd_m4_tile_to_table(next_payload, table)
     return next_payload
 
 
@@ -2165,13 +2215,12 @@ def _attach_future_month_points(payload: dict, ref_y: int, ref_m: int, dept_guid
         if by_id:
             saved_by_month[month] = by_id
     legacy = None
-    if dept_guid is None:
-        try:
-            from comdir.future_months import rows_for_tile
+    try:
+        from comdir.future_months import rows_for_department, rows_for_tile
 
-            legacy = rows_for_tile
-        except Exception:
-            logger.exception("future months: модуль не подключился")
+        legacy = rows_for_department if dept_guid else rows_for_tile
+    except Exception:
+        logger.exception("future months: модуль не подключился")
     items = (payload.get("Плитки") or {}).get("items") or []
     for tile in items:
         if not isinstance(tile, dict):
@@ -2185,13 +2234,84 @@ def _attach_future_month_points(payload: dict, ref_y: int, ref_m: int, dept_guid
             if row and _append_future_row(monthly, have, row, today):
                 added = True
         if legacy is not None:
-            for row in legacy(kid, ref_y, today):
+            extra_rows = (
+                legacy(kid, ref_y, dept_guid, today)
+                if dept_guid
+                else legacy(kid, ref_y, today)
+            )
+            for row in extra_rows:
                 if _append_future_row(monthly, have, row, today):
                     added = True
+        if dept_guid and _append_department_future_rows(
+            kid, monthly, have, dept_guid, ref_y, today,
+        ):
+            added = True
         if added:
             monthly.sort(key=lambda row: (int(row.get("year") or 0), int(row.get("month") or 0)))
             tile["monthly_data"] = monthly
     return payload
+
+
+_DEBT_SNAPSHOT_TILES = frozenset({"KD-M4", "KD-M5"})
+
+
+def _department_budget_point(kpi_id: str, year: int, month: int, dept_guid: str) -> dict | None:
+    """План декабря отдела из его бюджета. Факт будущего месяца ещё не начислен."""
+    try:
+        if kpi_id == "KD-M7":
+            from getkpi.calc_rashody import get_rashody_plan
+            plan = get_rashody_plan(month, dept_guid, year)
+        elif kpi_id == "KD-M8":
+            from getkpi.calc_fot import get_fot_plan
+            plan = get_fot_plan(month, dept_guid, year)
+        else:
+            return None
+    except Exception:
+        logger.exception("future months: план %s отдела не прочитался", kpi_id)
+        return None
+    fact = 0.0
+    try:
+        pct = round(fact / float(plan) * 100, 1) if plan else None
+    except (TypeError, ValueError):
+        pct = None
+    return {
+        "month": month,
+        "year": year,
+        "month_name": MONTH_NAMES_RU.get(month, ""),
+        "plan": plan,
+        "plan_full": plan,
+        "fact": fact,
+        "kpi_pct": pct,
+        "has_data": True,
+        "future_month": True,
+    }
+
+
+def _append_department_future_rows(
+    kpi_id: str,
+    monthly: list[dict],
+    have: set[tuple[int, int]],
+    dept_guid: str,
+    year: int,
+    today: date,
+) -> bool:
+    """Декабрь отдела: долг как текущий снимок, расходы и ФОТ из бюджета отдела."""
+    added = False
+    current = _monthly_row({"monthly_data": monthly}, year, today.month)
+    for month in range(today.month + 1, 13):
+        if (year, month) in have:
+            continue
+        point = None
+        if kpi_id in _DEBT_SNAPSHOT_TILES and current:
+            point = dict(current)
+            point["month"] = month
+            point["year"] = year
+            point["month_name"] = MONTH_NAMES_RU.get(month, "")
+        elif kpi_id in {"KD-M7", "KD-M8"}:
+            point = _department_budget_point(kpi_id, year, month, dept_guid)
+        if point and _append_future_row(monthly, have, point, today):
+            added = True
+    return added
 
 
 def _plans_payload_from_tile(tile: dict, kpi_id: str) -> dict:
