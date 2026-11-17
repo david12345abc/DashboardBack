@@ -1313,20 +1313,32 @@ def calc_expected_offer_live(p0: datetime, p_next: datetime) -> dict[str, float]
     dept_filter = " or ".join(
         f"Подразделение_Key eq guid'{g}'" for g in _DEPT_GUID_TO_NAME if g != "9edaa7d4-37a5-11ee-93d3-6cb31113810e"
     )
-    flt = quote(
-        f"Date ge datetime'{_odata_stamp(p0)}' and Date lt datetime'{_odata_stamp(p_next)}' "
-        f"and Posted eq true and ({dept_filter})",
-        safe="",
-    )
+    start = _odata_stamp(p0)
+    end = _odata_stamp(p_next)
     sel = quote(
         "Ref_Key,Number,СуммаДокумента,Подразделение_Key,Партнер_Key,Соглашение_Key,Статус,"
         "ТД_ПредполагаемаяДатаАванса,ТД_НеУчитыватьВПланФакте,ТД_СопровождениеПродажи",
         safe=",_",
     )
-    orders = _odata_get_pages(
-        session,
-        f"{base}/Document_ЗаказКлиента?$format=json&$filter={flt}&$select={sel}",
+    # Заказ ноября с авансом в декабре не попадает в срез «дата документа = декабрь».
+    windows = (
+        f"Date ge datetime'{start}' and Date lt datetime'{end}'",
+        f"ТД_ПредполагаемаяДатаАванса ge datetime'{start}' and ТД_ПредполагаемаяДатаАванса lt datetime'{end}'",
     )
+    orders_by_ref: dict[str, dict] = {}
+    for window in windows:
+        flt = quote(f"Posted eq true and ({dept_filter}) and ({window})", safe="")
+        try:
+            batch = _odata_get_pages(
+                session,
+                f"{base}/Document_ЗаказКлиента?$format=json&$filter={flt}&$select={sel}",
+            )
+        except Exception:
+            logger.exception("OData счёт-оферты ожидаемых договоров: срез не прочитался")
+            continue
+        for row in batch:
+            orders_by_ref[str(row.get("Ref_Key") or id(row))] = row
+    orders = list(orders_by_ref.values())
     agreements = _odata_batch(
         session,
         base,
@@ -1339,7 +1351,8 @@ def calc_expected_offer_live(p0: datetime, p_next: datetime) -> dict[str, float]
         for row in orders
         if (row.get("Number") or "").strip()
     })
-    in_sql: set[str] = set()
+    # Номер заказа повторяется по годам, поэтому сверяем номер вместе с датой документа.
+    in_sql: set[tuple[str, str]] = set()
     if numbers:
         cn = connect()
         try:
@@ -1349,22 +1362,22 @@ def calc_expected_offer_live(p0: datetime, p_next: datetime) -> dict[str, float]
                 marks = ",".join("?" * len(part))
                 cur.execute(
                     f"""
-                    SELECT _Number FROM _Document704 WITH (NOLOCK)
-                    WHERE _Date_Time >= ? AND _Date_Time < ?
-                      AND _Number IN ({marks})
+                    SELECT _Number,
+                           CONVERT(varchar(10), DATEADD(year, -2000, _Date_Time), 23)
+                    FROM _Document704 WITH (NOLOCK)
+                    WHERE _Number IN ({marks})
                     """,
-                    p0,
-                    p_next,
                     *part,
                 )
-                in_sql.update((r[0] or "").strip() for r in cur.fetchall())
+                in_sql.update(((r[0] or "").strip(), (r[1] or "")[:10]) for r in cur.fetchall())
         finally:
             cn.close()
 
     out: dict[str, float] = {}
     for row in orders:
         number = (row.get("Number") or "").strip()
-        if not number or number in in_sql:
+        order_day = (row.get("Date") or "")[:10]
+        if not number or (number, order_day) in in_sql:
             continue
         if (row.get("Статус") or "") in {"НеСогласован", "Черновик", "Отменен", "Отменён"}:
             continue

@@ -252,7 +252,12 @@ def _get_monthly_pairs() -> tuple[list[tuple[int, int]], int, int]:
 
 
 def _fot_tile_period(ref_y: int, ref_m: int) -> tuple[int, int]:
-    """KD-M8: в незакрытом текущем месяце показываем ФОТ за предыдущий."""
+    """KD-M8: каждый текущий месяц показывает ФОТ предыдущего.
+
+    Зарплата месяца попадает в учёт к следующему. Пока выбран незакрытый
+    календарный месяц, на плитке план и факт прошлого. Закрытый месяц
+    остаётся сам собой.
+    """
     today = date.today()
     if ref_y == today.year and ref_m == today.month:
         return last_full_month(today)
@@ -1680,6 +1685,8 @@ _PLAN_FACT_YTD_PREFIX = {
     "KD-M3": "comdir_kd_m3_ytd",
     "KD-M4": "comdir_kd_m4_ytd",
     "KD-M5": "comdir_kd_m4_ytd",
+    # Снимок дня не пересобирается сам: без этой строки ФОТ остаётся утренним.
+    "KD-M8": "comdir_kd_m8_ytd",
 }
 
 _REFRESHABLE_KOMDIR_TILES = frozenset({
@@ -1937,6 +1944,56 @@ _POTENTIAL_METRIC_BY_TILE = {
 }
 
 
+def _ytd_month_row(prefix: str, year: int, month: int) -> dict | None:
+    path = _CACHE_DIR / f"{prefix}_{year}_{month:02d}.json"
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    payload = raw.get("payload") if isinstance(raw, dict) else None
+    if not isinstance(payload, dict):
+        return None
+    for row in payload.get("months") or []:
+        if isinstance(row, dict) and int(row.get("month") or 0) == int(month):
+            return row
+    return None
+
+
+def _sync_plan_fact_tile_from_ytd(tile: dict, kpi_id: str, year: int, month: int) -> None:
+    """Плитка снимка отстаёт от YTD: факт договоров в снимке ещё 46 млн, в расчёте уже 67,3."""
+    prefix = _PLAN_FACT_YTD_PREFIX.get(kpi_id)
+    if not prefix:
+        return
+    source = _ytd_month_row(prefix, year, month)
+    if not source:
+        return
+    fact = source.get("fact")
+    expected = source.get("expected_full")
+    if expected is None:
+        expected = source.get("expected") or source.get("expected_current")
+    if fact is not None:
+        tile["fact"] = fact
+    if expected is not None:
+        tile["expected_plan"] = expected
+    for row in tile.get("monthly_data") or []:
+        if not isinstance(row, dict):
+            continue
+        if int(row.get("month") or 0) != int(month):
+            continue
+        if fact is not None:
+            row["fact"] = fact
+        if expected is not None:
+            row["expected_plan"] = expected
+
+
+def _tile_forecast(fact, expected, perspective: float) -> float | None:
+    if fact is None and expected is None and not perspective:
+        return None
+    return round(float(fact or 0) + float(expected or 0) + float(perspective or 0), 2)
+
+
 def _attach_commercial_potential(
     payload: dict,
     year: int,
@@ -1945,10 +2002,11 @@ def _attach_commercial_potential(
     *,
     metric_by_tile: dict[str, str] | None = None,
 ) -> dict:
-    """Потенциал плитки — коммерческие предложения внутри ожидаемого.
+    """Перспектива — колонки отчёта «Деньги прогноз» и «Отгрузки прогноз».
 
-    План, факт, ожидаемое и прогноз не меняются. Потенциал только
-    дополнительная цифра, он уже входит в ожидаемое.
+    В отчёте это аванс ожидаемых коммерческих предложений (половина их суммы),
+    и обе колонки совпадают. Прогноз плитки = факт + ожидаемо + перспектива.
+    На договорах перспективу не пишем.
     """
     if not isinstance(payload, dict):
         return payload
@@ -1957,30 +2015,38 @@ def _attach_commercial_potential(
 
         totals = commercial_potential_by_month(year, through_month, dept_guid)
     except Exception:
-        logger.exception("komdir: потенциал на плитках не посчитался")
-        return payload
-    metric_by_tile = metric_by_tile or _POTENTIAL_METRIC_BY_TILE
+        logger.exception("komdir: перспектива на плитках не посчиталась")
+        totals = {}
+    dog_by_month = (totals or {}).get("dog") or {}
     items = (payload.get("Плитки") or {}).get("items") or []
     for tile in items:
         if not isinstance(tile, dict):
             continue
-        metric = metric_by_tile.get(str(tile.get("kpi_id") or ""))
-        if not metric:
+        kid = str(tile.get("kpi_id") or "")
+        if kid not in _POTENTIAL_METRIC_BY_TILE:
             continue
-        by_month = totals.get(metric) or {}
+        _sync_plan_fact_tile_from_ytd(tile, kid, year, through_month)
+        show_perspective = kid != "KD-M3"
         monthly = [row for row in (tile.get("monthly_data") or []) if isinstance(row, dict)]
-        ref_potential = 0.0
+        ref_perspective = 0.0
         for row in monthly:
             try:
                 month = int(row.get("month") or 0)
-                expected = float(row.get("expected_plan") or 0)
             except (TypeError, ValueError):
                 continue
-            potential = min(float(by_month.get(month) or 0), expected) if expected > 0 else 0.0
-            row["potential"] = round(potential, 2)
+            perspective = round(float(dog_by_month.get(month) or 0) / 2.0, 2) if show_perspective else 0.0
+            if show_perspective:
+                row["potential"] = perspective
+            else:
+                row.pop("potential", None)
+            row["forecast"] = _tile_forecast(row.get("fact"), row.get("expected_plan"), perspective)
             if month == int(through_month):
-                ref_potential = row["potential"]
-        tile["potential"] = ref_potential
+                ref_perspective = perspective
+        if show_perspective:
+            tile["potential"] = ref_perspective
+        else:
+            tile.pop("potential", None)
+        tile["forecast"] = _tile_forecast(tile.get("fact"), tile.get("expected_plan"), ref_perspective)
     return payload
 
 
@@ -1994,11 +2060,13 @@ def _attach_plan_fact_breakdown(
     if not isinstance(payload, dict):
         return payload
     try:
-        from comdir.plan_fact_lines import tables_from_lines, tables_from_tile_cache
+        from comdir.plan_fact_lines import future_month_lines, tables_from_lines, tables_from_tile_cache
         from comdir.future_months import breakdown_lines, future_month_numbers
 
         tables = tables_from_tile_cache(ref_y, ref_m, dept_guid=dept_guid)
-        future_lines = breakdown_lines(ref_y)
+        future_lines = future_month_lines(ref_y, ref_m)
+        if not future_lines:
+            future_lines = breakdown_lines(ref_y)
         if future_lines:
             extra = tables_from_lines(future_lines, ref_y, 12, dept_guid)
             future = set(future_month_numbers(ref_y))
@@ -2030,38 +2098,96 @@ def _attach_plan_fact_breakdown(
     return next_payload
 
 
-def _attach_future_month_points(payload: dict, ref_y: int, ref_m: int, dept_guid: str | None) -> dict:
-    """На сводку коммерческого директора добавить месяцы после сегодня.
+def _load_saved_payload(ref_y: int, ref_m: int, dept_guid: str | None) -> dict | None:
+    path = _payload_cache_path(ref_y, ref_m, dept_guid)
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if raw.get("cache_version") != KOMDIR_PAYLOAD_CACHE_VERSION:
+        return None
+    payload = raw.get("payload")
+    return payload if isinstance(payload, dict) else None
 
-    Октябрь и раньше не меняются. Отделы получают свой payload без этих точек.
+
+def _monthly_row(tile: dict | None, year: int, month: int) -> dict | None:
+    if not isinstance(tile, dict):
+        return None
+    for row in tile.get("monthly_data") or []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            row_year = int(row.get("year") or year)
+            row_month = int(row.get("month") or 0)
+        except (TypeError, ValueError):
+            continue
+        if row_year == year and row_month == month:
+            return row
+    return None
+
+
+def _append_future_row(monthly: list[dict], have: set[tuple[int, int]], row: dict, today: date) -> bool:
+    try:
+        key = (int(row.get("year") or 0), int(row.get("month") or 0))
+    except (TypeError, ValueError):
+        return False
+    if key in have or key <= (today.year, today.month):
+        return False
+    point = dict(row)
+    point["future_month"] = True
+    monthly.append(point)
+    have.add(key)
+    return True
+
+
+def _attach_future_month_points(payload: dict, ref_y: int, ref_m: int, dept_guid: str | None) -> dict:
+    """Добавить месяцы после сегодня на сводку директора и каждого его отдела.
+
+    Точка берётся из кэша этого месяца. Пока файла нет, у директора остаётся
+    прежний общий снимок будущих месяцев.
     """
     today = date.today()
-    if dept_guid or not isinstance(payload, dict):
+    if not isinstance(payload, dict):
         return payload
     if ref_y != today.year or ref_m != today.month:
         return payload
-    try:
-        from comdir.future_months import rows_for_tile
-    except Exception:
-        logger.exception("future months: модуль не подключился")
-        return payload
+    saved_by_month: dict[int, dict[str, dict]] = {}
+    for month in range(today.month + 1, 13):
+        saved = _load_saved_payload(ref_y, month, dept_guid)
+        items = ((saved or {}).get("Плитки") or {}).get("items") or []
+        by_id = {
+            str(tile.get("kpi_id") or ""): tile
+            for tile in items
+            if isinstance(tile, dict) and tile.get("kpi_id")
+        }
+        if by_id:
+            saved_by_month[month] = by_id
+    legacy = None
+    if dept_guid is None:
+        try:
+            from comdir.future_months import rows_for_tile
+
+            legacy = rows_for_tile
+        except Exception:
+            logger.exception("future months: модуль не подключился")
     items = (payload.get("Плитки") or {}).get("items") or []
     for tile in items:
         if not isinstance(tile, dict):
             continue
-        extra = rows_for_tile(str(tile.get("kpi_id") or ""), ref_y, today)
-        if not extra:
-            continue
+        kid = str(tile.get("kpi_id") or "")
         monthly = [row for row in (tile.get("monthly_data") or []) if isinstance(row, dict)]
         have = {(int(row.get("year") or 0), int(row.get("month") or 0)) for row in monthly}
         added = False
-        for row in extra:
-            key = (int(row.get("year") or 0), int(row.get("month") or 0))
-            if key in have or key <= (today.year, today.month):
-                continue
-            monthly.append(dict(row))
-            have.add(key)
-            added = True
+        for month, by_id in saved_by_month.items():
+            row = _monthly_row(by_id.get(kid), ref_y, month)
+            if row and _append_future_row(monthly, have, row, today):
+                added = True
+        if legacy is not None:
+            for row in legacy(kid, ref_y, today):
+                if _append_future_row(monthly, have, row, today):
+                    added = True
         if added:
             monthly.sort(key=lambda row: (int(row.get("year") or 0), int(row.get("month") or 0)))
             tile["monthly_data"] = monthly
@@ -2310,6 +2436,17 @@ def _build_komdir_payload_fresh(kpi_list: list[dict],
                 "Отчёт 1С: «Списания ДС по статьям ДДС за период», "
                 "документ «Списание безналичных денежных средств», "
                 "статья в группе «КС»."
+            )
+        if kid == "KD-M8":
+            tile_item["description"] = (
+                "План:\n"
+                "Лимит ФОТ коммерческого блока за месяц, который показан на плитке.\n\n"
+                "Факт:\n"
+                "Дебет счетов 44, 44.01 и 44.02 по статьям «Оплата труда (44 сч) ТД НПО!» "
+                "и «Страховые взносы (44.01) ТД НПО!» "
+                "по коммерческим отделам и подразделению «Коммерческий директор».\n\n"
+                "В текущем незакрытом месяце плитка каждый раз показывает ФОТ предыдущего месяца. "
+                "Выбранный прошедший месяц показывает сам себя."
             )
         if kid == "KD-M2":
             tile_item["source"] = (

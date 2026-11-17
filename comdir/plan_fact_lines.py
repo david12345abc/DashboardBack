@@ -496,6 +496,49 @@ def _is_potential_document(document: str) -> bool:
     return text.startswith("коммерческое предложение") or text.startswith("потенциальный договор")
 
 
+def future_month_lines(year: int, after_month: int) -> list[dict]:
+    """Строки месяцев после текущего.
+
+    Сначала файл того месяца, который пишет дневной пересчёт. Старый общий
+    снимок дополняет только ту плитку месяца, для которой своего файла ещё нет.
+    """
+    metric_by_prefix = {
+        "comdir_kd_m1_ytd": "money",
+        "comdir_kd_m2_ytd": "ship",
+        "comdir_kd_m3_ytd": "dog",
+    }
+    lines: list[dict] = []
+    covered: set[tuple[int, str]] = set()
+    after = int(after_month)
+    for month in range(after + 1, 13):
+        for prefix, metric in metric_by_prefix.items():
+            stored = _tile_cache_lines(prefix, year, month)
+            if not stored:
+                continue
+            picked = [
+                row for row in stored
+                if int(row.get("month") or 0) == month and row.get("metric") == metric
+            ]
+            if not picked:
+                continue
+            covered.add((month, metric))
+            lines.extend(picked)
+    try:
+        from comdir.future_months import breakdown_lines
+
+        for row in breakdown_lines(year):
+            try:
+                month = int(row.get("month") or 0)
+            except (TypeError, ValueError):
+                continue
+            metric = str(row.get("metric") or "")
+            if month > after and (month, metric) not in covered:
+                lines.append(row)
+    except Exception:
+        logger.exception("Строки будущих месяцев не прочитались")
+    return lines
+
+
 def commercial_potential_by_month(
     year: int,
     through_month: int,
@@ -504,20 +547,13 @@ def commercial_potential_by_month(
     """Сумма потенциальных строк по месяцам: money / ship / dog.
 
     Строки текущего расчёта берутся из кэша плитки, будущие месяцы — из
-    отдельного кэша ожидаемого. Потенциал не вычитается из ожидаемого здесь:
+    кэша этого месяца. Потенциал не вычитается из ожидаемого здесь:
     это делает плитка, чтобы прогноз оставался фактом плюс обе части.
     """
     lines: list[dict] = []
     for prefix in TILE_CACHE_PREFIXES.values():
         lines.extend(_tile_cache_lines(prefix, year, through_month) or [])
-    try:
-        from comdir.future_months import breakdown_lines
-
-        for row in breakdown_lines(year):
-            if int(row.get("month") or 0) > int(through_month):
-                lines.append(row)
-    except Exception:
-        logger.exception("Потенциал: строки будущих месяцев не прочитались")
+    lines.extend(future_month_lines(year, through_month))
     wanted = (dept_guid or "").strip().lower()
     totals = {"money": {}, "ship": {}, "dog": {}}
     for row in lines:

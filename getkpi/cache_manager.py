@@ -643,6 +643,7 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
     from getkpi.c1auto.it_q5_tekuchest import get_it_q5_tekuchest_ytd
 
     y, m = ref_y, ref_m
+    prev_y, prev_m = (y - 1, 12) if m == 1 else (y, m - 1)
     cd = CACHE_DIR
 
     def _comdir_path(kpi_id: str) -> Path:
@@ -685,6 +686,10 @@ def _build_warm_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
         (f'comdir_fot_{y}_{m}',
          _comdir_path('KD-M8'),
          lambda: get_fot_ytd(year=y, month=m)),
+
+        (f'comdir_fot_prev_{prev_y}_{prev_m:02d}',
+         (comdir_cache_stamp_paths('KD-M8', prev_y, prev_m) or [cd / f'comdir_kd_m8_ytd_{prev_y}_{prev_m:02d}.json'])[0],
+         lambda yy=prev_y, mm=prev_m: get_fot_ytd(year=yy, month=mm)),
 
         (f'comdir_cena_{y}_{m}',
          _comdir_path('KD-M9'),

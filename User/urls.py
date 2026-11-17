@@ -12,6 +12,7 @@ urlpatterns = [
     path('access-requests/<int:request_id>/reject/', views.reject_access_request, name='access-request-reject'),
     path('register/', views.register, name='user-register'),
     path('me/', views.me, name='user-me'),
+    path('tile-order/', views.tile_order, name='user-tile-order'),
     path('list/', views.list_users, name='user-list'),
     path('<int:user_id>/', views.get_user, name='user-detail'),
     path('<int:user_id>/delete/', views.delete_user, name='user-delete'),

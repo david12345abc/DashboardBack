@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 from urllib.parse import quote
 
@@ -68,10 +69,10 @@ def _session():
     return session
 
 
-def _odata(session, url: str) -> list[dict]:
+def _odata(session, url: str) -> list[dict] | None:
     response = session.get(url, timeout=60)
     if not response.ok:
-        return []
+        return None
     return response.json().get("value") or []
 
 
@@ -106,11 +107,14 @@ def _fetch(proposals: set[str], orders: set[str]) -> dict[str, float | None]:
             session,
             f"{base}/{entity}?$format=json&$filter={flt}&$select={select}&$top={len(part)}",
         )
+        if rows is None:
+            continue
         by_ref = {row.get("Ref_Key"): row for row in rows}
         for key in part:
             row = by_ref.get(key)
             found[key] = chosen_percent(row) if row else None
     by_order: dict[str, list[dict]] = {}
+    fetched_orders: set[str] = set()
     order_list = sorted(orders)
     for index in range(0, len(order_list), 10):
         part = order_list[index:index + 10]
@@ -119,30 +123,58 @@ def _fetch(proposals: set[str], orders: set[str]) -> dict[str, float | None]:
             session,
             f"{base}/{entity}?$format=json&$filter={flt}&$select={select}&$top=200",
         )
+        if rows is None:
+            continue
+        fetched_orders.update(part)
         for row in rows:
             order_key = row.get("ЗаказКлиента_Key") or ""
             if order_key and order_key != _EMPTY:
                 by_order.setdefault(order_key, []).append(row)
-    for key in order_list:
+    for key in fetched_orders:
         found[key] = _pick(by_order.get(key) or [])
     return found
 
 
+def _fresh_percent(entry: object, today: str) -> tuple[float | None, bool]:
+    if not isinstance(entry, dict) or entry.get("day") != today or "pct" not in entry:
+        return None, False
+    pct = entry.get("pct")
+    if pct is None:
+        return None, True
+    try:
+        return float(pct), True
+    except (TypeError, ValueError):
+        return None, False
+
+
 def probabilities_for_lines(rows: list[dict]) -> dict[str, float | None]:
-    """guid документа строки -> процент. Повторно в 1С не ходим."""
+    """guid документа строки -> процент. Значение из 1С обновляется раз в день."""
     needed: dict[str, str] = {}
     for row in rows:
         kind, guid = line_source(row)
         if not guid or guid == _EMPTY:
             continue
         needed[guid] = "proposal" if kind == "КоммерческоеПредложениеКлиенту" else "order" if kind == "ЗаказКлиента" else ""
+    today = date.today().isoformat()
     cache = _load()
-    missing_proposals = {guid for guid, kind in needed.items() if kind == "proposal" and guid not in cache}
-    missing_orders = {guid for guid, kind in needed.items() if kind == "order" and guid not in cache}
+    fresh: dict[str, float | None] = {}
+    missing_proposals: set[str] = set()
+    missing_orders: set[str] = set()
+    for guid, kind in needed.items():
+        pct, is_fresh = _fresh_percent(cache.get(guid), today)
+        if is_fresh:
+            fresh[guid] = pct
+        elif kind == "proposal":
+            missing_proposals.add(guid)
+        elif kind == "order":
+            missing_orders.add(guid)
     if missing_proposals or missing_orders:
-        cache.update(_fetch(missing_proposals, missing_orders))
+        fetched = _fetch(missing_proposals, missing_orders)
+        for guid, pct in fetched.items():
+            cache[guid] = {"pct": pct, "day": today}
+            fresh[guid] = pct
         _save(cache)
-    return {guid: cache.get(guid) for guid in needed}
+    return fresh
 
 
 def attach(rows: list[dict]) -> None:

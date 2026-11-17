@@ -837,13 +837,38 @@ def get_rashody_ytd(
 
 # ── KD-M8 ФОТ ─────────────────────────────────────────────────
 
+def _is_previous_calendar_month(year: int, month: int) -> bool:
+    """Месяц, который плитка показывает, пока открыт следующий."""
+    today = date.today()
+    if today.month == 1:
+        return year == today.year - 1 and month == 12
+    return year == today.year and month == today.month - 1
+
+
 def compute_fot_month(year: int, month: int) -> dict[str, Any]:
-    p0, p_next = period_bounds(year, month)
-    with connect_ctx() as cn:
-        cur = cn.cursor()
-        cur.execute("SET NOCOUNT ON")
-        by_name = fot_mod.calc_fot_by_dept(cur, p0, p_next)
-    fact_map = aggregate_by_odata_name(by_name)
+    fact_source = "sql"
+    fact_map: dict[str, float] | None = None
+    # Прошлый месяц на плитке важнее копии: отражение зарплаты появляется
+    # в живой 1С раньше, чем в ночном дампе.
+    if _is_previous_calendar_month(year, month):
+        try:
+            from getkpi.calc_fot import live_npo_fot_by_dept
+
+            fact_map = live_npo_fot_by_dept(year, month)
+            fact_source = "odata"
+        except Exception:
+            logger.exception(
+                "KD-M8: живой ФОТ %d-%02d не собрался, факт из локальной копии",
+                year,
+                month,
+            )
+    if fact_map is None:
+        p0, p_next = period_bounds(year, month)
+        with connect_ctx() as cn:
+            cur = cn.cursor()
+            cur.execute("SET NOCOUNT ON")
+            by_name = fot_mod.calc_fot_by_dept(cur, p0, p_next)
+        fact_map = aggregate_by_odata_name(by_name)
     plan_map = {g: float(get_fot_plan(month, g)) for g in fact_map}
     plan_total = float(get_fot_plan(month, None))
     guids = set(fact_map) | set(plan_map)
@@ -854,6 +879,7 @@ def compute_fot_month(year: int, month: int) -> dict[str, Any]:
         "fact": round(sum(fact_map.values()), 2),
         "plan": plan_total,
         "by_dept": by_dept,
+        "fact_source": fact_source,
     }
 
 
@@ -871,7 +897,7 @@ def get_fot_ytd(
         year=year,
         month=month,
         cache_prefix="comdir_kd_m8_ytd",
-        source_tag="comdir_kd_m8_ytd_sql_v1",
+        source_tag="comdir_kd_m8_ytd_live_prev_month_v2",
         version=CACHE_VERSION,
         lock_key_prefix="comdir_kd_m8",
         compute_fn=build_fot_payload,

@@ -74,6 +74,7 @@ def _commercial_source_tasks(ref_y: int, ref_m: int, series_m: int) -> list[tupl
 
     cd = cache_manager.CACHE_DIR
     today = date.today()
+    prev_y, prev_m = (ref_y - 1, 12) if series_m == 1 else (ref_y, series_m - 1)
 
     def _comdir_path(kpi_id: str) -> Path:
         paths = comdir_cache_stamp_paths(kpi_id, ref_y, series_m)
@@ -110,6 +111,13 @@ def _commercial_source_tasks(ref_y: int, ref_m: int, series_m: int) -> list[tupl
             f"commercial_fot_{ref_y}_{series_m:02d}",
             _comdir_path("KD-M8"),
             lambda: get_fot_ytd(year=ref_y, month=series_m),
+        ),
+        (
+            # Плитка текущего месяца показывает ФОТ предыдущего. Его файл
+            # пересчитывается отдельно, иначе в снимке остаётся вчерашняя копия.
+            f"commercial_fot_prev_{prev_y}_{prev_m:02d}",
+            (comdir_cache_stamp_paths("KD-M8", prev_y, prev_m) or [cd / f"comdir_kd_m8_ytd_{prev_y}_{prev_m:02d}.json"])[0],
+            lambda y=prev_y, m=prev_m: get_fot_ytd(year=y, month=m),
         ),
         (
             f"commercial_kp_price_{ref_y}_{series_m:02d}",
@@ -217,6 +225,70 @@ def _has_stale_commercial_cache(
     return any(not cache_manager.is_cache_fresh(path) for path in paths)
 
 
+def _periods_after_current(year: int, month: int) -> list[tuple[int, int]]:
+    """Прошлый месяц, затем каждый следующий до декабря этого года."""
+    if month <= 1:
+        previous = (year - 1, 12)
+    else:
+        previous = (year, month - 1)
+    following = [(year, item) for item in range(month + 1, 13)]
+    return [previous, *following]
+
+
+def _tasks_for_period(
+    ref_y: int,
+    ref_m: int,
+    series_m: int,
+    *,
+    task_keys: set[str] | None = None,
+    month_only: bool = False,
+) -> list[tuple[str, Path, object]]:
+    tasks = _commercial_source_tasks(ref_y, ref_m, series_m)
+    if month_only:
+        token = f"_{ref_y}_{series_m:02d}"
+        tasks = [task for task in tasks if token in task[0]]
+    if task_keys:
+        wanted = {str(key).strip().lower() for key in task_keys}
+        tasks = [task for task in tasks if any(token in task[0].lower() for token in wanted)]
+    return tasks
+
+
+def _refresh_one_period(
+    ref_y: int,
+    ref_m: int,
+    series_m: int,
+    *,
+    force: bool,
+    task_keys: set[str] | None,
+    rebuild_payloads: bool,
+    payload_departments: Iterable[str] | None,
+    month_only: bool = False,
+) -> int:
+    tasks = _tasks_for_period(
+        ref_y,
+        ref_m,
+        series_m,
+        task_keys=task_keys,
+        month_only=month_only,
+    )
+    payload_paths = _filtered_payload_paths(ref_y, ref_m, payload_departments)
+    logger.info(
+        "commercial cache scheduler: refresh %04d-%02d, tasks=%d, payloads=%d",
+        ref_y,
+        series_m,
+        len(tasks),
+        len(payload_paths),
+    )
+    with cache_manager.mark_paths_refreshing(
+        f"commercial_daily_payloads_{ref_y}_{series_m:02d}",
+        payload_paths,
+    ):
+        cache_manager._run_warm_tasks(tasks, force=force)
+        if rebuild_payloads:
+            _rebuild_payload_snapshots(ref_y, ref_m, departments=payload_departments)
+    return len(tasks)
+
+
 def _rebuild_payload_snapshots(ref_y: int, ref_m: int, departments: Iterable[str] | None = None) -> None:
     from . import komdir_dashboard
     from . import views
@@ -252,38 +324,66 @@ def run_commercial_cache_refresh_once(
 ) -> dict[str, object]:
     """Запустить один цикл пересчёта коммерческих кэшей.
 
-    Используется scheduler-ом и тестом из shell. Старые файлы не удаляются:
-    active paths помечаются как refreshing, поэтому API продолжает отдавать
-    stale payload с индикатором загрузки.
+    Сначала текущий месяц. Затем по очереди прошлый и каждый следующий
+    месяц года: источники и снимки директора и его отделов.
+    Старые файлы не удаляются: active paths помечаются как refreshing,
+    поэтому API продолжает отдавать stale payload с индикатором загрузки.
     """
     if not _run_lock.acquire(blocking=False):
         logger.warning("commercial cache scheduler: refresh already running, skip")
         return {"started": False, "reason": "already_running"}
     try:
         ref_y, ref_m, series_m = _commercial_period(month, year)
-        tasks = _commercial_source_tasks(ref_y, ref_m, series_m)
-        if task_keys:
-            wanted = {str(key).strip().lower() for key in task_keys}
-            tasks = [task for task in tasks if any(token in task[0].lower() for token in wanted)]
-        payload_paths = _filtered_payload_paths(ref_y, ref_m, payload_departments)
         logger.info(
-            "commercial cache scheduler: start refresh, tasks=%d, period=%04d-%02d",
-            len(tasks),
+            "commercial cache scheduler: start refresh, period=%04d-%02d",
             ref_y,
             series_m,
         )
-        with cache_manager.mark_paths_refreshing("commercial_daily_payloads", payload_paths):
-            cache_manager._run_warm_tasks(tasks, force=force)
-            if rebuild_payloads:
-                _rebuild_payload_snapshots(ref_y, ref_m, departments=payload_departments)
+        tasks = _refresh_one_period(
+            ref_y,
+            ref_m,
+            series_m,
+            force=force,
+            task_keys=task_keys,
+            rebuild_payloads=rebuild_payloads,
+            payload_departments=payload_departments,
+        )
+        today = date.today()
+        adjacent: list[tuple[int, int]] = []
+        if not task_keys and ref_y == today.year and series_m == today.month:
+            adjacent = _periods_after_current(ref_y, series_m)
+        adjacent_done: list[dict[str, int]] = []
+        for extra_y, extra_m in adjacent:
+            try:
+                _refresh_one_period(
+                    extra_y,
+                    extra_m,
+                    extra_m,
+                    force=force,
+                    task_keys=None,
+                    rebuild_payloads=rebuild_payloads,
+                    payload_departments=payload_departments,
+                    month_only=True,
+                )
+                adjacent_done.append({"year": extra_y, "month": extra_m})
+            except Exception:
+                logger.exception(
+                    "commercial cache scheduler: adjacent month failed %04d-%02d",
+                    extra_y,
+                    extra_m,
+                )
         cache_manager.clear_memoized_dashboard_payload("komdir_payload_")
-        logger.info("commercial cache scheduler: refresh complete")
+        logger.info(
+            "commercial cache scheduler: refresh complete, adjacent=%s",
+            ",".join(f"{item['year']}-{item['month']:02d}" for item in adjacent_done) or "none",
+        )
         return {
             "started": True,
-            "tasks": len(tasks),
+            "tasks": tasks,
             "year": ref_y,
             "month": series_m,
             "payloads_rebuilt": bool(rebuild_payloads),
+            "adjacent_months": adjacent_done,
         }
     finally:
         _run_lock.release()

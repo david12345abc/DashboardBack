@@ -20,7 +20,7 @@ from .erp_auth import (
     UserNotFoundError,
     authenticate as authenticate_onec,
 )
-from .models import AccessRequest, User
+from .models import AccessRequest, User, UserTileOrder
 
 logger = logging.getLogger(__name__)
 
@@ -538,3 +538,45 @@ def edit_user(request, user_id):
 @login_required
 def me(request):
     return JsonResponse(_user_to_dict(request.current_user))
+
+
+def _clean_tile_order(raw) -> list[str] | None:
+    if not isinstance(raw, list):
+        return None
+    order: list[str] = []
+    seen: set[str] = set()
+    for item in raw[:300]:
+        text = str(item or "").strip()
+        if not text or len(text) > 80 or text in seen:
+            continue
+        seen.add(text)
+        order.append(text)
+    return order
+
+
+@require_http_methods(['GET', 'PUT'])
+@login_required
+def tile_order(request):
+    """Порядок плиток этой учётной записи. Один и тот же на всех устройствах."""
+    user = request.current_user
+    if request.method == 'GET':
+        rows = UserTileOrder.objects.filter(user=user).order_by('scope_key')
+        return JsonResponse({
+            'orders': {row.scope_key: list(row.order or []) for row in rows},
+        })
+
+    data, error = _parse_json_body(request)
+    if error is not None:
+        return error
+    scope = str((data or {}).get('scope') or '').strip()
+    if not scope or len(scope) > 400 or any(ord(ch) < 32 for ch in scope):
+        return JsonResponse({'error': 'Некорректный раздел дашборда'}, status=400)
+    order = _clean_tile_order((data or {}).get('order'))
+    if order is None:
+        return JsonResponse({'error': 'Порядок плиток должен быть списком'}, status=400)
+    UserTileOrder.objects.update_or_create(
+        user=user,
+        scope_key=scope,
+        defaults={'order': order},
+    )
+    return JsonResponse({'scope': scope, 'order': order})

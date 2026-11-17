@@ -62,6 +62,8 @@ COST_ARTICLES = {
 ARTICLE_SET = frozenset(COST_ARTICLES.keys())
 
 SUBCONTO_TYPE_COST = "fb2bdde9-6250-11e7-812d-001e67112509"
+# Ведомость по 44 счёту коммерческого директора сформирована по этой организации.
+ORG_NPO = "fbca2148-6cfd-11e7-812d-001e67112509"
 
 MONTH_RU = {
     1: "январь", 2: "февраль", 3: "март", 4: "апрель",
@@ -147,7 +149,9 @@ def _save_cache(year: int, ref_month: int, payload: dict) -> None:
 
 
 def _fetch_records_for_month(session: requests.Session,
-                             year: int, month: int) -> list[dict]:
+                             year: int, month: int,
+                             organization_key: str | None = None,
+                             raise_on_error: bool = False) -> list[dict]:
     """Загружает проводки RecordsWithExtDimensions по счёту 44 за один месяц."""
     if month == 12:
         p_start = f"{year}-12-01T00:00:00"
@@ -164,6 +168,8 @@ def _fetch_records_for_month(session: requests.Session,
         f" and Active eq true"
         f" and ({acc_filter})"
     )
+    if organization_key:
+        flt += f" and Организация_Key eq guid'{organization_key}'"
 
     sel = (
         "Period,AccountDr_Key,ПодразделениеDr_Key,Сумма,Сторно,"
@@ -187,9 +193,13 @@ def _fetch_records_for_month(session: requests.Session,
             r = session.get(url, timeout=120)
         except Exception as e:
             logger.error("FOT HTTP error: %s", e)
+            if raise_on_error:
+                raise
             break
         if not r.ok:
             logger.error("FOT HTTP %d: %s", r.status_code, r.text[:300])
+            if raise_on_error:
+                raise RuntimeError(f"FOT HTTP {r.status_code}")
             break
         batch = r.json().get("value", [])
         if not batch:
@@ -212,13 +222,13 @@ def _aggregate_records(records: list[dict]) -> dict[str, float]:
         if rec.get("Сторно"):
             amount = -amount
 
-        dept_key = rec.get("ПодразделениеDr_Key", EMPTY)
+        dept_key = str(rec.get("ПодразделениеDr_Key") or EMPTY).lower()
         ext_dim1 = rec.get("ExtDimensionDr1")
-        ext_type1 = rec.get("ExtDimensionTypeDr1_Key")
+        ext_type1 = str(rec.get("ExtDimensionTypeDr1_Key") or "").lower()
 
         article_key = None
         if ext_type1 == SUBCONTO_TYPE_COST and ext_dim1:
-            article_key = ext_dim1
+            article_key = str(ext_dim1).lower()
 
         if dept_key in DEPT_SET and article_key in ARTICLE_SET:
             by_dept[dept_key] += amount
@@ -226,6 +236,34 @@ def _aggregate_records(records: list[dict]) -> dict[str, float]:
 
     by_dept_rounded = {k: round(v, 2) for k, v in by_dept.items()}
     return {"total": round(total, 2), "by_dept": by_dept_rounded}
+
+
+def live_npo_fot_by_dept(year: int, month: int) -> dict[str, float]:
+    """Факт ФОТ месяца из живой 1С: НПО, дебет 44, две статьи оплаты труда.
+
+    Локальная копия erp_pm отстаёт, пока отражение зарплаты не попало в выгрузку.
+    Прошлый месяц на плитке коммерческого директора берётся отсюда.
+    """
+    session = requests.Session()
+    session.auth = AUTH
+    records = _fetch_records_for_month(
+        session,
+        year,
+        month,
+        organization_key=ORG_NPO,
+        raise_on_error=True,
+    )
+    aggregated = _aggregate_records(records)
+    if not records or aggregated["total"] == 0:
+        raise RuntimeError(f"живой ФОТ {year}-{month:02d} пустой")
+    logger.info(
+        "calc_fot: live NPO %d-%02d records=%d total=%.2f",
+        year,
+        month,
+        len(records),
+        aggregated["total"],
+    )
+    return aggregated["by_dept"]
 
 
 def _slice_payload(payload: dict, dept_guid: str | None) -> dict:
@@ -295,9 +333,12 @@ def get_fot_monthly(year: int | None = None,
             except (TypeError, ValueError):
                 continue
 
+    # При прогреве пересчитываем опорный месяц и предыдущий: плитка текущего
+    # месяца показывает ФОТ прошлого, и его нельзя оставлять вчерашним снимком.
+    prev_m = ref_m - 1 if ref_m > 1 else None
     out_months = []
     for m in range(1, ref_m + 1):
-        if force_compute and m != ref_m and m in stale_by_month:
+        if force_compute and m != ref_m and m != prev_m and m in stale_by_month:
             out_months.append(dict(stale_by_month[m]))
             continue
         records = _fetch_records_for_month(session, ref_y, m)

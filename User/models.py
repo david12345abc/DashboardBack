@@ -78,5 +78,20 @@ class AccessRequest(models.Model):
     def __str__(self):
         return f'{self.get_request_type_display()} {self.nickname} ({self.status})'
 
+
+class UserTileOrder(models.Model):
+    """Порядок плиток дашборда, общий для всех устройств этой учётной записи."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tile_orders')
+    scope_key = models.CharField(max_length=400)
+    order = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_tile_orders'
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'scope_key'], name='user_tile_order_scope'),
+        ]
+
     def set_password(self, raw_password: str):
         self.password_hash = make_password(raw_password)
