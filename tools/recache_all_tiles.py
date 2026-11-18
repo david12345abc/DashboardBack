@@ -73,16 +73,36 @@ def _backup(stamp: str) -> Path:
     return dest
 
 
-def _restore_missing(backup_dir: Path, purged: list[Path]) -> list[Path]:
+def _restore_missing(backup_dir: Path, purged: list[Path] | None = None) -> list[Path]:
+    """Вернуть из копии файлы, которых нет на диске.
+
+    purged=None — пройти всю копию. Иначе только переданный список.
+    Существующие файлы не перезаписываются.
+    """
     restored: list[Path] = []
-    for p in purged:
-        if p.exists():
+    if purged is not None:
+        candidates = purged
+        for p in candidates:
+            if p.exists():
+                continue
+            src = backup_dir / p.relative_to(ROOT)
+            if src.exists():
+                p.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, p)
+                restored.append(p)
+        return restored
+
+    if not backup_dir.exists():
+        return restored
+    for src in backup_dir.rglob("*"):
+        if not src.is_file():
             continue
-        src = backup_dir / p.relative_to(ROOT)
-        if src.exists():
-            p.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, p)
-            restored.append(p)
+        dest = ROOT / src.relative_to(backup_dir)
+        if dest.exists():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        restored.append(dest)
     return restored
 
 
@@ -101,7 +121,7 @@ def _build_department_requests(months: list[int], year: int) -> list[tuple[str, 
     return reqs
 
 
-def _run_departments(months: list[int], year: int) -> list[str]:
+def _run_departments(months: list[int], year: int, skip: int = 0) -> list[str]:
     root_dept = next(iter(views.get_structure_data().keys()))
     all_depts = set(views._get_departments())
     # Скрипт работает «от имени» корня структуры и видит всё, включая подразделения вне structure.json.
@@ -113,9 +133,13 @@ def _run_departments(months: list[int], year: int) -> list[str]:
 
     failures: list[str] = []
     reqs = _build_department_requests(months, year)
+    if skip:
+        _say(f"Пропуск уже собранных запросов: {skip}")
+        reqs = reqs[skip:]
     _say(f"Подразделений: {len(all_depts)}, запросов на сборку: {len(reqs)}")
-    for i, (dept, params) in enumerate(reqs, 1):
+    for i, (dept, params) in enumerate(reqs, skip + 1):
         label = f"{dept} {params or '(текущий период)'}"
+        total = skip + len(reqs)
         request = rf.get("/api/kpi/all/", {"department": dept, **params})
         request.current_user = user
         t0 = time.monotonic()
@@ -123,11 +147,13 @@ def _run_departments(months: list[int], year: int) -> list[str]:
             resp = raw_view(request)
             status = getattr(resp, "status_code", "?")
             ok = status == 200
-        except Exception:
+        except KeyboardInterrupt:
+            raise
+        except BaseException:
             logger.exception("Сборка упала: %s", label)
             status, ok = "exception", False
         dt = time.monotonic() - t0
-        _say(f"  [{i}/{len(reqs)}] {'OK ' if ok else 'ERR'} {label} — {dt:.1f}s (HTTP {status})")
+        _say(f"  [{i}/{total}] {'OK ' if ok else 'ERR'} {label} — {dt:.1f}s (HTTP {status})")
         if not ok:
             failures.append(label)
     return failures
@@ -142,7 +168,9 @@ def _run_warm_tasks(ref_y: int, ref_m: int) -> list[str]:
         try:
             cache_manager.locked_call(key, fn)
             ok = True
-        except Exception:
+        except KeyboardInterrupt:
+            raise
+        except BaseException:
             logger.exception("Задача прогрева упала: %s", key)
             ok = False
         _say(f"  [{i}/{len(tasks)}] {'OK ' if ok else 'ERR'} {key} — {time.monotonic() - t0:.1f}s")
@@ -168,6 +196,23 @@ def main() -> None:
     parser.add_argument("--months-from", type=int, default=1, help="с какого месяца текущего года пересобирать")
     parser.add_argument("--skip-months", action="store_true", help="только текущий период, без прошлых месяцев")
     parser.add_argument("--dry-run", action="store_true", help="показать, что будет удалено, и выйти")
+    parser.add_argument(
+        "--no-purge",
+        action="store_true",
+        help="не удалять кэши: досчитать сборку и вернуть из копии файлы, которые так и не появились",
+    )
+    parser.add_argument(
+        "--backup-dir",
+        type=Path,
+        default=None,
+        help="готовая резервная копия (обязательна вместе с --no-purge)",
+    )
+    parser.add_argument(
+        "--skip-requests",
+        type=int,
+        default=0,
+        help="не повторять первые N запросов сборки (продолжение после обрыва)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
@@ -176,6 +221,9 @@ def main() -> None:
     lfm_y, lfm_m = last_full_month(today)
     months = [] if args.skip_months else list(range(max(1, args.months_from), lfm_m + 1)) if lfm_y == today.year else []
 
+    if args.no_purge and args.backup_dir is None:
+        parser.error("--no-purge требует --backup-dir")
+
     purged = _purge_candidates()
     _say(f"Файлов кэша к пересчёту: {len(purged)}; месяцы {today.year}: {months or 'только текущий период'}")
     if args.dry_run:
@@ -183,21 +231,30 @@ def main() -> None:
             print("  ", p.relative_to(ROOT))
         return
 
-    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    backup_dir = _backup(stamp)
-    _say(f"Резервная копия: {backup_dir}")
-
-    for p in purged:
-        p.unlink(missing_ok=True)
-    _say(f"Удалено файлов кэша: {len(purged)}")
+    if args.no_purge:
+        backup_dir = args.backup_dir.resolve()
+        _say(f"Без удаления кэшей. Копия для пропусков: {backup_dir}")
+    else:
+        stamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        backup_dir = _backup(stamp)
+        _say(f"Резервная копия: {backup_dir}")
+        for p in purged:
+            p.unlink(missing_ok=True)
+        _say(f"Удалено файлов кэша: {len(purged)}")
 
     t0 = time.monotonic()
-    dept_failures = _run_departments(months, today.year)
-    warm_failures = _run_warm_tasks(today.year, today.month)
-    _wait_background_refresh()
-
-    restored = _restore_missing(backup_dir, purged)
-    regenerated = sum(1 for p in purged if p.exists()) - len(restored)
+    dept_failures: list[str] = []
+    warm_failures: list[str] = []
+    try:
+        dept_failures = _run_departments(months, today.year, skip=max(0, args.skip_requests))
+        warm_failures = _run_warm_tasks(today.year, today.month)
+        _wait_background_refresh()
+    finally:
+        restored = _restore_missing(backup_dir, None if args.no_purge else purged)
+        if args.no_purge:
+            regenerated = "—"
+        else:
+            regenerated = sum(1 for p in purged if p.exists()) - len(restored)
 
     _say("=" * 60)
     _say(f"Готово за {(time.monotonic() - t0) / 60:.1f} мин")

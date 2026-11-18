@@ -2973,10 +2973,11 @@ def _build_servhead_charts(
     """
     Графики servhead.
 
-    Если есть плитки ФОТ/бюджет (СЕР-M3-1 / СЕР-M3-2) — как у SUP.
-    Иначе на дашборде «Начальник сервисной службы» только обращения:
-    SH-M1 (удовлетворённые) и SH-M4 (в срок).
+    ОТП: SH-M1 (удовлетворённые) и SH-M4 (в срок) — SH-C1 / SH-C2.
+    Сервисная служба: SH-M6 (план производства) и SH-M8 (отставания) — СЕР-C3 / СЕР-C4.
+    Если есть плитки ФОТ/бюджет (СЕР-M3-1 / СЕР-M3-2), они добавляются как СЕР-C1 / СЕР-C2.
     """
+    charts: dict = {}
     fot_entry = (
         _entry_by_kpi_id(entries_by_id, "СЕР-M3-1")
         or _entry_by_kpi_id(entries_by_id, "CEP-M3-1")
@@ -2992,27 +2993,45 @@ def _build_servhead_charts(
         or (budget_entry.get("monthly_data") or budget_entry.get("last_full_month_row"))
     )
     if has_fot_budget:
-        return _build_dual_plan_fact_charts(
+        charts.update(
+            _build_dual_plan_fact_charts(
+                entries_by_id,
+                ref_y,
+                ref_m,
+                sources=[("СЕР-M3-1", "ФОТ"), ("СЕР-M3-2", "Бюджет")],
+                line_chart_id="СЕР-C1",
+                bar_chart_id="СЕР-C2",
+                line_name="Динамика ФОТ и бюджета",
+                bar_name="ФОТ и бюджет за выбранный месяц",
+            )
+        )
+    charts.update(
+        _build_dual_plan_fact_charts(
             entries_by_id,
             ref_y,
             ref_m,
-            sources=[("СЕР-M3-1", "ФОТ"), ("СЕР-M3-2", "Бюджет")],
-            line_chart_id="СЕР-C1",
-            bar_chart_id="СЕР-C2",
-            line_name="Динамика ФОТ и бюджета",
-            bar_name="ФОТ и бюджет за выбранный месяц",
+            sources=[("SH-M1", "Удовлетворённые"), ("SH-M4", "В срок")],
+            line_chart_id="SH-C1",
+            bar_chart_id="SH-C2",
+            line_name="Динамика обращений",
+            bar_name="Обращения за выбранный месяц",
+            default_unit="шт.",
         )
-    return _build_dual_plan_fact_charts(
-        entries_by_id,
-        ref_y,
-        ref_m,
-        sources=[("SH-M1", "Удовлетворённые"), ("SH-M4", "В срок")],
-        line_chart_id="SH-C1",
-        bar_chart_id="SH-C2",
-        line_name="Динамика обращений",
-        bar_name="Обращения за выбранный месяц",
-        default_unit="шт.",
     )
+    charts.update(
+        _build_dual_plan_fact_charts(
+            entries_by_id,
+            ref_y,
+            ref_m,
+            sources=[("SH-M6", "План производства"), ("SH-M8", "Отставания")],
+            line_chart_id="СЕР-C3",
+            bar_chart_id="СЕР-C4",
+            line_name="Динамика плана производства",
+            bar_name="План производства за выбранный месяц",
+            default_unit="шт.",
+        )
+    )
+    return charts
 
 
 def _build_devdir_charts(
@@ -3353,9 +3372,9 @@ def _build_universal_payload(
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _servhead_kpi_views.is_servhead_department(dept) and not include_debug:
-        # v11: SH-M3 показывает план — все обращения по ДатаРегистрации.
         # v12: SH-M2 — пороги «чем меньше, тем лучше» (≤5 / 5,1–10 / >10).
-        servhead_memo_key = f"servhead_dashboard:v12:{ref_y}:{ref_m:02d}"
+        # v13: графики сервисной службы — план производства (SH-M6) и отставания (SH-M8).
+        servhead_memo_key = f"servhead_dashboard:v13:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(servhead_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -3401,7 +3420,7 @@ def _build_universal_payload(
             dashboard_disk_key = f"c1auto_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = c1auto_memo_key
         elif servhead_memo_key:
-            dashboard_disk_key = f"servhead_v12_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"servhead_v13_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = servhead_memo_key
         elif devdir_memo_key:
             dashboard_disk_key = f"devdir_v9_{ref_y}_{ref_m:02d}"

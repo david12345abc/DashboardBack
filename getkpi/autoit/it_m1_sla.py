@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "autoit_it_m1_sla"
 CACHE_SOURCE_TAG = "autoit_it_m1_sla_ytd_sql_v1"
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 
 MONTHLY_CACHE_PREFIX = "autoit_it_m1_sla_monthly"
 MONTHLY_SOURCE_TAG = "autoit_it_m1_sla_monthly_sql_v1"
-MONTHLY_CACHE_VERSION = 3
+MONTHLY_CACHE_VERSION = 4
 
 
 def _kpi_pct(plan: float | None, fact: float | None) -> float | None:

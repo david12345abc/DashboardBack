@@ -2,12 +2,13 @@
 TD-M4 — ФОТ технического директора в пределах лимита.
 
 Методика факта (по ОСВ контура «ТЕХНИЧЕСКИЙ ДИРЕКТОР»):
-  • сч. 26 — статьи АУП НПО + ГАРАНТИИ;
+  • сч. 26 — статьи АУП НПО, ГАРАНТИИ и УРМЦ;
   • сч. 25 — статьи НПО и АЛМАЗ;
   • подразделения — карточки контура (вкл. корень «ТЕХНИЧЕСКИЙ ДИРЕКТОР»)
     и узлы, мапящиеся к ближайшей карточке.
 
-План — ФОТ из Документ.ЭкземплярБюджета по карточкам контура.
+План — ФОТ из Документ.ЭкземплярБюджета по карточкам контура, кроме отдела
+рекламаций, сервисной службы и отдела технической поддержки.
 
 SQL (erp_pm):
   _AccRg2005          — движения Хозрасчётный
@@ -64,6 +65,9 @@ FOT_SPEC_ARTICLES: tuple[str, ...] = (
     "Страховые взносы (25 сч) НПО!",
     "Оплата труда (сч 25) АЛМАЗ!",
     "Страховые взносы (сч 25) АЛМАЗ!",
+    # Начисления сектора разработки, проведённые на организацию УРМЦ.
+    "Оплата труда (26 сч) УРМЦ!",
+    "Страховые взносы (26 сч) УРМЦ!",
 )
 SALARY_ARTICLES = frozenset(a for a in FOT_SPEC_ARTICLES if a.startswith("Оплата труда"))
 FOT_ACCOUNTS: tuple[str, ...] = ("25", "26")
@@ -132,10 +136,20 @@ TECHDIR_FOT_SPEC: list[tuple[str, tuple[str, ...]]] = [
 ]
 TECHDIR_GROUP_ORDER = [t[0] for t in TECHDIR_FOT_SPEC]
 
-# Эталон факта по ОСВ (май/июнь проверены скринами).
+# План ФОТ этих карточек в лимит техдиректора не входит.
+# Факт по ним остаётся в контуре.
+TD_FOT_PLAN_EXCLUDED_DEPARTMENTS: frozenset[str] = frozenset(
+    {
+        "Отдел по работе с рекламациями",
+        "Сервисная служба",
+        "Отдел технической поддержки",
+    }
+)
+
+# Эталон факта по ОСВ (май проверен скрином). Июнь включает статьи УРМЦ сектора разработки.
 REFERENCE_FACT_2026: dict[int, float] = {
     5: 6_037_063.74,
-    6: 6_509_701.90,
+    6: 6_513_583.57,
 }
 
 MONTH_NAMES = {
@@ -252,8 +266,11 @@ def money(value: float | None) -> str:
 def plan_for_month(year: int, month: int) -> float | None:
     from getkpi.budget_instance_plan import PLAN_SCENARIO_NAME, indicator_for_month
 
+    departments = [
+        name for name in TECHDIR_GROUP_ORDER if name not in TD_FOT_PLAN_EXCLUDED_DEPARTMENTS
+    ]
     return indicator_for_month(
-        list(TECHDIR_GROUP_ORDER),
+        departments,
         year,
         month,
         "fot",

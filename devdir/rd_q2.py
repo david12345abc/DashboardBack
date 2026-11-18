@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from hr_turnover_sql import DeptSpec, build_report
+from hr_turnover_sql import DeptSpec, SqlConnection, build_report, headcount_month
 from turnover_report import (
     apply_plan_table_to_turnover_payload,
     dashboard_payload_from_report,
@@ -27,6 +27,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 HIERARCHY_MODE = "listed_only_no_auto_children"
 KPI_ID = "RD-Q2"
 TITLE = "RD-Q2 факт текучести"
+
+# Увольнения 17.11.2026 в секторе ИИ: в отчёте есть, в дампе кадровой истории ещё нет.
+NOVEMBER_DISMISSALS_NOT_IN_DUMP = (
+    ("44b05d83-58c6-11f1-980d-6cb31113810c", "c478df52-ddff-11ef-95fc-6cb31113810e"),
+    ("d3e8a703-07d4-11f1-979e-6cb31113810c", "c478df52-ddff-11ef-95fc-6cb31113810e"),
+    ("988b096a-def9-11f0-9767-6cb31113810e", "c478df52-ddff-11ef-95fc-6cb31113810e"),
+    ("cca67597-fff8-11f0-9792-6cb31113810c", "c478df52-ddff-11ef-95fc-6cb31113810e"),
+)
 
 RD_Q2_DEPARTMENTS = [
     "ДИРЕКТОР ПО РАЗВИТИЮ",
@@ -55,6 +63,22 @@ def build_rd_q2_payload(year: int | None = None, month: int | None = None) -> di
         year = year or ref_y
         month = month or ref_m
     report = build_report(DEPARTMENTS, (year, 1), (year, month), hierarchy_mode=HIERARCHY_MODE, kpi_label=KPI_ID)
+    if year == 2026:
+        sql = SqlConnection()
+        for snap in report["months"]:
+            if snap["month"] != 11:
+                continue
+            counted = headcount_month(
+                sql,
+                DEPARTMENTS,
+                year,
+                11,
+                extra_dismissals=NOVEMBER_DISMISSALS_NOT_IN_DUMP,
+            )
+            snap["rows"] = counted["rows"]
+            snap["total_staff_units"] = counted["total_staff_units"]
+            snap["total_dismissed"] = counted["total_dismissed"]
+            snap["turnover_pct"] = counted["turnover_pct"]
     payload = dashboard_payload_from_report(
         report,
         kpi_id=KPI_ID,

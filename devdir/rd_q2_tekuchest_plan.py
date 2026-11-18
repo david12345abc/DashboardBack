@@ -19,6 +19,9 @@ RD_Q2_PLAN_BY_MONTH_2026: dict[int, float] = {
 
 
 def plan_for_month(year: int, month: int) -> float | None:
+    # Ноябрь 2026: в документах контура нет строк плана.
+    if year == 2026 and month == 11:
+        return None
     if year == 2026 and month in RD_Q2_PLAN_BY_MONTH_2026:
         return RD_Q2_PLAN_BY_MONTH_2026[month]
     return None

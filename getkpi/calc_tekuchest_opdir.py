@@ -151,7 +151,7 @@ def load_opdir_struktura_departments(session: requests.Session) -> dict[str, str
     while True:
         r = session.get(f"{url}&$top={PAGE}&$skip={skip}", timeout=120)
         if not r.ok:
-            raise SystemExit(f"HTTP {r.status_code} структура: {r.text[:400]}")
+            raise RuntimeError(f"HTTP {r.status_code} структура: {r.text[:400]}")
         batch = r.json().get("value", [])
         if not batch:
             break

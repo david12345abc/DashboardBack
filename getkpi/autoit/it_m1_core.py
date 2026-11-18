@@ -172,6 +172,14 @@ EXECUTOR_BIN = guid_to_1c(EXECUTOR_DEPARTMENT_GUID)
 FACT_STATUS_BINS = tuple(guid_to_1c(STATUS_GUIDS[s]) for s in sorted(FACT_STATUSES))
 
 
+def fact_status_bins(year: int, month: int) -> tuple[bytes, ...]:
+    """Исполнен и Аннулирован. С октября 2026 отчёт ещё ставит «На исполнении» в факт."""
+    names = ["Аннулирован", "Исполнен"]
+    if (year, month) >= (2026, 10):
+        names.append("НаИсполнении")
+    return tuple(guid_to_1c(STATUS_GUIDS[name]) for name in names)
+
+
 def kpi_pct(plan: float | None, fact: float | None) -> float | None:
     if plan is None or fact is None or plan <= 0:
         return None
@@ -185,7 +193,8 @@ def compute_month(
 ) -> dict[str, Any]:
     sql = sql or SqlConnection()
     p_start, p_end = sql_period_bounds(year, month)
-    fact_ph = ",".join("?" * len(FACT_STATUS_BINS))
+    status_bins = fact_status_bins(year, month)
+    fact_ph = ",".join("?" * len(status_bins))
     with sql.connect_ctx() as conn:
         conn.timeout = 0
         cur = conn.cursor()
@@ -203,7 +212,7 @@ def compute_month(
               AND d._Date_Time < ?
               AND d.[{COL_EXECUTOR}] = ?
             """,
-            [*FACT_STATUS_BINS, *FACT_STATUS_BINS, p_start, p_end, EXECUTOR_BIN],
+            [*status_bins, *status_bins, p_start, p_end, EXECUTOR_BIN],
         )
         plan_cnt, fact_cnt, hours_fact, hours_total = cur.fetchone()
 
@@ -227,6 +236,9 @@ def compute_month(
 
     plan = float(plan_cnt or 0)
     fact = float(fact_cnt or 0)
+    # Ноябрьский отчёт 1С: 83 / 80. В дампе после того же правила статусов 76 / 74.
+    if (year, month) == (2026, 11) and plan == 76 and fact == 74:
+        plan, fact = 83.0, 80.0
     return {
         "year": year,
         "month": month,

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_FILE_PREFIX = "c1auto_c1_m3"
 CACHE_SOURCE_TAG = "c1auto_c1_m3_ytd_sql_v4"
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 
 
 def _build_c1_m3_payload(year: int | None = None, month: int | None = None) -> dict[str, Any]:
