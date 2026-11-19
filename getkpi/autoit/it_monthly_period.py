@@ -32,7 +32,11 @@ def pick_fot_display_row(
 
     1) Текущий календарный (незакрытый) месяц не берём как опору — иначе
        частичный факт даёт ложный green, а фронт часто рисует прошлый месяц.
-    2) Если в выбранном месяце факт 0/None — последний месяц с fact > 0.
+       Прошлый месяц с нулевым фактом тоже не берём: пустой расчёт не должен
+       краситься в зелёный.
+    2) Если в выбранном закрытом месяце факт > 0 — показываем его, даже когда
+       расчёт ещё не проведён в бухучёте.
+    3) Если в выбранном месяце факта нет — последний месяц с fact > 0.
     """
     rows = [r for r in (monthly_rows or []) if isinstance(r, dict)]
     if not rows:
@@ -57,15 +61,17 @@ def pick_fot_display_row(
             return False
         return fv is not None and fv > 0
 
-    # Незакрытый текущий месяц → всегда предыдущий календарный месяц из ряда (не текущий).
+    # Незакрытый текущий месяц → предыдущий календарный месяц с ненулевым фактом.
     if year == today.year and ref_m == today.month:
         closed_m = today.month - 1 if today.month > 1 else 12
         closed = next((r for r in rows if r.get("month") == closed_m), None)
-        if closed is not None:
+        if closed is not None and _nonzero_fact(closed):
             return closed
         for row in reversed(rows):
-            if row.get("month") != ref_m:
+            if row.get("month") != ref_m and _nonzero_fact(row):
                 return row
+        if closed is not None:
+            return closed
         return None
 
     ref_row = next((r for r in rows if r.get("month") == ref_m), None)

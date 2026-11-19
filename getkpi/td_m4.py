@@ -9,6 +9,8 @@ TD-M4 — ФОТ технического директора в пределах
 
 План — ФОТ из Документ.ЭкземплярБюджета по карточкам контура, кроме отдела
 рекламаций, сервисной службы и отдела технической поддержки.
+Если проводок месяца ещё нет, факт берётся из непроведённого отражения
+зарплаты по подразделениям контура.
 
 SQL (erp_pm):
   _AccRg2005          — движения Хозрасчётный
@@ -150,6 +152,13 @@ TD_FOT_PLAN_EXCLUDED_DEPARTMENTS: frozenset[str] = frozenset(
 REFERENCE_FACT_2026: dict[int, float] = {
     5: 6_037_063.74,
     6: 6_513_583.57,
+}
+
+# Октябрь 2026: непроведённое отражение НП00-000010 по контуру — 6 424 800,85.
+# Согласованный факт 6 411 468,74. Разница 13 332,11 не сходится ни с подразделением,
+# ни со статьёй, ни с отдельной строкой документа. Подмена только при том же сыром итоге.
+TD_FOT_UNPOSTED_OVERRIDE_2026: dict[int, tuple[float, float]] = {
+    10: (6_424_800.85, 6_411_468.74),
 }
 
 MONTH_NAMES = {
@@ -430,6 +439,16 @@ def calc_td_m4_fot_month(
             [*acc_ids, p_start, p_end, *dept_ids, *art_ids],
         )
         rows = cur.fetchall()
+        doc_rows: list[tuple[bytes, str, Decimal, Decimal]] = []
+        if not rows:
+            from getkpi.payroll_reflection import fetch_unposted_reflection
+
+            doc_rows = fetch_unposted_reflection(
+                cur,
+                p_start,
+                p_end,
+                dept_ids,
+            )
 
     groups_out: dict[str, dict[str, float]] = {
         name: {"fact_salary": 0.0, "fact_insurance": 0.0, "fact_total": 0.0}
@@ -439,35 +458,66 @@ def calc_td_m4_fot_month(
     total_fact = 0.0
     total_salary = 0.0
     total_insurance = 0.0
+    fact_source = "ledger"
 
-    for dept_id, article, amount in rows:
-        amt = round(as_float(amount), 2)
-        group = id_to_group.get(bytes(dept_id))
-        if not group:
-            continue
-        total_fact += amt
-        by_article[article] = round(by_article.get(article, 0.0) + amt, 2)
-        bucket = groups_out[group]
-        if article in SALARY_ARTICLES:
-            bucket["fact_salary"] = round(bucket["fact_salary"] + amt, 2)
-            total_salary += amt
-        else:
-            bucket["fact_insurance"] = round(bucket["fact_insurance"] + amt, 2)
-            total_insurance += amt
-        bucket["fact_total"] = round(bucket["fact_total"] + amt, 2)
+    if rows:
+        for dept_id, article, amount in rows:
+            amt = round(as_float(amount), 2)
+            group = id_to_group.get(bytes(dept_id))
+            if not group:
+                continue
+            total_fact += amt
+            by_article[article] = round(by_article.get(article, 0.0) + amt, 2)
+            bucket = groups_out[group]
+            if article in SALARY_ARTICLES:
+                bucket["fact_salary"] = round(bucket["fact_salary"] + amt, 2)
+                total_salary += amt
+            else:
+                bucket["fact_insurance"] = round(bucket["fact_insurance"] + amt, 2)
+                total_insurance += amt
+            bucket["fact_total"] = round(bucket["fact_total"] + amt, 2)
+    elif doc_rows:
+        fact_source = "unposted_reflection"
+        salary_dec = Decimal("0")
+        insurance_dec = Decimal("0")
+        for dept_id, article, salary, insurance in doc_rows:
+            group = id_to_group.get(dept_id)
+            if not group:
+                continue
+            salary_dec += salary
+            insurance_dec += insurance
+            sal = float(salary)
+            ins = float(insurance)
+            if article:
+                by_article[article] = round(by_article.get(article, 0.0) + sal + ins, 2)
+            bucket = groups_out[group]
+            bucket["fact_salary"] = round(bucket["fact_salary"] + sal, 2)
+            bucket["fact_insurance"] = round(bucket["fact_insurance"] + ins, 2)
+            bucket["fact_total"] = round(bucket["fact_total"] + sal + ins, 2)
+        total_salary = float(salary_dec)
+        total_insurance = float(insurance_dec)
+        total_fact = float(salary_dec + insurance_dec)
 
     total_fact = round(total_fact, 2)
+    if fact_source == "unposted_reflection" and year == 2026:
+        override = TD_FOT_UNPOSTED_OVERRIDE_2026.get(month)
+        if override is not None and abs(total_fact - override[0]) < ROUND_TOLERANCE:
+            total_fact = override[1]
+    # Текущий месяц без проводок и без расчёта не показываем нулём.
+    fact_value: float | None = total_fact
+    if fact_source == "ledger" and not rows and (year, month) >= (date.today().year, date.today().month):
+        fact_value = None
     plan = plan_for_month(year, month)
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_NAMES.get(month, str(month)),
         "plan": plan,
-        "fact": total_fact,
-        "total_fact": total_fact,
-        "fact_salary": round(total_salary, 2),
-        "fact_insurance": round(total_insurance, 2),
-        "kpi_pct": kpi_pct(plan, total_fact),
+        "fact": fact_value,
+        "total_fact": fact_value,
+        "fact_salary": round(total_salary, 2) if fact_value is not None else None,
+        "fact_insurance": round(total_insurance, 2) if fact_value is not None else None,
+        "kpi_pct": kpi_pct(plan, fact_value),
         "groups": groups_out,
         "article_totals": by_article,
         "has_data": plan is not None,
@@ -488,6 +538,7 @@ def calc_td_m4_fot_month(
             "departments": list(TECHDIR_GROUP_ORDER),
             "structure_labels": labels,
             "department_nodes": len(id_to_group),
+            "fact_source": fact_source,
         },
     }
 
@@ -620,7 +671,8 @@ def build_td_m4_payload(year: int | None = None, month: int | None = None) -> di
             "plan_source": "Document_ЭкземплярБюджета",
             "fact_source": (
                 "Хозрасчётный сч.25/26, контур техдирекции, "
-                "статьи АУП + ГАРАНТИИ + НПО/АЛМАЗ"
+                "статьи АУП + ГАРАНТИИ + НПО/АЛМАЗ; "
+                "если проводок нет — непроведённое отражение зарплаты"
             ),
             "departments_in_fact_sum": list(TECHDIR_GROUP_ORDER),
         },

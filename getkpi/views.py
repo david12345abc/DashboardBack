@@ -2114,20 +2114,20 @@ def _build_universal_payload(
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if techdir_dashboard.is_techdir_department(dept) and not include_debug:
-        # v4: color на строках месяца у плиток текучести (TD-Q2).
-        techdir_memo_key = f"techdir_dashboard:v4:{ref_y}:{ref_m:02d}"
+        # v6: штат TD-Q2 за ноябрь включает новую карточку сектора разработки.
+        techdir_memo_key = f"techdir_dashboard:v6:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(techdir_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_qualdir_dashboard(dept, all_kpis) and not include_debug:
-        # v13: формы 03-17/18/19 — статусы «Коррекция» и «В работе» входят в «в работе».
-        qualdir_memo_key = f"qualdir_dashboard:v13:{ref_y}:{ref_m:02d}"
+        # v14: в штат QD-Q2 входит служба качества.
+        qualdir_memo_key = f"qualdir_dashboard:v14:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(qualdir_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
     if _is_sup_department(dept) and not include_debug:
-        # v36: color на строках месяца у плиток текучести.
-        sup_memo_key = f"sup_dashboard:v36:{ref_y}:{ref_m:02d}"
+        # v37: ФОТ HRD-M2 закрытого месяца берётся из расчёта, а не из предыдущего месяца.
+        sup_memo_key = f"sup_dashboard:v37:{ref_y}:{ref_m:02d}"
         cached_payload = cache_manager.get_memoized_dashboard_payload(sup_memo_key)
         if cached_payload is not None:
             return tile_freshness.apply_tile_freshness(cached_payload)
@@ -2170,13 +2170,13 @@ def _build_universal_payload(
             dashboard_disk_key = f"gspp_v19_{dept.strip().lower()}_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = gspp_memo_key
         elif techdir_memo_key:
-            dashboard_disk_key = f"techdir_v4_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"techdir_v6_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = techdir_memo_key
         elif qualdir_memo_key:
-            dashboard_disk_key = f"qualdir_v13_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"qualdir_v14_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = qualdir_memo_key
         elif sup_memo_key:
-            dashboard_disk_key = f"sup_v36_{ref_y}_{ref_m:02d}"
+            dashboard_disk_key = f"sup_v37_{ref_y}_{ref_m:02d}"
             dashboard_mem_key = sup_memo_key
         elif autoit_memo_key:
             dashboard_disk_key = f"autoit_v9_{ref_y}_{ref_m:02d}"

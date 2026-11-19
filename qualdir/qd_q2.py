@@ -29,6 +29,7 @@ QD_Q2_DEPARTMENTS = [
     "ОТК-1",
     "ОТК-2",
     "Лаборатория неразрушающего контроля",
+    "Служба качества",
     "Отдел управления несоответствиями",
 ]
 
@@ -36,6 +37,7 @@ DEPARTMENTS = [
     DeptSpec("ОТК-1", "42dfd1d2-e6f3-11e7-826b-ac1f6b05524d"),
     DeptSpec("ОТК-2", "85f3b385-04c2-11e8-826d-ac1f6b05524d"),
     DeptSpec("Лаборатория неразрушающего контроля", "7ebffdf2-88b3-11eb-8577-ac1f6b05524d"),
+    DeptSpec("Служба качества", "b338c792-f396-11e8-8283-ac1f6b05524d"),
     DeptSpec(
         "Отдел управления несоответствиями",
         "",
@@ -124,7 +126,7 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 QD_Q2_YTD_CACHE_PREFIX = "qualdir_qd_q2_ytd"
 QD_Q2_YTD_DISK_TAG = "qualdir_qd_q2_ytd_sql_payload_v2"
-QD_Q2_YTD_DISK_VERSION = 2
+QD_Q2_YTD_DISK_VERSION = 3
 
 
 def turnover_month_cache_path(year: int, month: int) -> _Path:

@@ -11,6 +11,8 @@ HRD-M2 — ФОТ службы управления персоналом в пр
 Факт — Σ дебетовых оборотов сч. 26 по 2 статьям АУП по
 «Служба управления персоналом» и узлам в её поддереве
 (маппинг к ближайшей карточке из списка).
+Если проводок месяца ещё нет, факт берётся из непроведённого отражения
+зарплаты по тем же статьям, без строк с признаком «не входит в ФОТ».
 
 SQL (erp_pm):
   _AccRg2005          — движения Хозрасчётный
@@ -343,6 +345,18 @@ def calc_hrd_m2_fot_month(
             [acc26, p_start, p_end, *dept_ids, *art_ids],
         )
         rows = cur.fetchall()
+        doc_rows: list[tuple[bytes, str, Decimal, Decimal]] = []
+        if not rows:
+            from getkpi.payroll_reflection import fetch_unposted_reflection
+
+            doc_rows = fetch_unposted_reflection(
+                cur,
+                p_start,
+                p_end,
+                dept_ids,
+                article_names=FOT_SPEC_ARTICLES,
+                exclude_not_in_fot=True,
+            )
 
     groups_out: dict[str, dict[str, float]] = {
         name: {"fact_salary": 0.0, "fact_insurance": 0.0, "fact_total": 0.0}
@@ -352,35 +366,63 @@ def calc_hrd_m2_fot_month(
     total_fact = 0.0
     total_salary = 0.0
     total_insurance = 0.0
+    fact_source = "ledger"
 
-    for dept_id, article, amount in rows:
-        amt = round(as_float(amount), 2)
-        group = id_to_group.get(bytes(dept_id))
-        if not group:
-            continue
-        total_fact += amt
-        by_article[article] = round(by_article.get(article, 0.0) + amt, 2)
-        bucket = groups_out[group]
-        if article == SALARY_ARTICLE:
-            bucket["fact_salary"] = round(bucket["fact_salary"] + amt, 2)
-            total_salary += amt
-        else:
-            bucket["fact_insurance"] = round(bucket["fact_insurance"] + amt, 2)
-            total_insurance += amt
-        bucket["fact_total"] = round(bucket["fact_total"] + amt, 2)
+    if rows:
+        for dept_id, article, amount in rows:
+            amt = round(as_float(amount), 2)
+            group = id_to_group.get(bytes(dept_id))
+            if not group:
+                continue
+            total_fact += amt
+            by_article[article] = round(by_article.get(article, 0.0) + amt, 2)
+            bucket = groups_out[group]
+            if article == SALARY_ARTICLE:
+                bucket["fact_salary"] = round(bucket["fact_salary"] + amt, 2)
+                total_salary += amt
+            else:
+                bucket["fact_insurance"] = round(bucket["fact_insurance"] + amt, 2)
+                total_insurance += amt
+            bucket["fact_total"] = round(bucket["fact_total"] + amt, 2)
+    elif doc_rows:
+        fact_source = "unposted_reflection"
+        salary_dec = Decimal("0")
+        insurance_dec = Decimal("0")
+        for dept_id, article, salary, insurance in doc_rows:
+            group = id_to_group.get(dept_id)
+            if not group:
+                continue
+            salary_dec += salary
+            insurance_dec += insurance
+            sal = float(salary)
+            ins = float(insurance)
+            if article:
+                by_article[article] = round(by_article.get(article, 0.0) + sal + ins, 2)
+            bucket = groups_out[group]
+            bucket["fact_salary"] = round(bucket["fact_salary"] + sal, 2)
+            bucket["fact_insurance"] = round(bucket["fact_insurance"] + ins, 2)
+            bucket["fact_total"] = round(bucket["fact_total"] + sal + ins, 2)
+        total_salary = float(salary_dec)
+        total_insurance = float(insurance_dec)
+        total_fact = float(salary_dec + insurance_dec)
 
     total_fact = round(total_fact, 2)
+    # Текущий месяц без проводок и без расчёта не показываем нулём:
+    # иначе плитка «в пределах лимита» красится в зелёный.
+    fact_value: float | None = total_fact
+    if fact_source == "ledger" and not rows and (year, month) >= (date.today().year, date.today().month):
+        fact_value = None
     plan = plan_for_month(year, month)
     return {
         "year": year,
         "month": month,
         "month_name": MONTH_NAMES.get(month, str(month)),
         "plan": plan,
-        "fact": total_fact,
-        "total_fact": total_fact,
-        "fact_salary": round(total_salary, 2),
-        "fact_insurance": round(total_insurance, 2),
-        "kpi_pct": kpi_pct(plan, total_fact),
+        "fact": fact_value,
+        "total_fact": fact_value,
+        "fact_salary": round(total_salary, 2) if fact_value is not None else None,
+        "fact_insurance": round(total_insurance, 2) if fact_value is not None else None,
+        "kpi_pct": kpi_pct(plan, fact_value),
         "groups": groups_out,
         "article_totals": by_article,
         "has_data": plan is not None,
@@ -401,6 +443,7 @@ def calc_hrd_m2_fot_month(
             "departments": list(SUP_GROUP_ORDER),
             "structure_labels": labels,
             "department_nodes": len(id_to_group),
+            "fact_source": fact_source,
         },
     }
 
@@ -540,7 +583,10 @@ def build_hrd_m2_payload(year: int | None = None, month: int | None = None) -> d
             "kpi_id": "HRD-M2",
             "source": "sup.hrd_m2.sql",
             "plan_source": "Document_ЭкземплярБюджета",
-            "fact_source": "Хозрасчётный сч.26, Служба управления персоналом + поддерево, 2 статьи АУП",
+            "fact_source": (
+                "Хозрасчётный сч.26, Служба управления персоналом + поддерево, 2 статьи АУП; "
+                "если проводок нет — непроведённое отражение зарплаты"
+            ),
             "departments_in_fact_sum": list(SUP_GROUP_ORDER),
         },
     }
@@ -593,10 +639,10 @@ from qualdir.sql_tile_cache import get_ytd_via_cache, month_cache_path, normaliz
 
 HRD_M2_YTD_CACHE_PREFIX = "sup_hrd_m2_fot"
 HRD_M2_YTD_DISK_TAG = "sup_hrd_m2_fot_sql_payload_v1"
-HRD_M2_YTD_DISK_VERSION = 3
+HRD_M2_YTD_DISK_VERSION = 4
 HRD_M2_MONTHLY_CACHE_PREFIX = "sup_hrd_m2_fot_fact_sql_monthly"
 HRD_M2_MONTHLY_SOURCE_TAG = "sup_hrd_m2_fot_fact_sql_monthly_v1"
-HRD_M2_MONTHLY_CACHE_VERSION = 1
+HRD_M2_MONTHLY_CACHE_VERSION = 2
 
 
 def monthly_cache_path(year: int, month: int) -> _Path:

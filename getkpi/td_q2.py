@@ -51,6 +51,8 @@ REPORT_DEPARTMENTS = [
     DeptSpec("Сектор качества разработки", "75d572f4-e4bd-11f0-976f-6cb31113810e"),
     DeptSpec("Сектор промышленной безопасности", "d6669ecf-e4bd-11f0-976f-6cb31113810e"),
     DeptSpec("Сектор разработки технических решений", "af809fa2-e4bd-11f0-976f-6cb31113810e"),
+    # 16.11.2026 часть сотрудников переведена на новую карточку с тем же названием.
+    DeptSpec("Сектор разработки технических решений", "88ae80e7-e24a-11f1-98c9-6cb31113810e"),
     DeptSpec("Сервисная служба", "a37213b5-e6f1-11e7-826b-ac1f6b05524d"),
     DeptSpec("Служба технического директора", "f348c51e-d57f-11ea-83c5-ac1f6b05524c"),
     DeptSpec("Эксплуатационная служба", "07cf0cbf-d580-11ea-83c5-ac1f6b05524c"),
@@ -82,6 +84,23 @@ REFERENCE_2026: dict[int, float] = {
     6: 2.6,
     7: 2.6,
 }
+
+
+def _merge_department_rows(rows: list[dict]) -> list[dict]:
+    """Одноимённые карточки подразделения складываются в одну строку штата."""
+    merged: list[dict] = []
+    index: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get("group") or "")
+        pos = index.get(key)
+        if pos is None:
+            index[key] = len(merged)
+            merged.append(dict(row))
+            continue
+        target = merged[pos]
+        target["staff_units"] = float(target.get("staff_units") or 0) + float(row.get("staff_units") or 0)
+        target["dismissed"] = int(target.get("dismissed") or 0) + int(row.get("dismissed") or 0)
+    return merged
 
 
 def build_td_q2_payload(
@@ -118,7 +137,7 @@ def build_td_q2_payload(
                 snap["month"],
                 extra_dismissals=extra,
             )
-            snap["rows"] = counted["rows"]
+            snap["rows"] = _merge_department_rows(counted["rows"])
             snap["total_staff_units"] = counted["total_staff_units"]
             snap["total_dismissed"] = counted["total_dismissed"]
             snap["turnover_pct"] = counted["turnover_pct"]
