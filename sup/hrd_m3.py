@@ -331,10 +331,6 @@ def compute_hrd_m3_fact_monthly(
     counts["lines_counted"] = counts["rows_counted"]
     counts["requests_matched"] = len(reqs)
     total = round(total, 2)
-    # Ноябрь 2026: согласованный факт 769 191,82. В проведённых списаниях
-    # по статьям _СУП_ сейчас 682 006,85, разница 87 184,97 в регистре нет.
-    if year == 2026 and month == 11 and abs(total - 682_006.85) < 0.05:
-        total = 769_191.82
 
     return {
         "year": year,
