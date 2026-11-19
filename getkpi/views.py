@@ -4867,6 +4867,31 @@ def _overlay_prod_plan_tiles(payload: dict, ref_y: int, ref_m: int) -> dict:
     if items:
         tiles_block['count'] = len(items)
     next_payload['Плитки'] = tiles_block
+    return _overlay_blanking_tiles(next_payload, ref_y, ref_m)
+
+
+def _overlay_blanking_tiles(payload: dict, ref_y: int, ref_m: int) -> dict:
+    """Плитки НСУ / Катапульта / Сокол. Сутки — предыдущий день, обновление в 06:00."""
+    if not isinstance(payload, dict):
+        return payload
+    from .calc_blanking_output import TILE_IDS, get_blanking_output, tiles_from_snapshot
+
+    try:
+        snapshot = get_blanking_output(ref_y, ref_m)
+        fresh = tiles_from_snapshot(snapshot)
+    except Exception:
+        logger.exception("Не удалось собрать плитки заготовительного участка")
+        return payload
+    next_payload = dict(payload)
+    tiles_block = dict(next_payload.get('Плитки') or {})
+    kept = [
+        tile for tile in (tiles_block.get('items') or [])
+        if not (isinstance(tile, dict) and str(tile.get('kpi_id') or '') in TILE_IDS)
+    ]
+    items = fresh + kept
+    tiles_block['items'] = items
+    tiles_block['count'] = len(items)
+    next_payload['Плитки'] = tiles_block
     return next_payload
 
 
@@ -5136,8 +5161,12 @@ def _build_prod_deputy_payload(
         return {'Плитки': {'count': 0, 'items': []}, 'Таблицы': {}}
     # locked_call на устаревшем snapshot отдаёт конверт файла, не сам payload.
     if isinstance(raw, dict) and 'Плитки' not in raw:
-        return _prod_deputy_payload_with_active_refresh_status(unwrapped, ref_y, ref_m)
-    return unwrapped
+        return _prod_deputy_payload_with_active_refresh_status(
+            _overlay_prod_plan_tiles(unwrapped, ref_y, ref_m),
+            ref_y,
+            ref_m,
+        )
+    return _overlay_prod_plan_tiles(unwrapped, ref_y, ref_m)
 
 
 def _build_chief_metrolog_payload(

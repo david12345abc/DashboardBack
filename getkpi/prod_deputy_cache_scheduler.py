@@ -127,6 +127,15 @@ def _core_tasks(ref_y: int, ref_m: int) -> list[tuple[str, Path, object]]:
             lambda: calc_prod_deputy_projects.get_pd_q1_monthly(year=ref_y, month=ref_m),
         )
     )
+    from . import calc_blanking_output
+
+    tasks.append(
+        (
+            f"pd_blanking_{ref_y}_{ref_m}",
+            calc_blanking_output.cache_path(ref_y, ref_m),
+            lambda: calc_blanking_output.get_blanking_output(year=ref_y, month=ref_m),
+        )
+    )
     return tasks
 
 
